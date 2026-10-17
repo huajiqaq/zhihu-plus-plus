@@ -361,7 +361,14 @@ class PeopleScreenInstrumentedTest {
             seededViewModel.pinsFeedModel.allData.clear()
             seededViewModel.pinsFeedModel.allData.addAll(List(itemCount) { index -> seededPin(index + 1) })
             seededViewModel.columnsFeedModel.allData.clear()
-            seededViewModel.columnsFeedModel.allData.addAll(List(itemCount) { index -> seededColumn(index + 1) })
+            seededViewModel.columnsFeedModel.allData.addAll(
+                List(itemCount) { index ->
+                    DataHolder.ColumnContribution(
+                        column = seededColumn(index + 1),
+                        contributionsCount = index + 1,
+                    )
+                },
+            )
             seededViewModel.followersFeedModel.allData.clear()
             seededViewModel.followersFeedModel.allData.addAll(List(itemCount) { index -> seededPeople("follower", index + 1, "粉丝") })
             seededViewModel.followingFeedModel.allData.clear()
