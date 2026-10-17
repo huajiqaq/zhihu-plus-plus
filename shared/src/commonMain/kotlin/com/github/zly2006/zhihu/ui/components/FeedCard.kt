@@ -71,8 +71,10 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.data.authorDestination
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.officialBadge
+import com.github.zly2006.zhihu.data.questionDestination
 import com.github.zly2006.zhihu.data.sourceLabel
 import com.github.zly2006.zhihu.data.target
 import com.github.zly2006.zhihu.navigation.Account
@@ -88,6 +90,9 @@ import com.github.zly2006.zhihu.ui.subscreens.PREF_FONT_SIZE
 import com.github.zly2006.zhihu.ui.subscreens.PREF_LINE_HEIGHT
 import com.github.zly2006.zhihu.util.parseEmphasizedHtmlTextWithTheme
 import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
+
+const val FEED_CARD_TITLE_TAG = "feed_card_title"
+const val FEED_CARD_AUTHOR_TAG = "feed_card_author"
 
 /**
  * 信息流卡片的 Material 3 实现。
@@ -166,6 +171,7 @@ fun FeedCard(
             ) {
                 FeedCardContent(
                     item = item,
+                    readingQueueSourceId = readingQueueSourceId,
                     showFeedThumbnail = showFeedThumbnail,
                     thumbnailUrl = thumbnailUrl,
                     pinImages = pinImages,
@@ -217,6 +223,7 @@ fun FeedCard(
                 ) {
                     FeedCardContent(
                         item = item,
+                        readingQueueSourceId = readingQueueSourceId,
                         showFeedThumbnail = showFeedThumbnail,
                         thumbnailUrl = thumbnailUrl,
                         pinImages = pinImages,
@@ -292,6 +299,7 @@ private fun FeedCardMenuBox(
 @Composable
 private fun FeedCardContent(
     item: FeedDisplayItem,
+    readingQueueSourceId: String?,
     showFeedThumbnail: Boolean,
     thumbnailUrl: String?,
     pinImages: List<DataHolder.Pin.ContentImage>,
@@ -306,6 +314,22 @@ private fun FeedCardContent(
     val fontSizePercent = remember { settings.getInt(PREF_FONT_SIZE, 100) }
     val lineHeightPercent = remember { settings.getInt(PREF_LINE_HEIGHT, 160) }
     val navigator = LocalNavigator.current
+    val questionDestination = item.questionDestination?.withReadingQueueSource(readingQueueSourceId)
+    val authorDestination = item.authorDestination
+    val titleClickModifier = if (questionDestination != null) {
+        Modifier
+            .testTag(FEED_CARD_TITLE_TAG)
+            .clickable(onClickLabel = "打开问题") { navigator.onNavigate(questionDestination) }
+    } else {
+        Modifier
+    }
+    val authorClickModifier = if (authorDestination != null) {
+        Modifier
+            .testTag(FEED_CARD_AUTHOR_TAG)
+            .clickable(onClickLabel = "打开个人主页") { navigator.onNavigate(authorDestination) }
+    } else {
+        Modifier
+    }
     val visiblePinImages = pinImages.takeIf { showFeedThumbnail && !item.isFiltered }.orEmpty()
     val sourceLabel = item.feed?.sourceLabel.takeUnless { item.isFiltered }
     if (duo3CardLayout) {
@@ -329,7 +353,9 @@ private fun FeedCardContent(
                     maxLines = 2,
                     color = MaterialTheme.colorScheme.onSurface,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    modifier = Modifier
+                        .padding(bottom = 8.dp)
+                        .then(titleClickModifier),
                 )
             }
         }
@@ -382,7 +408,7 @@ private fun FeedCardContent(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .weight(1f, fill = false)
-                                    .clickable {},
+                                    .then(authorClickModifier),
                             ) {
                                 AsyncImage(
                                     model = avatarSrc,
@@ -438,6 +464,7 @@ private fun FeedCardContent(
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = titleClickModifier,
                 )
             }
         }
@@ -447,7 +474,7 @@ private fun FeedCardContent(
             Spacer(Modifier.height(4.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable {},
+                modifier = authorClickModifier,
             ) {
                 AsyncImage(
                     model = avatarSrc,
