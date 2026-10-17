@@ -1166,10 +1166,10 @@ fun ArticleScreen(
                 onNavigatePrevious = answerNavigationState::navigateToPrevious,
                 onNavigateNext = answerNavigationState::navigateToNext,
                 previousContent = nav?.previousAnswer?.let { cached ->
-                    { CachedAnswerPreview(cached, useTiqianMarkdown) }
+                    { CachedAnswerPreview(cached, useTiqianMarkdown, useDuo3ArticleActions) }
                 },
                 nextContent = nav?.nextAnswer?.let { cached ->
-                    { CachedAnswerPreview(cached, useTiqianMarkdown) }
+                    { CachedAnswerPreview(cached, useTiqianMarkdown, useDuo3ArticleActions) }
                 },
                 answerSwitchSensitivity = answerSwitchSensitivity,
             ) {

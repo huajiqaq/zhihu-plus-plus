@@ -38,9 +38,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,12 +66,20 @@ import com.github.zly2006.zhihu.ui.components.AuthorBadge
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel.CachedAnswerContent
 import org.jetbrains.compose.resources.painterResource
 import zhihu.shared.generated.resources.Res
+import zhihu.shared.generated.resources.ic_vote_down_24dp
 import zhihu.shared.generated.resources.ic_vote_up_24dp
+
+internal const val ANSWER_PREVIEW_DUO3_ACTIONS_TAG = "answer_preview_duo3_actions"
+internal const val ANSWER_PREVIEW_LEGACY_ACTIONS_TAG = "answer_preview_legacy_actions"
 
 /** 渲染水平回答切换时的缓存内容预览。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun CachedAnswerPreview(cached: CachedAnswerContent, useTiqianMarkdown: Boolean) {
+internal fun CachedAnswerPreview(
+    cached: CachedAnswerContent,
+    useTiqianMarkdown: Boolean,
+    duo3Actions: Boolean = false,
+) {
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -93,45 +105,10 @@ internal fun CachedAnswerPreview(cached: CachedAnswerContent, useTiqianMarkdown:
         },
         bottomBar = {
             Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(color = Color(0xFF40B6F6)),
-                        horizontalArrangement = Arrangement.Start,
-                    ) {
-                        Button(
-                            onClick = {},
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF40B6F6),
-                                contentColor = Color.Black,
-                            ),
-                            shape = RectangleShape,
-                            contentPadding = PaddingValues(horizontal = 0.dp),
-                        ) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(painterResource(Res.drawable.ic_vote_up_24dp), "赞同")
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = cached.voteUpCount.toString())
-                        }
-                    }
-                    Button(
-                        onClick = {},
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "${cached.commentCount}")
-                    }
+                if (duo3Actions) {
+                    Duo3PreviewActions(cached)
+                } else {
+                    LegacyPreviewActions(cached)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -214,7 +191,138 @@ internal fun CachedAnswerPreview(cached: CachedAnswerContent, useTiqianMarkdown:
                     footer = {},
                 )
             }
-            Spacer(modifier = Modifier.height((16 + 36).dp))
+            Spacer(modifier = Modifier.height((16 + if (duo3Actions) 48 else 36).dp))
+        }
+    }
+}
+
+@Composable
+private fun LegacyPreviewActions(cached: CachedAnswerContent) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .testTag(ANSWER_PREVIEW_LEGACY_ACTIONS_TAG),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(color = Color(0xFF40B6F6)),
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Button(
+                onClick = {},
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF40B6F6),
+                    contentColor = Color.Black,
+                ),
+                shape = RectangleShape,
+                contentPadding = PaddingValues(horizontal = 0.dp),
+            ) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(painterResource(Res.drawable.ic_vote_up_24dp), "赞同")
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = cached.voteUpCount.toString())
+            }
+        }
+        Button(
+            onClick = {},
+            contentPadding = PaddingValues(horizontal = 8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(text = "${cached.commentCount}")
+        }
+    }
+}
+
+/** 与 duo3 文章页一致的药丸式投票/操作区，用于回答切换预览。 */
+@Composable
+private fun Duo3PreviewActions(cached: CachedAnswerContent) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(ANSWER_PREVIEW_DUO3_ACTIONS_TAG),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(start = 6.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_vote_up_24dp),
+                    contentDescription = "赞同",
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = cached.voteUpCount.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(start = 6.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_vote_down_24dp),
+                    contentDescription = "反对",
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = {},
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            ) {
+                Icon(Icons.Filled.BookmarkBorder, contentDescription = "收藏")
+            }
+            Button(
+                onClick = {},
+                contentPadding = PaddingValues(start = 8.dp, end = 12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "${cached.commentCount}",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
         }
     }
 }
