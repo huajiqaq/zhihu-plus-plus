@@ -84,6 +84,7 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Collections
 import com.github.zly2006.zhihu.navigation.LocalNavigator
+import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.navigation.Person
@@ -150,6 +151,12 @@ fun AccountSettingScreen(
     isActive: Boolean = true,
 ) {
     val navigator = LocalNavigator.current
+
+    // 作为主页头像面板使用时，先关闭面板再导航，避免返回时面板重新创建造成闪回。
+    fun dismissAndNavigate(destination: NavDestination) {
+        onDismissRequest()
+        navigator.onNavigate(destination)
+    }
     val accountStore = rememberZhihuAccountStore()
     val accountState = rememberAccountSettingsAccountState()
     val requestLogin = ::requestLoginNavigation
@@ -220,7 +227,7 @@ fun AccountSettingScreen(
                         .testTag(ACCOUNT_SETTINGS_PROFILE_HEADER_TAG)
                         .padding(16.dp, 0.dp, 16.dp, 16.dp)
                         .clickable {
-                            navigator.onNavigate(
+                            dismissAndNavigate(
                                 Person(
                                     id = data.id,
                                     urlToken = data.urlToken ?: "",
@@ -300,7 +307,7 @@ fun AccountSettingScreen(
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.primaryContainer)
                                 .clickable {
-                                    data.urlToken?.let { navigator.onNavigate(Collections(it)) }
+                                    data.urlToken?.let { dismissAndNavigate(Collections(it)) }
                                 }.padding(8.dp, 16.dp),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -324,7 +331,7 @@ fun AccountSettingScreen(
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.primaryContainer)
                                 .clickable {
-                                    navigator.onNavigate(
+                                    dismissAndNavigate(
                                         Person(
                                             id = data.id,
                                             urlToken = data.urlToken ?: "",
@@ -355,8 +362,7 @@ fun AccountSettingScreen(
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.primaryContainer)
                                 .clickable {
-                                    onDismissRequest()
-                                    navigator.onNavigate(Notification)
+                                    dismissAndNavigate(Notification)
                                 }.padding(8.dp, 16.dp),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -418,7 +424,7 @@ fun AccountSettingScreen(
                             title = { Text("查看收藏夹") },
                             icon = { Icon(Icons.Default.BookmarkBorder, null) },
                             onClick = {
-                                data.urlToken?.let { navigator.onNavigate(Collections(it)) }
+                                data.urlToken?.let { dismissAndNavigate(Collections(it)) }
                             },
                         )
                         SettingItem(
@@ -427,7 +433,7 @@ fun AccountSettingScreen(
                             icon = { Icon(Icons.Default.Groups, null) },
                             modifier = Modifier.testTag(ACCOUNT_SETTINGS_SHORTCUT_SUBSCRIPTIONS_TAG),
                             onClick = {
-                                navigator.onNavigate(
+                                dismissAndNavigate(
                                     Person(
                                         id = data.id,
                                         urlToken = data.urlToken ?: "",
@@ -449,7 +455,7 @@ fun AccountSettingScreen(
                     shape = RoundedCornerShape(24.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     onClick = {
-                        navigator.onNavigate(Account.SettingsSearch)
+                        dismissAndNavigate(Account.SettingsSearch)
                     },
                 ) {
                     Row(
@@ -482,7 +488,7 @@ fun AccountSettingScreen(
                         description = { Text("创建马甲号或切换当前账号") },
                         icon = { Icon(Icons.Default.SwitchAccount, null) },
                         modifier = Modifier.testTag(ACCOUNT_SETTINGS_IDENTITY_MANAGEMENT_TAG),
-                        onClick = { navigator.onNavigate(Account.IdentityManagement) },
+                        onClick = { dismissAndNavigate(Account.IdentityManagement) },
                     )
                 }
 
@@ -491,7 +497,7 @@ fun AccountSettingScreen(
                     description = { Text("主题颜色、字体大小等") },
                     icon = { Icon(Icons.Default.Palette, null) },
                     modifier = Modifier.testTag(ACCOUNT_SETTINGS_APPEARANCE_TAG),
-                    onClick = { navigator.onNavigate(Account.AppearanceSettings()) },
+                    onClick = { dismissAndNavigate(Account.AppearanceSettings()) },
                 )
 
                 if (readingPlayerSupported) {
@@ -500,7 +506,7 @@ fun AccountSettingScreen(
                         description = { Text("朗读内容、播放队列与条目过渡") },
                         icon = { Icon(Icons.AutoMirrored.Filled.VolumeUp, null) },
                         modifier = Modifier.testTag(ACCOUNT_SETTINGS_READING_TAG),
-                        onClick = { navigator.onNavigate(Account.ReadingSettings) },
+                        onClick = { dismissAndNavigate(Account.ReadingSettings) },
                     )
                 }
 
@@ -509,7 +515,7 @@ fun AccountSettingScreen(
                     description = { Text("推荐、智能过滤、关键词屏蔽等") },
                     icon = { Icon(Icons.Default.FilterAlt, null) },
                     modifier = Modifier.testTag(ACCOUNT_SETTINGS_RECOMMEND_TAG),
-                    onClick = { navigator.onNavigate(Account.RecommendSettings()) },
+                    onClick = { dismissAndNavigate(Account.RecommendSettings()) },
                 )
 
                 SettingItem(
@@ -517,7 +523,7 @@ fun AccountSettingScreen(
                     description = { Text("GitHub、更新设置等") },
                     icon = { Icon(Icons.Default.Settings, null) },
                     modifier = Modifier.testTag(ACCOUNT_SETTINGS_SYSTEM_TAG),
-                    onClick = { navigator.onNavigate(Account.SystemAndUpdateSettings()) },
+                    onClick = { dismissAndNavigate(Account.SystemAndUpdateSettings()) },
                 )
 
                 AnimatedVisibility(isDeveloper) {
@@ -525,7 +531,7 @@ fun AccountSettingScreen(
                         title = { Text("开发者选项") },
                         icon = { Icon(Icons.Default.Code, null) },
                         modifier = Modifier.testTag(ACCOUNT_SETTINGS_DEVELOPER_TAG),
-                        onClick = { navigator.onNavigate(Account.DeveloperSettings) },
+                        onClick = { dismissAndNavigate(Account.DeveloperSettings) },
                     )
                 }
             }
@@ -610,7 +616,7 @@ fun AccountSettingScreen(
                     description = { Text("查看第三方组件许可证") },
                     icon = { Icon(painterResource(Res.drawable.ic_license_24dp), null) },
                     modifier = Modifier.testTag(ACCOUNT_SETTINGS_LICENSES_TAG),
-                    onClick = { navigator.onNavigate(Account.OpenSourceLicenses) },
+                    onClick = { dismissAndNavigate(Account.OpenSourceLicenses) },
                 )
             }
         }
