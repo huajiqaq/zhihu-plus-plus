@@ -136,6 +136,27 @@ internal fun CommandRegistry.installOperatorHandlers() {
         }
     }
 
+    // \mathbin{X} 等 math-class 声明命令
+    //
+    // LaTeX 把参数标为指定 math class（二元运算/关系/普通/开括/闭括/标点/内部），
+    // 主要影响间距。当前 renderer 没有间距模型，这里透明展开为 Group，
+    // 让参数正常渲染，间距由 renderer 已有的运算符间距自然产生。
+    // 若参数本身是单个 Group，解包后直接取其子节点，避免双层 Group 嵌套。
+    val mathClassCommands = arrayOf(
+        "mathbin", "mathrel", "mathord", "mathopen",
+        "mathclose", "mathpunct", "mathinner",
+    )
+    for (cmd in mathClassCommands) {
+        register(cmd) { _, ctx, _ ->
+            val arg = ctx.parseArgument()
+            when (arg) {
+                is LatexNode.Group -> LatexNode.Group(arg.children)
+                null -> LatexNode.Group(emptyList())
+                else -> LatexNode.Group(listOf(arg))
+            }
+        }
+    }
+
     // 取模运算符
     register("bmod") { _, _, _ ->
         LatexNode.ModOperator(null, LatexNode.ModOperator.ModStyle.BMOD)
