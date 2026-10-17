@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Keyboard
@@ -149,6 +150,7 @@ import com.github.zly2006.zhihu.platform.rememberImagePreviewOpener
 import com.github.zly2006.zhihu.platform.rememberImageSaver
 import com.github.zly2006.zhihu.platform.rememberImageSharer
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.platform.rememberSystemUrlOpener
 import com.github.zly2006.zhihu.reading.ReadingCommentOrder
 import com.github.zly2006.zhihu.reading.loadReadingPreferences
 import com.github.zly2006.zhihu.reading.saveReadingPreferences
@@ -157,6 +159,7 @@ import com.github.zly2006.zhihu.ui.components.pageTurnContentEndMarker
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.replaceSelection
+import com.github.zly2006.zhihu.ui.reportUrl
 import com.github.zly2006.zhihu.ui.subscreens.PREF_FONT_SIZE
 import com.github.zly2006.zhihu.ui.subscreens.PREF_LINE_HEIGHT
 import com.github.zly2006.zhihu.util.twoDigitString
@@ -1255,6 +1258,7 @@ private fun CommentItem(
     onDelete: (() -> Unit)? = null,
 ) {
     val navigator = LocalNavigator.current
+    val openSystemUrl = rememberSystemUrlOpener()
     val commentData = comment.item
     val authorPerson =
         Person(
@@ -1459,6 +1463,20 @@ private fun CommentItem(
                             onClick = {
                                 showMoreMenu = false
                                 onDelete()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("举报") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Report,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showMoreMenu = false
+                                openSystemUrl(reportUrl(commentData.id, "comment"))
                             },
                         )
                     }
