@@ -28,6 +28,11 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -35,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.github.zly2006.zhihu.MainActivity
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
+import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 
@@ -55,6 +61,7 @@ fun AndroidZhihuMain(navController: NavHostController) {
         navigateContent = activity::navigateIn,
         enableLandscapeListDetail = true,
         isListDetailCapable = isTablet,
+        enablePredictiveBack = rememberPredictiveBackEnabled(),
         setCurrentMainTabOpenFrom = activity::setCurrentMainTabOpenFrom,
         consumeMainTabNavigationTarget = activity::consumeMainTabNavigationTarget,
         preferenceState = rememberAndroidZhihuMainPreferenceState(),
@@ -107,4 +114,19 @@ fun AndroidZhihuMain(navController: NavHostController) {
             )
         },
     )
+}
+
+@Composable
+private fun rememberPredictiveBackEnabled(): Boolean {
+    val settings = rememberSettingsStore()
+    var enabled by remember { mutableStateOf(settings.getBoolean("enable_predictive_back", true)) }
+    DisposableEffect(settings) {
+        val subscription = settings.observeKeyChanges { key ->
+            if (key == "enable_predictive_back") {
+                enabled = settings.getBoolean("enable_predictive_back", true)
+            }
+        }
+        onDispose { subscription.close() }
+    }
+    return enabled
 }

@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.ui
 
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -68,6 +69,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -103,6 +106,7 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -165,19 +169,23 @@ import com.github.zly2006.zhihu.ui.subscreens.SystemAndUpdateSettingsScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 
+/**
+ * 预测性返回关闭时，由目的地内容层接管返回，避免 NavHost 内部的 PredictiveBackHandler
+ * 继续驱动页面预览。当前 Navigation Compose 没有公开的关闭参数，只能在其回调之后、
+ * 页面自身的返回处理器之前插入普通返回回调；这保留了菜单/弹窗对返回键的优先权。
+ */
+private val LocalPredictiveBackEnabled = compositionLocalOf { true }
 private val LocalPredictiveBackController = compositionLocalOf<NavHostController?> { null }
 
 @Composable
-private fun PredictiveBackFallbackHandler(entryId: String) {
+private fun PredictiveBackFallbackHandler() {
     if (LocalPredictiveBackEnabled.current) return
     val controller = LocalPredictiveBackController.current ?: return
     val backStack by controller.currentBackStack.collectAsState()
-    // 返回栈包含图入口；NavController 自身的返回回调也按“图之外的目的地数量”判断是否可 pop。
-    val destinationCount = backStack.count { it.destination !is NavGraph }
-    val enabled = destinationCount > 1 && backStack.lastOrNull()?.id == entryId
-    PlatformPredictiveBackFallbackHandler(enabled = enabled) {
+    PlatformBackHandler(enabled = backStack.size > 1) {
         controller.popBackStack()
     }
 }
@@ -197,7 +205,7 @@ private inline fun <reified T : Any> NavGraphBuilder.zhihuComposable(
         popEnterTransition = popEnterTransition,
         popExitTransition = popExitTransition,
     ) { entry ->
-        PredictiveBackFallbackHandler(entry.id)
+        PredictiveBackFallbackHandler()
         content(entry)
     }
 }
@@ -268,6 +276,7 @@ fun ZhihuMain(
     },
     articleEnterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
     articleExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+    enablePredictiveBack: Boolean = true,
 ) = BoxWithConstraints(modifier = modifier.fillMaxSize()) {
     val containerWidth = maxWidth
     val isLargeLandscape = canShowLandscapeListDetail(
@@ -568,6 +577,8 @@ fun ZhihuMain(
             LocalSelectedContentDestination provides selectedContentDestination,
             LocalReadingPlayerOverlayPadding provides readingPlayerOverlayPadding,
             LocalReadingPlayerOverlayOffsetState provides readingPlayerOverlayOffsetState,
+            LocalPredictiveBackEnabled provides enablePredictiveBack,
+            LocalPredictiveBackController provides detailNavController,
         ) {
             NavHost(
                 navController = detailNavController,
@@ -578,17 +589,17 @@ fun ZhihuMain(
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = { slideOutHorizontally(tween(300)) { it } + fadeOut(tween(300)) },
             ) {
-                composable<EmptyDetail> {
+                zhihuComposable<EmptyDetail> {
                     EmptyDetailPane()
                 }
-                composable<Article>(
+                zhihuComposable<Article>(
                     typeMap = mapOf(typeOf<ArticleType>() to ArticleTypeNavType),
                     enterTransition = articleEnterTransition,
                     exitTransition = articleExitTransition,
                 ) { entry ->
                     articleContent(entry.toRoute(), entry)
                 }
-                composable<Pin> { entry ->
+                zhihuComposable<Pin> { entry ->
                     PinScreen(entry.toRoute())
                 }
                 accountSettings(reloadBottomBarPreferences, blocklistSettingsNlpContent)
@@ -709,6 +720,8 @@ fun ZhihuMain(
                         LocalReadingPlayerOverlayPadding provides readingPlayerOverlayPadding,
                         LocalReadingPlayerOverlayOffsetState provides readingPlayerOverlayOffsetState,
                         LocalSelectedContentDestination provides selectedContentDestination,
+                        LocalPredictiveBackEnabled provides enablePredictiveBack,
+                        LocalPredictiveBackController provides navController,
                     ) {
                         NavHost(
                             navController,
@@ -747,7 +760,7 @@ fun ZhihuMain(
                                 slideOutHorizontally(tween(300)) { it } + fadeOut(tween(300))
                             },
                         ) {
-                            composable<MainTabs> {
+                            zhihuComposable<MainTabs> {
                                 MainTabsPager(
                                     pagerState = mainPagerState,
                                     pages = mainTabPages,
@@ -757,7 +770,7 @@ fun ZhihuMain(
                                     showHomeTopActions = showHomeTopActions,
                                 )
                             }
-                            composable<Login> {
+                            zhihuComposable<Login> {
                                 LoginScreen(
                                     onLoginComplete = { navController.popBackStack() },
                                     onOpenTelemetrySettings = {
@@ -765,21 +778,21 @@ fun ZhihuMain(
                                     },
                                 )
                             }
-                            composable<Question> { navEntry ->
+                            zhihuComposable<Question> { navEntry ->
                                 val question: Question = navEntry.toRoute()
                                 QuestionScreen(question)
                             }
-                            composable<Topic> { navEntry ->
+                            zhihuComposable<Topic> { navEntry ->
                                 TopicScreen(navEntry.toRoute())
                             }
-                            composable<WriteAnswer> { navEntry ->
+                            zhihuComposable<WriteAnswer> { navEntry ->
                                 val args: WriteAnswer = navEntry.toRoute()
                                 WriteAnswerScreen(args)
                             }
-                            composable<WritePin> { navEntry ->
+                            zhihuComposable<WritePin> { navEntry ->
                                 WritePinScreen(navEntry.toRoute())
                             }
-                            composable<Article>(
+                            zhihuComposable<Article>(
                                 typeMap = mapOf(typeOf<ArticleType>() to ArticleTypeNavType),
                                 enterTransition = articleEnterTransition,
                                 exitTransition = articleExitTransition,
@@ -788,29 +801,29 @@ fun ZhihuMain(
                                 // 启用自适应导航时由 effect 转交详情栈，不创建会抢先消费一次性交接数据的临时页面。
                                 if (!enableLandscapeListDetail) articleContent(article, navEntry)
                             }
-                            composable<HotList> {
+                            zhihuComposable<HotList> {
                                 HotListScreen(innerPadding)
                             }
-                            composable<Follow> {
+                            zhihuComposable<Follow> {
                                 FollowScreen(
                                     scrollToTopTrigger = scrollToTopTrigger,
                                     innerPadding = innerPadding,
                                     parentPagerState = mainPagerState,
                                 )
                             }
-                            composable<Daily> {
+                            zhihuComposable<Daily> {
                                 DailyScreen()
                             }
-                            composable<History> {
+                            zhihuComposable<History> {
                                 LegacyLocalHistoryScreen(innerPadding)
                             }
-                            composable<OnlineHistory> {
+                            zhihuComposable<OnlineHistory> {
                                 OnlineHistoryScreen()
                             }
-                            composable<Account> {
+                            zhihuComposable<Account> {
                                 AccountSettingScreen(innerPadding)
                             }
-                            composable<Search>(
+                            zhihuComposable<Search>(
                                 enterTransition = {
                                     if (initialState.destination.hasRoute<Search>()) {
                                         EnterTransition.None
@@ -839,45 +852,45 @@ fun ZhihuMain(
                                 val search: Search = navEntry.toRoute()
                                 SearchScreen(search)
                             }
-                            composable<Collections> { navEntry ->
+                            zhihuComposable<Collections> { navEntry ->
                                 val data: Collections = navEntry.toRoute()
                                 CollectionScreen(
                                     urlToken = data.userToken,
                                     contentPadding = innerPadding,
                                 )
                             }
-                            composable<CollectionContent> { navEntry ->
+                            zhihuComposable<CollectionContent> { navEntry ->
                                 val content: CollectionContent = navEntry.toRoute()
                                 CollectionContentScreen(content.collectionId)
                             }
-                            composable<Person> { navEntry ->
+                            zhihuComposable<Person> { navEntry ->
                                 val person: Person = navEntry.toRoute()
                                 PeopleScreen(person)
                             }
-                            composable<Pin> { navEntry ->
+                            zhihuComposable<Pin> { navEntry ->
                                 val pin: Pin = navEntry.toRoute()
                                 if (!enableLandscapeListDetail) PinScreen(pin)
                             }
                             accountSettings(reloadBottomBarPreferences, blocklistSettingsNlpContent)
-                            composable<Notification> {
+                            zhihuComposable<Notification> {
                                 NotificationScreen()
                             }
-                            composable<Notification.Entry> { navEntry ->
+                            zhihuComposable<Notification.Entry> { navEntry ->
                                 val entry: Notification.Entry = navEntry.toRoute()
                                 NotificationTimelineScreen(entry.entryName, entry.title)
                             }
-                            composable<Notification.Invitations> {
+                            zhihuComposable<Notification.Invitations> {
                                 NotificationTimelineScreen("invite", "邀请回答")
                             }
-                            composable<Notification.Message> { navEntry ->
+                            zhihuComposable<Notification.Message> { navEntry ->
                                 PrivateMessageScreen(navEntry.toRoute())
                             }
-                            composable<Notification.NotificationSettings> { navEntry ->
+                            zhihuComposable<Notification.NotificationSettings> { navEntry ->
                                 NotificationSettingsScreen(
                                     setting = navEntry.toRoute<Notification.NotificationSettings>().setting,
                                 )
                             }
-                            composable<SentenceSimilarityTest> {
+                            zhihuComposable<SentenceSimilarityTest> {
                                 sentenceSimilarityContent()
                             }
                         }
@@ -1139,44 +1152,44 @@ private fun NavGraphBuilder.accountSettings(
     reloadPreferences: () -> Unit,
     nlpContent: @Composable (onNavigateBack: () -> Unit) -> Unit,
 ) {
-    composable<Account.RecommendSettings.Blocklist> {
+    zhihuComposable<Account.RecommendSettings.Blocklist> {
         BlocklistSettingsScreen(nlpContent)
     }
-    composable<Account.RecommendSettings.BlockedFeedHistory> {
+    zhihuComposable<Account.RecommendSettings.BlockedFeedHistory> {
         BlockedFeedHistoryScreen()
     }
-    composable<Account.AppearanceSettings> { entry ->
+    zhihuComposable<Account.AppearanceSettings> { entry ->
         val args = entry.toRoute<Account.AppearanceSettings>()
         AppearanceSettingsScreen(
             setting = args.setting,
             onExit = reloadPreferences,
         )
     }
-    composable<Account.RecommendSettings> { entry ->
+    zhihuComposable<Account.RecommendSettings> { entry ->
         val args = entry.toRoute<Account.RecommendSettings>()
         ContentFilterSettingsScreen(args.setting)
     }
-    composable<Account.IdentityManagement> {
+    zhihuComposable<Account.IdentityManagement> {
         IdentityManagementScreen()
     }
-    composable<Account.SystemAndUpdateSettings> { entry ->
+    zhihuComposable<Account.SystemAndUpdateSettings> { entry ->
         SystemAndUpdateSettingsScreen(
             setting = entry.toRoute<Account.SystemAndUpdateSettings>().setting,
         )
     }
-    composable<Account.ReadingSettings> {
+    zhihuComposable<Account.ReadingSettings> {
         ReadingSettingsScreen()
     }
-    composable<Account.SettingsSearch> {
+    zhihuComposable<Account.SettingsSearch> {
         SettingsSearchScreen()
     }
-    composable<Account.OpenSourceLicenses> {
+    zhihuComposable<Account.OpenSourceLicenses> {
         OpenSourceLicensesScreen()
     }
-    composable<Account.DeveloperSettings> {
+    zhihuComposable<Account.DeveloperSettings> {
         DeveloperSettingsScreen()
     }
-    composable<Account.DeveloperSettings.ColorScheme> {
+    zhihuComposable<Account.DeveloperSettings.ColorScheme> {
         ColorSchemeScreen()
     }
 }
