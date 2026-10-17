@@ -30,6 +30,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -712,33 +713,37 @@ fun HomeScreen(
                     footer = ProgressIndicatorFooter,
                     key = { item -> item.stableKey },
                     topContent = {
-                        item {
-                            val availableUpdate = updateAnnouncement
+                        // 顶部提示统一放进同一个 item，item 数量保持恒定。
+                        // LazyListState 跨页面恢复时按 index 定位，提示增减会改变
+                        // 后续条目的 index，导致返回首页时列表偏移。
+                        item(key = "home_top_announcements") {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                val availableUpdate = updateAnnouncement
 
-                            AnnouncementCard(
-                                visible = availableUpdate != null && dismissedUpdateVersion != availableUpdate.version,
-                                title = "发现新版本：${availableUpdate?.version}${if (availableUpdate?.isNightly == true) " (Nightly)" else ""}",
-                                leadingIcon = { Icon(Icons.Default.ArrowCircleUp, contentDescription = null) },
-                                accept = { Text("查看更新") },
-                                onAccept = {
-                                    navigator.onNavigate(Account.SystemAndUpdateSettings())
-                                },
-                                dismiss = { Text("以后") },
-                                onDismiss = {
-                                    availableUpdate?.version?.let { versionStr ->
-                                        dismissedUpdateVersion = versionStr
+                                AnnouncementCard(
+                                    visible = availableUpdate != null && dismissedUpdateVersion != availableUpdate.version,
+                                    title = "发现新版本：${availableUpdate?.version}${if (availableUpdate?.isNightly == true) " (Nightly)" else ""}",
+                                    leadingIcon = { Icon(Icons.Default.ArrowCircleUp, contentDescription = null) },
+                                    accept = { Text("查看更新") },
+                                    onAccept = {
+                                        navigator.onNavigate(Account.SystemAndUpdateSettings())
+                                    },
+                                    dismiss = { Text("以后") },
+                                    onDismiss = {
+                                        availableUpdate?.version?.let { versionStr ->
+                                            dismissedUpdateVersion = versionStr
+                                        }
+                                    },
+                                    colors = AnnouncementCardDefaults.colorsImportant(),
+                                )
+                                onlineNotifications.forEach { notification ->
+                                    val markRead = {
+                                        onlineNotificationRepository.markRead(notification)
+                                        onlineNotifications = onlineNotifications.filterNot { it.uuid == notification.uuid }
                                     }
-                                },
-                                colors = AnnouncementCardDefaults.colorsImportant(),
-                            )
-                        }
-                        onlineNotifications.forEach { notification ->
-                            val markRead = {
-                                onlineNotificationRepository.markRead(notification)
-                                onlineNotifications = onlineNotifications.filterNot { it.uuid == notification.uuid }
-                            }
-                            item(notification.uuid) {
-                                Box(modifier = Modifier.animateItem()) {
                                     AnnouncementCard(
                                         modifier = Modifier.testTag(homeOnlineNotificationTag(notification.uuid)),
                                         visible = true,
@@ -804,52 +809,50 @@ fun HomeScreen(
                                         onDismiss = markRead,
                                     )
                                 }
-                            }
-                        }
-                        authorPinAnnouncements.forEach { announcement ->
-                            item(announcement.pinId) {
-                                AnnouncementCard(
-                                    modifier = Modifier.testTag(homeAuthorPollAnnouncementTag(announcement.pinId)),
-                                    visible = true,
-                                    title = if (announcement.kind == HomePinAnnouncementKind.Poll) {
-                                        "请给未来的知乎++提出建议"
-                                    } else {
-                                        "知乎++新动态"
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
-                                    content = buildString {
-                                        append(announcement.title)
-                                        val details = buildList {
-                                            if (announcement.optionCount > 0) {
-                                                add("${announcement.optionCount} 个选项")
+                                authorPinAnnouncements.forEach { announcement ->
+                                    AnnouncementCard(
+                                        modifier = Modifier.testTag(homeAuthorPollAnnouncementTag(announcement.pinId)),
+                                        visible = true,
+                                        title = if (announcement.kind == HomePinAnnouncementKind.Poll) {
+                                            "请给未来的知乎++提出建议"
+                                        } else {
+                                            "知乎++新动态"
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Flag, contentDescription = null) },
+                                        content = buildString {
+                                            append(announcement.title)
+                                            val details = buildList {
+                                                if (announcement.optionCount > 0) {
+                                                    add("${announcement.optionCount} 个选项")
+                                                }
+                                                if (announcement.memberCount > 0) {
+                                                    add("${announcement.memberCount} 人已参与")
+                                                }
                                             }
-                                            if (announcement.memberCount > 0) {
-                                                add("${announcement.memberCount} 人已参与")
+                                            if (details.isNotEmpty()) {
+                                                append("\n")
+                                                append(details.joinToString(" · "))
                                             }
-                                        }
-                                        if (details.isNotEmpty()) {
-                                            append("\n")
-                                            append(details.joinToString(" · "))
-                                        }
-                                    },
-                                    accept = {
-                                        Text(if (announcement.kind == HomePinAnnouncementKind.Poll) "去投票" else "查看")
-                                    },
-                                    onAccept = {
-                                        settings.putBoolean(homePinAnnouncementReadKey(announcement.pinId), true)
-                                        authorPinAnnouncements = authorPinAnnouncements.filterNot {
-                                            it.pinId == announcement.pinId
-                                        }
-                                        navigator.onNavigate(Pin(announcement.pinId))
-                                    },
-                                    dismiss = { Text("关闭") },
-                                    onDismiss = {
-                                        settings.putBoolean(homePinAnnouncementReadKey(announcement.pinId), true)
-                                        authorPinAnnouncements = authorPinAnnouncements.filterNot {
-                                            it.pinId == announcement.pinId
-                                        }
-                                    },
-                                )
+                                        },
+                                        accept = {
+                                            Text(if (announcement.kind == HomePinAnnouncementKind.Poll) "去投票" else "查看")
+                                        },
+                                        onAccept = {
+                                            settings.putBoolean(homePinAnnouncementReadKey(announcement.pinId), true)
+                                            authorPinAnnouncements = authorPinAnnouncements.filterNot {
+                                                it.pinId == announcement.pinId
+                                            }
+                                            navigator.onNavigate(Pin(announcement.pinId))
+                                        },
+                                        dismiss = { Text("关闭") },
+                                        onDismiss = {
+                                            settings.putBoolean(homePinAnnouncementReadKey(announcement.pinId), true)
+                                            authorPinAnnouncements = authorPinAnnouncements.filterNot {
+                                                it.pinId == announcement.pinId
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     },
