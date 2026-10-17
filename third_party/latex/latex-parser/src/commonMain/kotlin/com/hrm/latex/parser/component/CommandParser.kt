@@ -110,6 +110,12 @@ internal class CommandParser(
             return LatexNode.Text("\\")
         }
 
+        // `\ `（反斜杠+空格）由 tokenizer 产生 Command(" ")，语义是显式 inter-word 空格，
+        // 映射为 Space 节点，避免落入 Command fallback 被红色原样显示。
+        if (cmdName == " ") {
+            return LatexNode.Space(LatexNode.Space.SpaceType.NORMAL)
+        }
+
         val unicode = SymbolMap.getSymbol(cmdName)
         if (unicode != null) {
             return LatexNode.Symbol(cmdName, unicode)
