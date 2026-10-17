@@ -25,6 +25,9 @@ internal expect val platformBottomBarItemLimit: Int?
 
 expect val platformName: String
 
+/** 跨设备投放时展示的设备名称，默认取系统/机型名。 */
+expect val platformDeviceName: String
+
 expect val isJvm: Boolean
 
 expect val isNative: Boolean

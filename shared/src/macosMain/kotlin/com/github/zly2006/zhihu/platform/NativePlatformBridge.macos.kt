@@ -36,6 +36,8 @@ internal actual val nativeIsDesktop: Boolean = true
 
 actual val platformName: String = "macOS"
 
+actual val platformDeviceName: String = "macOS"
+
 fun isMacosQuitOnWindowCloseEnabled(): Boolean =
     nativeSettingsStore("settings.properties").getBoolean(MACOS_QUIT_ON_WINDOW_CLOSE_PREFERENCE_KEY, false)
 

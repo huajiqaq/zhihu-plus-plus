@@ -146,6 +146,7 @@ import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.reading.saveReadingPlaybackSpeed
 import com.github.zly2006.zhihu.ui.components.CompactReadingPlayerButton
+import com.github.zly2006.zhihu.ui.components.CrossDeviceInboxEffect
 import com.github.zly2006.zhihu.ui.components.NoOpPagerNestedScrollConnection
 import com.github.zly2006.zhihu.ui.components.ReadingPlayerBar
 import com.github.zly2006.zhihu.ui.components.ReadingQueueSheet
@@ -672,6 +673,7 @@ fun ZhihuMain(
                         LocalReadingPlayerOverlayOffsetState provides readingPlayerOverlayOffsetState,
                         LocalSelectedContentDestination provides selectedContentDestination,
                     ) {
+                        CrossDeviceInboxEffect()
                         NavHost(
                             navController,
                             modifier = Modifier.pointerInput(Unit) {

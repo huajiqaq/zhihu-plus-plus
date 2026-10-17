@@ -140,6 +140,7 @@ import com.github.zly2006.zhihu.ui.components.AuthorBadge
 import com.github.zly2006.zhihu.ui.components.CollectionDialogComponent
 import com.github.zly2006.zhihu.ui.components.CommentScreenComponent
 import com.github.zly2006.zhihu.ui.components.ContentEndMarker
+import com.github.zly2006.zhihu.ui.components.CrossDeviceOpenSheet
 import com.github.zly2006.zhihu.ui.components.DEFAULT_ANSWER_SWITCH_SENSITIVITY
 import com.github.zly2006.zhihu.ui.components.DraggableRefreshButton
 import com.github.zly2006.zhihu.ui.components.ExportDialogComponent
@@ -259,6 +260,7 @@ fun ArticleScreen(
     var showCollectionDialog by remember { mutableStateOf(false) }
     var showActionsMenu by remember { mutableStateOf(false) }
     var showSummaryDialog by remember { mutableStateOf(false) }
+    var showCrossDeviceSheet by remember { mutableStateOf(false) }
     var showAigcFlagSheet by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showDoubleTapActionDialog by remember { mutableStateOf(false) }
@@ -1253,6 +1255,13 @@ fun ArticleScreen(
             isImmersiveMode = !isImmersiveMode
             userMessages.showMessage("已进入沉浸式，按返回键即可退出")
         },
+        onCrossDeviceOpenRequest = { showCrossDeviceSheet = true },
+    )
+
+    CrossDeviceOpenSheet(
+        show = showCrossDeviceSheet,
+        article = article,
+        onDismiss = { showCrossDeviceSheet = false },
     )
 
     ArticleSummarySheet(

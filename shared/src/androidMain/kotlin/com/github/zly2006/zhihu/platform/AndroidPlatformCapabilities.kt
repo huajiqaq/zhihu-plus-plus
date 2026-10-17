@@ -77,6 +77,12 @@ internal actual val platformBottomBarItemLimit: Int? = 5
 
 actual val platformName: String = "Android"
 
+actual val platformDeviceName: String =
+    listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { "Android" }
+
 actual val isJvm: Boolean = false
 
 actual val isNative: Boolean = false

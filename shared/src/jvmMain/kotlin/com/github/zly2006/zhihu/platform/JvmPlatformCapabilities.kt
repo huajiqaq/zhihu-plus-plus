@@ -231,6 +231,8 @@ internal actual val platformBottomBarItemLimit: Int? = null
 
 actual val platformName: String = "JVM"
 
+actual val platformDeviceName: String = System.getProperty("os.name") ?: "Desktop"
+
 actual val isJvm: Boolean = true
 
 actual val isNative: Boolean = false

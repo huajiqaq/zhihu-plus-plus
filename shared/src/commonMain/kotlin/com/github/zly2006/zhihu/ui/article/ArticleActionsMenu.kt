@@ -58,6 +58,7 @@ import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.platform.rememberSystemUrlOpener
 import com.github.zly2006.zhihu.reading.ReadingContentType
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
@@ -74,7 +75,6 @@ import com.github.zly2006.zhihu.ui.articleSpeechText
 import com.github.zly2006.zhihu.ui.components.MyModalBottomSheet
 import com.github.zly2006.zhihu.ui.components.ShareAction
 import com.github.zly2006.zhihu.ui.components.rememberShareActionExecutor
-import com.github.zly2006.zhihu.ui.rememberArticleBrowserOpener
 import com.github.zly2006.zhihu.ui.rememberArticleSpeechToggler
 import com.github.zly2006.zhihu.ui.rememberArticleTtsState
 import com.github.zly2006.zhihu.util.Log
@@ -122,13 +122,14 @@ fun ArticleActionsMenu(
     onAigcFlagRequest: () -> Unit,
     onExportRequest: () -> Unit,
     onSetImmersiveDoubleTap: () -> Unit = {},
+    onCrossDeviceOpenRequest: () -> Unit = {},
 ) {
     val ttsState = rememberArticleTtsState()
     val toggleSpeech = rememberArticleSpeechToggler()
     val readingPlayer = rememberReadingPlayerController()
     val readingPlayerState by readingPlayer.state
     val readingSettings = rememberSettingsStore()
-    val openArticleInBrowser = rememberArticleBrowserOpener()
+    val openSystemUrl = rememberSystemUrlOpener()
     val executeShareAction = rememberShareActionExecutor()
     val coroutineScope = rememberCoroutineScope()
     val readingItem = ReadingQueueItem(
@@ -423,12 +424,10 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Outlined.DesktopWindows,
-            text = "在电脑中打开（我计划使用浏览器插件实现，还在写，点击后请手动前往收藏夹打开）",
+            text = "跨设备打开",
             onClick = {
-                coroutineScope.launch {
-                    openArticleInBrowser(article)
-                    onDismissRequest()
-                }
+                onDismissRequest()
+                onCrossDeviceOpenRequest()
             },
         )
         Spacer(modifier = Modifier.height(16.dp))
