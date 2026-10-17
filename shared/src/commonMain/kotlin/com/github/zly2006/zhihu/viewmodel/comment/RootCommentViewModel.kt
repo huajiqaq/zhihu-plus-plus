@@ -41,10 +41,13 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Clock
 
 class RootCommentViewModel(
     content: NavDestination,
@@ -110,6 +113,23 @@ class RootCommentViewModel(
 
         private val SegmentCommentHolder.normalizedContentType: String
             get() = contentType.removeSuffix("s")
+
+        /**
+         * 打开文章时并行预取评论第一页，打开评论面板时直接使用，
+         * 省掉一次网络往返（#450）。
+         */
+        suspend fun prefetchFirstPage(
+            environment: ZhihuApiEnvironment,
+            article: NavDestination,
+        ) {
+            val key = commentCacheKey(article) ?: return
+            val url = article.rootCommentUrl
+            if (url.isBlank()) return
+            val json = runCatching {
+                environment.fetchJson("$url?order_by=score", "")
+            }.getOrNull() ?: return
+            CommentFirstPageCache.put(key, json)
+        }
     }
 
     override val initialUrl: String
@@ -125,6 +145,16 @@ class RootCommentViewModel(
         }
 
     override suspend fun fetchFeeds(environment: PaginationEnvironment) {
+        if (lastPaging == null && initialCommentId == null && sortOrder == CommentSortOrder.SCORE) {
+            val key = commentCacheKey(article)
+            val cached = key?.let { CommentFirstPageCache.take(it) }
+            val data = cached?.get("data") as? JsonArray
+            if (cached != null && data != null) {
+                processResponse(environment, decodePage(environment, data), data)
+                if ("paging" in cached) lastPaging = ZhihuJson.decodeJson(cached["paging"]!!)
+                return
+            }
+        }
         if (!initialCommentLoaded && initialCommentId != null) {
             initialCommentLoaded = true
             try {
@@ -260,3 +290,38 @@ internal fun String.escapeCommentHtml(): String =
             }
         }
     }
+
+private const val COMMENT_PREFETCH_TTL_MS = 5 * 60 * 1000L
+private const val COMMENT_PREFETCH_MAX_ENTRIES = 4
+
+private data class CachedCommentPage(
+    val json: JsonObject,
+    val createdAt: Long,
+)
+
+private object CommentFirstPageCache {
+    private val mutex = Mutex()
+    private val entries = mutableMapOf<String, CachedCommentPage>()
+
+    suspend fun put(key: String, json: JsonObject) {
+        mutex.withLock {
+            val now = Clock.System.now().toEpochMilliseconds()
+            entries.entries.removeAll { now - it.value.createdAt > COMMENT_PREFETCH_TTL_MS }
+            if (entries.size >= COMMENT_PREFETCH_MAX_ENTRIES) {
+                entries.minByOrNull { it.value.createdAt }?.let { entries.remove(it.key) }
+            }
+            entries[key] = CachedCommentPage(json, now)
+        }
+    }
+
+    suspend fun take(key: String): JsonObject? = mutex.withLock {
+        val entry = entries.remove(key) ?: return@withLock null
+        val now = Clock.System.now().toEpochMilliseconds()
+        if (now - entry.createdAt > COMMENT_PREFETCH_TTL_MS) null else entry.json
+    }
+}
+
+private fun commentCacheKey(article: NavDestination): String? = when (article) {
+    is Article -> "${article.type}:${article.id}"
+    else -> null
+}
