@@ -26,13 +26,21 @@ import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.data.executeZhihuAuthenticatedRequest
 import com.github.zly2006.zhihu.data.sourceLabel
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.FeedDisplayEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpMethod
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class FollowViewModel : BaseFeedViewModel() {
     override val initialUrl: String
@@ -66,11 +74,55 @@ class RecentMomentsViewModel : ViewModel() {
     data class FollowingUserItem(
         val actor: Actor,
         val unreadCount: Int,
+        val brief: String = "",
     )
 
     var users = mutableStateListOf<FollowingUserItem>()
     var isLoading by mutableStateOf(false)
     var errorMessage by mutableStateOf<String?>(null)
+
+    /**
+     * 点击头像后先本地清掉红点，再用服务端返回的 brief 标记该用户动态已读。
+     * brief 是服务端给这条最近动态的不透明 token，不能由 actor id 推导。
+     */
+    fun markRead(
+        environment: ZhihuApiEnvironment,
+        actorId: String,
+    ) {
+        val index = users.indexOfFirst { it.actor.id == actorId }
+        if (index == -1) return
+        val previous = users[index]
+        if (previous.unreadCount <= 0) return
+        users[index] = previous.copy(unreadCount = 0)
+        if (previous.brief.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val response = environment.withAuthenticatedClient { client, cookies ->
+                    executeZhihuAuthenticatedRequest(client, "https://api.zhihu.com/moments/recent/read") {
+                        method = HttpMethod.Post
+                        url { parameters["brief"] = previous.brief }
+                        signZhihuFetchRequest(cookies)
+                    }
+                }
+                val acknowledged = ZhihuJson.json
+                    .parseToJsonElement(response.bodyAsText())
+                    .jsonObject["success"]
+                    ?.jsonPrimitive
+                    ?.booleanOrNull == true
+                check(response.status.value in 200..299 && acknowledged) {
+                    "标记关注动态已读失败（${response.status.value}）"
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val currentIndex = users.indexOfFirst { it.actor.id == actorId }
+                if (currentIndex != -1 && users[currentIndex].unreadCount == 0) {
+                    users[currentIndex] = users[currentIndex].copy(unreadCount = previous.unreadCount)
+                }
+                environment.handleFetchFailure("RecentMomentsVM", e)
+            }
+        }
+    }
 
     fun load(environment: ZhihuApiEnvironment) {
         if (isLoading || users.isNotEmpty()) return
@@ -89,6 +141,8 @@ class RecentMomentsViewModel : ViewModel() {
                         }
                     },
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 environment.handleFetchFailure("RecentMomentsVM", e)
                 errorMessage = "加载关注动态失败"
