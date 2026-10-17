@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class FeedContentFilterPipelineTest {
     @Test
@@ -122,6 +123,68 @@ class FeedContentFilterPipelineTest {
 
         assertEquals(emptyList(), result.kept)
         assertEquals(listOf("NLP语义屏蔽：nlp phrase"), result.blocked.map { it.second })
+        database.close()
+    }
+
+    @Test
+    fun keywordAndNlpBlockingShouldSkipQuestions() = runTest {
+        val database = getContentFilterDatabase(
+            createTempDirectory("keyword-skip-question").resolve("content-filter.db").toFile(),
+        )
+        database.blockedKeywordDao().insertKeyword(
+            BlockedKeyword(keyword = "blocked keyword"),
+        )
+        database.blockedKeywordDao().insertKeyword(
+            BlockedKeyword(
+                keyword = "nlp phrase",
+                keywordType = KeywordType.NLP_SEMANTIC.name,
+            ),
+        )
+        val keywordService = BlockedKeywordService(
+            keywordDao = database.blockedKeywordDao(),
+            recordDao = database.blockedContentRecordDao(),
+            semanticMatcher = KeywordSemanticMatcher { text, _, _ ->
+                if (text.contains("nlp phrase")) listOf("nlp phrase" to 0.95) else emptyList()
+            },
+        )
+
+        val questionContent = FilterableContent(
+            title = "blocked keyword title",
+            summary = null,
+            content = "blocked keyword nlp phrase",
+            authorName = "asker",
+            authorId = "ok-user",
+            contentId = "question-1",
+            contentType = ContentType.QUESTION,
+            raw = DataHolder.DummyContent,
+        )
+        val answerContent = FilterableContent(
+            title = "blocked keyword title",
+            summary = null,
+            content = "blocked keyword nlp phrase",
+            authorName = "author",
+            authorId = "ok-user",
+            contentId = "answer-1",
+            contentType = ContentType.ANSWER,
+            raw = DataHolder.DummyContent,
+        )
+
+        val result = FeedContentFilterPipeline(
+            settings = FeedFilterSettings(enableNlpBlocking = true),
+            blockedKeywordDao = database.blockedKeywordDao(),
+            blockedUserDao = database.blockedUserDao(),
+            blockedQuestionAuthorDao = database.blockedQuestionAuthorDao(),
+            blockedTopicDao = database.blockedTopicDao(),
+            blockedKeywordService = keywordService,
+        ).filter(listOf(questionContent, answerContent))
+
+        // 问题不被屏蔽词过滤，保留
+        assertTrue(result.kept.any { it.contentId == "question-1" }, "question should be kept")
+        // 回答被关键词屏蔽
+        assertTrue(
+            result.blocked.any { it.first.contentId == "answer-1" },
+            "answer should be blocked",
+        )
         database.close()
     }
 
