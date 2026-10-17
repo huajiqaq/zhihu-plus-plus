@@ -143,6 +143,7 @@ import com.github.zly2006.zhihu.navigation.loginNavigationRequestFlow
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.platform.rememberTouchExplorationEnabled
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.reading.saveReadingPlaybackSpeed
 import com.github.zly2006.zhihu.ui.components.CompactReadingPlayerButton
@@ -242,7 +243,8 @@ fun ZhihuMain(
     val bottomPadding = ScaffoldDefaults.contentWindowInsets.asPaddingValues().calculateBottomPadding()
     val duo3HomeAccount = preferenceState.duo3HomeAccount
     val tapToScrollToTopEnabled = preferenceState.tapToScrollToTopEnabled
-    val autoHideBottomBar = preferenceState.autoHideBottomBar
+    val touchExplorationEnabled = rememberTouchExplorationEnabled()
+    val autoHideBottomBar = preferenceState.autoHideBottomBar && !touchExplorationEnabled
     val collectionDirectBrowseEnabled = preferenceState.collectionDirectBrowseEnabled
     val selectedBottomBarItemKeys = preferenceState.selectedBottomBarItemKeys
     val startDestination = preferenceState.startDestination
@@ -634,7 +636,7 @@ fun ZhihuMain(
                                                 NavigationBarItemDefaults.colors()
                                             },
                                             icon = {
-                                                Icon(icon, contentDescription = label)
+                                                Icon(icon, contentDescription = null)
                                             },
                                             modifier = Modifier.padding(top = 4.dp).testTag(tag),
                                         )

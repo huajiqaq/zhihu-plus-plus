@@ -90,6 +90,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -232,7 +235,9 @@ fun QuestionScreen(
     }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics { paneTitle = "问题" },
         topBar = {
             QuestionTopBar(
                 title = viewModel.questionDetail?.title ?: question.title,
@@ -412,7 +417,9 @@ private fun QuestionHeaderSection(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.testTag(QUESTION_TITLE_TAG),
+                modifier = Modifier
+                    .testTag(QUESTION_TITLE_TAG)
+                    .semantics { heading() },
             )
         }
         Row(
@@ -431,9 +438,11 @@ private fun QuestionHeaderSection(
             }
             OutlinedButton(
                 onClick = onShowComments,
-                modifier = Modifier.testTag(QUESTION_COMMENTS_BUTTON_TAG),
+                modifier = Modifier
+                    .testTag(QUESTION_COMMENTS_BUTTON_TAG)
+                    .semantics { contentDescription = "$commentCount 条评论" },
             ) {
-                Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
+                Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("$commentCount")
             }
@@ -811,7 +820,7 @@ private fun QuestionPrimaryActions(
         ) {
             Icon(
                 imageVector = if (isFollowing) Icons.Filled.Check else Icons.Filled.Add,
-                contentDescription = if (isFollowing) "取消关注" else "关注问题",
+                contentDescription = null,
             )
             Spacer(Modifier.width(8.dp))
             Text(if (isFollowing) "已关注" else "关注问题")

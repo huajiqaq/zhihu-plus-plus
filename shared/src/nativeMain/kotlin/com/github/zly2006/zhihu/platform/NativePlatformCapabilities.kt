@@ -127,6 +127,9 @@ actual fun rememberPlainTextClipboard(): PlainTextClipboard = remember {
     }
 }
 
+@Composable
+actual fun rememberTouchExplorationEnabled(): Boolean = false
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable

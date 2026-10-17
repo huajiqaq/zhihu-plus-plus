@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -166,7 +167,7 @@ fun FeedCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { performClick(item) }
+                    .clickable(onClickLabel = "打开内容") { performClick(item) }
                     .padding(horizontal = horizontalPadding, vertical = 12.dp),
             ) {
                 FeedCardContent(
@@ -207,7 +208,7 @@ fun FeedCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .let { if (duo3CardAppearance) it.clip(RoundedCornerShape(24.dp)) else it }
-                    .clickable { performClick(item) },
+                    .clickable(onClickLabel = "打开内容") { performClick(item) },
                 elevation = if (duo3CardAppearance) {
                     CardDefaults.cardElevation()
                 } else {
@@ -320,8 +321,9 @@ private fun FeedCardContent(
         Modifier
             .testTag(FEED_CARD_TITLE_TAG)
             .clickable(onClickLabel = "打开问题") { navigator.onNavigate(questionDestination) }
+            .semantics { heading() }
     } else {
-        Modifier
+        Modifier.semantics { heading() }
     }
     val authorClickModifier = if (authorDestination != null) {
         Modifier
@@ -377,7 +379,7 @@ private fun FeedCardContent(
                     Spacer(modifier = Modifier.width(8.dp))
                     AsyncImage(
                         model = thumbnailUrl,
-                        contentDescription = "Thumbnail",
+                        contentDescription = null,
                         modifier = Modifier
                             .padding(top = 8.dp)
                             .sizeIn(maxHeight = 80.dp, maxWidth = 128.dp)
@@ -412,7 +414,7 @@ private fun FeedCardContent(
                             ) {
                                 AsyncImage(
                                     model = avatarSrc,
-                                    contentDescription = "Avatar",
+                                    contentDescription = null,
                                     modifier = Modifier
                                         .clip(CircleShape)
                                         .size(24.dp),
@@ -478,7 +480,7 @@ private fun FeedCardContent(
             ) {
                 AsyncImage(
                     model = avatarSrc,
-                    contentDescription = "Avatar",
+                    contentDescription = null,
                     modifier = Modifier
                         .clip(CircleShape)
                         .size(20.dp),
@@ -533,7 +535,7 @@ private fun FeedCardContent(
                 Spacer(modifier = Modifier.width(8.dp))
                 AsyncImage(
                     model = thumbnailUrl,
-                    contentDescription = "Thumbnail",
+                    contentDescription = null,
                     modifier = Modifier
                         .weight(1f)
                         .sizeIn(maxWidth = 60.dp)

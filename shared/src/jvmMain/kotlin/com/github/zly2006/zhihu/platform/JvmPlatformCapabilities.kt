@@ -198,6 +198,9 @@ actual fun rememberPlainTextClipboard(): PlainTextClipboard =
     }
 
 @Composable
+actual fun rememberTouchExplorationEnabled(): Boolean = false
+
+@Composable
 actual fun rememberUserMessageSink(): UserMessageSink = remember {
     object : UserMessageSink {
         override fun showShortMessage(message: String) {

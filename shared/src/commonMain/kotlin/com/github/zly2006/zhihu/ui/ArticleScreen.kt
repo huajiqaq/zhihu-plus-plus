@@ -100,6 +100,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -121,6 +129,7 @@ import com.github.zly2006.zhihu.platform.isAnswerSwipeSupported
 import com.github.zly2006.zhihu.platform.isArticleHtmlExportSupported
 import com.github.zly2006.zhihu.platform.isArticleImageExportSupported
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.platform.rememberTouchExplorationEnabled
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.article.AigcFlagSheet
@@ -208,6 +217,7 @@ fun ArticleScreen(
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
     val settings = rememberSettingsStore()
+    val touchExplorationEnabled = rememberTouchExplorationEnabled()
     val isTitleAutoHide by rememberObservedSetting(settings, "titleAutoHide") { getBoolean("titleAutoHide", false) }
     val autoHideArticleBottomBar by rememberObservedSetting(settings, "autoHideArticleBottomBar") {
         getBoolean("autoHideArticleBottomBar", false)
@@ -215,7 +225,8 @@ fun ArticleScreen(
     val configuredAnswerSwitchMode by rememberObservedSetting(settings, "answerSwitchMode") {
         getString("answerSwitchMode", "vertical")
     }
-    val answerSwitchMode = configuredAnswerSwitchMode.takeIf { isAnswerSwipeSupported } ?: "off"
+    val answerSwitchMode = (if (touchExplorationEnabled) "off" else configuredAnswerSwitchMode)
+        .takeIf { isAnswerSwipeSupported } ?: "off"
     val answerSwitchSensitivity by rememberObservedSetting(settings, ANSWER_SWITCH_SENSITIVITY_PREFERENCE_KEY) {
         normalizedAnswerSwitchSensitivity(getFloat(ANSWER_SWITCH_SENSITIVITY_PREFERENCE_KEY, DEFAULT_ANSWER_SWITCH_SENSITIVITY))
     }
@@ -269,11 +280,11 @@ fun ArticleScreen(
     var showVoters by rememberSaveable(article.type, article.id) { mutableStateOf(false) }
     val topBarState = rememberArticleTopBarState(
         scrollState = scrollState,
-        autoHide = isTitleAutoHide,
+        autoHide = isTitleAutoHide && !touchExplorationEnabled,
     )
     val bottomBarState = rememberArticleBottomBarState(
         scrollState = scrollState,
-        autoHide = autoHideArticleBottomBar,
+        autoHide = autoHideArticleBottomBar && !touchExplorationEnabled,
         scrollDeltaThreshold = with(density) { ScrollThresholdDp.toPx() },
         showSlot = backStackEntry?.hasRoute(Article::class) == true || articleNavController == null,
         navigationBarHeightPx = density.run {
@@ -287,6 +298,14 @@ fun ArticleScreen(
     val sharedData = sharedArticleAnswerSwitchState.takeIf { article.type == ArticleType.Answer }
     var isImmersiveMode by remember(sharedData) {
         mutableStateOf(sharedData?.isImmersiveMode ?: false)
+    }
+    LaunchedEffect(touchExplorationEnabled) {
+        if (touchExplorationEnabled) isImmersiveMode = false
+    }
+
+    fun toggleImmersiveMode() {
+        if (touchExplorationEnabled) return
+        isImmersiveMode = !isImmersiveMode
     }
     val answerNavigationState = rememberArticleAnswerNavigationState(
         switchState = sharedData,
@@ -365,7 +384,7 @@ fun ArticleScreen(
                 showComments = true
             }
             AnswerDoubleTapAction.ToggleImmersive -> {
-                isImmersiveMode = !isImmersiveMode
+                toggleImmersiveMode()
             }
             AnswerDoubleTapAction.JumpToTop -> coroutineScope.launch {
                 scrollState.scrollTo(0)
@@ -452,6 +471,7 @@ fun ArticleScreen(
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
+                .semantics { paneTitle = if (article.type == ArticleType.Answer) "回答" else "文章" }
                 .then(if (!isImmersiveMode) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier),
             topBar = if (isImmersiveMode) {
                 {}
@@ -497,17 +517,40 @@ fun ArticleScreen(
                                 }
                             },
                             title = { expanded ->
+                                val nav = answerNavigationState.answerNavigator
                                 Text(
                                     text = viewModel.title,
                                     modifier = Modifier
                                         .padding(if (expanded) PaddingValues(end = 16.dp) else PaddingValues())
                                         .let {
                                             if (article.type == ArticleType.Answer) {
-                                                it.clickable {
+                                                it.clickable(onClickLabel = "打开问题") {
                                                     navigator.onNavigate(Question(viewModel.questionId, viewModel.title))
                                                 }
                                             } else {
                                                 it
+                                            }
+                                        }.semantics {
+                                            heading()
+                                            if (article.type == ArticleType.Answer) {
+                                                customActions = buildList {
+                                                    if (nav?.previousAnswer != null) {
+                                                        add(
+                                                            CustomAccessibilityAction("上一个回答") {
+                                                                answerNavigationState.navigateToPrevious()
+                                                                true
+                                                            },
+                                                        )
+                                                    }
+                                                    if (nav?.nextAnswer != null) {
+                                                        add(
+                                                            CustomAccessibilityAction("下一个回答") {
+                                                                answerNavigationState.navigateToNext()
+                                                                true
+                                                            },
+                                                        )
+                                                    }
+                                                }
                                             }
                                         },
                                     maxLines = if (expanded) Int.MAX_VALUE else 1,
@@ -670,8 +713,11 @@ fun ArticleScreen(
                                         onClick = { showComments = true },
                                         contentPadding = PaddingValues(start = 8.dp, end = 12.dp),
                                         colors = voteUpNeutralButtonColors(),
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "${viewModel.commentCount} 条评论"
+                                        },
                                     ) {
-                                        Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
+                                        Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = null)
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(text = "${viewModel.commentCount}")
                                     }
@@ -843,8 +889,11 @@ fun ArticleScreen(
                                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                             contentColor = MaterialTheme.colorScheme.onSurface,
                                         ),
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "${viewModel.commentCount} 条评论"
+                                        },
                                     ) {
-                                        Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = "评论")
+                                        Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = null)
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(text = "${viewModel.commentCount}", style = MaterialTheme.typography.titleMedium)
                                     }
@@ -1173,7 +1222,10 @@ fun ArticleScreen(
             val isAtTop by remember(scrollState) {
                 derivedStateOf { scrollState.value == 0 }
             }
-            val showSkipButton = !autoHideSkipAnswerButton || bottomBarState.isScrollingUp || isAtTop
+            val showSkipButton = touchExplorationEnabled ||
+                !autoHideSkipAnswerButton ||
+                bottomBarState.isScrollingUp ||
+                isAtTop
             val skipButtonAlpha by animateFloatAsState(
                 targetValue = if (showSkipButton) 1f else 0f,
                 animationSpec = tween(200),
@@ -1184,7 +1236,7 @@ fun ArticleScreen(
                 if (fabClickCount > 0) {
                     delay(350)
                     if (fabClickCount >= 2) {
-                        isImmersiveMode = !isImmersiveMode
+                        toggleImmersiveMode()
                     } else {
                         if (showSkipButton) {
                             answerNavigationState.navigateToNext()
@@ -1194,7 +1246,10 @@ fun ArticleScreen(
                 }
             }
             DraggableRefreshButton(
-                modifier = Modifier.graphicsLayer { alpha = skipButtonAlpha },
+                modifier = Modifier
+                    .graphicsLayer { alpha = skipButtonAlpha }
+                    .then(if (showSkipButton) Modifier else Modifier.clearAndSetSemantics {}),
+                enabled = showSkipButton,
                 onClick = { fabClickCount++ },
                 preferenceName = "buttonSkipAnswer",
             ) {
@@ -1228,7 +1283,7 @@ fun ArticleScreen(
         onSetImmersiveDoubleTap = {
             showActionsMenu = false
             // 沉浸式模式下，按返回键优先退出沉浸式，不会直接退出回答
-            isImmersiveMode = !isImmersiveMode
+            toggleImmersiveMode()
             userMessages.showMessage("已进入沉浸式，按返回键即可退出")
         },
     )
@@ -1357,7 +1412,7 @@ fun ArticleScreen(
                     onClick = {
                         showDoubleTapActionDialog = false
                         saveAnswerDoubleTapAction(AnswerDoubleTapAction.ToggleImmersive)
-                        isImmersiveMode = !isImmersiveMode
+                        toggleImmersiveMode()
                         userMessages.showMessage("已将双击回答动作设为：${AnswerDoubleTapAction.ToggleImmersive.label}")
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -1420,7 +1475,7 @@ private fun ArticleAuthorIdentity(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.clickable(onClickLabel = "打开个人主页", onClick = onClick),
     ) {
         if (viewModel.authorAvatarSrc.isNotEmpty()) {
             AsyncImage(
@@ -1479,7 +1534,9 @@ private fun ArticleAuthorFollowButton(
         onClick = onClick,
         enabled = !changing,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        modifier = Modifier.testTag(ARTICLE_AUTHOR_FOLLOW_TAG),
+        modifier = Modifier
+            .testTag(ARTICLE_AUTHOR_FOLLOW_TAG)
+            .semantics { selected = following },
     ) {
         Text(
             text = if (following) "已关注" else "关注",
