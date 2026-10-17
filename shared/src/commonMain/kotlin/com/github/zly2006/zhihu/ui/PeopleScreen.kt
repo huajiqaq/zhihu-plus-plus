@@ -267,14 +267,14 @@ class PeoplePinsViewModel(
 
 class PeopleColumnContributionsViewModel(
     val person: Person,
-) : PaginationViewModel<DataHolder.Column>(
-        typeOf<DataHolder.Column>(),
+) : PaginationViewModel<DataHolder.ColumnContribution>(
+        typeOf<DataHolder.ColumnContribution>(),
     ) {
     override val initialUrl: String
         get() = "https://www.zhihu.com/api/v4/members/${person.userTokenOrId}/column-contributions"
 
     override val include: String
-        get() = "data[*].articles_count,followers,author"
+        get() = "data[*].articles_count,followers,author,contributions_count"
 }
 
 class PeopleFollowingCollectionsViewModel(
@@ -1048,11 +1048,12 @@ fun PeopleScreen(
                                 .fillMaxSize()
                                 .pageTurnViewportWithGuide(pageTurnTarget)
                                 .testTag(PEOPLE_SCREEN_COLUMNS_LIST_TAG),
-                            key = { it.id },
-                        ) { column ->
+                            key = { it.column.id },
+                        ) { contribution ->
                             ColumnListItem(
-                                column = column,
-                                itemTag = "people_screen_column_item_${column.id}",
+                                column = contribution.column,
+                                itemTag = "people_screen_column_item_${contribution.column.id}",
+                                contributionsCount = contribution.contributionsCount,
                             )
                         }
                     }
@@ -1333,6 +1334,7 @@ private fun PinListItem(
 private fun ColumnListItem(
     column: DataHolder.Column,
     itemTag: String? = null,
+    contributionsCount: Int? = null,
 ) {
     val openZhihuWebUrl = rememberZhihuWebUrlOpener()
     Row(
@@ -1360,7 +1362,11 @@ private fun ColumnListItem(
                 )
             }
             Text(
-                text = "${column.articlesCount} 文章 · ${column.followerCount.coerceAtLeast(column.followers)} 关注",
+                text = if (contributionsCount != null) {
+                    "贡献 $contributionsCount 篇"
+                } else {
+                    "${column.articlesCount} 文章 · ${column.followerCount.coerceAtLeast(column.followers)} 关注"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),

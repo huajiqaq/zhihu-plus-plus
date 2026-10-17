@@ -967,4 +967,14 @@ object DataHolder {
         val updated: Long = 0L,
         val author: JsonElement? = null,
     )
+
+    /**
+     * `/members/{token}/column-contributions` 的条目：专栏本身嵌在 `column` 字段里，
+     * 外层只带贡献数。直接把外层当 [Column] 解析会因缺少 `id` 而整页丢弃。
+     */
+    @Serializable
+    data class ColumnContribution(
+        val column: Column,
+        val contributionsCount: Int = 0,
+    )
 }
