@@ -23,6 +23,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -97,7 +98,11 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 class MainActivity : ComponentActivity() {
     lateinit var history: HistoryStorage
@@ -117,7 +122,13 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        Thread.setDefaultUncaughtExceptionHandler { _, e ->
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            if (thread != Looper.getMainLooper().thread && e.isConnectivityFailure()) {
+                // 连接类失败（DNS、连接重置、超时、TLS）不是程序错误。后台协程里
+                // 未捕获时若走下面的重启流程，会清空任务栈并丢失首页/文章状态。
+                Log.w(TAG, "Ignoring connectivity failure on background thread", e)
+                return@setDefaultUncaughtExceptionHandler
+            }
             Log.e(TAG, "Uncaught exception", e)
             val intent = Intent(
                 Intent.ACTION_VIEW,
@@ -544,3 +555,15 @@ class MainActivity : ComponentActivity() {
         const val TAG = "MainActivity"
     }
 }
+
+/**
+ * 判断异常链里是否只有连接类失败。这类失败来自网络状态变化，不是代码缺陷，
+ * 后台协程未捕获时不应触发全局重启流程。
+ */
+private fun Throwable.isConnectivityFailure(): Boolean =
+    generateSequence(this) { it.cause }.any { cause ->
+        cause is UnknownHostException ||
+            cause is SocketException ||
+            cause is SocketTimeoutException ||
+            cause is SSLException
+    }
