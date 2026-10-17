@@ -27,12 +27,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.github.zly2006.zhihu.data.CommonFeed
-import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
-import com.github.zly2006.zhihu.data.FeedDisplayItem
-import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Question
@@ -40,6 +35,9 @@ import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
+import com.github.zly2006.zhihu.test.mockQuestionDetail
+import com.github.zly2006.zhihu.test.offlineAnswerFeed
+import com.github.zly2006.zhihu.test.offlineQuestionDisplayItems
 import com.github.zly2006.zhihu.test.performVerticalSwipeCycle
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.seedViewModel
@@ -58,9 +56,7 @@ import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.paginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
-import io.ktor.http.HttpMethod
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,7 +65,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import com.github.zly2006.zhihu.data.Person as FeedPerson
 
 @RunWith(AndroidJUnit4::class)
 class QuestionScreenInstrumentedTest {
@@ -210,13 +205,13 @@ class QuestionScreenInstrumentedTest {
             viewModel.processForTest(
                 composeRule.activity,
                 listOf(
-                    seedAnswerFeed(
+                    offlineAnswerFeed(
                         id = 1L,
                         authorId = "blocked-answer-author",
                         authorName = "被屏蔽回答作者",
                         excerpt = "这条回答不应展示",
                     ),
-                    seedAnswerFeed(
+                    offlineAnswerFeed(
                         id = 2L,
                         authorId = "allowed-answer-author",
                         authorName = "可见回答作者",
@@ -243,25 +238,8 @@ class QuestionScreenInstrumentedTest {
         val viewModel = composeRule.seedViewModel<SeededQuestionFeedViewModel>(key = "question_123456789") {
             SeededQuestionFeedViewModel(123456789L, isEnd)
         }
-        viewModel.addDisplayItems(seededItems(itemCount))
+        viewModel.addDisplayItems(offlineQuestionDisplayItems(itemCount))
         return viewModel
-    }
-
-    private fun mockQuestionDetail(
-        questionId: Long = 123456789L,
-        detail: String = "<p>离线问题详情用于 QuestionScreen instrumented test。</p>",
-    ) {
-        ZhihuMockApi.mockJsonPrefix(
-            method = HttpMethod.Get,
-            urlPrefix = "https://www.zhihu.com/api/v4/questions/$questionId?",
-            body = ZhihuJson.json.encodeToString(seededQuestionDetail(questionId, detail)),
-        )
-    }
-
-    private fun mockQuestionFollowActions(questionId: Long = 123456789L) {
-        val url = "https://www.zhihu.com/api/v4/questions/$questionId/followers"
-        ZhihuMockApi.mockJson(method = HttpMethod.Post, url = url, body = "{}")
-        ZhihuMockApi.mockJson(method = HttpMethod.Delete, url = url, body = "{}")
     }
 
     private class SeededQuestionFeedViewModel(
@@ -300,55 +278,6 @@ class QuestionScreenInstrumentedTest {
         }
     }
 
-    private fun seededQuestionDetail(
-        questionId: Long,
-        detail: String,
-    ): DataHolder.Question = DataHolder.Question(
-        type = "question",
-        id = questionId,
-        title = "离线问题标题",
-        questionType = "normal",
-        created = 1_713_456_789L,
-        updatedTime = 1_713_456_999L,
-        url = "https://www.zhihu.com/question/$questionId",
-        answerCount = 12,
-        visitCount = 345,
-        commentCount = 7,
-        followerCount = 89,
-        detail = detail,
-        relationship = DataHolder.QuestionRelationship(isFollowing = false),
-        topics = emptyList(),
-        author = DataHolder.Author(
-            avatarUrl = "",
-            gender = 0,
-            headline = "离线提问者简介",
-            id = "question-author-id",
-            isAdvertiser = false,
-            isOrg = false,
-            name = "离线提问者",
-            type = "people",
-            url = "https://www.zhihu.com/people/question-author-token",
-            urlToken = "question-author-token",
-            userType = "people",
-        ),
-        voteupCount = 0,
-    )
-
-    private fun seededItems(count: Int): List<FeedDisplayItem> = List(count) { index ->
-        val id = index + 1L
-        FeedDisplayItem(
-            title = "离线回答条目 $id",
-            summary = "这是第 $id 条离线回答摘要。",
-            details = "离线作者 $id · 赞同 ${(id * 3)}",
-            feed = null,
-            navDestinationJson = Article(
-                type = ArticleType.Answer,
-                id = 7000L + id,
-            ).toFeedDisplayItemNavDestinationJson(),
-            authorName = "离线作者 $id",
-        )
-    }
-
     private class TestableQuestionFeedViewModel(
         questionId: Long,
     ) : QuestionFeedViewModel(questionId) {
@@ -356,35 +285,4 @@ class QuestionScreenInstrumentedTest {
             processResponse(paginationEnvironment(context), data, JsonArray(emptyList()))
         }
     }
-
-    private fun seedAnswerFeed(
-        id: Long,
-        authorId: String,
-        authorName: String,
-        excerpt: String,
-    ): Feed = CommonFeed(
-        id = "answer-feed-$id",
-        target = Feed.AnswerTarget(
-            id = id,
-            url = "https://www.zhihu.com/answer/$id",
-            author = FeedPerson(
-                id = authorId,
-                url = "https://www.zhihu.com/people/$authorId",
-                userType = "people",
-                urlToken = "$authorId-token",
-                name = authorName,
-                headline = "$authorName 的离线签名",
-                avatarUrl = "https://example.invalid/avatar/$authorId.png",
-            ),
-            voteupCount = 10,
-            commentCount = 1,
-            question = Feed.QuestionTarget(
-                id = 123456789L,
-                _title = "离线问题标题",
-                url = "https://www.zhihu.com/question/123456789",
-                type = "question",
-            ),
-            excerpt = excerpt,
-        ),
-    )
 }
