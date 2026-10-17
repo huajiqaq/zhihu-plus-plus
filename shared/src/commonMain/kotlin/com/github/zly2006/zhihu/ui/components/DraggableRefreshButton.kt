@@ -60,6 +60,7 @@ fun DraggableRefreshButton(
     modifier: Modifier = Modifier,
     preferenceName: String = "fabRefresh",
     bottomAvoidance: Dp = 0.dp,
+    edgeMargin: Dp = 16.dp,
     initiallyOnLeft: Boolean = false,
     onClick: () -> Unit,
     content: @Composable () -> Unit = {
@@ -80,6 +81,11 @@ fun DraggableRefreshButton(
     }
     var offsetY by remember { mutableFloatStateOf(settings.getFloat("$preferenceName-y", Float.MAX_VALUE)) }
     var pressing by remember { mutableStateOf(false) }
+    val fabSize = 56.dp
+    val edgeMarginPx = with(density) { edgeMargin.toPx() }
+    val maxStoredOffsetX = with(density) {
+        (screenSize.width - fabSize.toPx() - edgeMargin.toPx()).coerceAtLeast(edgeMargin.toPx())
+    }
     val maxStoredOffsetY = with(density) {
         (screenSize.height - 250.dp.toPx()).coerceAtLeast(0f)
     }
@@ -88,10 +94,8 @@ fun DraggableRefreshButton(
     }
 
     fun adjustFabPosition() {
-        with(density) {
-            offsetX = offsetX.coerceIn(0f, screenSize.width - 56.dp.toPx())
-            offsetY = offsetY.coerceIn(0f, maxStoredOffsetY)
-        }
+        offsetX = offsetX.coerceIn(edgeMarginPx, maxStoredOffsetX)
+        offsetY = offsetY.coerceIn(0f, maxStoredOffsetY)
     }
 
     adjustFabPosition()
@@ -138,14 +142,12 @@ fun DraggableRefreshButton(
                         pressing = false
                         adjustFabPosition()
                         val screenWidth = screenSize.width.toFloat()
-                        with(density) {
-                            offsetX =
-                                if (offsetX < screenWidth / 2) {
-                                    0f
-                                } else {
-                                    screenWidth - 56.dp.toPx()
-                                }
-                        }
+                        offsetX =
+                            if (offsetX < screenWidth / 2) {
+                                edgeMarginPx
+                            } else {
+                                maxStoredOffsetX
+                            }
                         settings.putFloat("$preferenceName-x", offsetX)
                         settings.putFloat("$preferenceName-y", offsetY)
                     },
