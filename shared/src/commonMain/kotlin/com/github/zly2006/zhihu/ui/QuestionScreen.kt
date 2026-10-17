@@ -79,6 +79,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -213,6 +214,28 @@ fun QuestionScreen(
         enabled = !showComments && !showShareDialog,
     )
 
+    // 滚动恢复：等头部高度定型后再解释保存的偏移。数据和布局未稳定时不恢复。
+    var anchorIndex by rememberSaveable(question.questionId) { mutableIntStateOf(0) }
+    var anchorOffset by rememberSaveable(question.questionId) { mutableIntStateOf(0) }
+    var headerReady by remember(question.questionId) { mutableStateOf(false) }
+    var anchorRestored by remember(question.questionId) { mutableStateOf(false) }
+
+    LaunchedEffect(listState, headerReady, anchorRestored) {
+        // 恢复完成前不记录，避免返回瞬间的瞬态位置覆盖保存值。
+        if (!headerReady || !anchorRestored) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                anchorIndex = index
+                anchorOffset = offset
+            }
+    }
+
+    LaunchedEffect(headerReady, viewModel.displayItems.size) {
+        if (!headerReady || viewModel.displayItems.isEmpty()) return@LaunchedEffect
+        anchorRestored = true
+        listState.scrollToItem(anchorIndex, anchorOffset)
+    }
+
     // 加载问题详情和答案
     LaunchedEffect(question.questionId, viewModel) {
         if (viewModel.displayItems.isEmpty()) {
@@ -312,6 +335,7 @@ fun QuestionScreen(
                                         )
                                     },
                                     answerCount = viewModel.questionDetail?.answerCount ?: 0,
+                                    onHeightSettled = { headerReady = true },
                                     currentSort = viewModel.sortOrder,
                                     onSortChange = { sortOrder ->
                                         viewModel.updateSortOrder(sortOrder)
@@ -456,6 +480,7 @@ private fun QuestionAnimatedBodyHeader(
     answerCount: Int,
     currentSort: String,
     onSortChange: (String) -> Unit,
+    onHeightSettled: () -> Unit,
 ) {
     val allowDetailCollapse =
         questionContentPlainText.length >= QUESTION_DETAIL_COLLAPSE_THRESHOLD || questionContent.contains("<img")
@@ -471,7 +496,13 @@ private fun QuestionAnimatedBodyHeader(
         animationInitialized = false
         animatedViewportHeightPx.snapTo(collapsedViewportHeightPx.toFloat())
     }
+    var heightSettled by remember(questionId) { mutableStateOf(false) }
     LaunchedEffect(isExpanded, fullViewportHeightPx, collapsedViewportHeightPx) {
+        // 首次测量到真实高度时通知调用方：此时头部几何才稳定，可以恢复滚动位置。
+        if (fullViewportHeightPx > 0 && !heightSettled) {
+            heightSettled = true
+            onHeightSettled()
+        }
         if (!allowDetailCollapse || fullViewportHeightPx <= 0) return@LaunchedEffect
         val collapsedTarget = collapsedViewportHeightPx.coerceAtMost(fullViewportHeightPx).toFloat()
         val targetHeight = if (isExpanded) fullViewportHeightPx.toFloat() else collapsedTarget
