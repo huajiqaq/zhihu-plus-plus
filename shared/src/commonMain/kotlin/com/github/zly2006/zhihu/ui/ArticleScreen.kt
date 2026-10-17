@@ -69,6 +69,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -99,8 +100,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -173,6 +176,7 @@ import kotlin.math.max
 
 private const val SCROLL_THRESHOLD = 10 // 滑动阈值，单位为dp
 private val ScrollThresholdDp = SCROLL_THRESHOLD.dp
+const val ARTICLE_AUTHOR_FOLLOW_TAG = "article_author_follow"
 
 /**
  * 文章/回答详情页。
@@ -516,8 +520,26 @@ fun ArticleScreen(
                                     modifier = Modifier
                                         .padding(if (expanded) PaddingValues(vertical = 16.dp) else PaddingValues(top = 2.dp, bottom = 8.dp))
                                         .padding(end = 16.dp)
-                                        .fillMaxWidth()
-                                        .clickable {
+                                        .fillMaxWidth(),
+                                ) {
+                                    ArticleAuthorIdentity(
+                                        viewModel = viewModel,
+                                        avatarSize = if (expanded) 40.dp else 20.dp,
+                                        spacerWidth = if (expanded) 8.dp else 4.dp,
+                                        nameStyle = if (expanded) {
+                                            MaterialTheme.typography.titleSmall
+                                        } else {
+                                            MaterialTheme.typography.labelMedium
+                                        },
+                                        nameColor = if (expanded) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        showBio = expanded,
+                                        showBadge = true,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
                                             navigator.onNavigate(
                                                 com.github.zly2006.zhihu.navigation.Person(
                                                     id = viewModel.authorId,
@@ -526,53 +548,14 @@ fun ArticleScreen(
                                                 ),
                                             )
                                         },
-                                ) {
-                                    if (viewModel.authorAvatarSrc.isNotEmpty()) {
-                                        AsyncImage(
-                                            model = viewModel.authorAvatarSrc,
-                                            contentDescription = "作者头像",
-                                            modifier = Modifier
-                                                .size(if (expanded) 40.dp else 20.dp)
-                                                .clip(CircleShape),
+                                    )
+                                    if (viewModel.canFollowAuthor) {
+                                        ArticleAuthorFollowButton(
+                                            following = viewModel.authorIsFollowing,
+                                            changing = viewModel.authorFollowChanging,
+                                            compact = !expanded,
+                                            onClick = { viewModel.toggleAuthorFollow(environment) },
                                         )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(if (expanded) 40.dp else 20.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(if (expanded) 8.dp else 4.dp))
-
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = viewModel.authorName,
-                                                style = if (expanded) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium,
-                                                color = if (expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false),
-                                            )
-                                            if (viewModel.authorBadge != null) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                AuthorBadge(
-                                                    badge = viewModel.authorBadge,
-                                                    compact = !expanded,
-                                                )
-                                            }
-                                        }
-                                        if (viewModel.authorBio.isNotEmpty() && expanded) {
-                                            Text(
-                                                text = viewModel.authorBio,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
                                     }
                                 }
                             },
@@ -906,7 +889,18 @@ fun ArticleScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .padding(vertical = 8.dp),
+                            ) {
+                                ArticleAuthorIdentity(
+                                    viewModel = viewModel,
+                                    avatarSize = 24.dp,
+                                    spacerWidth = 6.dp,
+                                    nameStyle = MaterialTheme.typography.labelLarge,
+                                    nameColor = MaterialTheme.colorScheme.onSurface,
+                                    showBio = false,
+                                    showBadge = false,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
                                         navigator.onNavigate(
                                             com.github.zly2006.zhihu.navigation.Person(
                                                 id = viewModel.authorId,
@@ -914,32 +908,16 @@ fun ArticleScreen(
                                                 name = viewModel.authorName,
                                             ),
                                         )
-                                    }.padding(vertical = 8.dp),
-                            ) {
-                                if (viewModel.authorAvatarSrc.isNotBlank()) {
-                                    AsyncImage(
-                                        model = viewModel.authorAvatarSrc,
-                                        contentDescription = "作者头像",
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(CircleShape),
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    },
+                                )
+                                if (viewModel.canFollowAuthor) {
+                                    ArticleAuthorFollowButton(
+                                        following = viewModel.authorIsFollowing,
+                                        changing = viewModel.authorFollowChanging,
+                                        compact = false,
+                                        onClick = { viewModel.toggleAuthorFollow(environment) },
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = viewModel.authorName,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                         }
@@ -1426,4 +1404,91 @@ fun ArticleScreen(
             viewModel.exportToImageWithComments(environment, commentCount, includeAppAttribution, onComplete)
         },
     )
+}
+
+@Composable
+private fun ArticleAuthorIdentity(
+    viewModel: ArticleViewModel,
+    avatarSize: Dp,
+    spacerWidth: Dp,
+    nameStyle: TextStyle,
+    nameColor: Color,
+    showBio: Boolean,
+    showBadge: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.clickable(onClick = onClick),
+    ) {
+        if (viewModel.authorAvatarSrc.isNotEmpty()) {
+            AsyncImage(
+                model = viewModel.authorAvatarSrc,
+                contentDescription = "作者头像",
+                modifier = Modifier
+                    .size(avatarSize)
+                    .clip(CircleShape),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(avatarSize)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
+        Spacer(modifier = Modifier.width(spacerWidth))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = viewModel.authorName,
+                    style = nameStyle,
+                    color = nameColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (showBadge && viewModel.authorBadge != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    AuthorBadge(
+                        badge = viewModel.authorBadge,
+                        compact = avatarSize < 40.dp,
+                    )
+                }
+            }
+            if (showBio && viewModel.authorBio.isNotEmpty()) {
+                Text(
+                    text = viewModel.authorBio,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArticleAuthorFollowButton(
+    following: Boolean,
+    changing: Boolean,
+    compact: Boolean,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = !changing,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        modifier = Modifier.testTag(ARTICLE_AUTHOR_FOLLOW_TAG),
+    ) {
+        Text(
+            text = if (following) "已关注" else "关注",
+            style = if (compact) {
+                MaterialTheme.typography.labelSmall
+            } else {
+                MaterialTheme.typography.labelLarge
+            },
+            maxLines = 1,
+        )
+    }
 }
