@@ -80,7 +80,14 @@ fun DraggableRefreshButton(
             ),
         )
     }
-    var offsetY by remember { mutableFloatStateOf(settings.getFloat("$preferenceName-y", Float.MAX_VALUE)) }
+    var offsetY by remember {
+        mutableFloatStateOf(
+            settings.getFloat(
+                "$preferenceName-y",
+                with(density) { (screenSize.height - 250.dp.toPx()).coerceAtLeast(0f) },
+            ),
+        )
+    }
     var pressing by remember { mutableStateOf(false) }
     val fabSize = 56.dp
     val edgeMarginPx = with(density) { edgeMargin.toPx() }
@@ -88,7 +95,7 @@ fun DraggableRefreshButton(
         (screenSize.width - fabSize.toPx() - edgeMargin.toPx()).coerceAtLeast(edgeMargin.toPx())
     }
     val maxStoredOffsetY = with(density) {
-        (screenSize.height - 250.dp.toPx()).coerceAtLeast(0f)
+        (screenSize.height - fabSize.toPx() - edgeMargin.toPx()).coerceAtLeast(0f)
     }
     val maxVisibleOffsetY = with(density) {
         (maxStoredOffsetY - bottomAvoidance.toPx()).coerceAtLeast(0f)
