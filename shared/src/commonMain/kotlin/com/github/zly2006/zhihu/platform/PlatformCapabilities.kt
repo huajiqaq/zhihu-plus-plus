@@ -182,6 +182,18 @@ expect fun PlatformBackHandler(
     onBack: () -> Unit,
 )
 
+/**
+ * 预测性返回关闭时使用的导航回退处理器。
+ *
+ * Android 侧使用 navigationevent 的 NavigationBackHandler，其他平台退化为普通
+ * [PlatformBackHandler]。
+ */
+@Composable
+internal expect fun PlatformPredictiveBackFallbackHandler(
+    enabled: Boolean,
+    onBack: () -> Unit,
+)
+
 @Composable
 expect fun PlatformPredictiveBackHandler(
     enabled: Boolean,

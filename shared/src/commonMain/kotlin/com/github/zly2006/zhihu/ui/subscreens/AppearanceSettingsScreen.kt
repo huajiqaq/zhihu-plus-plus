@@ -1575,7 +1575,7 @@ fun AppearanceSettingsScreen(
                 val enablePredictiveBack = remember { mutableStateOf(settings.getBoolean("enable_predictive_back", true)) }
                 SettingItemWithSwitch(
                     title = { Text("启用预测性返回") },
-                    description = { Text("开启 Android 14+ 的预测性返回手势动画。") },
+                    description = { Text("控制页面导航和内置弹层的预测性返回手势动画；关闭后返回手势仍可用，但不显示预测预览。") },
                     checked = enablePredictiveBack.value,
                     onCheckedChange = {
                         enablePredictiveBack.value = it

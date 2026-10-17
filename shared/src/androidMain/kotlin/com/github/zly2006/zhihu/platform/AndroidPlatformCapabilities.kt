@@ -34,6 +34,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.components.OpenImageDialog
@@ -275,19 +278,38 @@ actual fun PlatformBackHandler(
 ) = BackHandler(enabled = enabled, onBack = onBack)
 
 @Composable
+internal actual fun PlatformPredictiveBackFallbackHandler(
+    enabled: Boolean,
+    onBack: () -> Unit,
+) {
+    val state = rememberNavigationEventState(NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = state,
+        isBackEnabled = enabled,
+        onBackCompleted = onBack,
+    )
+}
+
+@Composable
 actual fun PlatformPredictiveBackHandler(
     enabled: Boolean,
     onProgress: (Float) -> Unit,
     onCancel: () -> Unit,
     onBack: () -> Unit,
-) = PredictiveBackHandler(enabled = enabled) { progress ->
-    try {
-        progress.collect { backEvent ->
-            onProgress(backEvent.progress)
+) {
+    if (!LocalPredictiveBackEnabled.current) {
+        PlatformBackHandler(enabled = enabled, onBack = onBack)
+        return
+    }
+    PredictiveBackHandler(enabled = enabled) { progress ->
+        try {
+            progress.collect { backEvent ->
+                onProgress(backEvent.progress)
+            }
+            onBack()
+        } catch (e: CancellationException) {
+            onCancel()
+            throw e
         }
-        onBack()
-    } catch (e: CancellationException) {
-        onCancel()
-        throw e
     }
 }

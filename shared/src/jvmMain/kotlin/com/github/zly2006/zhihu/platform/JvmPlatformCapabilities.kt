@@ -218,6 +218,12 @@ actual fun PlatformBackHandler(
 ) = BackHandler(enabled = enabled, onBack = onBack)
 
 @Composable
+internal actual fun PlatformPredictiveBackFallbackHandler(
+    enabled: Boolean,
+    onBack: () -> Unit,
+) = PlatformBackHandler(enabled = enabled, onBack = onBack)
+
+@Composable
 actual fun PlatformPredictiveBackHandler(
     enabled: Boolean,
     onProgress: (Float) -> Unit,

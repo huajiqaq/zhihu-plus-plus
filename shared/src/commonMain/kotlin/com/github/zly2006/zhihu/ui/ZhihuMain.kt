@@ -100,6 +100,7 @@ import androidx.lifecycle.compose.rememberLifecycleOwner
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -140,7 +141,9 @@ import com.github.zly2006.zhihu.navigation.Video
 import com.github.zly2006.zhihu.navigation.WriteAnswer
 import com.github.zly2006.zhihu.navigation.WritePin
 import com.github.zly2006.zhihu.navigation.loginNavigationRequestFlow
+import com.github.zly2006.zhihu.platform.LocalPredictiveBackEnabled
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
+import com.github.zly2006.zhihu.platform.PlatformPredictiveBackFallbackHandler
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
@@ -163,6 +166,41 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.reflect.KClass
 import kotlin.reflect.typeOf
+
+private val LocalPredictiveBackController = compositionLocalOf<NavHostController?> { null }
+
+@Composable
+private fun PredictiveBackFallbackHandler(entryId: String) {
+    if (LocalPredictiveBackEnabled.current) return
+    val controller = LocalPredictiveBackController.current ?: return
+    val backStack by controller.currentBackStack.collectAsState()
+    // 返回栈包含图入口；NavController 自身的返回回调也按“图之外的目的地数量”判断是否可 pop。
+    val destinationCount = backStack.count { it.destination !is NavGraph }
+    val enabled = destinationCount > 1 && backStack.lastOrNull()?.id == entryId
+    PlatformPredictiveBackFallbackHandler(enabled = enabled) {
+        controller.popBackStack()
+    }
+}
+
+private inline fun <reified T : Any> NavGraphBuilder.zhihuComposable(
+    typeMap: Map<KType, NavType<*>> = emptyMap(),
+    noinline enterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
+    noinline exitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+    noinline popEnterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
+    noinline popExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+    noinline content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
+) {
+    composable<T>(
+        typeMap = typeMap,
+        enterTransition = enterTransition,
+        exitTransition = exitTransition,
+        popEnterTransition = popEnterTransition,
+        popExitTransition = popExitTransition,
+    ) { entry ->
+        PredictiveBackFallbackHandler(entry.id)
+        content(entry)
+    }
+}
 
 private sealed class MainTabPage(
     val bottomDestination: TopLevelDestination,
