@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FilterCenterFocus
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.GetApp
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material3.ButtonDefaults
@@ -58,6 +59,7 @@ import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.platform.rememberSystemUrlOpener
 import com.github.zly2006.zhihu.reading.ReadingContentType
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
@@ -70,6 +72,7 @@ import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.ui.TtsState
 import com.github.zly2006.zhihu.ui.articleActionText
+import com.github.zly2006.zhihu.ui.articleReportUrl
 import com.github.zly2006.zhihu.ui.articleSpeechText
 import com.github.zly2006.zhihu.ui.components.MyModalBottomSheet
 import com.github.zly2006.zhihu.ui.components.ShareAction
@@ -129,6 +132,7 @@ fun ArticleActionsMenu(
     val readingPlayerState by readingPlayer.state
     val readingSettings = rememberSettingsStore()
     val openArticleInBrowser = rememberArticleBrowserOpener()
+    val openSystemUrl = rememberSystemUrlOpener()
     val executeShareAction = rememberShareActionExecutor()
     val coroutineScope = rememberCoroutineScope()
     val readingItem = ReadingQueueItem(
@@ -373,6 +377,16 @@ fun ArticleActionsMenu(
             onClick = {
                 onDismissRequest()
                 onAigcFlagRequest()
+            },
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        MenuActionButton(
+            icon = Icons.Filled.Report,
+            text = "举报",
+            onClick = {
+                onDismissRequest()
+                openSystemUrl(articleReportUrl(article))
             },
         )
 
