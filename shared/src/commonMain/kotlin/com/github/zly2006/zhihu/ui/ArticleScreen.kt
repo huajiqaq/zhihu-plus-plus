@@ -1217,6 +1217,7 @@ fun ArticleScreen(
             }
             DraggableRefreshButton(
                 modifier = Modifier.graphicsLayer { alpha = skipButtonAlpha },
+                enabled = showSkipButton,
                 onClick = { fabClickCount++ },
                 preferenceName = "buttonSkipAnswer",
             ) {
