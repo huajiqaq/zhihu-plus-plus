@@ -470,10 +470,9 @@ class ContentReadingService : Service() {
             currentChunks[currentChunkIndex],
             TextToSpeech.QUEUE_FLUSH,
             Bundle().apply {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f)
-                // 部分第三方引擎（如 Multi TTS）不读取 setSpeechRate，
-                // 只认每次 speak 的 rate 参数；两处都传以兼容。
-                putFloat(SPEECH_RATE_PARAM, effectiveSpeechRate(selectedEngineName))
+                readingSpeechParameters(effectiveSpeechRate(selectedEngineName)).forEach { (key, value) ->
+                    putFloat(key, value)
+                }
             },
             utteranceId,
         ) ?: TextToSpeech.ERROR
@@ -1072,7 +1071,6 @@ class ContentReadingService : Service() {
         private const val SHERPA_TTS_ENGINE = "com.k2fsa.sherpa.onnx.tts.engine"
         private const val SHERPA_BASE_SPEECH_RATE = 1.1f
         private const val DEFAULT_BASE_SPEECH_RATE = 0.9f
-        private const val SPEECH_RATE_PARAM = "rate"
 
         private val PLAYING_STATUSES = setOf(
             ReadingPlaybackStatus.Initializing,
