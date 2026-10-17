@@ -61,6 +61,7 @@ fun DraggableRefreshButton(
     preferenceName: String = "fabRefresh",
     bottomAvoidance: Dp = 0.dp,
     initiallyOnLeft: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     content: @Composable () -> Unit = {
         Icon(Icons.Default.Refresh, contentDescription = "刷新")
@@ -115,7 +116,7 @@ fun DraggableRefreshButton(
         settings.getInt(PREF_FAB_OPACITY, DEFAULT_FAB_OPACITY).coerceIn(10, 100) / 100f
     }
     FloatingActionButton(
-        onClick = onClick,
+        onClick = { if (enabled) onClick() },
         shape = CircleShape,
         containerColor = FloatingActionButtonDefaults.containerColor.copy(alpha = opacityFraction),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = opacityFraction),
@@ -126,7 +127,9 @@ fun DraggableRefreshButton(
         },
         modifier = modifier
             .offset { IntOffset(displayedOffsetX.roundToInt(), displayedOffsetY.roundToInt()) }
-            .pointerInput(Unit) {
+            .pointerInput(enabled) {
+                // 隐藏期间（enabled=false）不接收拖动，避免不可见时被误拖到新位置。
+                if (!enabled) return@pointerInput
                 detectDragGestures(
                     onDragStart = {
                         offsetX = animatedOffsetX
