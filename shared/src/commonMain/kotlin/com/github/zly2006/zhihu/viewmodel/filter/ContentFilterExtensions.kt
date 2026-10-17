@@ -129,9 +129,13 @@ class FeedContentFilterPipeline(
                 .getAllKeywords()
                 .filter { it.getKeywordTypeEnum() == KeywordType.EXACT_MATCH }
             val (kept, removed) = filteredContents.partition { content ->
-                !containsBlockedKeyword(content.title, exactKeywords) &&
-                    !containsBlockedKeyword(content.summary, exactKeywords) &&
-                    !containsBlockedKeyword(content.content, exactKeywords)
+                // 屏蔽词不针对问题本身，只过滤回答/文章/想法等内容
+                content.contentType == ContentType.QUESTION ||
+                    (
+                        !containsBlockedKeyword(content.title, exactKeywords) &&
+                            !containsBlockedKeyword(content.summary, exactKeywords) &&
+                            !containsBlockedKeyword(content.content, exactKeywords)
+                    )
             }
             removed.forEach { blocked.add(it to "关键词屏蔽") }
             filteredContents = kept
@@ -142,6 +146,11 @@ class FeedContentFilterPipeline(
             val blockedThisRound = mutableListOf<FilterableContent>()
 
             for (content in filteredContents) {
+                // 屏蔽词不针对问题本身，只过滤回答/文章/想法等内容
+                if (content.contentType == ContentType.QUESTION) {
+                    finalFilteredContents.add(content)
+                    continue
+                }
                 val (shouldBlock, matchedKeywords) = blockedKeywordService.checkNLPBlockingWithWeight(
                     title = content.title,
                     excerpt = content.summary,
