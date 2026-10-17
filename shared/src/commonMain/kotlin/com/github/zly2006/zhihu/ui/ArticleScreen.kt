@@ -162,6 +162,7 @@ import com.github.zly2006.zhihu.util.formatFullDateTime
 import com.github.zly2006.zhihu.util.smoothGradient
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.addReadHistory
+import com.github.zly2006.zhihu.viewmodel.comment.RootCommentViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 import com.materialkolor.ktx.harmonize
@@ -418,6 +419,7 @@ fun ArticleScreen(
         viewModel.loadArticle(environment)
         viewModel.loadCollections(environment)
         viewModel.loadAigcFlagStatus(environment)
+        launch { RootCommentViewModel.prefetchFirstPage(environment, article) }
     }
 
     LaunchedEffect(article.type, article.id, viewModel.content) {
