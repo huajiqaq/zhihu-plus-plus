@@ -553,7 +553,7 @@ fun CommentScreen(
             }
         }
     }
-    val commentBackgroundColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val commentBackgroundColor = MaterialTheme.colorScheme.background
     val commentInputBarColor = MaterialTheme.colorScheme.surfaceContainer
     val actionChipColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val actionChipIconColor = MaterialTheme.colorScheme.onSurfaceVariant
