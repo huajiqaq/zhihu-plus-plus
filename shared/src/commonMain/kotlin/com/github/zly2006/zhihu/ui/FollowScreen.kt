@@ -301,6 +301,7 @@ fun FollowingUsersRow() {
                         modifier = Modifier
                             .testTag("following_users_item_${user.actor.id}")
                             .clickable {
+                                viewModel.markRead(environment, user.actor.id)
                                 navigator.onNavigate(
                                     Person(
                                         id = user.actor.id,
