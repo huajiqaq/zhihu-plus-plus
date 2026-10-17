@@ -90,6 +90,7 @@ import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.ARTICLE_AUTHOR_FOLLOW_TAG
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.ArticleScreen
@@ -158,6 +159,28 @@ class ArticleScreenInstrumentedTest {
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/638
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/640
      */
+    @Test
+    fun unreadAuthorShowsFollowActionOnHeader() {
+        setArticleScreen()
+        composeRule.onNodeWithTag(ARTICLE_AUTHOR_FOLLOW_TAG).assertIsDisplayed()
+        composeRule.onNodeWithText("关注").assertIsDisplayed()
+    }
+
+    @Test
+    fun followedAuthorShowsFollowedLabelOnHeader() {
+        setArticleScreen(authorIsFollowing = true)
+        composeRule.onNodeWithTag(ARTICLE_AUTHOR_FOLLOW_TAG).assertIsDisplayed()
+        composeRule.onNodeWithText("已关注").assertIsDisplayed()
+    }
+
+    @Test
+    fun ownContentHidesFollowAction() {
+        setArticleScreen(authorIsSelf = true)
+        composeRule.onNodeWithTag(ARTICLE_AUTHOR_FOLLOW_TAG).assertDoesNotExist()
+        composeRule.onNodeWithText("关注").assertDoesNotExist()
+        composeRule.onNodeWithText("已关注").assertDoesNotExist()
+    }
+
     @Test
     fun autoHideTitleRemainsResponsiveWhenDirectionChangesDuringHideAnimation() {
         setArticleScreen()
@@ -1566,7 +1589,11 @@ class ArticleScreenInstrumentedTest {
         assertTrue(preferences.getFloat("buttonSkipAnswer-x", Float.NaN) > rootWidth / 2)
     }
 
-    private fun setArticleScreen(pageTurnDispatcher: PageTurnDispatcher? = null) {
+    private fun setArticleScreen(
+        pageTurnDispatcher: PageTurnDispatcher? = null,
+        authorIsFollowing: Boolean = false,
+        authorIsSelf: Boolean = false,
+    ) {
         val viewModel = ArticleViewModel(
             article = ARTICLE,
             httpClient = null,
@@ -1576,6 +1603,8 @@ class ArticleScreenInstrumentedTest {
             viewModel.authorName = "离线作者"
             viewModel.authorId = "offline-author-id"
             viewModel.authorUrlToken = "offline-author"
+            viewModel.authorIsFollowing = authorIsFollowing
+            viewModel.authorIsSelf = authorIsSelf
             viewModel.content = (1..20).joinToString("\n\n") { index ->
                 "第 $index 段离线正文，用于 ArticleScreen instrumented test。"
             }
