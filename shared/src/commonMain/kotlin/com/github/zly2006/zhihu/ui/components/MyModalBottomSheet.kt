@@ -63,6 +63,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -91,6 +92,7 @@ import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
@@ -176,6 +178,11 @@ fun MyModalBottomSheet(
                 content = content,
             )
         }
+        // 等对话框内的 BottomSheet 完成锚点初始化后再 show，避免首帧被放在顶部。
+        LaunchedEffect(sheetState) {
+            snapshotFlow { sheetState.hasExpandedState }.first { it }
+            sheetState.show()
+        }
     }
 
     if (usePlatformWindow) {
@@ -214,9 +221,6 @@ fun MyModalBottomSheet(
             onBack = animateToDismiss,
         )
         SheetContent()
-    }
-    if (sheetState.hasExpandedState) {
-        LaunchedEffect(sheetState) { sheetState.show() }
     }
 }
 
