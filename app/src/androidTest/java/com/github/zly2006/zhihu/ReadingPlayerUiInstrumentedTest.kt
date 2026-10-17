@@ -94,6 +94,25 @@ class ReadingPlayerUiInstrumentedTest {
     }
 
     /**
+     * Regression for https://github.com/zly2006/zhihu-plus-plus/issues/596：
+     * 刷新按钮默认位置应与标准 FAB 一样保留 16dp 右边缘边距。
+     */
+    @Test
+    fun homeRefreshFabKeepsStandardEndMargin() {
+        composeRule.setZhihuMainContent()
+        composeRule.waitForTag(HOME_REFRESH_BUTTON_TAG)
+        val rootBounds = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
+        val refreshBounds = composeRule.onNodeWithTag(HOME_REFRESH_BUTTON_TAG).fetchSemanticsNode().boundsInRoot
+        val expectedMargin = 16f * composeRule.activity.resources.displayMetrics.density
+        assertEquals(
+            "root=$rootBounds refresh=$refreshBounds",
+            expectedMargin,
+            rootBounds.right - refreshBounds.right,
+            1f,
+        )
+    }
+
+    /**
      * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/550
      * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/552
      */
