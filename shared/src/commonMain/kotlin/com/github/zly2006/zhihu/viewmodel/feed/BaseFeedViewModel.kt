@@ -48,6 +48,12 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
     var isPullToRefresh by mutableStateOf(false)
         protected set
 
+    /**
+     * 刷新成功拿到第一页前保留旧列表；失败时旧内容继续可见。
+     * 网络不稳定时（如 WiFi/移动数据切换）不再把已加载内容清空。
+     */
+    private var pendingRefresh = false
+
     override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray) {
         super.processResponse(environment, data, rawData)
         val loadedItems = data.flattenFeeds().map { createDisplayItem(environment, it) }
@@ -56,14 +62,14 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
     }
 
     override fun refresh(environment: PaginationEnvironment) {
-        displayItems.clear()
+        pendingRefresh = true
         super.refresh(environment)
     }
 
     suspend fun pullToRefresh(environment: PaginationEnvironment) {
-        isPullToRefresh = true
-        displayItems.clear()
         if (isLoading) return
+        isPullToRefresh = true
+        pendingRefresh = true
         errorMessage = null
         debugData.clear()
         allData.clear()
@@ -88,6 +94,11 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
     }
 
     fun addDisplayItems(newItems: List<FeedDisplayItem>) {
+        if (pendingRefresh) {
+            // 第一页成功返回后才替换旧列表；失败时 addDisplayItems 不会被调用。
+            displayItems.clear()
+            pendingRefresh = false
+        }
         newItems.forEach {
             if (displayItems.none { existing -> existing.stableKey == it.stableKey }) {
                 displayItems.add(it)
