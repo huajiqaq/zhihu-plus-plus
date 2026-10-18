@@ -466,11 +466,15 @@ class ContentReadingService : Service() {
         playbackStatus = ReadingPlaybackStatus.Playing
         errorMessage = null
         publishState()
+        // 速率只走 setSpeechRate()；Bundle 里再放 "rate" 会覆盖框架写入的 Int，
+        // 使 SynthesisRequest.getSpeechRate() 回退到系统默认值。
         val result = textToSpeech?.speak(
             currentChunks[currentChunkIndex],
             TextToSpeech.QUEUE_FLUSH,
             Bundle().apply {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f)
+                readingSpeechParameters().forEach { (key, value) ->
+                    putFloat(key, value)
+                }
             },
             utteranceId,
         ) ?: TextToSpeech.ERROR
