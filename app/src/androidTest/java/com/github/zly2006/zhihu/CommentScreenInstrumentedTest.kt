@@ -71,6 +71,9 @@ import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.comment.BaseCommentViewModel
+import com.github.zly2006.zhihu.viewmodel.comment.CommentImageAttachment
+import com.github.zly2006.zhihu.viewmodel.comment.CommentMention
+import com.github.zly2006.zhihu.viewmodel.comment.CommentSticker
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.paginationEnvironment
@@ -516,6 +519,11 @@ class CommentScreenInstrumentedTest {
             commentText: String,
             environment: ZhihuApiEnvironment,
             replyToCommentId: String?,
+            images: List<CommentImageAttachment>,
+            stickers: List<CommentSticker>,
+            mentions: List<CommentMention>,
+            syncToPin: Boolean,
+            voiceId: String?,
             onSuccess: () -> Unit,
         ) = Unit
     }
@@ -549,6 +557,11 @@ class CommentScreenInstrumentedTest {
             commentText: String,
             environment: ZhihuApiEnvironment,
             replyToCommentId: String?,
+            images: List<CommentImageAttachment>,
+            stickers: List<CommentSticker>,
+            mentions: List<CommentMention>,
+            syncToPin: Boolean,
+            voiceId: String?,
             onSuccess: () -> Unit,
         ) {
             submissions += Submission(commentText, replyToCommentId)

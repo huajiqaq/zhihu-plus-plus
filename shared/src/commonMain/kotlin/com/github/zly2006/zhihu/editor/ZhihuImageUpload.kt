@@ -21,7 +21,6 @@ import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
-import com.github.zly2006.zhihu.util.twoDigitString
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -34,14 +33,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import kotlinx.coroutines.delay
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.min
-import kotlin.time.Clock
 
 /**
  * 图片上传逻辑移植自 zhihu_obsidian/src/image_service.ts。
@@ -134,27 +128,20 @@ private suspend fun uploadSinglePut(
     mimeType: String,
     token: UploadToken,
 ) {
-    val date = rfc1123Now()
-    val ossUserAgent = OSS_USER_AGENT
-    val stringToSign = buildStringToSignPut(
-        mimeType = mimeType,
-        date = date,
-        securityToken = token.accessToken,
-        ossUserAgent = ossUserAgent,
-        imageHash = imageHash,
+    putZhihuOssObject(
+        client = client,
+        endpoint = "https://zhihu-pics-upload.zhimg.com",
+        bucket = "zhihu-pics",
+        objectKey = "v2-$imageHash",
+        bytes = bytes,
+        contentType = mimeType,
+        credentials = ZhihuOssCredentials(
+            accessId = token.accessId,
+            accessKey = token.accessKey,
+            securityToken = token.accessToken,
+        ),
+        userAgent = OSS_USER_AGENT,
     )
-    val signature = hmacSha1Base64(token.accessKey, stringToSign)
-    val authorization = "OSS ${token.accessId}:$signature"
-
-    client
-        .put("https://zhihu-pics-upload.zhimg.com/v2-$imageHash") {
-            contentType(ContentType.parse(mimeType))
-            header("x-oss-date", date)
-            header("x-oss-user-agent", ossUserAgent)
-            header("x-oss-security-token", token.accessToken)
-            header(HttpHeaders.Authorization, authorization)
-            setBody(bytes)
-        }.raiseForStatus(dumpRequest = true)
 }
 
 private suspend fun uploadGifMultipart(
@@ -199,12 +186,12 @@ private suspend fun initMultipartUpload(
     date: String,
     ossUserAgent: String,
 ): String {
-    val stringToSign = buildOssSignatureString(
+    val stringToSign = buildZhihuOssStringToSign(
         method = "POST",
         contentType = "",
         date = date,
         securityToken = token.accessToken,
-        ossUserAgent = ossUserAgent,
+        userAgent = ossUserAgent,
         resourcePath = "/zhihu-pics/v2-$imageHash",
         subResource = "uploads",
     )
@@ -234,12 +221,12 @@ private suspend fun uploadMultipartPart(
     ossUserAgent: String,
 ): String {
     val subResource = "partNumber=$partNumber&uploadId=$uploadId"
-    val stringToSign = buildOssSignatureString(
+    val stringToSign = buildZhihuOssStringToSign(
         method = "PUT",
         contentType = "application/octet-stream",
         date = date,
         securityToken = token.accessToken,
-        ossUserAgent = ossUserAgent,
+        userAgent = ossUserAgent,
         resourcePath = "/zhihu-pics/v2-$imageHash",
         subResource = subResource,
     )
@@ -282,12 +269,12 @@ private suspend fun completeMultipartUpload(
         append("</CompleteMultipartUpload>")
     }
 
-    val stringToSign = buildOssSignatureString(
+    val stringToSign = buildZhihuOssStringToSign(
         method = "POST",
         contentType = "application/xml",
         date = date,
         securityToken = token.accessToken,
-        ossUserAgent = ossUserAgent,
+        userAgent = ossUserAgent,
         resourcePath = "/zhihu-pics/v2-$imageHash",
         subResource = subResource,
     )
@@ -383,10 +370,6 @@ private data class ImageStatus(
 
 private const val OSS_USER_AGENT =
     "aliyun-sdk-js/6.8.0 Chrome 99.0.4844.84 on Windows 10 64-bit"
-
-private const val HMAC_SHA1_BLOCK_SIZE = 64
-private val RFC1123_DAY_NAMES = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-private val RFC1123_MONTH_NAMES = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 private fun decodeImageSize(bytes: ByteArray): Pair<Int, Int> =
     decodePngSize(bytes)
@@ -502,141 +485,6 @@ private fun decodeWebpSize(bytes: ByteArray): Pair<Int, Int>? {
     return null
 }
 
-private fun rfc1123Now(): String {
-    val now = Clock.System.now().toLocalDateTime(TimeZone.UTC)
-    val day = RFC1123_DAY_NAMES[now.dayOfWeek.ordinal]
-    val month = RFC1123_MONTH_NAMES[now.month.ordinal]
-    return "$day, ${now.day.twoDigitString()} $month ${now.year} " +
-        "${now.hour.twoDigitString()}:${now.minute.twoDigitString()}:${now.second.twoDigitString()} GMT"
-}
-
-private fun buildStringToSignPut(
-    mimeType: String,
-    date: String,
-    securityToken: String,
-    ossUserAgent: String,
-    imageHash: String,
-): String = buildString {
-    append("PUT\n")
-    append("\n")
-    append(mimeType).append('\n')
-    append(date).append('\n')
-    append("x-oss-date:").append(date).append('\n')
-    append("x-oss-security-token:").append(securityToken).append('\n')
-    append("x-oss-user-agent:").append(ossUserAgent).append('\n')
-    append("/zhihu-pics/v2-").append(imageHash)
-}
-
-private fun buildOssSignatureString(
-    method: String,
-    contentType: String,
-    date: String,
-    securityToken: String,
-    ossUserAgent: String,
-    resourcePath: String,
-    subResource: String?,
-): String {
-    val canonicalHeaders = buildString {
-        append("x-oss-date:").append(date).append('\n')
-        append("x-oss-security-token:").append(securityToken).append('\n')
-        append("x-oss-user-agent:").append(ossUserAgent).append('\n')
-    }
-    val canonicalResource = if (subResource.isNullOrBlank()) {
-        resourcePath
-    } else {
-        "$resourcePath?$subResource"
-    }
-    return buildString {
-        append(method).append('\n')
-        append('\n')
-        append(contentType).append('\n')
-        append(date).append('\n')
-        append(canonicalHeaders)
-        append(canonicalResource)
-    }
-}
-
-@OptIn(ExperimentalEncodingApi::class)
-private fun hmacSha1Base64(secret: String, message: String): String {
-    val rawKey = secret.encodeToByteArray()
-    val key = if (rawKey.size > HMAC_SHA1_BLOCK_SIZE) sha1(rawKey) else rawKey
-    val keyBlock = ByteArray(HMAC_SHA1_BLOCK_SIZE)
-    key.copyInto(keyBlock)
-
-    val outerPad = ByteArray(HMAC_SHA1_BLOCK_SIZE)
-    val innerPad = ByteArray(HMAC_SHA1_BLOCK_SIZE)
-    for (index in keyBlock.indices) {
-        outerPad[index] = (keyBlock[index].toInt() xor 0x5c).toByte()
-        innerPad[index] = (keyBlock[index].toInt() xor 0x36).toByte()
-    }
-
-    return Base64.Default.encode(sha1(outerPad + sha1(innerPad + message.encodeToByteArray())))
-}
-
-private fun sha1(input: ByteArray): ByteArray {
-    val bitLength = input.size.toLong() * 8
-    val paddedLength = (((input.size + 8) / 64) + 1) * 64
-    val padded = ByteArray(paddedLength)
-    input.copyInto(padded)
-    padded[input.size] = 0x80.toByte()
-    for (index in 0 until 8) {
-        padded[paddedLength - 1 - index] = (bitLength ushr (index * 8)).toByte()
-    }
-
-    var h0 = 0x67452301
-    var h1 = 0xefcdab89.toInt()
-    var h2 = 0x98badcfe.toInt()
-    var h3 = 0x10325476
-    var h4 = 0xc3d2e1f0.toInt()
-    val words = IntArray(80)
-
-    var chunkOffset = 0
-    while (chunkOffset < padded.size) {
-        for (index in 0 until 16) {
-            words[index] = readUInt32BigEndian(padded, chunkOffset + index * 4)
-        }
-        for (index in 16 until 80) {
-            words[index] = (words[index - 3] xor words[index - 8] xor words[index - 14] xor words[index - 16]).rotateLeft(1)
-        }
-
-        var a = h0
-        var b = h1
-        var c = h2
-        var d = h3
-        var e = h4
-
-        for (index in 0 until 80) {
-            val (f, k) = when (index) {
-                in 0..19 -> ((b and c) or (b.inv() and d)) to 0x5a827999
-                in 20..39 -> (b xor c xor d) to 0x6ed9eba1
-                in 40..59 -> ((b and c) or (b and d) or (c and d)) to 0x8f1bbcdc.toInt()
-                else -> (b xor c xor d) to 0xca62c1d6.toInt()
-            }
-            val temp = a.rotateLeft(5) + f + e + k + words[index]
-            e = d
-            d = c
-            c = b.rotateLeft(30)
-            b = a
-            a = temp
-        }
-
-        h0 += a
-        h1 += b
-        h2 += c
-        h3 += d
-        h4 += e
-        chunkOffset += 64
-    }
-
-    return ByteArray(20).apply {
-        writeIntBigEndian(0, h0)
-        writeIntBigEndian(4, h1)
-        writeIntBigEndian(8, h2)
-        writeIntBigEndian(12, h3)
-        writeIntBigEndian(16, h4)
-    }
-}
-
 private fun isJpegStartOfFrame(marker: Int): Boolean =
     marker in 0xc0..0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc
 
@@ -653,24 +501,11 @@ private fun readUInt24LittleEndian(bytes: ByteArray, offset: Int): Int =
         ((bytes[offset + 1].toInt() and 0xff) shl 8) or
         ((bytes[offset + 2].toInt() and 0xff) shl 16)
 
-private fun readUInt32BigEndian(bytes: ByteArray, offset: Int): Int =
-    ((bytes[offset].toInt() and 0xff) shl 24) or
-        ((bytes[offset + 1].toInt() and 0xff) shl 16) or
-        ((bytes[offset + 2].toInt() and 0xff) shl 8) or
-        (bytes[offset + 3].toInt() and 0xff)
-
 private fun readUInt32LittleEndian(bytes: ByteArray, offset: Int): Int =
     (bytes[offset].toInt() and 0xff) or
         ((bytes[offset + 1].toInt() and 0xff) shl 8) or
         ((bytes[offset + 2].toInt() and 0xff) shl 16) or
         ((bytes[offset + 3].toInt() and 0xff) shl 24)
-
-private fun ByteArray.writeIntBigEndian(offset: Int, value: Int) {
-    this[offset] = (value ushr 24).toByte()
-    this[offset + 1] = (value ushr 16).toByte()
-    this[offset + 2] = (value ushr 8).toByte()
-    this[offset + 3] = value.toByte()
-}
 
 private fun ByteArray.hasAscii(offset: Int, value: String): Boolean {
     if (offset + value.length > size) return false

@@ -118,6 +118,11 @@ abstract class BaseCommentViewModel(
         commentText: String,
         environment: ZhihuApiEnvironment,
         replyToCommentId: String? = null,
+        images: List<CommentImageAttachment> = emptyList(),
+        stickers: List<CommentSticker> = emptyList(),
+        mentions: List<CommentMention> = emptyList(),
+        syncToPin: Boolean = false,
+        voiceId: String? = null,
         onSuccess: () -> Unit,
     )
 

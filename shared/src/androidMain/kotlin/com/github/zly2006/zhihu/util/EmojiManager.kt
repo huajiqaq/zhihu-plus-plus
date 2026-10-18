@@ -20,6 +20,9 @@ package com.github.zly2006.zhihu.util
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.github.zly2006.zhihu.account.androidZhihuAccountStore
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,9 +30,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 @Serializable
 private data class EmojiApiResponse(
@@ -38,6 +43,7 @@ private data class EmojiApiResponse(
 
 @Serializable
 private data class EmojiData(
+    val version: Int = 0,
     val stickers: List<StickerItem> = emptyList(),
 )
 
@@ -51,9 +57,9 @@ private data class StickerItem(
 object EmojiManager {
     private const val TAG = "EmojiManager"
     private const val EMOJI_API_URL = "https://www.zhihu.com/api/v4/sticker-groups/1114161698310770688"
+    private const val EMOJI_GROUPS_URL = "https://www.zhihu.com/api/v4/me/sticker-groups"
     private const val EMOJI_MAPPING_FILE = "emoji_mapping.json"
     private const val EMOJI_CACHE_VERSION_FILE = "emoji_version.txt"
-    private const val CURRENT_EMOJI_VERSION = "1" // 增加版本号可强制重新下载
 
     // emoji占位符到文件名的映射
     private val emojiMapping = mutableMapOf<String, String>()
@@ -83,14 +89,20 @@ object EmojiManager {
             val mappingFile = File(context.filesDir, EMOJI_MAPPING_FILE)
             val versionFile = File(context.filesDir, EMOJI_CACHE_VERSION_FILE)
 
-            // 检查是否需要重新下载
+            // 检查是否需要重新下载：本地缓存缺失，或远端默认分组 version 变了。
+            val cachedVersion = versionFile
+                .takeIf { it.exists() }
+                ?.readText()
+                ?.trim()
+                ?.toIntOrNull()
+            val remoteVersion = fetchDefaultEmojiVersion(context)
             val needsDownload = !mappingFile.exists() ||
                 !versionFile.exists() ||
-                versionFile.readText().trim() != CURRENT_EMOJI_VERSION
+                (remoteVersion != null && remoteVersion != cachedVersion)
 
             if (needsDownload) {
                 Log.i(TAG, "Downloading emoji data from Zhihu API...")
-                downloadAndCacheEmojis(emojiDir, mappingFile, versionFile)
+                downloadAndCacheEmojis(context, emojiDir, mappingFile, versionFile)
             } else {
                 Log.i(TAG, "Loading emoji data from cache...")
                 loadEmojiMapping(mappingFile, emojiDir)
@@ -115,69 +127,86 @@ object EmojiManager {
         }
     }
 
+    /** 读取默认表情分组当前的 version；失败时返回 null，回退到本地缓存。 */
+    private suspend fun fetchDefaultEmojiVersion(context: Context): Int? = runCatching {
+        val accountClient = androidZhihuAccountStore(context).client
+        val response = accountClient
+            .httpClient()
+            .get(EMOJI_GROUPS_URL) {
+                signZhihuFetchRequest(accountClient.load().cookies)
+            }.raiseForStatus()
+            .bodyAsText()
+        val data = Json
+            .parseToJsonElement(response)
+            .jsonObject["data"]
+            ?.jsonArray
+            ?: return@runCatching null
+        data
+            .mapNotNull { item -> runCatching { item.jsonObject }.getOrNull() }
+            .firstOrNull { group -> group["type"]?.jsonPrimitive?.content == "emoji" }
+            ?.get("version")
+            ?.jsonPrimitive
+            ?.intOrNull
+    }.getOrNull()
+
     /**
      * 从Zhihu API下载emoji数据并缓存到本地
      */
-    private fun downloadAndCacheEmojis(
+    private suspend fun downloadAndCacheEmojis(
+        context: Context,
         emojiDir: File,
         mappingFile: File,
         versionFile: File,
     ) {
-        val url = URL(EMOJI_API_URL)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 10000
-        connection.readTimeout = 10000
+        // 走账号客户端，带上 cookie 和 x-zse-96；测试环境的 MockEngine 也能拦截。
+        val accountClient = androidZhihuAccountStore(context).client
+        val response = accountClient
+            .httpClient()
+            .get(EMOJI_API_URL) {
+                signZhihuFetchRequest(accountClient.load().cookies)
+            }.raiseForStatus()
+            .bodyAsText()
 
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw Exception("HTTP error code: $responseCode")
+        val json = Json { ignoreUnknownKeys = true }
+        val emojiData = json.decodeFromString<EmojiApiResponse>(response).data
+            ?: throw Exception("Invalid response format")
+        val stickers = emojiData.stickers
+
+        val newMapping = mutableMapOf<String, String>()
+        var downloadCount = 0
+
+        stickers.forEach { sticker ->
+            val fileName = "emoji_${sticker.id}.png"
+            newMapping[sticker.placeholder] = fileName
+
+            // 解析base64图片数据
+            if (sticker.staticImageUrl.startsWith("data:image/png;base64,")) {
+                val base64Data = sticker.staticImageUrl.substring("data:image/png;base64,".length)
+                val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+
+                val targetFile = File(emojiDir, fileName)
+                targetFile.outputStream().use { it.write(imageBytes) }
+
+                emojiCache[fileName] = targetFile.absolutePath
+                downloadCount++
             }
-
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val json = Json { ignoreUnknownKeys = true }
-            val stickers = json.decodeFromString<EmojiApiResponse>(response).data?.stickers
-                ?: throw Exception("Invalid response format")
-
-            val newMapping = mutableMapOf<String, String>()
-            var downloadCount = 0
-
-            stickers.forEach { sticker ->
-                val fileName = "emoji_${sticker.id}.png"
-                newMapping[sticker.placeholder] = fileName
-
-                // 解析base64图片数据
-                if (sticker.staticImageUrl.startsWith("data:image/png;base64,")) {
-                    val base64Data = sticker.staticImageUrl.substring("data:image/png;base64,".length)
-                    val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
-
-                    val targetFile = File(emojiDir, fileName)
-                    targetFile.outputStream().use { it.write(imageBytes) }
-
-                    emojiCache[fileName] = targetFile.absolutePath
-                    downloadCount++
-                }
-            }
-
-            // 保存映射文件
-            val mappingJson = json.encodeToString(
-                kotlinx.serialization.serializer<Map<String, String>>(),
-                newMapping,
-            )
-            mappingFile.writeText(mappingJson)
-
-            // 保存版本文件
-            versionFile.writeText(CURRENT_EMOJI_VERSION)
-
-            emojiMapping.clear()
-            emojiMapping.putAll(newMapping)
-            mutablePlaceholders.value = newMapping.keys.toList()
-
-            Log.i(TAG, "Downloaded and cached $downloadCount emojis")
-        } finally {
-            connection.disconnect()
         }
+
+        // 保存映射文件
+        val mappingJson = json.encodeToString(
+            kotlinx.serialization.serializer<Map<String, String>>(),
+            newMapping,
+        )
+        mappingFile.writeText(mappingJson)
+
+        // 保存版本文件（使用接口返回的 version，而不是手工常量）
+        versionFile.writeText(emojiData.version.toString())
+
+        emojiMapping.clear()
+        emojiMapping.putAll(newMapping)
+        mutablePlaceholders.value = newMapping.keys.toList()
+
+        Log.i(TAG, "Downloaded and cached $downloadCount emojis")
     }
 
     /**

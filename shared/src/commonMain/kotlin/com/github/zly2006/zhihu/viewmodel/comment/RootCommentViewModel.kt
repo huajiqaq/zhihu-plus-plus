@@ -41,10 +41,16 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlin.time.Clock
 
 class RootCommentViewModel(
     content: NavDestination,
@@ -110,6 +116,23 @@ class RootCommentViewModel(
 
         private val SegmentCommentHolder.normalizedContentType: String
             get() = contentType.removeSuffix("s")
+
+        /**
+         * 打开文章时并行预取评论第一页，打开评论面板时直接使用，
+         * 省掉一次网络往返（#450）。
+         */
+        suspend fun prefetchFirstPage(
+            environment: ZhihuApiEnvironment,
+            article: NavDestination,
+        ) {
+            val key = commentCacheKey(article) ?: return
+            val url = article.rootCommentUrl
+            if (url.isBlank()) return
+            val json = runCatching {
+                environment.fetchJson("$url?order_by=score", "")
+            }.getOrNull() ?: return
+            CommentFirstPageCache.put(key, json)
+        }
     }
 
     override val initialUrl: String
@@ -125,6 +148,16 @@ class RootCommentViewModel(
         }
 
     override suspend fun fetchFeeds(environment: PaginationEnvironment) {
+        if (lastPaging == null && initialCommentId == null && sortOrder == CommentSortOrder.SCORE) {
+            val key = commentCacheKey(article)
+            val cached = key?.let { CommentFirstPageCache.take(it) }
+            val data = cached?.get("data") as? JsonArray
+            if (cached != null && data != null) {
+                processResponse(environment, decodePage(environment, data), data)
+                if ("paging" in cached) lastPaging = ZhihuJson.decodeJson(cached["paging"]!!)
+                return
+            }
+        }
         if (!initialCommentLoaded && initialCommentId != null) {
             initialCommentLoaded = true
             try {
@@ -180,13 +213,26 @@ class RootCommentViewModel(
         commentText: String,
         environment: ZhihuApiEnvironment,
         replyToCommentId: String?,
+        images: List<CommentImageAttachment>,
+        stickers: List<CommentSticker>,
+        mentions: List<CommentMention>,
+        syncToPin: Boolean,
+        voiceId: String?,
         onSuccess: () -> Unit,
     ) {
-        if (commentText.isBlank()) return
+        if (commentText.isBlank() && images.isEmpty() && stickers.isEmpty() && voiceId.isNullOrBlank()) return
 
         viewModelScope.launch {
             try {
-                val requestBody = content.buildSubmitCommentBody(commentText, replyToCommentId)
+                val requestBody = content.buildSubmitCommentBody(
+                    commentText = commentText,
+                    replyToCommentId = replyToCommentId,
+                    images = images,
+                    stickers = stickers,
+                    mentions = mentions,
+                    syncToPin = syncToPin,
+                    voiceId = voiceId,
+                )
 
                 val response = environment.postSigned(content.submitCommentUrl) {
                     contentType(ContentType.Application.Json)
@@ -208,15 +254,66 @@ class RootCommentViewModel(
     }
 }
 
+data class CommentImageAttachment(
+    val url: String,
+    val width: Int,
+    val height: Int,
+)
+
+data class CommentMention(
+    val userId: String,
+    val name: String,
+    val urlToken: String,
+)
+
 internal fun NavDestination.buildSubmitCommentBody(
     commentText: String,
     replyToCommentId: String?,
+    images: List<CommentImageAttachment> = emptyList(),
+    stickers: List<CommentSticker> = emptyList(),
+    mentions: List<CommentMention> = emptyList(),
+    syncToPin: Boolean = false,
+    voiceId: String? = null,
 ): JsonObject {
-    val escapedText = commentText.escapeCommentHtml()
+    var escapedText = commentText.escapeCommentHtml()
+    mentions.forEach { mention ->
+        val display = "@${mention.name} ".escapeCommentHtml()
+        val mentionHtml = "<a data-hash=\"${mention.userId.escapeCommentHtml()}\" " +
+            "href=\"/people/${mention.urlToken.escapeCommentHtml()}\" " +
+            "class=\"member_mention\">$display</a>"
+        escapedText = escapedText.replaceFirst(display, mentionHtml)
+    }
+    val contentHtml = buildString {
+        if (escapedText.isNotBlank()) append("<p>$escapedText</p>")
+        images.forEach { image ->
+            val safeUrl = image.url.replace("\"", "&quot;")
+            append(
+                "<a href=\"$safeUrl\" class=\"comment_img\" " +
+                    "data-width=\"${image.width}\" data-height=\"${image.height}\">查看图片</a>",
+            )
+        }
+        stickers.forEach { sticker ->
+            append(commentStickerHtml(sticker))
+        }
+    }
     return buildJsonObject {
-        put("content", "<p>$escapedText</p>")
-        replyToCommentId?.let { put("reply_comment_id", it) }
-        if (this@buildSubmitCommentBody is SegmentCommentHolder) {
+        val isSegment = this@buildSubmitCommentBody is SegmentCommentHolder
+        put("comment_id", "")
+        put("content", contentHtml)
+        put("extra_params", "")
+        put("has_img", images.isNotEmpty())
+        put("reply_comment_id", replyToCommentId.orEmpty())
+        put("score", 0)
+        if (!isSegment) {
+            putJsonArray("selected_settings") {
+                if (syncToPin) add(JsonPrimitive("publish_sync_pin"))
+            }
+            put("unfriendly_check", "strict")
+        }
+        val stickerType = stickers.lastOrNull()?.let { if (it.isVipSticker) "vip" else "normal" }
+        put("sticker_type", stickerType?.let { JsonArray(listOf(JsonPrimitive(it))) } ?: JsonNull)
+        put("voice_info", voiceId?.let { id -> buildJsonObject { put("voice_id", id) } } ?: JsonNull)
+        if (isSegment) {
             // `unfriendly_check` 和 `selected_settings` 均为可选字段，发布段评时无需提交。
             put(
                 "segment",
@@ -243,6 +340,8 @@ internal fun NavDestination.buildSubmitCommentBody(
                     )
                 },
             )
+        } else {
+            put("segment", JsonNull)
         }
     }
 }
@@ -260,3 +359,38 @@ internal fun String.escapeCommentHtml(): String =
             }
         }
     }
+
+private const val COMMENT_PREFETCH_TTL_MS = 5 * 60 * 1000L
+private const val COMMENT_PREFETCH_MAX_ENTRIES = 4
+
+private data class CachedCommentPage(
+    val json: JsonObject,
+    val createdAt: Long,
+)
+
+private object CommentFirstPageCache {
+    private val mutex = Mutex()
+    private val entries = mutableMapOf<String, CachedCommentPage>()
+
+    suspend fun put(key: String, json: JsonObject) {
+        mutex.withLock {
+            val now = Clock.System.now().toEpochMilliseconds()
+            entries.entries.removeAll { now - it.value.createdAt > COMMENT_PREFETCH_TTL_MS }
+            if (entries.size >= COMMENT_PREFETCH_MAX_ENTRIES) {
+                entries.minByOrNull { it.value.createdAt }?.let { entries.remove(it.key) }
+            }
+            entries[key] = CachedCommentPage(json, now)
+        }
+    }
+
+    suspend fun take(key: String): JsonObject? = mutex.withLock {
+        val entry = entries.remove(key) ?: return@withLock null
+        val now = Clock.System.now().toEpochMilliseconds()
+        if (now - entry.createdAt > COMMENT_PREFETCH_TTL_MS) null else entry.json
+    }
+}
+
+private fun commentCacheKey(article: NavDestination): String? = when (article) {
+    is Article -> "${article.type}:${article.id}"
+    else -> null
+}

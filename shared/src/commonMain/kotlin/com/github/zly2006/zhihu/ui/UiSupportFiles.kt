@@ -244,6 +244,12 @@ fun articleWebUrl(article: Article): String =
         ArticleType.Article -> "https://zhuanlan.zhihu.com/p/${article.id}"
     }
 
+fun reportUrl(id: String, type: String): String =
+    "https://www.zhihu.com/report?id=$id&type=$type&source=android"
+
+fun articleReportUrl(article: Article): String =
+    reportUrl(article.id.toString(), if (article.type == ArticleType.Article) "article" else "answer")
+
 fun articleSpeechText(
     title: String,
     content: String,

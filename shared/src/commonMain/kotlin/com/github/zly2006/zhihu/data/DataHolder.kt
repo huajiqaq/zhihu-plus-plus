@@ -686,9 +686,26 @@ object DataHolder {
         val childCommentNextOffset: JsonElement? = null,
         val childComments: List<Comment> = listOf(),
         val isVisibleOnlyToMyself: Boolean = false,
+        val voiceInfo: CommentVoiceInfo? = null,
         @SerialName("_")
         val underscore: JsonElement? = null,
     ) {
+        /**
+         * 语音评论的 voice_info。服务端字段为 snake_case，
+         * ZhihuJson 解码前会统一转成 camelCase。
+         */
+        @Serializable
+        data class CommentVoiceInfo(
+            val voiceId: String = "",
+            val url: String = "",
+            val asrText: String = "",
+            val durationMs: Long = 0,
+            val fileSize: Long? = null,
+            val mimeType: String = "",
+            val status: String = "",
+            val hostId: String = "",
+        )
+
         @Serializable
         data class Author(
             val id: String,

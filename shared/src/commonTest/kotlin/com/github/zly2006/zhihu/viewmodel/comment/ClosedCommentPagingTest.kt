@@ -77,6 +77,11 @@ private class FetchableCommentViewModel(
         commentText: String,
         environment: ZhihuApiEnvironment,
         replyToCommentId: String?,
+        images: List<CommentImageAttachment>,
+        stickers: List<CommentSticker>,
+        mentions: List<CommentMention>,
+        syncToPin: Boolean,
+        voiceId: String?,
         onSuccess: () -> Unit,
     ) = Unit
 

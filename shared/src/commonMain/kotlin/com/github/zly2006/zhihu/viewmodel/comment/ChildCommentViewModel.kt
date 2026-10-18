@@ -33,8 +33,6 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * 注意：此view model不按照正常VM生命期管理，不要使用viewModel()函数创建
@@ -75,21 +73,27 @@ class ChildCommentViewModel(
         commentText: String,
         environment: ZhihuApiEnvironment,
         replyToCommentId: String?,
+        images: List<CommentImageAttachment>,
+        stickers: List<CommentSticker>,
+        mentions: List<CommentMention>,
+        syncToPin: Boolean,
+        voiceId: String?,
         onSuccess: () -> Unit,
     ) {
         val commentHolder = content as CommentHolder
-        if (commentText.isBlank()) return
+        if (commentText.isBlank() && images.isEmpty() && stickers.isEmpty() && voiceId.isNullOrBlank()) return
 
         viewModelScope.launch {
             try {
-                // Escape HTML special characters to prevent HTML injection
-                val escapedText = commentText.escapeCommentHtml()
-
-                // Use buildJsonObject to properly escape JSON special characters
-                val requestBody = buildJsonObject {
-                    put("content", "<p>$escapedText</p>")
-                    put("reply_comment_id", replyToCommentId ?: commentHolder.commentId)
-                }
+                val requestBody = commentHolder.article.buildSubmitCommentBody(
+                    commentText = commentText,
+                    replyToCommentId = replyToCommentId ?: commentHolder.commentId,
+                    images = images,
+                    stickers = stickers,
+                    mentions = mentions,
+                    syncToPin = syncToPin,
+                    voiceId = voiceId,
+                )
 
                 val response = environment.postSigned(commentHolder.article.submitCommentUrl) {
                     contentType(ContentType.Application.Json)
