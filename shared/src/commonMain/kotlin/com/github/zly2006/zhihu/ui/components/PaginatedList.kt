@@ -128,6 +128,12 @@ fun <T> PaginatedList(
     isEnd: () -> Boolean = { false },
     footer: @Composable ((LazyListState) -> Unit)? = null,
     key: ((T) -> Any)? = null,
+    /**
+     * 固定占一个 item 的头部。动态头部应放这里，而不是 [topContent]：
+     * 头部条目数恒定，LazyListState 的 index 恢复才不会因为提示增减而错位。
+     */
+    header: (@Composable () -> Unit)? = null,
+    headerKey: Any = "paginated_list_header",
     topContent: LazyListScope.() -> Unit = {},
     bottomContent: LazyListScope.() -> Unit = {},
     itemContent: @Composable LazyItemScope.(T) -> Unit,
@@ -163,6 +169,9 @@ fun <T> PaginatedList(
         contentPadding = contentPadding,
         reverseLayout = reverseLayout,
     ) {
+        if (header != null) {
+            item(key = headerKey) { header() }
+        }
         topContent(this)
 
         if (key != null) {

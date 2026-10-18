@@ -18,6 +18,7 @@ import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.test.ZhihuMockApi
+import com.github.zly2006.zhihu.test.assertListOffsetKept
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setZhihuMainContent
 import io.ktor.http.HttpMethod
@@ -26,7 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.math.abs
 
 /**
  * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/740
@@ -114,11 +114,7 @@ class QuestionScreenScrollRestoreInstrumentedTest {
         rule.waitForIdle()
 
         val after = firstAnswerOffset()
-        assertTrue("the first answer must stay visible; before=$before after=$after", after != null)
-        assertTrue(
-            "the first answer must keep its pixel offset; before=$before after=$after",
-            abs(after!! - before!!) < 8f,
-        )
+        assertListOffsetKept("the first answer", before, after)
         assertEquals(
             "returning to the question page must not re-request the question detail",
             1,

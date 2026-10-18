@@ -79,7 +79,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -119,6 +118,7 @@ import com.github.zly2006.zhihu.ui.components.ShareDialog
 import com.github.zly2006.zhihu.ui.components.getShareText
 import com.github.zly2006.zhihu.ui.components.handleShareAction
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
+import com.github.zly2006.zhihu.ui.components.rememberListScrollAnchor
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.rememberShareActionExecutor
 import com.github.zly2006.zhihu.viewmodel.ContentLoadEnvironment
@@ -215,26 +215,13 @@ fun QuestionScreen(
     )
 
     // 滚动恢复：等头部高度定型后再解释保存的偏移。数据和布局未稳定时不恢复。
-    var anchorIndex by rememberSaveable(question.questionId) { mutableIntStateOf(0) }
-    var anchorOffset by rememberSaveable(question.questionId) { mutableIntStateOf(0) }
-    var headerReady by remember(question.questionId) { mutableStateOf(false) }
-    var anchorRestored by remember(question.questionId) { mutableStateOf(false) }
-
-    LaunchedEffect(listState, headerReady, anchorRestored) {
-        // 恢复完成前不记录，避免返回瞬间的瞬态位置覆盖保存值。
-        if (!headerReady || !anchorRestored) return@LaunchedEffect
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (index, offset) ->
-                anchorIndex = index
-                anchorOffset = offset
-            }
-    }
-
-    LaunchedEffect(headerReady, viewModel.displayItems.size) {
-        if (!headerReady || viewModel.displayItems.isEmpty()) return@LaunchedEffect
-        anchorRestored = true
-        listState.scrollToItem(anchorIndex, anchorOffset)
-    }
+    val headerReady = remember(question.questionId) { mutableStateOf(false) }
+    rememberListScrollAnchor(
+        listState = listState,
+        contentReady = headerReady.value,
+        itemCount = viewModel.displayItems.size,
+        saveKey = question.questionId,
+    )
 
     // 加载问题详情和答案
     LaunchedEffect(question.questionId, viewModel) {
@@ -293,56 +280,54 @@ fun QuestionScreen(
                     .testTag(QUESTION_SCREEN_LIST_TAG),
                 contentPadding = PaddingValues(bottom = readingPlayerOverlayPadding),
                 footer = ProgressIndicatorFooter,
-                topContent = {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            QuestionHeaderSection(
-                                title = viewModel.questionDetail?.title ?: question.title,
-                                visitCount = viewModel.questionDetail?.visitCount ?: 0,
-                                commentCount = viewModel.questionDetail?.commentCount ?: 0,
-                                followerCount = followerCount,
-                                onShowComments = { showComments = true },
+                header = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        QuestionHeaderSection(
+                            title = viewModel.questionDetail?.title ?: question.title,
+                            visitCount = viewModel.questionDetail?.visitCount ?: 0,
+                            commentCount = viewModel.questionDetail?.commentCount ?: 0,
+                            followerCount = followerCount,
+                            onShowComments = { showComments = true },
+                        )
+                        if (viewModel.questionDetail != null) {
+                            QuestionAnimatedBodyHeader(
+                                questionId = question.questionId,
+                                questionContent = viewModel.questionDetail?.detail.orEmpty(),
+                                questionContentPlainText = questionContentPlainText,
+                                topics = viewModel.questionDetail?.topics.orEmpty(),
+                                onTopicClick = { topic -> navigator.onNavigate(Topic(topic.id, topic.name)) },
+                                isExpanded = isQuestionDetailExpanded,
+                                onToggleExpanded = { isQuestionDetailExpanded = !isQuestionDetailExpanded },
+                                isFollowing = isFollowing,
+                                onFollowClick = {
+                                    scope.launch {
+                                        val nextFollowing = !isFollowing
+                                        viewModel.followQuestion(paginationEnvironment, nextFollowing)
+                                        isFollowing = nextFollowing
+                                        followerCount = (followerCount + if (isFollowing) 1 else -1).coerceAtLeast(0)
+                                        userMessages.showShortMessage(if (isFollowing) "已关注问题" else "已取消关注问题")
+                                    }
+                                },
+                                onWriteAnswerClick = {
+                                    navigator.onNavigate(
+                                        WriteAnswer(
+                                            questionId = question.questionId,
+                                            questionTitle = viewModel.questionDetail?.title ?: question.title,
+                                            questionDetail = viewModel.questionDetail?.detail.orEmpty(),
+                                        ),
+                                    )
+                                },
+                                answerCount = viewModel.questionDetail?.answerCount ?: 0,
+                                onHeightSettled = { headerReady.value = true },
+                                currentSort = viewModel.sortOrder,
+                                onSortChange = { sortOrder ->
+                                    viewModel.updateSortOrder(sortOrder)
+                                    viewModel.refresh(paginationEnvironment)
+                                },
                             )
-                            if (viewModel.questionDetail != null) {
-                                QuestionAnimatedBodyHeader(
-                                    questionId = question.questionId,
-                                    questionContent = viewModel.questionDetail?.detail.orEmpty(),
-                                    questionContentPlainText = questionContentPlainText,
-                                    topics = viewModel.questionDetail?.topics.orEmpty(),
-                                    onTopicClick = { topic -> navigator.onNavigate(Topic(topic.id, topic.name)) },
-                                    isExpanded = isQuestionDetailExpanded,
-                                    onToggleExpanded = { isQuestionDetailExpanded = !isQuestionDetailExpanded },
-                                    isFollowing = isFollowing,
-                                    onFollowClick = {
-                                        scope.launch {
-                                            val nextFollowing = !isFollowing
-                                            viewModel.followQuestion(paginationEnvironment, nextFollowing)
-                                            isFollowing = nextFollowing
-                                            followerCount = (followerCount + if (isFollowing) 1 else -1).coerceAtLeast(0)
-                                            userMessages.showShortMessage(if (isFollowing) "已关注问题" else "已取消关注问题")
-                                        }
-                                    },
-                                    onWriteAnswerClick = {
-                                        navigator.onNavigate(
-                                            WriteAnswer(
-                                                questionId = question.questionId,
-                                                questionTitle = viewModel.questionDetail?.title ?: question.title,
-                                                questionDetail = viewModel.questionDetail?.detail.orEmpty(),
-                                            ),
-                                        )
-                                    },
-                                    answerCount = viewModel.questionDetail?.answerCount ?: 0,
-                                    onHeightSettled = { headerReady = true },
-                                    currentSort = viewModel.sortOrder,
-                                    onSortChange = { sortOrder ->
-                                        viewModel.updateSortOrder(sortOrder)
-                                        viewModel.refresh(paginationEnvironment)
-                                    },
-                                )
-                            }
                         }
                     }
                 },
