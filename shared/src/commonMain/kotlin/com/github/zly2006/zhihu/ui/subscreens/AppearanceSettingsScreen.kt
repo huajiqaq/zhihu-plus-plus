@@ -712,6 +712,7 @@ fun AppearanceSettingsScreen(
 
             // ── 信息流 ──────────────────────────────────────────────────────────
             val showRefreshFab = remember { mutableStateOf(settings.getBoolean("showRefreshFab", true)) }
+            val showCreateFab = remember { mutableStateOf(settings.getBoolean("showCreateFab", true)) }
             SettingItemGroup(
                 title = "信息流",
             ) {
@@ -740,6 +741,19 @@ fun AppearanceSettingsScreen(
                     settingKey = "showRefreshFab",
                     highlightedKey = settingKey,
                     bringIntoViewRequester = requesterFor("showRefreshFab"),
+                )
+
+                SettingItemWithSwitch(
+                    title = { Text("显示发布按钮") },
+                    description = { Text("在主页右下角显示创作/发布按钮。") },
+                    checked = showCreateFab.value,
+                    onCheckedChange = {
+                        showCreateFab.value = it
+                        settings.putBoolean("showCreateFab", it)
+                    },
+                    settingKey = "showCreateFab",
+                    highlightedKey = settingKey,
+                    bringIntoViewRequester = requesterFor("showCreateFab"),
                 )
 
                 var feedCardStyleExpanded by remember { mutableStateOf(false) }
