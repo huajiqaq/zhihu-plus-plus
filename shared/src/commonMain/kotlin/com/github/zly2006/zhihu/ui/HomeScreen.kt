@@ -222,10 +222,15 @@ private class HomeScreenState(
     val authorPinAnnouncements = mutableStateOf(emptyList<HomePinAnnouncement>())
     val dismissedUpdateVersion = mutableStateOf<String?>(null)
     var authorAnnouncementsLoaded by mutableStateOf(false)
+    var authorAnnouncementsLoading by mutableStateOf(false)
     var onlineNotificationsLoaded by mutableStateOf(false)
+    var onlineNotificationsLoading by mutableStateOf(false)
 
     val headerReady: Boolean
-        get() = authorAnnouncementsLoaded && onlineNotificationsLoaded
+        get() = authorAnnouncementsLoaded &&
+            !authorAnnouncementsLoading &&
+            onlineNotificationsLoaded &&
+            !onlineNotificationsLoading
 }
 
 /**
@@ -445,35 +450,42 @@ fun HomeScreen(
 
     LaunchedEffect(lifecycleOwner, scrollToTopTrigger) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val loadedAnnouncements = try {
-                paginationEnvironment
-                    .fetchJson(ZHIHU_PLUS_AUTHOR_PINS_URL, "")
-                    ?.let(::decodeHomePinAnnouncements)
-                    ?.filter {
-                        it.kind == HomePinAnnouncementKind.Poll ||
-                            it.createdAtEpochSeconds >= Clock.System.now().epochSeconds - 5 * 24 * 60 * 60
-                    }?.filterNot { settings.getBoolean(homePinAnnouncementReadKey(it.pinId), false) }
-                    ?.take(MAX_HOME_PIN_ANNOUNCEMENTS)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("HomeScreen", "Failed to load home pin announcements", e)
-                null
+            homeState.authorAnnouncementsLoading = true
+            try {
+                val loadedAnnouncements = try {
+                    paginationEnvironment
+                        .fetchJson(ZHIHU_PLUS_AUTHOR_PINS_URL, "")
+                        ?.let(::decodeHomePinAnnouncements)
+                        ?.filter {
+                            it.kind == HomePinAnnouncementKind.Poll ||
+                                it.createdAtEpochSeconds >= Clock.System.now().epochSeconds - 5 * 24 * 60 * 60
+                        }?.filterNot { settings.getBoolean(homePinAnnouncementReadKey(it.pinId), false) }
+                        ?.take(MAX_HOME_PIN_ANNOUNCEMENTS)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("HomeScreen", "Failed to load home pin announcements", e)
+                    null
+                }
+                if (loadedAnnouncements != null) {
+                    authorPinAnnouncements = loadedAnnouncements
+                }
+                homeState.authorAnnouncementsLoaded = true
+            } finally {
+                homeState.authorAnnouncementsLoading = false
             }
-            if (loadedAnnouncements != null) {
-                authorPinAnnouncements = loadedAnnouncements
-            }
-            homeState.authorAnnouncementsLoaded = true
         }
     }
 
     LaunchedEffect(lifecycleOwner, paginationEnvironment, versionName) {
         if (versionName == null) {
             homeState.onlineNotificationsLoaded = true
+            homeState.onlineNotificationsLoading = false
             return@LaunchedEffect
         }
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
+                homeState.onlineNotificationsLoading = true
                 try {
                     onlineNotifications = onlineNotificationRepository.load(
                         versionName = versionName,
@@ -483,8 +495,10 @@ fun HomeScreen(
                     throw e
                 } catch (e: Exception) {
                     Log.e("HomeScreen", "Failed to load online notifications", e)
+                } finally {
+                    homeState.onlineNotificationsLoaded = true
+                    homeState.onlineNotificationsLoading = false
                 }
-                homeState.onlineNotificationsLoaded = true
                 delay(HOME_NOTIFICATION_REFRESH_INTERVAL_MILLIS)
             }
         }
