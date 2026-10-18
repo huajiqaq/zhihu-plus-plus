@@ -172,8 +172,10 @@ fun NotificationScreen() {
                 modifier = Modifier.fillMaxSize(),
                 footer = ProgressIndicatorFooter,
                 key = { it.stableId },
-                topContent = {
-                    item(key = "notification_categories") {
+                header = {
+                    // 分类、邀请和分隔条放在同一个固定 item 里：
+                    // 邀请出现/消失只改变头部高度，不会改变后续通知的 index。
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         NotificationCategoryRow(
                             unreadCounts = viewModel.categoryUnreadCounts,
                             showUnreadBadges = settingsStore.getUnreadBadgeEnabled(),
@@ -183,9 +185,7 @@ fun NotificationScreen() {
                                 )
                             },
                         )
-                    }
-                    viewModel.invitation?.let { invitation ->
-                        item(key = "notification_invitation") {
+                        viewModel.invitation?.let { invitation ->
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                             NotificationInvitationRow(
                                 invitation = invitation,
@@ -193,8 +193,6 @@ fun NotificationScreen() {
                                 onClick = { navigator.onNavigate(Notification.Invitations) },
                             )
                         }
-                    }
-                    item(key = "notification_messages_divider") {
                         HorizontalDivider(
                             thickness = 8.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
