@@ -20,13 +20,14 @@ package com.github.zly2006.zhihu.reading
 /**
  * 朗读引擎每次 speak 时附带的参数。
  *
- * 部分第三方引擎（如 Multi TTS）不读取 TextToSpeech.setSpeechRate，
- * 只认每次 speak 调用里的 rate；因此速率必须同时出现在这里。
+ * 这里不能放 `"rate"`：`TextToSpeech.setSpeechRate()` 已经把速率以 **Int**
+ * （`rate * 100`）写进框架内部的 speak 参数；调用方再传同名 Float 会在
+ * `TextToSpeech.getParams()` 的 `putAll` 中覆盖它，随后引擎读取
+ * `SynthesisRequest.getSpeechRate()` 时 `Bundle.getInt()` 类型不匹配，
+ * 回退到系统默认值（1x）。因此速率只走 `setSpeechRate()`，这里仅传音量。
  */
-internal const val READING_SPEECH_RATE_PARAM = "rate"
 internal const val READING_SPEECH_VOLUME_PARAM = "volume"
 
-internal fun readingSpeechParameters(speechRate: Float): Map<String, Float> = mapOf(
+internal fun readingSpeechParameters(): Map<String, Float> = mapOf(
     READING_SPEECH_VOLUME_PARAM to 1f,
-    READING_SPEECH_RATE_PARAM to speechRate,
 )

@@ -19,13 +19,16 @@ package com.github.zly2006.zhihu.reading
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class ReadingSpeechParametersTest {
     @Test
-    fun includesSpeechRateForEnginesThatIgnoreSetSpeechRate() {
-        val parameters = readingSpeechParameters(1.35f)
+    fun doesNotOverrideFrameworkSpeechRate() {
+        val parameters = readingSpeechParameters()
 
-        assertEquals(1.35f, parameters[READING_SPEECH_RATE_PARAM])
         assertEquals(1f, parameters[READING_SPEECH_VOLUME_PARAM])
+        // 速率由 TextToSpeech.setSpeechRate() 以 Int 写入框架参数；
+        // 这里再传 Float 会让 SynthesisRequest.getSpeechRate() 回退到 1x。
+        assertFalse("rate" in parameters)
     }
 }
