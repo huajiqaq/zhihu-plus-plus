@@ -22,10 +22,11 @@ import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.GroupFeed
 import com.github.zly2006.zhihu.data.Person
 import com.github.zly2006.zhihu.data.sourceLabel
-import com.github.zly2006.zhihu.viewmodel.FeedDisplayEnvironment
+import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FollowSourceLabelTest {
     @Test
@@ -36,7 +37,7 @@ class FollowSourceLabelTest {
             actionText = "关注用户赞同了回答",
         )
 
-        val item = FollowViewModel().createDisplayItem(object : FeedDisplayEnvironment {}, feed)
+        val item = FollowViewModel().createDisplayItem(FeedDisplaySettings(), feed)
 
         assertEquals("关注用户赞同了回答", feed.sourceLabel)
         assertEquals(feed, item.feed)
@@ -54,10 +55,10 @@ class FollowSourceLabelTest {
             actionText = "关注用户赞同了回答",
         )
 
-        val item = FollowViewModel().createDisplayItem(object : FeedDisplayEnvironment {}, feed)
+        val item = FollowViewModel().createDisplayItem(FeedDisplaySettings(), feed)
 
         assertEquals(feed, item.feed)
-        assertEquals("已屏蔽", item.title)
+        assertTrue(item.isFiltered)
     }
 
     @Test

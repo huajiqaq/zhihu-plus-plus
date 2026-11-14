@@ -1,3 +1,4 @@
 <resources>
     <style name="Theme.Zhihu" parent="@android:style/Theme.Material.NoActionBar"/>
+    <color name="splash_background">#121212</color>
 </resources>

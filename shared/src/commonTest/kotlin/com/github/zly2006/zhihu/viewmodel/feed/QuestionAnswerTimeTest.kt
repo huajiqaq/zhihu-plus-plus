@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.feed
 
 import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
-import com.github.zly2006.zhihu.viewmodel.FeedDisplayEnvironment
+import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -45,7 +45,7 @@ class QuestionAnswerTimeTest {
             updatedTime = Clock.System.now().epochSeconds,
         )
         val item = QuestionFeedViewModel(1).createDisplayItem(
-            object : FeedDisplayEnvironment {},
+            FeedDisplaySettings(),
             CommonFeed(id = "answer-1", target = answer),
         )
         assertTrue(item.details.endsWith(" · $year-03-22"), item.details)

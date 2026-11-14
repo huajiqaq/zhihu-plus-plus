@@ -47,6 +47,16 @@ class ZhihuInstrumentedTestRunner : AndroidJUnitRunner() {
         super.onStart()
     }
 
+    override fun finish(resultCode: Int, results: Bundle?) {
+        try {
+            InstrumentedTestEnvironment.close()
+        } catch (error: Exception) {
+            android.util.Log.e("ZHPP_TEST", "Failed to close instrumentation account root", error)
+        } finally {
+            super.finish(resultCode, results)
+        }
+    }
+
     private companion object {
         const val TEST_TIMEOUT_ARGUMENT = "timeout_msec"
         const val TEST_LISTENER_ARGUMENT = "listener"

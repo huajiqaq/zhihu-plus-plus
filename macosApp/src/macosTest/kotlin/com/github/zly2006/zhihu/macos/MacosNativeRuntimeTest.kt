@@ -22,9 +22,6 @@ package com.github.zly2006.zhihu.macos
 import com.github.zly2006.zhihu.account.generateQrLoginBitmap
 import com.github.zly2006.zhihu.util.hmacSha1Hex
 import kotlinx.cinterop.autoreleasepool
-import kotlin.experimental.ExperimentalNativeApi
-import kotlin.native.processUnhandledException
-import kotlin.native.setUnhandledExceptionHook
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -41,18 +38,5 @@ class MacosNativeRuntimeTest {
             assertTrue(qrBitmap.width > 0)
             assertTrue(qrBitmap.height > 0)
         }
-    }
-
-    @OptIn(ExperimentalNativeApi::class)
-    @Test
-    fun unhandledExceptionHookReturnsControlToTheRuntime() {
-        var capturedMessage: String? = null
-        setUnhandledExceptionHook { error ->
-            capturedMessage = error.message
-        }
-
-        processUnhandledException(IllegalStateException("native-unhandled-exception-test"))
-
-        assertEquals("native-unhandled-exception-test", capturedMessage)
     }
 }

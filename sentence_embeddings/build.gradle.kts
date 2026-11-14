@@ -1,17 +1,15 @@
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.android.library)
 }
 
-// Used in GitHub CI to pass the path of the installed Android NDK
 val envAndroidNDKPath = System.getenv("ANDROID_NDK_HOME")
 
 android {
     namespace = "com.ml.shubham0204.sentence_embeddings"
     compileSdk = 37
 
-    // Declare the ndkVersion to avoid 'NDK not installed' errors from rust-android-plugin
-    // see: https://github.com/mozilla/rust-android-gradle/issues/29#issuecomment-593501017
-    ndkVersion = "29.0.14206865" // Android NDK r28b
+    // rust-android-plugin requires an explicit NDK version: https://github.com/mozilla/rust-android-gradle/issues/29#issuecomment-593501017
+    ndkVersion = "29.0.14206865"
     envAndroidNDKPath?.let {
         ndkPath = it
     }
@@ -50,24 +48,16 @@ android {
     }
 }
 
-// Rust build configuration
 val rustProjectDir = file("../rs-hf-tokenizer")
 val jniLibsDir = file("src/main/jniLibs")
 val rustSrcDir = rustProjectDir.resolve("src")
 val cargoToml = rustProjectDir.resolve("Cargo.toml")
 val cargoLock = rustProjectDir.resolve("Cargo.lock")
 
-// Define Android targets
 val androidTargets = mapOf(
     "aarch64-linux-android" to "arm64-v8a",
-    // targets below are commented out to only build for arm64-v8a
-//    "armv7-linux-androideabi" to "armeabi-v7a",
-//    "i686-linux-android" to "x86",
-//    "x86_64-linux-android" to "x86_64"
 )
 
-// Task to build Rust library using cargo-ndk
-// Adding explicit inputs/outputs allows Gradle to skip or remote-cache this task when nothing changes
 tasks.register<Exec>("buildRustLib") {
     description = "Build Rust library for Android using cargo-ndk"
     group = "rust"
@@ -82,14 +72,11 @@ tasks.register<Exec>("buildRustLib") {
     inputs.property("androidTargets", androidTargets.toString())
     inputs.property("ndkVersion", android.ndkVersion)
 
-    // Note: commented out for performance
-    //outputs.dir(rustProjectDir.resolve("target"))
     outputs.dir(jniLibsDir)
 
     val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 
     if (isWindows) {
-        // Windows: use batch commands with proper path handling
         val jniLibsPath = jniLibsDir.absolutePath.replace("\\", "/")
         val buildCommands = androidTargets.entries.joinToString(" && ") { (rustTarget, androidAbi) ->
             listOf(
@@ -108,9 +95,7 @@ tasks.register<Exec>("buildRustLib") {
             ).joinToString(" && ")
         )
     } else {
-        // Unix/macOS: use shell commands
         val jniLibsPath = jniLibsDir.absolutePath
-        environment("DEVELOPER_DIR", "/Library/Developer/CommandLineTools")
         val buildCommands = androidTargets.entries.joinToString("\n") { (rustTarget, androidAbi) ->
             listOf(
                 "echo \"Building for $androidAbi...\"",
@@ -124,7 +109,6 @@ tasks.register<Exec>("buildRustLib") {
         }
         commandLine("sh", "-c", listOf(
             "set -e",
-            // 强制将用户的 cargo bin 目录注入到当前 shell 的 PATH 最前面
             "export PATH=\"\$HOME/.cargo/bin:\$PATH\"",
             "# Add Android targets if not already added",
             addTargetCommands,
@@ -137,7 +121,6 @@ tasks.register<Exec>("buildRustLib") {
     }
 }
 
-// Clean Rust build artifacts
 tasks.register<Delete>("cleanRust") {
     description = "Clean Rust build artifacts"
     group = "rust"
@@ -145,18 +128,16 @@ tasks.register<Delete>("cleanRust") {
     delete(jniLibsDir)
 }
 
-// Make clean depend on cleanRust
 tasks.named("clean") {
     dependsOn("cleanRust")
 }
 
-// Make preBuild depend on buildRustLib
 tasks.matching { it.name.startsWith("preBuild") }.configureEach {
     dependsOn("buildRustLib")
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.onnxruntime.android)
 }

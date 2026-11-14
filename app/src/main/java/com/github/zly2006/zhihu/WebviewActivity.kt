@@ -22,6 +22,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -29,13 +30,18 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.webkit.WebViewClientCompat
+import com.github.zly2006.zhihu.account.AccountVerificationDialogs
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.account.webViewFailureObserver
 import com.github.zly2006.zhihu.data.AccountData
 import com.github.zly2006.zhihu.data.ZHIHU_ANDROID_USER_AGENT
 import com.github.zly2006.zhihu.navigation.resolveContent
+import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.components.setupUpWebviewClient
 import com.github.zly2006.zhihu.util.enableEdgeToEdgeCompat
 import com.github.zly2006.zhihu.util.luoTianYiUrlLauncher
@@ -51,57 +57,67 @@ class WebviewActivity : ComponentActivity() {
         }
         enableEdgeToEdgeCompat()
         setContent {
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding(),
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        val webView = WebView(ctx)
-                        webView.setupUpWebviewClient {
+            ZhihuTheme {
+                val account = rememberZhihuAccountStore().client
+                val observeHttpFailure = remember(account) { account.webViewFailureObserver() }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding(),
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            val webView = WebView(ctx)
+                            webView.setupUpWebviewClient {
+                                val js = intent.extras?.getString("javascript")
+                                if (js != null) {
+                                    webView.evaluateJavascript(js, null)
+                                }
+                            }
+                            setupCookies(webView)
+                            webView.settings.userAgentString = ZHIHU_ANDROID_USER_AGENT
+                            @SuppressLint("SetJavaScriptEnabled")
+                            webView.settings.javaScriptEnabled = true
+                            webView.loadUrl(url)
                             val js = intent.extras?.getString("javascript")
                             if (js != null) {
                                 webView.evaluateJavascript(js, null)
                             }
-                        } // 覆盖掉原有的 WebViewClient，因为我们需要全屏显示
-                        setupCookies(webView)
-                        webView.settings.userAgentString = ZHIHU_ANDROID_USER_AGENT
-                        @SuppressLint("SetJavaScriptEnabled")
-                        webView.settings.javaScriptEnabled = true
-                        webView.loadUrl(url)
-                        val js = intent.extras?.getString("javascript")
-                        if (js != null) {
-                            webView.evaluateJavascript(js, null)
-                        }
 
-                        webView.webViewClient = object : WebViewClientCompat() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                if (request.url.host == "link.zhihu.com") {
-                                    Url(request.url.toString()).parameters["target"]?.let {
-                                        luoTianYiUrlLauncher(this@WebviewActivity, it.toUri())
-                                        return true
-                                    }
-                                } else if (request.url.host == "www.zhihu.com" || request.url.host == "zhuanlan.zhihu.com" || request.url.scheme == "zhihu") {
-                                    val destination = resolveContent(request.url.toString())
-                                    if (destination != null) {
-                                        val intent = Intent(this@WebviewActivity, MainActivity::class.java).apply {
-                                            action = Intent.ACTION_VIEW
-                                            data = request.url
-                                        }
-                                        this@WebviewActivity.startActivity(intent)
-                                        this@WebviewActivity.finish()
-                                        return true
-                                    } else if (request.url.pathSegments.getOrNull(0) == "done") {
-                                        this@WebviewActivity.finish()
-                                    }
+                            webView.webViewClient = object : WebViewClientCompat() {
+                                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+                                    super.onReceivedHttpError(view, request, errorResponse)
+                                    observeHttpFailure(request, errorResponse)
                                 }
-                                return super.shouldOverrideUrlLoading(view, request)
+
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                    if (request.url.host == "link.zhihu.com") {
+                                        Url(request.url.toString()).parameters["target"]?.let {
+                                            luoTianYiUrlLauncher(this@WebviewActivity, it.toUri())
+                                            return true
+                                        }
+                                    } else if (request.url.host == "www.zhihu.com" || request.url.host == "zhuanlan.zhihu.com" || request.url.scheme == "zhihu") {
+                                        val destination = resolveContent(request.url.toString())
+                                        if (destination != null) {
+                                            val intent = Intent(this@WebviewActivity, MainActivity::class.java).apply {
+                                                action = Intent.ACTION_VIEW
+                                                data = request.url
+                                            }
+                                            this@WebviewActivity.startActivity(intent)
+                                            this@WebviewActivity.finish()
+                                            return true
+                                        } else if (request.url.pathSegments.getOrNull(0) == "done") {
+                                            this@WebviewActivity.finish()
+                                        }
+                                    }
+                                    return super.shouldOverrideUrlLoading(view, request)
+                                }
                             }
-                        }
-                        webView
-                    },
-                )
+                            webView
+                        },
+                    )
+                }
+                AccountVerificationDialogs(client = account)
             }
         }
     }

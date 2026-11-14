@@ -1,178 +1,39 @@
 ---
 name: zhihu-pp-ai-slop-cleaner
-description: Use for Zhihu++ maintenance work that scans Kotlin main sources for low-call functions, structurally similar function bodies, dead code, pure forwarding wrappers, pointless abstractions, repeated helpers, and cross-platform duplicate glue before refactoring or PR cleanup. Trigger when the user asks to clean AI slop, remove low-call wrappers, find similar or duplicated code, review duplicated helper functions, or audit functions with call count at most 2 in /Users/zhaoliyan/IdeaProjects/Zhihu.
+description: 审查 Zhihu++ Kotlin 中的低调用函数、死代码、重复实现、薄包装和多余状态容器。用于代码精简、重复 helper 检查或 PR 清理；扫描结果需结合真实调用方判断。
 ---
 
-# Zhihu++ AI Slop Cleaner
+# Kotlin 代码精简
 
-## 强制验证门禁
+低调用次数和相似函数只是候选，不是删除依据。
 
-- 单生产调用点的过滤、映射或测试专用 helper 优先内联，不得为注入时间或制造可测性扩大生产 API。
-- 回归测试必须先在基线得到红测，再在修复后用同一生产路径得到绿测；测试新 helper 不算回归证据。
-- seed、默认初始化和本地快照不能冒充真实线上数据库写入，必须使用真实管理接口或数据库读回。
+## 扫描
 
-## 新增测试前先检查已有覆盖
-
-新增测试前必须先搜索并阅读覆盖同一模型、codec 和生产调用链的现有测试，包括 common/JVM 测试与真实响应语料；先确定缺少的断言，再决定放在哪里。同一解码契约的新字段或新样本应优先补入已有测试，不能未查覆盖就另建测试类，等用户指出重复后才合并。例如，已有真实响应解码测试时，应在其中补充图片元数据样本和必要断言，而不是另写一套解码、重新编码、再比较字段的流程。
-
-用户明确认可合并已有测试时，应保留这种整合方向。根因是实施前未充分检查已有覆盖，不能将反馈擅自解释成“不需要这些测试”，也不能把改文件归属当成已经完成了事前分析。
-
-## Cookie 与客户端状态的事实源
-
-已有账号客户端或 CookieStorage 持有结构化 Cookie 时，读取该状态，不要把请求头重新拆成字符串再解析。请求重试需要识别已发送凭据时，应在发起请求时从同一账号包装器保存必要值，并沿用它的生命周期校验；不要由旧请求反查全局当前账号。外部 Set-Cookie 或用户导入文本才属于解析输入，应优先复用项目现有解析器或 Ktor 标准 API，不能用 split/startsWith 拼一个只覆盖当前样本的协议解析器。
-
-## Core Rule
-
-Treat low call count as a queue for review, not proof of deletion.
-
-Use non-test production line count as a hard refactor check, measured per independent change cluster rather than
-only across the whole commit. Deleting one large client must not hide line growth caused by new owners, adapters,
-constructor parameters, or initialization glue elsewhere. A cleanup that preserves behavior but materially grows
-the production implementation is presumed wrong unless the added lines encode a demonstrated new contract.
-
-Do not treat unit-test reachability as a production contract. Before merging or preserving tests for a pure
-function, inspect whether the test caused production code to expose an `internal` helper, accept extra parameters,
-or retain test-only branches and fallback values. When the behavior is simple and already exercised through its
-real caller, delete the direct helper test, inline or make the helper `private`, and remove parameters or special
-cases that no production path needs. Optimize the production API first, then keep only tests for observable
-contracts and regression-prone boundaries; reducing test-method count while leaving test-shaped production code is
-not a successful cleanup.
-
-Do not create a `State` object merely because several local values belong to the same screen, feature, or naming family, or because their count crosses a mechanical threshold. A state object is justified only when its members participate in the same invariant, transition, or lifecycle; independent dialog flags, display modes, loading flags, and navigation flags must remain independent even when there are many of them. Count-based review rules identify places to inspect, not fields to bundle. Example: a reading mode flag and a next-item loading flag may both appear on a content page, but changing one does not constrain the other, so grouping them only hides unrelated state behind a vague container.
-
-Delete or inline a function only after inspecting its declaration, every real call site, and the surrounding contract. Keep small functions that are framework entry points, stable UI/test selectors, platform contracts, interface defaults, Room/serialization hooks, navigation hooks, or meaningful domain boundaries.
-
-`Runtime` / UI `State` dependency bundles are migration debt, not contracts. Search for `*Runtime`, `*State`, `remember*Runtime`, and similar dependency-bundle names as a first-class cleanup target instead of waiting for low-call evidence. When a screen or shared UI exposes one of these objects and it aggregates ViewModels, settings snapshots, environment methods, callbacks, network/database access, or platform helpers, dismantle it unconditionally. Move each responsibility to the real owner: common UI selects common ViewModels directly, common code calls cross-platform network/database helpers directly, and platform-only effects use narrow expect/actual functions or existing composition locals. Do not preserve a runtime field just because it currently carries login, update, install metadata, debug flags, or another “platform service”; split that service into the smallest real platform primitive or inline it at the caller.
-
-When a runtime/capability object or composition local already owns a cross-platform helper, do not also thread that same capability through sibling parameters. Treat `runtime + duplicate capability parameter` or `composition local + forwarded parameter` as a half-cleaned dependency bundle: remove the duplicate parameter and read the capability at the lowest composable/helper that actually uses it, or from the runtime if the runtime remains temporarily. Example: an item renderer should not receive image save/share functions merely to pass them into an image menu when those functions are already cross-platform composition helpers available to that menu.
-
-When merging duplicated platform implementations, do not stop at moving the duplicated body into an environment/interface default if there is still only one real semantic caller. If a ViewModel is the only place that owns the workflow, put the request logic in that ViewModel and let the environment expose only lower-level capabilities such as authenticated cookies and signed requests. Example: a question follow action should live in the question feed ViewModel that catches its errors, not as a one-call `environment.follow...()` wrapper that only chooses POST or DELETE.
-
-Before adding a cross-platform file-storage interface, inspect and use the Kotlin multiplatform filesystem API already available to the project. Platform code may supply the application-private root path when the operating system determines it, but it must not wrap ordinary read, write, exists, or delete operations behind environment methods that merely forward to the common file object. Example: a feature cache should receive or derive a common `Path` under the app-private directory and perform JSON file I/O in common code, instead of adding four `readPrivateTextFile` and `writePrivateTextFile` methods to an environment and duplicating those operations in every actual implementation.
-
-Do not push platform or storage dependencies upward just because the current accessor is only convenient from UI code. If a lower-level navigation or filtering component owns the query, make the cross-platform dependency available at that level instead of threading a database or platform handle through screen and ViewModel calls. Example: answer switching should ask its own support layer for already-opened content, not force the article loading call to accept a database parameter that exists only to be forwarded.
-
-Do not delete runtime guards just to make tests pass or to simplify state. If a throttle, retry limiter, debounce, permission gate, or cache invalidation guard protects production behavior, keep it and make tests reset or inject the relevant state explicitly. Example: an authenticated request refresh throttle should be reset in tests; removing the throttle changes runtime semantics.
-
-Default to whole-file or helper-family cleanup batches. Do not wait for the user to ask for a “second stage” before leaving tiny one-helper edits behind. If the current checkout is not already a dedicated cleanup branch or worktree, put broad cleanup in its own worktree so the main checkout remains available, then process whole-file helper clusters at once. A valid broad batch should remove or inline at least one complete file's helper cluster and cover at least 30 helper functions unless the user explicitly narrows the scope. If one suspicious helper is found, inspect its surrounding file-level cluster and remove adjacent useless wrappers together instead of deleting one isolated function per commit.
-
-## Workflow
-
-1. Record the current time and inspect `git status --short --branch`.
-2. Run the low-call scan:
+在项目根目录运行，输出放到本次临时目录：
 
 ```bash
 python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/scan_low_call_functions.py \
-  --root . \
-  --max-calls 2 \
-  --output /tmp/zhihu_low_functions.tsv
-```
-
-3. Run the similar-function scan in every cleanup pass; duplicated wrappers often hide outside low-call results:
-
-```bash
+  --root . --max-calls 2 --output '<低调用候选 TSV 路径>'
 python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/find_similar_kotlin_functions.py \
-  --root . \
-  --threshold 0.82 \
-  --output /tmp/zhihu_similar_functions.tsv
+  --root . --threshold 0.82 --output '<相似函数 TSV 路径>'
 ```
 
-4. Review the TSVs from highest-confidence candidates first.
-5. For each candidate, verify with `rg` before editing:
+脚本覆盖直接模块的 Java/Kotlin 源集，默认排除测试、构建输出和 worktree。`--include-tests` 可纳入测试。扫描不能识别所有反射、框架分派、Java 或生成代码调用。
 
-```bash
-rg -n "\bFUNCTION_NAME\b" app shared desktopApp -g '*.kt'
-```
+## 判断与修改
 
-6. Classify each candidate:
-   - `delete`: no production caller and no framework/test entry value.
-   - `inline`: function body is a pure forwarding call, local one-use wrapper, or renaming shell.
-   - `merge`: repeated helpers perform the same operation; replace with one shared helper or add a parameter.
-   - `keep`: function is a real contract, domain boundary, parser step, platform actual, override, DAO method, serializer, stable test tag, or improves readability of a complex expression.
-   - Runtime/state glue is not classified as `keep`; delete or inline the whole bundle and all of its actual/expect shells.
+1. 读声明、真实调用方和附近实现，再分类为删除、内联、合并或保留。顺带检查同类包装，不为凑数量扩范围。
+2. 没有分支、状态或独立语义的转发直接在调用点使用底层 API；单调用业务请求不经 environment getter、client 和 helper 层层转发。
+3. 重复代码按共同语义合并，不把平台差异、错误处理、安全校验或不同数据库类型混在一起。
+4. 框架入口、`expect/actual`、override、Room/序列化钩子、导航、稳定测试 tag 和解释复杂语法的函数不能只按次数删除。
+5. 状态容器需要共同不变量或生命周期，不因同页、同名前缀或字段数量而创建。只汇集依赖和转发回调的 Runtime/State 应拆回真实所有者；清理后不留下重复参数或换名 adapter。
+6. 按完整改动检查生产行数和新增层级，不用删掉一个大文件掩盖其他调用方变复杂。小函数保留的理由应能从语义看出来。
+7. 合并冲突时保留新的产品行为和已确认的职责边界，不恢复被清理的旧包装。
 
-7. For every candidate, switch to a file-level pass before editing. Read the nearby functions and classify the whole helper cluster together instead of deleting one `rg` hit at a time. Example: if one signed request helper in an environment file looks unnecessary, inspect adjacent signed helpers in the same file; keep multi-call primitives, but inline a single-call wrapper that only forwards to the lower-level client and adds no contract.
-8. Edit only after classification. Prefer the nearest existing API over creating a new helper.
-9. Re-run the relevant scan after each batch and check that deleted or merged names disappeared.
-10. Run project verification in the required order before committing:
+## 测试与验收
 
-```bash
-./gradlew assembleLiteDebug
-./gradlew ktlintFormat
-```
+新增测试先查同一模型、codec 和生产路径的已有覆盖，缺什么补什么；不为测试开放 helper、增加时钟或进程级 override。设备用例按 [测试取舍](../zhihu-instrument-test-governance/SKILL.md) 判断。
 
-11. Run a final review pass:
+修改后用 `rg` 核对旧名字和调用方，检查 diff、重复实现与平台接线，再执行最小相关验证。真实回归已有修复前失败和修复后通过证据时复用，不重建所有变体。用户限制测试或构建预算时遵守。
 
-```bash
-git diff --check
-git diff --stat
-rg -n "TODO|unused|deprecated wrapper|pure forwarding" app shared desktopApp -g '*.kt'
-```
-
-## What To Remove Aggressively
-
-- Private or local functions with one call and a body under 10 lines that simply call another function.
-- Public/internal functions used only by tests when production should instead test the lower-level encoder, decoder, URL builder, or data type directly.
-- Same-file helper names that only rename an environment/platform method with no branch, state, permission, or lifecycle boundary.
-- Cross-platform duplicate helpers that do identical formatting, parsing, URL normalization, or ID construction.
-- Dead debug helpers, stale reset hooks, stale bulk methods, and comment-referenced methods with no production caller.
-- `*Runtime`, `*State`, `remember*Runtime`, and UI dependency-bundle fields, even when they still have multiple call sites. Treat each field as a forwarding layer to eliminate, not as a surface to preserve.
-
-## Merge Conflict Boundary
-
-During slop cleanup, do not reintroduce platform/environment state just because `master` has a newer conflict-side implementation. If the cleanup intentionally pushed a cache/throttle into a lower-level helper to keep API surface small, preserve that direction when resolving conflicts. Example: when a lower-level authenticated request helper owns a short refresh throttle, do not add per-platform `last...` getters/setters back onto the environment interface merely to satisfy one merge side; keep the throttle at the lower layer and adapt the conflicting code around it.
-
-After a user points out one bad conflict direction, audit the whole merge intersection before continuing. Check every file changed on both sides, search for deleted helper families that may have been reintroduced under the same or similar names, and verify new master-side behavior is still present. Example: if a conflict around an environment interface accidentally brings back one state accessor, also inspect adjacent files for old repositories, URL helpers, wrapper methods, and newly added feature interfaces instead of fixing only the named accessor.
-
-## What To Keep
-
-- Non-runtime `override`, `expect`, `actual`, `@Serializable` serializer methods, `NavType`, Room DAO, Room converter, migration, lifecycle callback, and JavaScript bridge entry points unless source inspection proves they are unused and removable.
-- Interface default implementations that are part of a capability contract.
-- Stable UI test tags and semantic tag builders, even if call count is one.
-- Parser helpers where the name explains a non-obvious grammar or Markdown/HTML rule.
-- UI composables that isolate a meaningful visual unit rather than only forwarding parameters.
-- Platform code that intentionally differs by Android/JVM/native behavior.
-- These keep rules do not protect runtime/state dependency bundles or their expect/actual constructors.
-
-## Scan Script Notes
-
-`scripts/scan_low_call_functions.py` is intentionally conservative:
-
-- It scans main source roots only by default.
-- It excludes `test`, `androidTest`, build output, and worktrees unless options change that.
-- It groups `expect`/`actual` declarations by name and arity so the multiplatform declaration family is counted once.
-- It masks comments and strings before counting references.
-- It still cannot know Kotlin reflection, framework dispatch, Java interop, or generated-code calls. Always inspect candidates manually.
-
-Useful options:
-
-```bash
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/scan_low_call_functions.py --help
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/scan_low_call_functions.py --include-tests
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/scan_low_call_functions.py --max-calls 0
-```
-
-`scripts/find_similar_kotlin_functions.py` finds similar bodies by normalized token shingles:
-
-- It normalizes non-keyword identifiers to `ID`, numbers to `NUM`, and string/char literals to `STR`/`CHAR`.
-- It compares function bodies with shingled Jaccard similarity.
-- It defaults to main source roots, excludes tests, ignores tiny bodies, and outputs only high-score pairs.
-- It is useful for repeated formatters, URL builders, platform stubs, and copied UI glue.
-- It can false-positive on framework callbacks and similar Compose layout skeletons; inspect before merging.
-
-Useful options:
-
-```bash
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/find_similar_kotlin_functions.py --help
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/find_similar_kotlin_functions.py --threshold 0.9
-python3 .agents/skills/zhihu-pp-ai-slop-cleaner/scripts/find_similar_kotlin_functions.py --min-lines 8 --min-tokens 60
-```
-
-## PR Hygiene
-
-When the cleanup becomes a PR:
-
-- Do not use broad `git add .`; stage explicit paths.
-- Do not commit unrelated user changes.
-- Keep PR title/body in Chinese and use `refactor:` unless the user asks otherwise.
-- Include the scan command, validation commands, and any deliberately kept categories in the PR body.
+提交只包含本次完整改动，保留其他脏文件。PR 使用中文，按行为选择类型并说明实际验证，不把扫描输出当作功能通过。

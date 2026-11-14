@@ -15,36 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_SOURCE_ROOTS = (
-    "app/src/main/java",
-    "app/src/main/kotlin",
-    "app/src/full/java",
-    "app/src/full/kotlin",
-    "app/src/lite/java",
-    "app/src/lite/kotlin",
-    "shared/src/commonMain/kotlin",
-    "shared/src/androidMain/kotlin",
-    "shared/src/jvmMain/kotlin",
-    "shared/src/iosMain/kotlin",
-    "shared/src/nativeMain/kotlin",
-    "desktopApp/src/main/kotlin",
-    "app/src/test/java",
-    "app/src/test/kotlin",
-    "app/src/androidTest/java",
-    "app/src/androidTest/kotlin",
-    "shared/src/commonTest/kotlin",
-    "shared/src/androidUnitTest/kotlin",
-    "shared/src/jvmTest/kotlin",
-)
-
-TEST_MARKERS = (
-    "/test/",
-    "/androidTest/",
-    "/androidUnitTest/",
-    "/commonTest/",
-    "/jvmTest/",
-    "/nativeTest/",
-)
+DEFAULT_SOURCE_ROOTS = ("*/src/*/java", "*/src/*/kotlin")
+TEST_SOURCE_SET_RE = re.compile(r"/src/(?:test[A-Za-z0-9_]*|[A-Za-z0-9_]*Test[A-Za-z0-9_]*)/")
 SKIP_DIRS = {".git", ".gradle", ".idea", ".worktrees", "build", ".kotlin"}
 
 FUNCTION_RE = re.compile(
@@ -285,26 +257,24 @@ def annotation_names(prefix: str) -> tuple[str, ...]:
 
 
 def is_test_path(relative_path: str) -> bool:
-    return any(marker in relative_path for marker in TEST_MARKERS)
+    return TEST_SOURCE_SET_RE.search(relative_path) is not None
 
 
 def source_files(root: Path, include_tests: bool, test_only: bool = False) -> list[Path]:
     files: list[Path] = []
     for source_root in DEFAULT_SOURCE_ROOTS:
-        base = root / source_root
-        if not base.exists():
-            continue
-        for path in sorted(base.rglob("*.kt")):
-            rel = "/" + path.relative_to(root).as_posix()
-            if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
-                continue
-            is_test = is_test_path(rel)
-            if test_only and not is_test:
-                continue
-            if not test_only and not include_tests and is_test:
-                continue
-            files.append(path)
-    return files
+        for base in sorted(root.glob(source_root)):
+            for path in sorted(base.rglob("*.kt")):
+                rel = "/" + path.relative_to(root).as_posix()
+                if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+                    continue
+                is_test = is_test_path(rel)
+                if test_only and not is_test:
+                    continue
+                if not test_only and not include_tests and is_test:
+                    continue
+                files.append(path)
+    return sorted(files)
 
 
 def parse_functions(root: Path, files: list[Path]) -> tuple[list[FunctionDef], dict[Path, str]]:

@@ -50,7 +50,7 @@ class FeedNavigationTest {
         pending.reversed().forEach { route ->
             assertEquals("<p data-pid=\"${route.id}\">正文 ${route.id}</p>", ArticleViewModel(route, null).previewContent)
         }
-        listOf(Article(type = ArticleType.Answer, id = 999), Article(type = ArticleType.Article, id = 123)).forEach { override ->
+        listOf(Article(type = ArticleType.Answer, id = 999), Article(type = ArticleType.Article, id = 123), Article(type = ArticleType.Answer, id = 0), Article(type = ArticleType.Answer, id = -1)).forEach { override ->
             val route = assertIs<Article>(items.first().copy(navDestinationJson = override.toFeedDisplayItemNavDestinationJson()).prepareNavigation())
             assertEquals("", ArticleViewModel(route, null).previewContent)
         }

@@ -17,18 +17,20 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
+import buildlogic.VerifyThemeDependencies
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 plugins {
-    id("com.android.application")
-    id("com.mikepenz.aboutlibraries.plugin.android")
-    kotlin("plugin.serialization")
-    kotlin("plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.aboutlibraries)
+    alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.kotlin.plugin.compose)
     id("kotlin-parcelize")
-    id("org.jlleitschuh.gradle.ktlint")
+    alias(libs.plugins.ktlint)
 }
 
 ktlint {
@@ -44,6 +46,7 @@ ktlint {
 android {
     namespace = "com.github.zly2006.zhihu"
     compileSdk = 37
+    sourceSets.getByName("main").assets.srcDir(File(rootProject.extensions.extraProperties["zhihuUpstreamInputs"] as String, "assets"))
 
     defaultConfig {
         applicationId = "com.github.zly2006.zhplus"
@@ -66,7 +69,6 @@ android {
             isDefault = true
             buildConfigField("boolean", "IS_LITE", "true")
             applicationIdSuffix = ".lite"
-//            versionNameSuffix = "-lite"
         }
     }
 
@@ -153,14 +155,12 @@ android {
             excludes +=
                 listOf(
                     "META-INF/DEPENDENCIES",
-//                    "META-INF/*.version",
                     "META-INF/**/LICENSE",
                     "META-INF/**/LICENSE.txt",
                     "META-INF/proguard/*",
                     "**.kotlin_module",
                     "kotlin-tooling-metadata.json",
                     "DebugProbesKt.bin",
-//                    "META-INF/*.kotlin_module",
                 )
         }
     }
@@ -181,8 +181,8 @@ android {
     }
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    compilerOptions.freeCompilerArgs.add("-Xdebug")
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.contains("Debug")) compilerOptions.freeCompilerArgs.add("-Xdebug")
 }
 
 tasks.withType<Test>().configureEach {
@@ -193,89 +193,97 @@ tasks.withType<Test>().configureEach {
     )
 }
 
-val ktor = "3.5.0"
-val coil = "3.5.0"
-val aboutLibraries = "15.0.0"
-val composeVersion = "1.11.1"
-val jetbrainsLifecycleVersion = "2.10.0"
-val androidxLifecycleVersion = "2.11.0"
-
-// Force material3 to 1.10.0-alpha05，与 shared 模块保持一致。
-// 根因：shared 模块 commonMain 通过 material-kolor 的 strictly 约束解析到 1.10.0-alpha05，
-// 但平台配置和本模块如果没有 force，会各自解析到不同版本（1.9.0 或 1.11.0-alpha07），
-// 导致运行时类冲突或编译时 internal API 不可见。
-configurations.configureEach {
-    resolutionStrategy {
-        force("org.jetbrains.compose.material3:material3:1.10.0-alpha05")
-    }
-}
-
 dependencies {
     implementation(project(":shared"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    implementation("io.ktor:ktor-client-core-jvm:$ktor")
-    implementation("io.ktor:ktor-client-android:$ktor")
-    implementation("io.ktor:ktor-client-content-negotiation-jvm:$ktor")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor")
-    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
-    implementation("androidx.browser:browser:1.10.0")
+    implementation(project(":shared-core"))
+    implementation(project(":shared-domain"))
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.ktor.client.core.jvm)
+    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.content.negotiation.jvm)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.kotlinx.datetime)
+    implementation(libs.androidx.browser)
 
-    implementation("me.zly2006.markdown:markdown-renderer:${property("markdown.version")}")
+    implementation(libs.markdown.renderer)
 
-    implementation("io.coil-kt.coil3:coil-compose:$coil")
-    implementation("io.coil-kt.coil3:coil-network-ktor3-android:$coil")
-    implementation("io.coil-kt.coil3:coil-gif:$coil")
-    // implementation("io.coil-kt.coil3:coil-svg:$coil")
-    implementation("me.saket.telephoto:zoomable-image-coil3:0.19.0")
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.ktor3.android)
+    implementation(libs.coil.gif)
+    implementation(libs.telephoto.zoomable.image.coil3)
 
-    implementation("com.materialkolor:material-kolor:4.1.1")
+    implementation(libs.materialkolor)
 
-    implementation("org.jsoup:jsoup:1.22.2")
+    implementation(libs.jsoup)
 
-    // ZXing for QR code scanning
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation(libs.zxing.android.embedded)
 
-    implementation("androidx.core:core-ktx:1.19.0")
-    // Lifecycle (JetBrains KMP versions)
-    implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:$jetbrainsLifecycleVersion")
-    implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:$jetbrainsLifecycleVersion")
-    // LiveData is Android-specific, keep androidx
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$androidxLifecycleVersion")
-    // Navigation (JetBrains KMP version)
-    //noinspection GradleDependency
-    implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.2")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.jetbrains.lifecycle.runtime.compose)
+    implementation(libs.jetbrains.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.livedata.ktx)
 
-    implementation("androidx.webkit:webkit:1.16.0")
-    implementation("androidx.activity:activity-compose:1.13.0")
-    // Compose (core from JetBrains KMP)
-    implementation("org.jetbrains.compose.runtime:runtime:$composeVersion")
-    implementation("org.jetbrains.compose.foundation:foundation:$composeVersion")
-    implementation("org.jetbrains.compose.material3:material3:1.10.0-alpha05")
-    implementation("org.jetbrains.compose.ui:ui:$composeVersion")
-    implementation("org.jetbrains.compose.ui:ui-graphics:$composeVersion")
-    implementation("org.jetbrains.compose.animation:animation:$composeVersion")
-    implementation("org.jetbrains.compose.animation:animation-core:$composeVersion")
-    implementation("org.jetbrains.compose.components:components-resources-android:$composeVersion")
-    // Compose (AndroidX — icons, tooling, test not available from JetBrains yet)
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("com.mikepenz:aboutlibraries-compose-m3:$aboutLibraries")
+    implementation(libs.androidx.webkit)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.jb.compose.runtime)
+    implementation(libs.jb.compose.foundation)
+    implementation(libs.material3)
+    implementation(libs.jb.compose.ui)
+    implementation(libs.jb.compose.ui.graphics)
+    implementation(libs.jb.compose.animation)
+    implementation(libs.jb.compose.animation.core)
+    implementation(libs.jb.compose.components.resources.android)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.material.icons.extended)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.aboutlibraries.compose.m3)
     "fullImplementation"(project(":sentence_embeddings"))
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
 
-    // HanLP for Chinese NLP
-    "fullImplementation"("com.hankcs:hanlp:portable-1.8.6")
+    "fullImplementation"(libs.hanlp)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("io.ktor:ktor-client-cio:$ktor")
-    testImplementation("io.ktor:ktor-client-content-negotiation:$ktor")
-    testImplementation("io.ktor:ktor-serialization-kotlinx-json:$ktor")
+    testImplementation(libs.junit4)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.ktor.client.cio)
+    testImplementation(libs.ktor.client.content.negotiation)
+    testImplementation(libs.ktor.serialization.kotlinx.json)
     //noinspection GradleDependency
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("io.ktor:ktor-client-mock:$ktor")
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.ktor.client.mock)
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val flavor = variant.productFlavors.single { it.first == "version" }.second
+        val capitalizedName = variant.name.replaceFirstChar(Char::uppercaseChar)
+        val runtimeResolution = variant.runtimeConfiguration.incoming.resolutionResult
+        val verify =
+            tasks.register<VerifyThemeDependencies>("verify${capitalizedName}ThemeDependencies") {
+                group = "verification"
+                description = "Checks ${variant.name} resolved theme dependencies."
+                resolvedModules.set(
+                    providers.provider {
+                        runtimeResolution.allComponents
+                            .mapNotNull { component ->
+                                (component.id as? ModuleComponentIdentifier)?.let {
+                                    "${it.group}:${it.module}:${it.version}"
+                                }
+                            }.distinct()
+                            .sorted()
+                    },
+                )
+                requireMiuixTheme.set(flavor == "full")
+            }
+        variant.lifecycleTasks.registerPreBuild(verify)
+        val aggregate = "verify${flavor.replaceFirstChar(Char::uppercaseChar)}ThemeDependencies"
+        if (tasks.findByName(aggregate) == null) {
+            tasks.register(aggregate) { group = "verification" }
+        }
+        tasks.named(aggregate) { dependsOn(verify) }
+    }
 }

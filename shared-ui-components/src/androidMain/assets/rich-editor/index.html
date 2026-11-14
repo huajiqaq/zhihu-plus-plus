@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src https: data:; font-src 'none'; connect-src 'none'; frame-src 'none'">
+<link rel="stylesheet" href="quill.snow.css">
+<style>
+:root {
+  color-scheme: light dark;
+  --foreground: #18232d;
+  --background: #fff;
+  --muted: #66737c;
+  --editor-surface: color-mix(in srgb, var(--background) 94%, var(--foreground));
+  --editor-outline: color-mix(in srgb, var(--background) 72%, var(--foreground));
+  --editor-accent: color-mix(in srgb, var(--foreground) 86%, var(--muted));
+  --editor-shadow: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 17px/1.6 sans-serif; color: var(--foreground); background: var(--background); }
+#toolbar { position: sticky; top: 0; z-index: 2; background: var(--background); border: 0; border-bottom: 1px solid var(--editor-outline); }
+.ql-container { border: 0 !important; font: inherit; min-height: calc(100vh - 96px); }
+.ql-editor { min-height: calc(100vh - 96px); padding: 16px 4px 260px; }
+.ql-editor img { max-width: 100%; height: auto; }
+.ql-snow .ql-stroke, .ql-snow .ql-stroke-miter { stroke: var(--foreground); }
+.ql-snow .ql-fill, .ql-snow .ql-stroke.ql-fill { fill: var(--foreground); }
+.ql-snow .ql-picker, .ql-snow.ql-toolbar button { color: var(--foreground); }
+.ql-snow.ql-toolbar :is(button, .ql-picker-label, .ql-picker-item):is(:hover, :focus, .ql-active, .ql-selected),
+.ql-snow .ql-picker.ql-expanded .ql-picker-label { color: var(--editor-accent); }
+.ql-snow.ql-toolbar :is(button, .ql-picker-label, .ql-picker-item):is(:hover, :focus, .ql-active, .ql-selected) :is(.ql-stroke, .ql-stroke-miter),
+.ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-stroke { stroke: var(--editor-accent); }
+.ql-snow.ql-toolbar :is(button, .ql-picker-label, .ql-picker-item):is(:hover, :focus, .ql-active, .ql-selected) .ql-fill,
+.ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-fill { fill: var(--editor-accent); }
+.ql-snow.ql-toolbar :is(button, .ql-picker-label, .ql-picker-item):focus-visible { outline: 2px solid var(--editor-accent); outline-offset: 2px; }
+/* Quill 2 触屏 hover 规则带 button 标签，特异性高于上面的 :is；必须用同一 selector 覆盖固定 #444。 */
+@media (pointer: coarse) {
+  .ql-snow.ql-toolbar button:hover:not(.ql-active) { color: var(--editor-accent); }
+  .ql-snow.ql-toolbar button:hover:not(.ql-active) :is(.ql-stroke, .ql-stroke-miter) { stroke: currentColor; }
+  .ql-snow.ql-toolbar button:hover:not(.ql-active) :is(.ql-fill, .ql-stroke.ql-fill) { fill: currentColor; }
+}
+.ql-snow .ql-picker-options, .ql-snow .ql-tooltip {
+  background: var(--editor-surface);
+  color: var(--foreground);
+  border-color: var(--editor-outline);
+  box-shadow: 0 2px 8px var(--editor-shadow);
+}
+.ql-snow .ql-picker-options { max-height: min(50dvh, 20rem); overflow-y: auto; }
+.ql-snow.ql-toolbar .ql-picker.ql-expanded :is(.ql-picker-label, .ql-picker-options) { border-color: var(--editor-outline); }
+.ql-snow .ql-tooltip { max-width: calc(100vw - 8px); white-space: normal; overflow-wrap: anywhere; }
+.ql-snow .ql-tooltip input[type=text] {
+  max-width: 100%;
+  color: var(--foreground);
+  background: var(--background);
+  border-color: var(--editor-outline);
+  caret-color: var(--editor-accent);
+}
+.ql-snow .ql-tooltip a { color: var(--editor-accent); }
+.ql-snow .ql-tooltip a.ql-action::after { border-color: var(--editor-outline); }
+.ql-snow .ql-editor blockquote { border-color: var(--editor-outline); }
+/* 只替换编辑器默认底色与默认链接色，作者的内联样式和 Quill 颜色格式优先。 */
+.ql-snow .ql-editor :is(code, .ql-code-block-container):where(:not([style*="background"]):not([class*="ql-bg-"])) { background: var(--editor-surface); }
+.ql-snow .ql-editor .ql-code-block-container:where(:not([style*="color"]):not([class*="ql-color-"])) { color: var(--foreground); }
+.ql-snow .ql-editor a:where(:not([style*="color"]):not([class*="ql-color-"])) { color: var(--editor-accent); }
+.ql-editor.ql-blank::before { color: var(--muted); font-style: normal; }
+#toolbar .ql-formats { display: inline-flex; align-items: center; vertical-align: middle; }
+#toolbar button { display: flex; align-items: center; justify-content: center; float: none; line-height: 1; }
+#toolbar button svg { float: none; width: 18px; height: 18px; flex-shrink: 0; }
+#toolbar .ql-picker-label { display: flex; align-items: center; }
+.history { min-width: 32px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <span class="ql-formats"><button type="button" id="undo" class="history" aria-label="撤销"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="M6 3 2 7l4 4M2 7h8a4 4 0 0 1 0 8" fill="none"/></svg></button><button type="button" id="redo" class="history" aria-label="重做"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="m12 3 4 4-4 4M16 7H8a4 4 0 0 0 0 8" fill="none"/></svg></button></span>
+  <span class="ql-formats"><select class="ql-header" aria-label="标题级别"><option selected>正文</option><option value="1">标题一</option><option value="2">标题二</option><option value="3">标题三</option><option value="4">标题四</option></select></span>
+  <span class="ql-formats"><button class="ql-bold" aria-label="加粗"></button><button class="ql-italic" aria-label="斜体"></button><button class="ql-underline" aria-label="下划线"></button></span>
+  <span class="ql-formats"><button class="ql-list" value="ordered" aria-label="有序列表"></button><button class="ql-list" value="bullet" aria-label="无序列表"></button><button class="ql-blockquote" aria-label="引用"></button></span>
+  <span class="ql-formats"><button class="ql-code" aria-label="行内代码"></button><button class="ql-code-block" aria-label="代码块"></button><button class="ql-link" aria-label="插入链接"></button><button class="ql-clean" aria-label="清除格式"></button></span>
+</div>
+<div id="editor"></div>
+<script src="quill.js"></script>
+<script>
+'use strict';
+const QuillImage = Quill.import('formats/image');
+class EditorImage extends QuillImage {
+  static create(value) {
+    const node = super.create(typeof value === 'string' ? value : value.url);
+    if (typeof value === 'object') {
+      node.setAttribute('data-rawwidth', value.width);
+      node.setAttribute('data-rawheight', value.height);
+    }
+    return node;
+  }
+  static formats(node) {
+    const formats = super.formats(node);
+    for (const name of ['data-rawwidth', 'data-rawheight', 'data-watermark', 'data-watermark-src', 'data-original', 'data-original-src']) {
+      if (node.hasAttribute(name)) formats[name] = node.getAttribute(name);
+    }
+    return formats;
+  }
+  format(name, value) {
+    if (name.startsWith('data-')) {
+      if (value) this.domNode.setAttribute(name, value);
+      else this.domNode.removeAttribute(name);
+    } else super.format(name, value);
+  }
+}
+Quill.register(EditorImage, true);
+const quill = new Quill('#editor', {
+  theme: 'snow',
+  modules: { toolbar: '#toolbar', history: { delay: 500, maxStack: 100, userOnly: true } },
+  placeholder: '开始写作……'
+});
+let lastSelection = { index: 0, length: 0 };
+const toolbarLabels = { bold: '加粗', italic: '斜体', underline: '下划线', blockquote: '引用', code: '行内代码', 'code-block': '代码块', link: '插入链接', clean: '清除格式' };
+for (const [format, label] of Object.entries(toolbarLabels)) {
+  const button = document.querySelector(`button.ql-${format}`);
+  if (button) { button.setAttribute('aria-label', label); button.title = label; }
+}
+for (const button of document.querySelectorAll('button.ql-list')) button.setAttribute('aria-label', button.value === 'ordered' ? '有序列表' : '无序列表');
+let lastTop = 0;
+function publish() {
+  if (window.EditorBridge) EditorBridge.contentChanged(quill.getSemanticHTML(), quill.getText());
+}
+quill.on('text-change', publish);
+quill.on('selection-change', range => { if (range) lastSelection = range; });
+document.getElementById('undo').onclick = () => { quill.history.undo(); publish(); };
+document.getElementById('redo').onclick = () => { quill.history.redo(); publish(); };
+window.editorLoad = function(html) {
+  quill.setContents(quill.clipboard.convert({ html: html || '<p><br></p>' }), 'silent');
+  quill.history.clear();
+  publish();
+};
+window.editorImage = function(url, width, height) {
+  const index = Math.min(lastSelection.index, quill.getLength() - 1);
+  quill.deleteText(index, lastSelection.length, 'user');
+  quill.insertEmbed(index, 'image', { url, width, height }, 'user');
+  quill.insertText(index + 1, '\n', 'user');
+  quill.setSelection(Math.min(index + 2, quill.getLength() - 1), 0, 'silent');
+  publish();
+};
+window.editorConfigure = function(enabled, placeholder, foreground, background, muted) {
+  quill.enable(enabled);
+  quill.root.setAttribute('data-placeholder', placeholder);
+  quill.root.setAttribute('aria-label', placeholder);
+  document.documentElement.style.setProperty('--foreground', foreground);
+  document.documentElement.style.setProperty('--background', background);
+  document.documentElement.style.setProperty('--muted', muted);
+};
+window.addEventListener('scroll', () => {
+  const top = window.scrollY;
+  if (window.EditorBridge) EditorBridge.scrolled(lastTop - top);
+  lastTop = top;
+});
+if (window.EditorBridge) EditorBridge.ready();
+</script>
+</body>
+</html>

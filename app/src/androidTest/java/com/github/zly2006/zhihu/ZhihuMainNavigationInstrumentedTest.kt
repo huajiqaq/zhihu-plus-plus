@@ -22,7 +22,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,12 +56,12 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
+import androidx.room.useReaderConnection
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
 import com.github.zly2006.zhihu.filter.ContentOpenFrom
 import com.github.zly2006.zhihu.navigation.Account
+import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Daily
@@ -74,6 +73,7 @@ import com.github.zly2006.zhihu.navigation.MyCollections
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.Video
+import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.reading.AndroidReadingPlayerBridge
 import com.github.zly2006.zhihu.reading.ReadingContentType
 import com.github.zly2006.zhihu.reading.ReadingPlaybackStatus
@@ -84,7 +84,6 @@ import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setZhihuMainContent
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
-import com.github.zly2006.zhihu.ui.AndroidArticleNavigationHandoff
 import com.github.zly2006.zhihu.ui.AndroidZhihuMain
 import com.github.zly2006.zhihu.ui.FOLLOW_SCREEN_PAGER_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
@@ -94,16 +93,19 @@ import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnCommand
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.READING_QUEUE_SHEET_TAG
-import com.github.zly2006.zhihu.ui.rememberAndroidZhihuMainPreferenceState
+import com.github.zly2006.zhihu.ui.rememberZhihuMainPreferenceState
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
+import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog as AlertDialog
 
 @RunWith(AndroidJUnit4::class)
 class ZhihuMainNavigationInstrumentedTest {
@@ -188,7 +190,16 @@ class ZhihuMainNavigationInstrumentedTest {
         var openFrom: String? = null
         composeRule.runOnIdle {
             composeRule.activity.navigate(article)
-            openFrom = AndroidArticleNavigationHandoff.consumeContentOpenFrom(article)
+            openFrom = runBlocking {
+                val database = getContentFilterDatabase()
+                ContentOpenEventSupport.recordOpenEvent(database, article)
+                database.useReaderConnection { connection ->
+                    connection.usePrepared("SELECT openFrom FROM content_open_events WHERE contentType = 'answer' AND contentId = '318' ORDER BY id DESC LIMIT 1") { statement ->
+                        check(statement.step())
+                        statement.getText(0)
+                    }
+                }
+            }
         }
 
         assertEquals(ContentOpenFrom.HOME_FEED, openFrom)
@@ -376,7 +387,7 @@ class ZhihuMainNavigationInstrumentedTest {
     fun detailVideoUsesArticleController() {
         var videoSource: Article? = null
         composeRule.launchZhihuMainWithFakeArticle(width = { 1000.dp }, onVideo = { controller ->
-            videoSource = runCatching { controller.currentBackStackEntry?.toRoute<Article>() }.getOrNull()
+            videoSource = controller.top as? Article
         })
         val article = Article(type = ArticleType.Answer, id = 318L)
         composeRule.runOnIdle { composeRule.activity.navigate(article) }
@@ -489,8 +500,10 @@ class ZhihuMainNavigationInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.activity.setContent {
             ZhihuTheme {
+                val navHost = rememberAppNavHost(MainTabs)
+                LaunchedEffect(navHost) { composeRule.activity.navHost = navHost }
                 CompositionLocalProvider(LocalPageTurnDispatcher provides dispatcher) {
-                    AndroidZhihuMain(navController = rememberNavController())
+                    AndroidZhihuMain(navHost = navHost)
                 }
             }
         }
@@ -529,7 +542,7 @@ class ZhihuMainNavigationInstrumentedTest {
 
     private fun MainActivityComposeRule.launchZhihuMainWithFakeArticle(
         width: (() -> Dp)? = null,
-        onVideo: ((NavHostController) -> Unit)? = null,
+        onVideo: ((AppNavHost) -> Unit)? = null,
     ) {
         activity.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE).edit(commit = true) {
             putString(START_DESTINATION_PREFERENCE_KEY, Home.name)
@@ -543,26 +556,26 @@ class ZhihuMainNavigationInstrumentedTest {
         waitForIdle()
         activity.setContent {
             ZhihuTheme {
-                val navController = rememberNavController()
-                LaunchedEffect(navController) {
-                    activity.navController = navController
+                val navHost = rememberAppNavHost(MainTabs)
+                LaunchedEffect(navHost) {
+                    activity.navHost = navHost
                 }
                 ZhihuMain(
                     modifier = width?.let { Modifier.requiredSize(it(), 600.dp) } ?: Modifier,
-                    navController = navController,
+                    navHost = navHost,
                     mainTabNavigationTarget = activity.mainTabNavigationTarget,
                     navigate = { destination ->
-                        if (destination is Video && onVideo != null) onVideo(navController) else activity.navigate(destination)
+                        if (destination is Video && onVideo != null) onVideo(navHost) else activity.navigate(destination)
                     },
                     navigateContent = { destination, controller ->
-                        if (destination is Video && onVideo != null) onVideo(controller) else activity.navigateIn(destination, controller)
+                        if (destination is Video && onVideo != null) onVideo(controller) else activity.navigate(destination, controller)
                     },
                     enableLandscapeListDetail = true,
                     setCurrentMainTabOpenFrom = activity::setCurrentMainTabOpenFrom,
                     consumeMainTabNavigationTarget = activity::consumeMainTabNavigationTarget,
-                    preferenceState = rememberAndroidZhihuMainPreferenceState(),
+                    preferenceState = rememberZhihuMainPreferenceState(),
                     isDarkTheme = ThemeManager.isDarkTheme,
-                    articleContent = { _, _ ->
+                    articleContent = { _ ->
                         val navigator = LocalNavigator.current
                         var expanded by rememberSaveable { mutableStateOf(false) }
                         var dialogVisible by rememberSaveable { mutableStateOf(false) }

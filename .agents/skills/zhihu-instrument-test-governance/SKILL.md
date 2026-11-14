@@ -1,155 +1,42 @@
 ---
 name: zhihu-instrument-test-governance
-description: Audit, add, migrate, or remove Zhihu++ Android instrument tests under app/src/androidTest. Use for instrument-test cleanup, flaky device-test reduction, regression-test provenance, deciding whether a UI test belongs on an emulator, or reviewing a PR that changes permanent Android instrument coverage.
+description: 审查、精简或迁移 Zhihu++ Android instrument 测试。用于测试重复、一次性截图/取证、设备测试过慢、测试价值审查及 PR 测试范围控制；只保留有独立长期价值且确需设备的行为契约。
 ---
 
-# Zhihu++ Instrument Test Governance
+# Instrument Test Governance
 
-## 回归与数据边界
+把设备时间和测试维护视为成本。目标是保住用户行为、数据、安全和平台集成，不是提高测试数量或为每次修复新增文件。
 
-新增回归用例前必须在基线得到可复现失败，再在修复版本用同一用例验证通过。不得为注入时间或伪造后端数据新增一次性生产 helper；线上数据变更必须走真实服务端写入与读回，不能用 seed 冒充。
+## 判断价值
 
-Treat emulator time as a recurring maintenance cost. Keep it only where a real product contract or historical regression needs Android, Compose, window, lifecycle, accessibility, or device integration to prove the behavior.
+每个候选只回答：保护什么长期行为；为何现有覆盖不够；为何必须 Android 执行。
 
-## Non-negotiable Rules
+- **保留**：设备相关的窗口、生命周期、系统栏、输入/手势、保存恢复、可访问性、服务集成，或曾被便宜测试漏掉的真实问题。
+- **合并**：同一契约与路径重复。保留较强覆盖，不把无关问题塞成巨大测试来减少数字。
+- **迁移**：有价值但不依赖设备的解析、URL/请求构造、纯状态转换，放到已有 common/JVM 用例，不重建夹具。
+- **删除**：仅截图文件/非空/前缀/常量、重述实现、临时确认某次修复、只测夹具或已被更强行为测试完全覆盖的用例。
+- **待核对**：历史或等价性不清先留，不按名称或运行慢删除，也不把待核对算成已审完。
 
-1. Never delete a test that protects a bug which actually occurred.
-2. Every retained `@Test` must have verified issue and fixing/introducing PR links next to it. Never invent provenance.
-3. Keep test cleanup out of feature and bug-fix PRs. Use a dedicated branch, worktree, commit, and PR.
-4. Do not add a permanent instrument test merely to confirm a low-risk visual choice once. Build the APK and capture a real before/after screenshot instead.
-   A temporary instrument test may capture a screenshot for review. After retrieving the image, restore the test source to its original state before committing or submitting a PR. Permanent tests may capture pixels in memory only when those pixels support a meaningful visual assertion; do not retain screenshot file output or a screenshot-only assertion.
-5. Do not run the complete instrument suite locally unless the user explicitly asks. Prefer compilation, the smallest relevant test, or GitHub CI.
-6. Flakiness, runtime, or inconvenience never justify deleting a proven regression test. Repair its synchronization, fixture, or execution boundary.
-7. A test must assert user-observable behavior or a proven regression, not copy an implementation constant list into assertions. Delete tests that only restate the current source shape without an independent contract; validate the behavior through real interaction, build, or focused regression evidence instead.
-8. Every retained regression test must be red against the pre-fix implementation. Temporarily restore the old behavior (or run the test against the parent revision) and record the failing assertion before accepting the test.
-9. Every retained test must document both the related issue and the fixing or introducing PR with full URLs in its provenance KDoc.
-10. Every retained test must state the target state, what it verifies, and why the assertion protects that behavior; a bare test name or implementation-detail assertion is insufficient.
-11. Before stopping, execute every changed regression test against both the pre-fix implementation (must fail) and the fixed implementation (must pass). Record the exact red/green evidence; compilation alone is not sufficient.
-12. Every PR that adds or changes tests must state in its body, per test, whether red-to-green verification was completed, including the commands and terminal results or an explicit blocker.
+真实回归可以被更强等价覆盖合并；不能为了少测丢掉保护。慢或 flaky 不是充分删除理由。
 
-Read [references/provenance-and-decisions.md](references/provenance-and-decisions.md) before changing tests.
+## 工作方式
 
-## Required Provenance Block
+1. 用文件/测试清单覆盖全范围，再深入有具体证据的候选。不为形式逐文件全文读取、联网寻找所有链接或启动全套测试。
+2. 修改/删除前阅读目标并保护脏工作树。清理与产品改动分清范围，只记录本次必要的取舍，不整体 reset/stage。
+3. 来源可以是真实 issue/PR、提交、协议样本或明确产品契约。不强制每个测试同时有 issue 和 PR URL，不伪造链接或创建追溯事项。
+4. 复用已有行为断言，不为 helper、边角输入或每个平台复制测试；不要求生产代码增加一次性注入层。
+5. 临时 instrument 截图取证完成后移除源码与输出；仅有独立长期行为价值的像素断言才常驻，并在内存验证。
 
-Place a KDoc block immediately above the annotations for every permanent test:
+## 按比例验证
 
-```kotlin
-/**
- * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/123
- * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/456
- */
-@Test
-fun restoredBehaviorStaysStable() = Unit
-```
+- 默认不跑全量 instrument；确实依赖设备行为时只执行最小相关用例。
+- 删除完全冗余测试用差异审查/必要编译验收，不为删除重跑所有被删用例。
+- 真实回归缺乏证据且成本合理时做一次红→绿；复用已有结果，不对所有保留测试反复恢复基线、重建多变体。
+- 未完成的网络、设备、CI 或编译检查如实标注，不把截图非空、跳过或脚本退出当通过。
+- 用户明确减少验证时遵守预算，不为 skill 流程扩大执行。
 
-For a feature contract rather than a reported regression, use:
+## PR 检查
 
-```kotlin
-/**
- * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/123
- * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/456
- */
-@Test
-fun featureContractStaysStable() = Unit
-```
+说明变更测试的长期契约、重复/替代覆盖与实际结果即可。不要提交 Temp 测试、取证输出、纯前缀/非空断言、实现镜像或无必要的防御矩阵。已有覆盖足够时可以不新增测试。
 
-Both URLs are required. A commit hash, branch name, issue number without a URL, current cleanup PR, or a guessed related report is not historical provenance.
-
-An introducing PR without an issue is not enough. A smoke test has no exemption. If no verified pair exists, record the test as `UNVERIFIED` in the audit. Do not add a fake block merely to make a checker pass, and do not create a retrospective issue solely to legalize an existing test.
-
-## Workflow
-
-### 1. Establish an isolated cleanup surface
-
-- Fetch the intended base and create a dedicated worktree from it.
-- Record the base SHA.
-- Inventory staged, unstaged, and untracked files before editing.
-- Do not touch a feature worktree or a dirty main checkout.
-- Never set or change `GRADLE_USER_HOME`.
-- Never run `gradle --stop` or `./gradlew --stop`.
-- If a task-owned Gradle process must be stopped, first prove the exact PID, cwd, and command belong to this worktree; terminate only that process.
-
-### 2. Build a per-test audit
-
-Inventory every `@Test` under `app/src/androidTest`. For each test record:
-
-- file and test name;
-- verified issue URL;
-- verified fixing or introducing PR URL;
-- classification: `REGRESSION`, `CONTRACT`, `SMOKE`, or `UNVERIFIED`;
-- why an Android device is necessary;
-- overlapping cheaper coverage;
-- decision: keep, migrate, consolidate, or delete;
-- evidence for that decision.
-
-Use git history as the starting point, then read the linked issue and PR. Search by the test name, nearby production symbols, commit SHA, and user-visible behavior. A filename containing an issue number is a clue, not proof.
-
-### 3. Apply the deletion gate
-
-Use this order for every test:
-
-1. If it covers a real historical bug, keep it. Consolidation is allowed only when another retained test proves the same regression at least as strongly and carries the same provenance.
-2. If it protects a current product contract, keep it only when the assertion genuinely needs Android/device behavior.
-3. If the contract is valuable but device execution is unnecessary, migrate the coverage to the cheapest appropriate JVM/common test before removing the instrument version.
-4. If it only captures a one-time visual preference, implementation detail, duplicate fixture plumbing, or behavior already proven more strongly elsewhere, remove it.
-5. If provenance or equivalence is uncertain, keep it pending more evidence. Uncertainty is not permission to delete.
-
-`SMOKE` is an audit classification, not an exemption. A smoke test can remain permanent only when a verified issue and PR document why that device-level signal matters. A pure reducer, mapping, or list transform cannot be retained by renaming it a smoke test.
-
-### 4. Review test quality without weakening coverage
-
-For retained tests:
-
-- add the verified provenance block;
-- assert user-observable behavior, not only internal state or that composition did not crash;
-- replace fixed sleeps with semantics, idling, clock control, or explicit state waits;
-- keep fixtures deterministic and local when the behavior does not require the network;
-- split unrelated behaviors so a failure identifies one contract;
-- remove duplicate setup only when the remaining support object carries a real shared contract.
-
-Do not create helper layers that merely rename a single Compose assertion or navigation call.
-
-If a proven regression remains flaky after a scoped repair attempt, keep its code and provenance. Temporary isolation is allowed only with a new follow-up issue that records the failure mode, owner, restoration condition, and affected CI lane; never silently disable it or delete it to make checks green.
-
-### 5. Validate proportionally
-
-After edits:
-
-1. Run the provenance audit command from the reference.
-2. Run `git diff --check`.
-3. Run formatting.
-4. Compile the affected androidTest source set if the project exposes a suitable task.
-5. Run only targeted instrument tests when device-specific behavior or a changed fixture needs execution.
-6. Let GitHub CI run the complete suite and follow it to a terminal result when CI is the acceptance boundary.
-
-Do not describe an in-progress check as green or a compiled test as behaviorally executed.
-
-Removing or migrating the test that emitted the visible ANR/error does not by itself fix a stalled shard. Inspect the shard's last `START`/`PASS`, active workflow step, and runner/process teardown state to distinguish a test-body hang from Activity focus cleanup or runner-shell deadlock, then require the replacement run to reach a terminal result.
-
-When a regression contract does not depend on Android framework or device behavior, migrate it to the cheapest common/JVM layer and remove the redundant instrument test. Preserve historical device regressions unless equivalent coverage is demonstrated; never delete them merely to make the shard terminate.
-
-### 6. Publish an auditable cleanup PR
-
-The Chinese PR body must include:
-
-- base SHA and the exact instrument-test inventory before/after;
-- a keep/migrate/consolidate/delete count;
-- every deleted test and why it passed the deletion gate;
-- the issue/PR pair and classification for every retained test;
-- confirmation that no historical regression coverage was deleted;
-- the validation actually completed and checks still running;
-- a note that the PR contains no product behavior change.
-
-Read the PR back after creation and verify title/body language, head/base, diff scope, and mergeability.
-
-## Stop Conditions
-
-Stop deletion and gather more evidence when:
-
-- an issue or PR link cannot be verified;
-- a test name suggests a regression but history is unclear;
-- cheaper coverage looks similar but does not assert the same user-visible outcome;
-- removing a fixture would silently reduce several retained tests;
-- the only reason to delete is suite duration or flakiness.
-
-When blocked, keep the test and document the unresolved provenance. Conservative retention is cheaper than silently reintroducing a known bug.
+清理不自动授权 push/创建 PR。分类记录见 `references/provenance-and-decisions.md`。

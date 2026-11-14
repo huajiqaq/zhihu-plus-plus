@@ -31,9 +31,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.core.content.edit
-import androidx.navigation.NavHostController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.navigation.Account
+import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Home
@@ -150,10 +150,10 @@ class ReadingPlayerUiInstrumentedTest {
      */
     @Test
     fun leavingDetailCompactsTheExpandedPlayer() {
-        lateinit var navController: NavHostController
-        composeRule.setZhihuMainContent { navController = it }
+        lateinit var navHost: AppNavHost
+        composeRule.setZhihuMainContent { navHost = it }
         composeRule.runOnIdle {
-            navController.navigate(Article(type = ArticleType.Answer, id = 987654L))
+            navHost.open(Article(type = ArticleType.Answer, id = 987654L))
         }
 
         composeRule.waitForTag(READING_PLAYER_BAR_TAG)
@@ -171,10 +171,10 @@ class ReadingPlayerUiInstrumentedTest {
      */
     @Test
     fun changingThePlayingItemReplacesTheVisibleReadingDetail() {
-        lateinit var navController: NavHostController
-        composeRule.setZhihuMainContent { navController = it }
+        lateinit var navHost: AppNavHost
+        composeRule.setZhihuMainContent { navHost = it }
         composeRule.runOnIdle {
-            navController.navigate(Article(type = ArticleType.Answer, id = PLAYER_STATE.queue.first().id))
+            navHost.open(Article(type = ArticleType.Answer, id = PLAYER_STATE.queue.first().id))
         }
         composeRule.waitForTag(READING_PLAYER_BAR_TAG)
 
@@ -263,7 +263,7 @@ class ReadingPlayerUiInstrumentedTest {
         composeRule.onNodeWithTag(READING_QUEUE_SHEET_TAG).assertDoesNotExist()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.activity.history.history
-                .firstOrNull() == Account.ReadingSettings
+                .firstOrNull() == Account.ReadingPlaybackSettings()
         }
         composeRule.waitForTag(READING_PLAYER_COMPACT_TAG)
     }

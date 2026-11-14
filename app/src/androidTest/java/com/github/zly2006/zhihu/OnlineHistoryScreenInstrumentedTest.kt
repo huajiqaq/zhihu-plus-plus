@@ -17,36 +17,39 @@
 
 package com.github.zly2006.zhihu
 
+import android.content.Context
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.github.zly2006.zhihu.account.ZhihuAccountClient
-import com.github.zly2006.zhihu.account.ZhihuRequestProfile
-import com.github.zly2006.zhihu.data.FeedDisplayItem
-import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.data.HistoryType
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.RecordingNavigator
+import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.LEGACY_LOCAL_HISTORY_BACK_BUTTON_TAG
+import com.github.zly2006.zhihu.ui.LegacyLocalHistoryScreen
 import com.github.zly2006.zhihu.ui.OnlineHistoryScreen
-import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
+import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
+import com.github.zly2006.zhihu.ui.components.HISTORY_DELETE_SELECTED_TAG
+import com.github.zly2006.zhihu.ui.components.HISTORY_SELECT_ALL_TAG
+import com.github.zly2006.zhihu.ui.components.HISTORY_SELECT_TOGGLE_TAG
 import com.github.zly2006.zhihu.viewmodel.feed.OnlineHistoryViewModel
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.TextContent
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -62,7 +65,9 @@ class OnlineHistoryScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
+        composeRule.resetAppPreferences(forceMock = true)
+        ZhihuMockApi.mockJson(HttpMethod.Get, "https://api.zhihu.com/read_history/total", "{\"disabled\":false}")
+        ZhihuMockApi.mockJson(HttpMethod.Post, "https://api.zhihu.com/read_history/batch_del", "{}")
         clearDisplayItems()
     }
 
@@ -71,121 +76,93 @@ class OnlineHistoryScreenInstrumentedTest {
         clearDisplayItems()
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/562
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/604
-     */
     @Test
     fun historyItemOverflowOffersSingleDeleteAction() {
         setOnlineHistoryScreen()
 
-        // The toolbar is the first "更多选项" node; the next one belongs to the first visible
-        // history card. Single-record deletion lives in that existing card menu rather than the
-        // global toolbar menu.
+        // 第一个“更多选项”属于顶栏，第二个才是可见历史项的菜单。
         composeRule.onAllNodesWithContentDescription("更多选项")[1].performClick()
-        composeRule.onNodeWithText("删除该条历史记录").assertIsDisplayed()
+        composeRule.onNodeWithText("删除此条浏览记录").assertIsDisplayed()
+        composeRule.onNodeWithText("删除此条浏览记录").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { onlineHistoryViewModel.displayItems.size == 23 }
+        composeRule.onNodeWithText(seedTitle(1)).assertDoesNotExist()
+        composeRule.onNodeWithText(seedTitle(2)).assertIsDisplayed()
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/562
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/604
-     */
     @Test
-    fun singleDeletePostsDecodedPairAndRemovesRowAfterSuccess() {
-        val client = HttpClient(
-            MockEngine { request ->
-                assertEquals(HttpMethod.Post, request.method)
-                assertEquals("https://api.zhihu.com/read_history/batch_del", request.url.toString())
-                assertEquals(
-                    Json.parseToJsonElement(
-                        """{"pairs":[{"content_token":"123","content_type":"answer"}],"clear":false}""",
-                    ),
-                    Json.parseToJsonElement((request.body as TextContent).text),
-                )
-                respond("", HttpStatusCode.OK)
-            },
-        )
-        val response = ZhihuJson.json
-            .parseToJsonElement(
-                """
-                {
-                  "data": [
-                    {
-                      "card_type": "single_card",
-                      "data": {
-                        "header": {
-                          "icon": "https://example.com/icon.png",
-                          "title": "待删除的在线历史"
-                        },
-                        "action": {
-                          "type": "router",
-                          "url": "zhihu://answers/123"
-                        },
-                        "extra": {
-                          "content_token": "123",
-                          "content_type": "answer",
-                          "read_time": 1716120000,
-                          "question_token": "456"
-                        }
-                      }
-                    }
-                  ],
-                  "paging": {
-                    "is_end": true,
-                    "is_start": true,
-                    "totals": 1
-                  }
-                }
-                """.trimIndent(),
-            ).jsonObject
-        val environment = object : PaginationEnvironment {
-            override val accountClient: ZhihuAccountClient? = null
-
-            override fun httpClient(profile: ZhihuRequestProfile) = client
-
-            override suspend fun fetchJson(url: String, include: String): JsonObject = response
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
+    fun typeFilterAndSelectionModeUseStableTags() {
+        setOnlineHistoryScreen()
+        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER).fetchSemanticsNodes().isNotEmpty())
+        composeRule.onNodeWithTag("history_type_filter_" + HistoryType.ARTICLE).performClick()
+        composeRule.waitForIdle()
+        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ARTICLE).fetchSemanticsNodes().isNotEmpty())
+        composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER).assertCountEquals(0)
+        composeRule.onNodeWithTag(HISTORY_SELECT_TOGGLE_TAG).performClick()
+        composeRule.onNodeWithTag(HISTORY_SELECT_ALL_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertIsDisplayed()
+        for (duo3 in listOf(false, true)) {
+            composeRule.runOnIdle {
+                composeRule.activity
+                    .getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("duo3_card_layout", duo3)
+                    .commit()
+            }
+            composeRule.waitForIdle()
+            val title = composeRule
+                .onNode(hasTestTag("feed_card_title") and hasText(seedTitle(2)), useUnmergedTree = true)
+                .fetchSemanticsNode()
+                .boundsInRoot
+            val badges = composeRule
+                .onAllNodesWithTag("history_badge_" + HistoryType.ARTICLE, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+            assertTrue(badges.any { it.boundsInRoot.left >= title.right && it.boundsInRoot.center.y in title.top..title.bottom })
         }
-        val viewModel = OnlineHistoryViewModel()
+        composeRule.onNodeWithTag(HISTORY_SELECT_ALL_TAG).performClick()
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertTextEquals("删除(12)")
+        composeRule.onNodeWithText(seedTitle(2)).performClick()
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertTextEquals("删除(11)")
+        composeRule.onNodeWithText(seedTitle(2)).performClick()
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertTextEquals("删除(12)")
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).performClick()
+        composeRule.onNodeWithText("删除选中的 12 条浏览记录？").assertIsDisplayed()
+        composeRule.onAllNodesWithText("取消")[1].performClick()
+        assertEquals(24, onlineHistoryViewModel.displayItems.size)
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertTextEquals("删除(12)")
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).performClick()
+        composeRule.onNodeWithText("删除", substring = false).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { onlineHistoryViewModel.displayItems.size == 12 }
+        assertTrue(onlineHistoryViewModel.displayItems.all { it.historyType == HistoryType.ANSWER })
+    }
 
-        composeRule.activity.runOnUiThread {
-            viewModel.refresh(environment)
-        }
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            viewModel.displayItems.singleOrNull()?.title == "待删除的在线历史"
-        }
-
-        runBlocking {
-            viewModel.deleteItem(environment, viewModel.displayItems.single())
-        }
-
-        assertEquals(0, viewModel.displayItems.size)
+    /** 本地历史页点「管理」不能闪退，且官方多选动作条出现。 */
+    @Test
+    fun localHistoryManagementEntersSelectionWithoutCrash() {
+        val navigator = composeRule.setScreenContent { LegacyLocalHistoryScreen() }
+        composeRule.onNodeWithTag(HISTORY_SELECT_TOGGLE_TAG).performClick()
+        composeRule.onNodeWithTag(HISTORY_SELECT_ALL_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(HISTORY_SELECT_TOGGLE_TAG).performClick()
+        composeRule.onAllNodesWithTag(HISTORY_DELETE_SELECTED_TAG).assertCountEquals(0)
+        assertEquals(0, navigator.backCount)
+        composeRule.onNodeWithTag(LEGACY_LOCAL_HISTORY_BACK_BUTTON_TAG).performClick()
+        assertEquals(1, navigator.backCount)
     }
 
     private fun setOnlineHistoryScreen(itemCount: Int = 24): RecordingNavigator {
-        seedDisplayItems(itemCount)
-        return composeRule.setScreenContent {
-            OnlineHistoryScreen()
+        val items = (1..itemCount).joinToString(",") { index ->
+            val type = if (index % 2 == 1) "answer" else "article"
+            val route = if (type == "answer") "answers" else "articles"
+            """{"card_type":"single_card","data":{"header":{"icon":"","title":"${seedTitle(index)}"},"action":{"type":"router","url":"zhihu://$route/$index"},"extra":{"content_token":"token-$index","content_type":"$type","read_time":$index,"question_token":"fixture"}}}"""
         }
-    }
-
-    private fun seedDisplayItems(itemCount: Int) {
-        composeRule.activity.runOnUiThread {
-            onlineHistoryViewModel.displayItems.clear()
-            onlineHistoryViewModel.displayItems.addAll(
-                List(itemCount) { index ->
-                    FeedDisplayItem(
-                        title = seedTitle(index + 1),
-                        summary = "用于 OnlineHistoryScreen 仪器测试的固定摘要 ${index + 1}",
-                        details = "固定详情 ${index + 1}",
-                        feed = null,
-                        authorName = "作者 ${index + 1}",
-                    )
-                },
-            )
-        }
-        composeRule.waitForIdle()
+        ZhihuMockApi.mockJsonPrefix(
+            HttpMethod.Get,
+            "https://api.zhihu.com/unify-consumption/read_history",
+            """{"data":[$items],"paging":{"is_end":true,"next":""}}""",
+        )
+        val navigator = composeRule.setScreenContent { OnlineHistoryScreen() }
+        composeRule.waitUntil(timeoutMillis = 5_000) { onlineHistoryViewModel.displayItems.size == itemCount }
+        return navigator
     }
 
     private fun clearDisplayItems() {
@@ -196,8 +173,6 @@ class OnlineHistoryScreenInstrumentedTest {
     }
 
     private companion object {
-        const val LIST_TAG = "online_history_list"
-
         fun seedTitle(index: Int) = "固定在线历史条目 $index"
     }
 }

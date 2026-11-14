@@ -17,37 +17,25 @@
 
 package com.github.zly2006.zhihu.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,29 +48,39 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.data.Collection
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
+import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
+import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIconButton
+import com.github.zly2006.zhihu.ui.components.AppIconToggleButton
+import com.github.zly2006.zhihu.ui.components.AppLoadStateContent
+import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
+import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.AppSpinner
+import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.DraggableRefreshButton
 import com.github.zly2006.zhihu.viewmodel.CollectionContentEnvironment
 import com.github.zly2006.zhihu.viewmodel.CollectionContentViewModel
 import com.github.zly2006.zhihu.viewmodel.CollectionsViewModel
+import com.github.zly2006.zhihu.viewmodel.LoadState
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
-/**
- * 收藏直达浏览页：进入后直接展示某个收藏夹的内容瀑布流，
- * 右上角文件夹图标在页内切换当前展示的收藏夹，不跳转到新页面。
- *
- * 默认选中策略见 [pickDefaultCollectionId]（优先默认收藏夹，否则第一个）。
- *
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CollectionBrowseScreen(
     urlToken: String?,
@@ -107,20 +105,17 @@ fun CollectionBrowseScreen(
     var selectedCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
     var folderMenuExpanded by remember { mutableStateOf(false) }
     var randomMode by rememberSaveable { mutableStateOf(false) }
-    var refreshCollectionsOnNextActivation by rememberSaveable { mutableStateOf(true) }
     var collectionPendingDeletion by remember { mutableStateOf<Collection?>(null) }
 
-    LaunchedEffect(isActive) {
-        if (
-            shouldRefreshCollectionDataOnActivation(
-                isActive = isActive,
-                useLocalCollections = useLocalCollections,
-                refreshOnNextActivation = refreshCollectionsOnNextActivation,
-            )
+    LaunchedEffect(collectionsViewModel, isActive) {
+        if (isActive &&
+            !useLocalCollections &&
+            collections.isEmpty() &&
+            !collectionsViewModel.isEnd &&
+            collectionsViewModel.errorMessage == null
         ) {
-            collectionsViewModel.refresh(environment)
+            collectionsViewModel.loadMore(environment)
         }
-        refreshCollectionsOnNextActivation = !isActive
     }
     LaunchedEffect(collections.map { it.id }, collectionsViewModel.isLoading) {
         if (collections.isNotEmpty() && collections.none { it.id == selectedCollectionId }) {
@@ -165,8 +160,10 @@ fun CollectionBrowseScreen(
                     itemCount = selectedCollectionItemCount,
                     randomSeed = randomSeed,
                 )
-            } else {
+            } else if (contentViewModel.isRandomMode) {
                 contentViewModel.refresh(contentEnvironment)
+            } else if (contentViewModel.allData.isEmpty() && !contentViewModel.isEnd && contentViewModel.errorMessage == null) {
+                contentViewModel.loadMore(contentEnvironment)
             }
         }
     }
@@ -193,46 +190,32 @@ fun CollectionBrowseScreen(
         cachedScrollToTopTrigger = scrollToTopTrigger
     }
 
-    Scaffold(
+    AppScaffold(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = contentViewModel?.title ?: "收藏夹",
-                        modifier = Modifier.testTag(COLLECTION_BROWSE_TITLE_TAG),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    if (showBackButton) {
-                        IconButton(
-                            onClick = navigator.onNavigateBack,
-                            modifier = Modifier.testTag(COLLECTION_BROWSE_BACK_BUTTON_TAG),
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                },
+            AppCompactTopBar(
+                title = "收藏夹",
+                titleTag = COLLECTION_BROWSE_TITLE_TAG,
+                onBack = navigator.onNavigateBack.takeIf { showBackButton },
+                backTag = COLLECTION_BROWSE_BACK_BUTTON_TAG,
                 actions = {
                     Box {
-                        IconButton(
+                        AppIconButton(
                             onClick = { folderMenuExpanded = true },
                             enabled = collections.isNotEmpty(),
                             modifier = Modifier.testTag(COLLECTION_BROWSE_FOLDER_SWITCH_BUTTON_TAG),
                         ) {
                             Icon(Icons.Filled.Folder, contentDescription = "切换收藏夹")
                         }
-                        DropdownMenu(
+                        AppDropdownMenu(
                             expanded = folderMenuExpanded,
                             onDismissRequest = { folderMenuExpanded = false },
                             modifier = Modifier.testTag(COLLECTION_BROWSE_FOLDER_MENU_TAG),
                         ) {
                             collections.forEach { collection ->
-                                DropdownMenuItem(
+                                AppDropdownMenuItem(
                                     text = { Text(collection.title) },
                                     trailingIcon = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -240,7 +223,7 @@ fun CollectionBrowseScreen(
                                                 Icon(Icons.Filled.Check, contentDescription = null)
                                             }
                                             if (!collection.isDefault) {
-                                                IconButton(
+                                                AppIconButton(
                                                     onClick = {
                                                         collectionsViewModel.clearMutationErrors()
                                                         collectionPendingDeletion = collection
@@ -263,12 +246,17 @@ fun CollectionBrowseScreen(
                                         selectedCollectionId = collection.id
                                         folderMenuExpanded = false
                                     },
-                                    modifier = Modifier.testTag("collection_browse_folder_menu_item_${collection.id}"),
+                                    modifier = Modifier
+                                        .testTag("collection_browse_folder_menu_item_${collection.id}")
+                                        .semantics {
+                                            selected = collection.id == selectedCollectionId
+                                            role = Role.RadioButton
+                                        },
                                 )
                             }
                         }
                     }
-                    IconToggleButton(
+                    AppIconToggleButton(
                         checked = randomMode,
                         onCheckedChange = { enabled ->
                             randomMode = enabled
@@ -299,15 +287,24 @@ fun CollectionBrowseScreen(
         },
     ) { innerPadding ->
         when {
+            collections.isEmpty() && collectionsViewModel.errorMessage != null -> {
+                AppLoadStateContent<Unit>(
+                    state = LoadState.Failed(collectionsViewModel.errorMessage!!),
+                    onRetry = { collectionsViewModel.retry(environment) },
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    content = {},
+                )
+            }
             collections.isEmpty() && (useLocalCollections || collectionsViewModel.isEnd) -> {
-                Box(
+                AppEmptyState(
+                    title = "还没有收藏夹",
+                    description = "在内容页点收藏，就能在这里找到它",
+                    icon = Icons.Filled.Folder,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("还没有收藏夹", modifier = Modifier.testTag(COLLECTION_BROWSE_EMPTY_COLLECTIONS_TAG))
-                }
+                        .padding(innerPadding)
+                        .testTag(COLLECTION_BROWSE_EMPTY_COLLECTIONS_TAG),
+                )
             }
             contentViewModel == null -> {
                 Box(
@@ -316,11 +313,11 @@ fun CollectionBrowseScreen(
                         .padding(innerPadding),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.testTag(COLLECTION_BROWSE_LOADING_COLLECTIONS_TAG))
+                    AppSpinner(modifier = Modifier.testTag(COLLECTION_BROWSE_LOADING_COLLECTIONS_TAG))
                 }
             }
             else -> {
-                PullToRefreshBox(
+                AppPullToRefreshBox(
                     isRefreshing = collectionsViewModel.isLoading || contentViewModel.isLoading,
                     onRefresh = {
                         if (!useLocalCollections) {
@@ -338,15 +335,14 @@ fun CollectionBrowseScreen(
                         .testTag(COLLECTION_BROWSE_PULL_TO_REFRESH_TAG),
                 ) {
                     if (contentViewModel.allData.isEmpty() && contentViewModel.isEnd) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "这个收藏夹是空的",
-                                modifier = Modifier.testTag(COLLECTION_BROWSE_EMPTY_CONTENT_TAG),
-                            )
-                        }
+                        AppEmptyState(
+                            title = selectedCollection?.title ?: contentViewModel.title,
+                            description = "这个收藏夹是空的。收藏喜欢的回答、文章或想法后会出现在这里",
+                            icon = Icons.Filled.Folder,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag(COLLECTION_BROWSE_EMPTY_CONTENT_TAG),
+                        )
                     } else {
                         CollectionContentBody(
                             viewModel = contentViewModel,
@@ -356,6 +352,17 @@ fun CollectionBrowseScreen(
                             listState = listState,
                             tagPrefix = "collection_browse",
                             displayItems = orderedDisplayItems,
+                            header = {
+                                Text(
+                                    text = selectedCollection?.title ?: contentViewModel.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = collections.isNotEmpty(), role = Role.Button) { folderMenuExpanded = true }
+                                        .padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8)
+                                        .testTag(COLLECTION_BROWSE_TITLE_TAG + "_name"),
+                                )
+                            },
                         )
                     }
                     if (randomMode) {
@@ -367,7 +374,7 @@ fun CollectionBrowseScreen(
                             },
                         ) {
                             if (contentViewModel.isLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(30.dp))
+                                AppSpinner(size = 30.dp)
                             } else {
                                 Icon(Icons.Filled.Refresh, contentDescription = "重新随机加载")
                             }
@@ -380,7 +387,7 @@ fun CollectionBrowseScreen(
 
     collectionPendingDeletion?.let { collection ->
         val isDeleting = collectionsViewModel.deletingCollectionId != null
-        AlertDialog(
+        AppAlertDialog(
             modifier = Modifier.testTag("collection_browse_delete_dialog_${collection.id}"),
             onDismissRequest = {
                 if (!isDeleting) {
@@ -401,7 +408,8 @@ fun CollectionBrowseScreen(
                 }
             },
             confirmButton = {
-                TextButton(
+                AppTextButton(
+                    text = if (isDeleting) "删除中…" else "删除",
                     onClick = {
                         coroutineScope.launch {
                             if (collectionsViewModel.deleteCollection(environment, collection)) {
@@ -416,33 +424,23 @@ fun CollectionBrowseScreen(
                             }
                         }
                     },
-                    enabled = !isDeleting,
                     modifier = Modifier.testTag("collection_browse_delete_confirm_${collection.id}"),
-                ) {
-                    Text(if (isDeleting) "删除中…" else "删除")
-                }
+                    enabled = !isDeleting,
+                )
             },
             dismissButton = {
-                TextButton(
+                AppTextButton(
+                    text = "取消",
                     onClick = { collectionPendingDeletion = null },
                     enabled = !isDeleting,
-                ) {
-                    Text("取消")
-                }
+                )
             },
         )
     }
 }
 
-/** 挑选默认展示的收藏夹 id：优先默认收藏夹，否则取第一个；列表为空返回 null。 */
 internal fun pickDefaultCollectionId(collections: List<Collection>): String? =
     collections.firstOrNull { it.isDefault }?.id ?: collections.firstOrNull()?.id
-
-internal fun shouldRefreshCollectionDataOnActivation(
-    isActive: Boolean,
-    useLocalCollections: Boolean,
-    refreshOnNextActivation: Boolean = true,
-): Boolean = isActive && !useLocalCollections && refreshOnNextActivation
 
 internal fun orderCollectionItems(
     items: List<FeedDisplayItem>,

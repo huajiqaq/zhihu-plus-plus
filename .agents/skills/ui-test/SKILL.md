@@ -19,9 +19,9 @@ license: CC BY-NC-SA 4.0
 ```bash
 export ANDROID_SERIAL='<目标设备序列号>'
 python3 .agents/skills/ui-test/llm_test_helper.py dump
-python3 .agents/skills/ui-test/llm_test_helper.py find --tag feed_card
+python3 .agents/skills/ui-test/llm_test_helper.py find --desc '更多选项' --within-text '<卡片标题>'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --tag nav_tab_home
-python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text '<卡片标题>'
+python3 .agents/skills/ui-test/llm_test_helper.py tap --desc '更多选项' --within-text '<卡片标题>'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --text '取消'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --desc '返回'
 python3 .agents/skills/ui-test/llm_test_helper.py screenshot '<输出 PNG 路径>'

@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,21 +35,16 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.Button
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.fleeksoft.ksoup.Ksoup
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Question
@@ -65,6 +63,11 @@ import com.github.zly2006.zhihu.navigation.WriteAnswer
 import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.ui.components.AppButton
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
+import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
+import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.PaginatedList
 import com.github.zly2006.zhihu.ui.components.ProgressIndicatorFooter
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
@@ -77,6 +80,9 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+
+const val NOTIFICATION_TIMELINE_BACK_BUTTON_TAG = "notification_timeline_back_button"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +91,7 @@ fun NotificationTimelineScreen(
     title: String,
 ) {
     val navigator = LocalNavigator.current
+    val accountClient = rememberZhihuAccountStore().client
     val settingsStore = rememberNotificationSettingsStore()
     val environment = rememberNotificationEnvironment(settingsStore)
     val userMessages = rememberUserMessageSink()
@@ -92,35 +99,29 @@ fun NotificationTimelineScreen(
         NotificationTimelineViewModel(entryName)
     }
     val invitations = entryName == INVITATION_ENTRY_NAME
-    val listState = rememberLazyListState()
+    val listState = key(accountClient) { rememberLazyListState() }
     val pageTurnTarget = rememberPageTurnTarget(
         listState = listState,
         enabled = MobileNotificationCategory.entries.any { it.entryName == entryName },
     )
 
-    LaunchedEffect(entryName) {
-        if (viewModel.allData.isEmpty()) {
-            viewModel.refresh(environment)
-        }
+    LaunchedEffect(entryName, accountClient, environment) {
+        viewModel.loadFor(environment)
     }
 
-    Scaffold(
+    AppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = navigator.onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+            AppCompactTopBar(
+                title = title,
+                onBack = navigator.onNavigateBack,
+                backTag = NOTIFICATION_TIMELINE_BACK_BUTTON_TAG,
+                centered = true,
+                containerColor = MaterialTheme.colorScheme.surface,
             )
         },
     ) { paddingValues ->
-        PullToRefreshBox(
+        AppPullToRefreshBox(
             isRefreshing = viewModel.isLoading,
             onRefresh = { viewModel.refresh(environment) },
             modifier = Modifier.padding(paddingValues),
@@ -129,6 +130,9 @@ fun NotificationTimelineScreen(
                 items = viewModel.allData,
                 onLoadMore = { viewModel.loadMore(environment) },
                 isEnd = { viewModel.isEnd },
+                isLoading = { viewModel.isLoading },
+                loadError = { viewModel.errorMessage },
+                onRetry = { viewModel.retry(environment) },
                 listState = listState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -138,50 +142,53 @@ fun NotificationTimelineScreen(
             ) { notification ->
                 when {
                     notification.type == "empty" -> {
-                        Text(
-                            text = notification.emptyInfo?.text.orEmpty(),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        AppEmptyState(
+                            title = notification.emptyInfo?.text?.takeIf(String::isNotBlank) ?: "暂无通知",
+                            description = "有新的动态时会出现在这里",
+                            icon = Icons.Outlined.Notifications,
+                            modifier = Modifier.padding(top = 32.dp),
                         )
                     }
 
-                    invitations -> InvitationAnswerItem(
-                        notification = notification,
-                        onQuestionClick = {
-                            notification.target?.id?.toLongOrNull()?.let { questionId ->
-                                navigator.onNavigate(
-                                    Question(
-                                        questionId = questionId,
-                                        title = notification.target.title.ifBlank {
-                                            notification.targetSource?.text.orEmpty()
-                                        },
-                                    ),
-                                )
-                            } ?: userMessages.showMessage("无法打开这个问题")
-                        },
-                        onAnswerClick = {
-                            val target = notification.target
-                            val destination = target
-                                ?.myAnswerUrl
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let(::resolveContent)
-                            if (destination != null) {
-                                navigator.onNavigate(destination)
-                            } else {
-                                target?.id?.toLongOrNull()?.let { questionId ->
+                    invitations -> {
+                        val invitationTarget = notification.target
+                        InvitationAnswerItem(
+                            notification = notification,
+                            onQuestionClick = {
+                                invitationTarget?.id?.toLongOrNull()?.let { questionId ->
                                     navigator.onNavigate(
-                                        WriteAnswer(
+                                        Question(
                                             questionId = questionId,
-                                            questionTitle = target.title.ifBlank {
+                                            title = invitationTarget.title.ifBlank {
                                                 notification.targetSource?.text.orEmpty()
                                             },
                                         ),
                                     )
-                                } ?: userMessages.showMessage("无法回答这个问题")
-                            }
-                        },
-                    )
+                                } ?: userMessages.showMessage("无法打开这个问题")
+                            },
+                            onAnswerClick = {
+                                val target = notification.target
+                                val destination = target
+                                    ?.myAnswerUrl
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let(::resolveContent)
+                                if (destination != null) {
+                                    navigator.onNavigate(destination)
+                                } else {
+                                    target?.id?.toLongOrNull()?.let { questionId ->
+                                        navigator.onNavigate(
+                                            WriteAnswer(
+                                                questionId = questionId,
+                                                questionTitle = target.title.ifBlank {
+                                                    notification.targetSource?.text.orEmpty()
+                                                },
+                                            ),
+                                        )
+                                    } ?: userMessages.showMessage("无法回答这个问题")
+                                }
+                            },
+                        )
+                    }
 
                     viewModel.shouldShowNotification(settingsStore, notification) -> {
                         NotificationItemView(
@@ -242,16 +249,18 @@ private fun InvitationAnswerItem(
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = authorName,
                         style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     notification.head?.labels?.firstOrNull()?.text?.takeIf { it.isNotBlank() }?.let { label ->
-                        Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -265,11 +274,16 @@ private fun InvitationAnswerItem(
                         }
                     }
                 }
+                notification.content?.subTitle?.takeIf(String::isNotBlank)?.let { event ->
+                    Text(
+                        text = event,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
-                    text = listOf(notification.content?.subTitle.orEmpty(), notification.invitationTime())
-                        .filter { it.isNotBlank() }
-                        .joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = notification.invitationTime(),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -280,7 +294,7 @@ private fun InvitationAnswerItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onQuestionClick),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(Modifier.padding(14.dp)) {
@@ -301,29 +315,27 @@ private fun InvitationAnswerItem(
                             notification.targetSource?.text.orEmpty()
                         }.orEmpty(),
                     style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                Text(
+                    text = notification.targetSource?.subText.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                AppButton(
+                    onClick = onAnswerClick,
+                    modifier = Modifier.width(IntrinsicSize.Max).align(Alignment.End).testTag("invitation_answer_${notification.stableId}"),
                 ) {
-                    Text(
-                        text = notification.targetSource?.subText.orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
+                    Icon(
+                        if (notification.target?.hasAnswer == true) Icons.Default.Visibility else Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Button(
-                        onClick = onAnswerClick,
-                        modifier = Modifier.testTag("invitation_answer_${notification.stableId}"),
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text(if (notification.target?.hasAnswer == true) "查看回答" else "写回答")
-                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (notification.target?.hasAnswer == true) "查看回答" else "写回答")
                 }
             }
         }

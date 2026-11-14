@@ -21,7 +21,7 @@ import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.Person
 import com.github.zly2006.zhihu.data.QualityFilterSettings
-import com.github.zly2006.zhihu.viewmodel.FeedDisplayEnvironment
+import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
 import kotlin.test.Test
@@ -52,9 +52,7 @@ class QualityFilterModeTest {
     @Test
     fun offModeKeepsOriginalCard() {
         val item = HomeFeedViewModel().createDisplayItem(
-            object : FeedDisplayEnvironment {
-                override fun feedDisplaySettings() = FeedDisplaySettings(qualityFilterMode = QualityFilterMode.OFF)
-            },
+            FeedDisplaySettings(qualityFilterMode = QualityFilterMode.OFF),
             lowQualityArticle,
         )
 
@@ -67,30 +65,27 @@ class QualityFilterModeTest {
     fun rulesAndHideModesMarkQualityFilteredCards() {
         listOf(QualityFilterMode.RULES, QualityFilterMode.HIDE).forEach { mode ->
             val item = HomeFeedViewModel().createDisplayItem(
-                object : FeedDisplayEnvironment {
-                    override fun feedDisplaySettings() = FeedDisplaySettings(qualityFilterMode = mode)
-                },
+                FeedDisplaySettings(qualityFilterMode = mode),
                 lowQualityArticle,
             )
 
-            assertEquals("已屏蔽", item.title)
+            assertEquals("低赞文章", item.title)
+            assertEquals(lowQualityArticle.target!!.navDestination, item.navDestination)
+            assertEquals("作者", item.authorName)
             assertTrue(item.isFiltered)
             assertTrue(item.isQualityFiltered)
+            assertTrue(item.content.orEmpty().isNotBlank())
         }
     }
 
     @Test
     fun customArticleVoteupThresholdIsApplied() {
         val item = HomeFeedViewModel().createDisplayItem(
-            object : FeedDisplayEnvironment {
-                override fun feedDisplaySettings() = FeedDisplaySettings(
-                    qualityFilter = QualityFilterSettings(articleVoteupCount = 1000),
-                )
-            },
+            FeedDisplaySettings(qualityFilter = QualityFilterSettings(articleVoteupCount = 1000)),
             lowQualityArticle.copy(target = (lowQualityArticle.target as Feed.ArticleTarget).copy(voteupCount = 500)),
         )
 
         assertTrue(item.isQualityFiltered)
-        assertTrue(item.summary.orEmpty().contains("1000"))
+        assertTrue(item.content.orEmpty().contains("1000"))
     }
 }

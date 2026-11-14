@@ -1,0 +1,86 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.github.zly2006.zhihu.theme
+
+/** 皮肤只影响呈现，不承载业务状态。 */
+enum class ThemeStyle(
+    val displayName: String,
+) {
+    MATERIAL_EXPRESSIVE("Material 3 Expressive"),
+    MIUIX("Miuix"),
+    ;
+
+    companion object {
+        val Default: ThemeStyle = MATERIAL_EXPRESSIVE
+
+        fun fromName(name: String?): ThemeStyle = entries.firstOrNull { it.name == name } ?: Default
+    }
+}
+
+const val THEME_STYLE_PREFERENCE_KEY: String = "uiThemeStyle"
+
+/** 仅用于 Material 动态配色，不替换 Miuix 原生色表。 */
+enum class ThemePaletteStyle(
+    val displayName: String,
+) {
+    TONAL_SPOT("均衡"),
+    NEUTRAL("中性"),
+    VIBRANT("鲜明"),
+    EXPRESSIVE("表现力"),
+    RAINBOW("彩虹"),
+    FRUIT_SALAD("果彩"),
+    MONOCHROME("单色"),
+    FIDELITY("保真"),
+    CONTENT("内容"),
+    ;
+
+    val supportedColorSpecs: List<ThemeColorSpec>
+        get() = when (this) {
+            TONAL_SPOT, NEUTRAL, VIBRANT, EXPRESSIVE -> ThemeColorSpec.entries
+            else -> listOf(ThemeColorSpec.SPEC_2021)
+        }
+
+    fun effectiveColorSpec(preferred: ThemeColorSpec): ThemeColorSpec =
+        preferred.takeIf { it in supportedColorSpecs } ?: supportedColorSpecs.last()
+
+    companion object {
+        val Default: ThemePaletteStyle = EXPRESSIVE
+
+        fun fromName(name: String?): ThemePaletteStyle = entries.firstOrNull { it.name == name } ?: Default
+    }
+}
+
+enum class ThemeColorSpec(
+    val displayName: String,
+) {
+    SPEC_2021("2021"),
+    SPEC_2025("2025"),
+    ;
+
+    companion object {
+        val Default: ThemeColorSpec = SPEC_2025
+
+        fun fromName(name: String?): ThemeColorSpec = entries.firstOrNull { it.name == name } ?: Default
+    }
+}
+
+const val THEME_PALETTE_STYLE_PREFERENCE_KEY: String = "themePaletteStyle"
+const val THEME_COLOR_SPEC_PREFERENCE_KEY: String = "themeColorSpec"
+const val AMOLED_THEME_PREFERENCE_KEY: String = "amoledTheme"
+
+const val NEW_UI_NOTICE_PREFERENCE_KEY: String = "newUiNoticeShown"

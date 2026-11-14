@@ -20,6 +20,14 @@ package com.github.zly2006.zhihu.viewmodel.local
 import androidx.room.Room
 import java.io.File
 
+private val desktopLocalContentDatabase by lazy {
+    getLocalContentDatabase(
+        File(File(System.getProperty("user.home"), ".zhihu-plus"), "local-content.db").also { it.parentFile?.mkdirs() },
+    )
+}
+
+actual fun getLocalContentDatabase(): LocalContentDatabase? = desktopLocalContentDatabase
+
 fun getLocalContentDatabase(databaseFile: File): LocalContentDatabase =
     buildLocalContentDatabase(
         Room.databaseBuilder<LocalContentDatabase>(

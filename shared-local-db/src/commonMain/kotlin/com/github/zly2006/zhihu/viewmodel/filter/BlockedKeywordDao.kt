@@ -22,11 +22,19 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BlockedKeywordDao {
     @Query("SELECT * FROM ${BlockedKeyword.TABLE_NAME} ORDER BY createdTime DESC")
     suspend fun getAllKeywords(): List<BlockedKeyword>
+
+    @Query("SELECT * FROM ${BlockedKeyword.TABLE_NAME} WHERE keywordType = :type ORDER BY createdTime DESC")
+    fun observeKeywordsByType(type: String): Flow<List<BlockedKeyword>>
+
+    /** 关键词页与 NLP 短语页共用这张表，清空时只能删除当前页展示的那一类。 */
+    @Query("DELETE FROM ${BlockedKeyword.TABLE_NAME} WHERE keywordType = :type")
+    suspend fun deleteKeywordsByType(type: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKeyword(keyword: BlockedKeyword): Long

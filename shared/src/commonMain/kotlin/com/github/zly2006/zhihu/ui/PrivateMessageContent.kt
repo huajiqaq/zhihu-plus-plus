@@ -23,6 +23,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
@@ -53,7 +54,7 @@ internal fun ZhihuPrivateMessage.displayContent(
             withLink(
                 LinkAnnotation.Clickable(
                     tag = url,
-                    styles = TextLinkStyles(style = SpanStyle(color = linkColor)),
+                    styles = TextLinkStyles(style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
                 ) { onLinkClick(url) },
             ) {
                 append(text.substring(start, end))

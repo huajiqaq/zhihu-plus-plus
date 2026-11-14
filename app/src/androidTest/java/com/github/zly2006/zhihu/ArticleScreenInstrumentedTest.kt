@@ -57,6 +57,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
@@ -73,7 +74,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.markdown.RenderImage
 import com.github.zly2006.zhihu.markdown.RenderMarkdown
@@ -81,6 +81,7 @@ import com.github.zly2006.zhihu.markdown.RenderMarkdownText
 import com.github.zly2006.zhihu.navigation.AnswerNavigator
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
+import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.reading.AndroidReadingPlayerBridge
 import com.github.zly2006.zhihu.reading.ContentReadingService
 import com.github.zly2006.zhihu.reading.ReadingContentType
@@ -91,6 +92,8 @@ import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.ARTICLE_FULL_TITLE_TAG
+import com.github.zly2006.zhihu.ui.ARTICLE_IP_INFO_TAG
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.ArticleScreen
@@ -104,7 +107,8 @@ import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_FAB
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
-import me.zly2006.markdown.renderer.MarkdownImageData
+import com.hrm.markdown.renderer.MarkdownImageData
+import io.ktor.client.HttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -152,6 +156,38 @@ class ArticleScreenInstrumentedTest {
             sharedArticleAnswerSwitchState.navigator = null
             sharedArticleAnswerSwitchState.pendingNavigator = null
         }
+    }
+
+    @Test
+    fun answerHeaderShowsIpBeforeBodyAndTitleNavigatesToItsQuestion() {
+        val preferences = composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
+        preferences
+            .edit()
+            .putBoolean("titleAutoHide", false)
+            .putBoolean("pinAnswerDate", false)
+            .commit()
+        val viewModel = seededAnswerViewModel(ANSWER)
+        composeRule.activity.runOnUiThread {
+            viewModel.content = "<p>回答正文开始</p>" + (1..20).joinToString("") { "<p>用于保持真实滚动范围的段落 $it。</p>" }
+            viewModel.endorsements = emptyList()
+        }
+        val navigator = composeRule.setScreenContent {
+            ArticleScreen(article = ANSWER, viewModel = viewModel)
+        }
+        composeRule.onNodeWithTag(ARTICLE_IP_INFO_TAG).assertIsDisplayed()
+        val ip = composeRule.onNodeWithTag(ARTICLE_IP_INFO_TAG).getUnclippedBoundsInRoot()
+        val body = composeRule.onNodeWithText("回答正文开始").getUnclippedBoundsInRoot()
+        assertTrue("IP belongs to the header, before answer text", ip.bottom <= body.top)
+        assertEquals(1, composeRule.onAllNodesWithText("IP属地：上海").fetchSemanticsNodes().size)
+        val beforeTitle = navigator.destinations.size
+        composeRule.onNodeWithTag(ARTICLE_FULL_TITLE_TAG).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf(Question(123456L, "离线 Answer 标题")), navigator.destinations.drop(beforeTitle))
+        composeRule.activity.runOnUiThread { viewModel.questionId = 0L }
+        val beforeInvalid = navigator.destinations.size
+        composeRule.onNodeWithTag(ARTICLE_FULL_TITLE_TAG).performTouchInput { click(center) }
+        composeRule.waitForIdle()
+        assertEquals(beforeInvalid, navigator.destinations.size)
     }
 
     /**
@@ -1816,7 +1852,9 @@ class ArticleScreenInstrumentedTest {
         )
 
         val NO_OP_API_ENVIRONMENT = object : ZhihuApiEnvironment {
-            override val accountClient: ZhihuAccountClient? = null
+            override fun httpClient(): HttpClient = error("No HTTP client in offline navigator test")
+
+            override fun authenticatedCookies(): Map<String, String> = emptyMap()
 
             override suspend fun handleFetchFailure(
                 tag: String?,

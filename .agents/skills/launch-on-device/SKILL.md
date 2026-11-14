@@ -25,7 +25,7 @@ bash .agents/skills/launch-on-device/deploy.sh
 
 Full 使用 `:app:assembleFullDebug`，两种变体分两次构建。手动安装和启动时，每条 ADB 命令都明确 `-s "$ANDROID_SERIAL"`。
 
-启动组件以包管理器的实际 Launcher 解析结果为准，不写死 Activity 名称。通过 `cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p <包名>` 获取组件，再以同样的 action/category 启动。手动指定 Activity 不能替代 Launcher 启动验收。
+Launcher 为 `SplashActivity`，动画完成后进入 `MainActivity`。通过 `cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p <包名>` 获取组件，再以同样的 action/category 启动。直接启动主 Activity 会绕过启动页，不能作为启动验收。
 
 ## 失败处理
 

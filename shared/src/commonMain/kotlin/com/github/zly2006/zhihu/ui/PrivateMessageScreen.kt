@@ -43,43 +43,41 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.SentimentSatisfied
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.account.accountIdentityKey
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Notification
@@ -87,8 +85,16 @@ import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.platform.rememberZhihuWebUrlOpener
+import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
+import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIconButton
+import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
+import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.AppTextField
 import com.github.zly2006.zhihu.ui.components.PaginatedList
 import com.github.zly2006.zhihu.ui.components.ProgressIndicatorFooter
+import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.util.formatFullDateTime
 import com.github.zly2006.zhihu.util.formatRelativeTime
 import com.github.zly2006.zhihu.viewmodel.PrivateMessageViewModel
@@ -96,11 +102,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+
+const val PRIVATE_MESSAGE_BACK_BUTTON_TAG = "private_message_back_button"
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalTime::class)
 @Composable
 fun PrivateMessageScreen(destination: Notification.Message) {
     val navigator = LocalNavigator.current
+    val accountStore = rememberZhihuAccountStore()
+    val accountClient = accountStore.client
+    val accountId = accountStore.session.accountIdentityKey() ?: "guest"
     val environment = rememberNotificationEnvironment(rememberNotificationSettingsStore())
     val viewModel = viewModel(key = "private_message_${destination.peerId}") {
         PrivateMessageViewModel(destination.peerId)
@@ -110,8 +122,15 @@ fun PrivateMessageScreen(destination: Notification.Message) {
     val userMessages = rememberUserMessageSink()
     val lifecycleOwner = LocalLifecycleOwner.current
     val selfAvatarUrl = rememberAccountSettingsAccountState().value.avatarUrl.orEmpty()
-    val listState = rememberLazyListState()
-    var draft by rememberSaveable(destination.peerId) { mutableStateOf("") }
+    val listState = key(accountId, destination.peerId) { rememberLazyListState() }
+    val drafts = rememberSaveable(
+        destination.peerId,
+        saver = mapSaver(
+            save = { values: SnapshotStateMap<String, String> -> values.toMap() },
+            restore = { saved -> mutableStateMapOf<String, String>().apply { putAll(saved.mapValues { it.value as String }) } },
+        ),
+    ) { mutableStateMapOf<String, String>() }
+    val draft = drafts[accountId].orEmpty()
     var nowEpochSeconds by remember { mutableLongStateOf(Clock.System.now().epochSeconds) }
 
     LaunchedEffect(viewModel, listState) {
@@ -132,12 +151,10 @@ fun PrivateMessageScreen(destination: Notification.Message) {
         }
     }
 
-    LaunchedEffect(lifecycleOwner, destination.peerId, environment) {
+    LaunchedEffect(lifecycleOwner, destination.peerId, environment, accountClient) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             nowEpochSeconds = Clock.System.now().epochSeconds
-            if (viewModel.allData.isEmpty()) {
-                viewModel.refresh(environment)
-            }
+            viewModel.loadFor(environment)
             while (true) {
                 delay(PRIVATE_MESSAGE_POLL_INTERVAL_MILLIS)
                 nowEpochSeconds = Clock.System.now().epochSeconds
@@ -146,63 +163,61 @@ fun PrivateMessageScreen(destination: Notification.Message) {
         }
     }
 
-    Scaffold(
+    AppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = peerName.ifBlank { "私信" },
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = navigator.onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+            AppCompactTopBar(
+                title = peerName.ifBlank { "私信" },
+                onBack = navigator.onNavigateBack,
+                backTag = PRIVATE_MESSAGE_BACK_BUTTON_TAG,
+                centered = true,
+                containerColor = MaterialTheme.colorScheme.surface,
             )
         },
         bottomBar = {
             Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
+                color = if (settingSkinIsMiuix()) {
+                    LocalAppSkinTokens.current.surfaceContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer
+                },
+                tonalElevation = AppDimens.ElevationNone,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .imePadding()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(
+                            start = AppDimens.Space12,
+                            end = AppDimens.Space6,
+                            top = AppDimens.Space8,
+                            bottom = AppDimens.Space8,
+                        ),
+                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    OutlinedTextField(
+                    AppTextField(
                         value = draft,
-                        onValueChange = { draft = it },
+                        onValueChange = { drafts[accountId] = it },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("private_message_input"),
-                        placeholder = { Text("发私信") },
+                        placeholder = "发私信",
+                        labelText = "私信内容",
                         enabled = !viewModel.isSending,
+                        singleLine = false,
                         maxLines = 4,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(AppDimens.InputCornerRadius),
                     )
-                    IconButton(onClick = {}, enabled = false) {
-                        Icon(
-                            Icons.Outlined.SentimentSatisfied,
-                            contentDescription = "表情（暂不可用）",
-                            tint = MaterialTheme.colorScheme.outline,
-                        )
-                    }
-                    IconButton(
+                    Spacer(Modifier.width(4.dp))
+                    AppIconButton(
                         onClick = {
                             val content = draft
                             coroutineScope.launch {
-                                if (viewModel.sendMessage(content, environment)) {
-                                    draft = ""
+                                val succeeded = viewModel.sendMessage(content, environment)
+                                if (accountStore.client !== accountClient) return@launch
+                                if (succeeded) {
+                                    if (drafts[accountId] == content) drafts.remove(accountId)
                                     listState.requestScrollToItem(0)
                                 } else {
                                     userMessages.showMessage(viewModel.errorMessage ?: "发送失败")
@@ -215,13 +230,18 @@ fun PrivateMessageScreen(destination: Notification.Message) {
                         Icon(
                             Icons.AutoMirrored.Outlined.Send,
                             contentDescription = "发送",
+                            tint = if (draft.isNotBlank()) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
                         )
                     }
                 }
             }
         },
     ) { paddingValues ->
-        PullToRefreshBox(
+        AppPullToRefreshBox(
             isRefreshing = viewModel.isLoading,
             onRefresh = { viewModel.refresh(environment) },
             modifier = Modifier.padding(paddingValues),
@@ -230,6 +250,9 @@ fun PrivateMessageScreen(destination: Notification.Message) {
                 items = viewModel.allData,
                 onLoadMore = { viewModel.loadMore(environment) },
                 isEnd = { viewModel.isEnd },
+                isLoading = { viewModel.isLoading },
+                loadError = { viewModel.errorMessage },
+                onRetry = { viewModel.retry(environment) },
                 reverseLayout = true,
                 // 保留列表淡入，由新消息高度连续变化带动旧消息让位，避免独立的位置动画造成重叠。
                 animateItemPlacement = false,
@@ -273,7 +296,26 @@ private fun PrivateMessageBubble(
 ) {
     val navigator = LocalNavigator.current
     val openWebUrl = rememberZhihuWebUrlOpener()
-    val linkColor = MaterialTheme.colorScheme.primary
+    val isMiuix = settingSkinIsMiuix()
+    val bubbleColor = if (isMiuix) {
+        if (incoming) {
+            LocalAppSkinTokens.current.surfaceContainer
+        } else {
+            LocalAppSkinTokens.current.secondaryVariant
+        }
+    } else {
+        if (incoming) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        }
+    }
+    val bubbleContentColor = if (isMiuix) {
+        if (incoming) LocalAppSkinTokens.current.onSurface else LocalAppSkinTokens.current.onSecondaryVariant
+    } else {
+        if (incoming) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val linkColor = bubbleContentColor
     val displayText = remember(message.content, message.plugin, linkColor, navigator, openWebUrl) {
         message.displayContent(linkColor) { url ->
             resolveContent(url)?.let(navigator.onNavigate) ?: openWebUrl(url)
@@ -284,7 +326,7 @@ private fun PrivateMessageBubble(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("private_message_${message.stableId}")
-            .padding(horizontal = 14.dp, vertical = 5.dp),
+            .padding(horizontal = AppDimens.Space14, vertical = AppDimens.Space6),
         horizontalArrangement = if (incoming) Arrangement.Start else Arrangement.End,
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -294,7 +336,7 @@ private fun PrivateMessageBubble(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(AppDimens.AvatarSizeCompact)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )
@@ -308,19 +350,25 @@ private fun PrivateMessageBubble(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = if (incoming) Alignment.CenterStart else Alignment.CenterEnd,
             ) {
+                val bubbleShape = RoundedCornerShape(
+                    topStart = AppDimens.BubbleCornerRadius,
+                    topEnd = AppDimens.BubbleCornerRadius,
+                    bottomStart = if (incoming) {
+                        AppDimens.BubbleTailCorner
+                    } else {
+                        AppDimens.BubbleCornerRadius
+                    },
+                    bottomEnd = if (incoming) {
+                        AppDimens.BubbleCornerRadius
+                    } else {
+                        AppDimens.BubbleTailCorner
+                    },
+                )
                 Surface(
                     modifier = Modifier.widthIn(max = maxWidth * 0.88f),
-                    shape = RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (incoming) 4.dp else 16.dp,
-                        bottomEnd = if (incoming) 16.dp else 4.dp,
-                    ),
-                    color = if (incoming) {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer
-                    },
+                    shape = bubbleShape,
+                    color = bubbleColor,
+                    contentColor = bubbleContentColor,
                 ) {
                     SelectionContainer {
                         Text(
@@ -328,7 +376,11 @@ private fun PrivateMessageBubble(
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier
                                 .commentSelectionWorkaround()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                .semantics { stateDescription = if (incoming) "收到的私信" else "发出的私信" }
+                                .padding(
+                                    horizontal = AppDimens.Space14,
+                                    vertical = AppDimens.Space10,
+                                ),
                         )
                     }
                 }
@@ -354,7 +406,7 @@ private fun PrivateMessageBubble(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(AppDimens.AvatarSizeCompact)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )

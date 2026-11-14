@@ -27,3 +27,14 @@ tasks.withType<KotlinCompile>().configureEach {
         jvmTarget = JvmTarget.fromTarget(libs.versions.jvm.get())
     }
 }
+
+
+dependencies {
+    testImplementation(gradleApi())
+    testImplementation(libs.junit4)
+}
+
+tasks.withType<Test>().configureEach {
+    // ProjectBuilder 通过 MethodHandles 向 java.lang 类加载器注入测试夹具。
+    jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED")
+}

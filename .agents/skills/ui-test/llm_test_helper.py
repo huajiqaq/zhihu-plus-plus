@@ -425,7 +425,7 @@ def cmd_screenshot(args):
     if capture.returncode != 0:
         print(f"screencap 失败: {capture.stderr}", file=sys.stderr)
         sys.exit(1)
-    local = args.output or "/tmp/zhihu_screenshot.png"
+    local = args.output or os.path.join(tempfile.gettempdir(), "zhihu_screenshot.png")
     pull = adb("pull", remote, local)
     if pull.returncode != 0:
         print(f"截图 pull 失败: {pull.stderr}", file=sys.stderr)
@@ -460,7 +460,7 @@ def main():
     tap_p.add_argument("--index", type=int, default=None, help="第 N 个同名 tag（未指定时若有歧义则报错）")
 
     ss_p = sub.add_parser("screenshot", help="截图并拉取到本地")
-    ss_p.add_argument("output", nargs="?", help="本地路径（默认 /tmp/zhihu_screenshot.png）")
+    ss_p.add_argument("output", nargs="?", help="本地路径（默认系统临时目录下的 zhihu_screenshot.png）")
 
     args = parser.parse_args()
     {"dump": cmd_dump, "find": cmd_find, "tap": cmd_tap, "screenshot": cmd_screenshot}[

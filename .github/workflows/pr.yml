@@ -161,7 +161,7 @@ jobs:
             module="${build_script%%/*}"
             tasks+=(":$module:jvmTest")
           done
-          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite --max-workers=2
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
 
       - name: Upload test reports
         if: always()

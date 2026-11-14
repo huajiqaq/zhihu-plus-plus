@@ -21,11 +21,16 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
+import androidx.room.Transaction
 
 @Dao
 interface LocalContentDao {
-    // CrawlingTask 相关操作
+    @Query("SELECT file FROM pragma_database_list WHERE name = 'main'")
+    suspend fun databaseFilePath(): String
+
+    @Query("UPDATE crawling_tasks SET status = 'NotStarted', errorMessage = NULL WHERE status = 'InProgress'")
+    suspend fun recoverAbandonedTasks(): Int
+
     @Query("SELECT * FROM crawling_tasks WHERE status = :status ORDER BY priority DESC, createdAt ASC")
     suspend fun getTasksByStatus(status: CrawlingStatus): List<CrawlingTask>
 
@@ -35,13 +40,20 @@ interface LocalContentDao {
     @Insert
     suspend fun insertTasks(tasks: List<CrawlingTask>)
 
-    @Update
-    suspend fun updateTask(task: CrawlingTask)
+    @Query("UPDATE crawling_tasks SET status = 'InProgress', executedAt = :executedAt, errorMessage = NULL WHERE id = :id AND status = 'NotStarted' AND executedAt IS :previousExecution AND (executedAt IS NULL OR executedAt < :executedAt)")
+    suspend fun claimTask(id: Long, previousExecution: Long?, executedAt: Long): Int
+
+    @Query("UPDATE crawling_tasks SET status = :status, errorMessage = :errorMessage WHERE id = :id AND status = 'InProgress' AND executedAt = :executedAt")
+    suspend fun finishTask(id: Long, executedAt: Long, status: CrawlingStatus, errorMessage: String? = null): Int
+
+    @Transaction
+    suspend fun completeTask(id: Long, executedAt: Long, results: List<CrawlingResult>) {
+        if (finishTask(id, executedAt, CrawlingStatus.Completed) == 1) insertResults(results)
+    }
 
     @Query("DELETE FROM crawling_tasks WHERE status = :status AND createdAt < :before")
     suspend fun cleanupOldTasks(status: CrawlingStatus, before: Long)
 
-    // CrawlingResult 相关操作
     @Query("SELECT * FROM crawling_results WHERE reason = :reason ORDER BY score DESC, createdAt DESC")
     suspend fun getResultsByReason(reason: CrawlingReason): List<CrawlingResult>
 
@@ -57,7 +69,6 @@ interface LocalContentDao {
     @Query("DELETE FROM crawling_results WHERE createdAt < :before")
     suspend fun cleanupOldResults(before: Long)
 
-    // LocalFeed 相关操作
     @Query("SELECT * FROM local_feeds WHERE id = :feedId LIMIT 1")
     suspend fun getFeedById(feedId: String): LocalFeed?
 
@@ -70,7 +81,6 @@ interface LocalContentDao {
     @Query("DELETE FROM local_feeds WHERE createdAt < :before")
     suspend fun cleanupOldFeeds(before: Long)
 
-    // UserBehavior 相关操作
     @Insert
     suspend fun insertBehavior(behavior: UserBehavior)
 

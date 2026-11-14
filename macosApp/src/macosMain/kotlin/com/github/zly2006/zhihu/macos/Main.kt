@@ -24,6 +24,7 @@ import com.github.zly2006.zhihu.platform.MacosBackNavigationHost
 import com.github.zly2006.zhihu.platform.isMacosQuitOnWindowCloseEnabled
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.MacosZhihuMain
+import com.github.zly2006.zhihu.ui.components.AppStartupSplash
 import kotlinx.cinterop.autoreleasepool
 import platform.AppKit.NSApplication
 import platform.AppKit.NSApplicationActivationPolicy
@@ -60,13 +61,15 @@ fun main() {
             applicationDelegate.window = window
             window.delegate = applicationDelegate
             MacosBackNavigationHost(window) {
-                ZhihuTheme {
-                    MacosZhihuMain { chrome, content ->
-                        MacosNativeWindowChrome(
-                            window = window,
-                            chrome = chrome,
-                            content = content,
-                        )
+                AppStartupSplash {
+                    ZhihuTheme {
+                        MacosZhihuMain { chrome, content ->
+                            MacosNativeWindowChrome(
+                                window = window,
+                                chrome = chrome,
+                                content = content,
+                            )
+                        }
                     }
                 }
             }

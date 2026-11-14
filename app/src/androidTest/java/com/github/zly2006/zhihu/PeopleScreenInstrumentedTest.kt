@@ -19,7 +19,15 @@ package com.github.zly2006.zhihu
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -27,6 +35,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.FeedDisplayItem
@@ -53,6 +62,7 @@ import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_AVATAR_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_FOLLOW_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_HEADER_TAG
+import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_MORE_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_SEARCH_BUTTON_TAG
@@ -77,20 +87,15 @@ class PeopleScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
     }
 
     @After
     fun tearDown() {
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
-    /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/377
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/382
-     */
+    /** 重复回答 key 崩溃回归：https://github.com/zly2006/zhihu-plus-plus/issues/377；修复：https://github.com/zly2006/zhihu-plus-plus/pull/382。 */
     @Test
     fun duplicatedAuthorAnswerKeysDoNotCrashAnswerListOffline() {
         val duplicatedAnswerId = 2_544_209_984L
@@ -120,10 +125,7 @@ class PeopleScreenInstrumentedTest {
         composeRule.onAllNodesWithTag("people_screen_answer_item_$duplicatedAnswerId").assertCountEquals(2)
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/374
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/408
-     */
+    /** 用户内搜索入口来源：https://github.com/zly2006/zhihu-plus-plus/issues/374；实现：https://github.com/zly2006/zhihu-plus-plus/pull/408。 */
     @Test
     fun headerSearchActionNavigatesToMemberScopedSearchOffline() {
         seededViewModel()
@@ -168,15 +170,17 @@ class PeopleScreenInstrumentedTest {
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/718
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/722
-     * Target: four badges leave the expanded action buttons visible and keep them clear of the tab row after collapse.
-     * The tab row must move upward to prove the header collapsed; changes to unrelated list pixels cannot pass.
+     * 密集认证遮挡操作回归：https://github.com/zly2006/zhihu-plus-plus/issues/718；修复：https://github.com/zly2006/zhihu-plus-plus/pull/722。
+     * 四项认证下，展开操作区仍须可见，收起后不能被 tab 行遮挡。
+     * 用 tab 行上移证明页头确实收起；无关列表像素变化不能代替此条件。
      */
     @Test
     fun denseProfileBadgesKeepHeaderActionsVisibleOffline() {
         val viewModel = seededViewModel(itemCount = 1)
         setPeopleScreen()
+        composeRule.waitUntil("用户资料必须加载完成后再设置四项认证", timeoutMillis = 5_000) {
+            viewModel.hasLoadedProfile && !viewModel.isProfileLoading
+        }
         composeRule.activity.runOnUiThread {
             viewModel.officialBadgeDetails = listOf(
                 OfficialBadge("社区成就", "社区成就说明"),
@@ -188,9 +192,6 @@ class PeopleScreenInstrumentedTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag(PEOPLE_SCREEN_FOLLOW_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG).assertIsDisplayed()
         val expandedTabTop = composeRule
             .onNodeWithTag(PEOPLE_SCREEN_TAB_ROW_TAG)
             .fetchSemanticsNode()
@@ -198,17 +199,95 @@ class PeopleScreenInstrumentedTest {
             .top
         listOf(
             PEOPLE_SCREEN_FOLLOW_BUTTON_TAG,
-            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_MORE_BUTTON_TAG,
         ).forEach { tag ->
             assertTrue(
                 "展开态操作按钮必须完整位于标签栏之前: $tag",
                 composeRule
                     .onNodeWithTag(tag)
+                    .assertIsDisplayed()
+                    .assertIsEnabled()
+                    .assertHasClickAction()
                     .fetchSemanticsNode()
                     .boundsInRoot.bottom <= expandedTabTop,
             )
+        }
+
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).performTouchInput { click() }
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        val blockActionTags = listOf(
+            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+        )
+        val menuViewport = composeRule.onNode(isPopup()).fetchSemanticsNode().boundsInRoot
+        blockActionTags.forEach { tag ->
+            val buttonBounds = composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .assertHasClickAction()
+                .fetchSemanticsNode()
+                .boundsInRoot
+            assertTrue(
+                "展开态菜单操作必须完整位于真实菜单视口内: $tag",
+                buttonBounds.width > 0f &&
+                    buttonBounds.height > 0f &&
+                    buttonBounds.left >= menuViewport.left &&
+                    buttonBounds.top >= menuViewport.top &&
+                    buttonBounds.right <= menuViewport.right &&
+                    buttonBounds.bottom <= menuViewport.bottom,
+            )
+        }
+        val blockRequestCount = ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block")
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNode(isPopup()).assertDoesNotExist()
+        composeRule.onNode(hasAnyAncestor(isDialog()) and hasText("拉黑 离线用户？")).assertIsDisplayed()
+        composeRule
+            .onNode(hasAnyAncestor(isDialog()) and hasText("会同步到你的知乎账号。之后可以在这个页面点“取消拉黑”恢复。"))
+            .assertIsDisplayed()
+        assertEquals("拉黑必须先确认，打开弹窗不能提交", blockRequestCount, ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block"))
+        composeRule
+            .onNode(hasAnyAncestor(isDialog()) and hasText("取消"))
+            .assertIsDisplayed()
+            .performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNode(isDialog()).assertDoesNotExist()
+        assertEquals("取消拉黑不能提交", blockRequestCount, ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block"))
+        composeRule.runOnIdle {
+            assertTrue("取消确认后仍未拉黑", !viewModel.isBlocking)
+        }
+        listOf(
+            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+        ).forEach { tag ->
+            composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+            composeRule.onNodeWithTag(tag).assertIsDisplayed().performTouchInput { click() }
+            composeRule.waitUntil("菜单点击必须完成屏蔽: $tag", timeoutMillis = 5_000) {
+                if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) {
+                    viewModel.isBlockedInRecommendations
+                } else {
+                    viewModel.isBlockedAsQuestionAuthor
+                }
+            }
+            composeRule.onNode(isPopup()).assertDoesNotExist()
+            composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+            composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertTextEquals(if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) "取消屏蔽推荐" else "取消屏蔽其提问")
+                .performTouchInput { click() }
+            composeRule.waitUntil("取消屏蔽必须恢复原状态: $tag", timeoutMillis = 5_000) {
+                if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) {
+                    !viewModel.isBlockedInRecommendations
+                } else {
+                    !viewModel.isBlockedAsQuestionAuthor
+                }
+            }
+            composeRule.onNode(isPopup()).assertDoesNotExist()
         }
 
         val listNode = composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG)
@@ -230,9 +309,7 @@ class PeopleScreenInstrumentedTest {
         )
         listOf(
             PEOPLE_SCREEN_FOLLOW_BUTTON_TAG,
-            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_MORE_BUTTON_TAG,
         ).forEach { tag ->
             val buttonBounds = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
             assertTrue(
@@ -240,12 +317,34 @@ class PeopleScreenInstrumentedTest {
                 buttonBounds.bottom <= collapsedTabBounds.top || buttonBounds.top >= collapsedTabBounds.bottom,
             )
         }
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+        val collapsedMenuViewport = composeRule.onNode(isPopup()).fetchSemanticsNode().boundsInRoot
+        blockActionTags.forEach { tag ->
+            val buttonBounds = composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .assertHasClickAction()
+                .fetchSemanticsNode()
+                .boundsInRoot
+            assertTrue(
+                "收起态菜单操作必须完整位于真实菜单视口内: $tag",
+                buttonBounds.width > 0f &&
+                    buttonBounds.height > 0f &&
+                    buttonBounds.left >= collapsedMenuViewport.left &&
+                    buttonBounds.top >= collapsedMenuViewport.top &&
+                    buttonBounds.right <= collapsedMenuViewport.right &&
+                    buttonBounds.bottom <= collapsedMenuViewport.bottom,
+            )
+        }
+        Espresso.pressBack()
+        composeRule.waitUntil("Android 返回后更多菜单必须关闭", timeoutMillis = 5_000) {
+            composeRule.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNode(isPopup()).assertDoesNotExist()
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/302
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/324
-     */
+    /** 关注订阅入口来源：https://github.com/zly2006/zhihu-plus-plus/issues/302；实现：https://github.com/zly2006/zhihu-plus-plus/pull/324。 */
     @Test
     fun followingSubscriptionsTabMatchesOfficialEntryPointsOffline() {
         /*

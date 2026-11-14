@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessagePlugin
 import kotlin.test.Test
@@ -31,7 +32,24 @@ class PrivateMessageContentTest {
         ).displayContent(Color.Blue) {}
 
         assertEquals("周报已生成，查看周报；活动地址见下方。", content.text)
-        assertEquals(1, content.getLinkAnnotations(0, content.length).size)
+        val links = content.getLinkAnnotations(0, content.length)
+        assertEquals(1, links.size)
+        assertEquals(
+            Color.Blue,
+            links
+                .single()
+                .item.styles
+                ?.style
+                ?.color,
+        )
+        assertEquals(
+            TextDecoration.Underline,
+            links
+                .single()
+                .item.styles
+                ?.style
+                ?.textDecoration,
+        )
     }
 
     @Test

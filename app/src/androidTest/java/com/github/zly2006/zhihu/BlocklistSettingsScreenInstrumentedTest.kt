@@ -17,13 +17,17 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.navigation.Person
@@ -79,10 +83,10 @@ class BlocklistSettingsScreenInstrumentedTest {
         val dao = getContentFilterDatabase(composeRule.activity).blockedQuestionAuthorDao()
         val navigator = setScreen()
 
-        composeRule.onNode(hasText("屏蔽提问者") and hasClickAction()).performClick()
+        composeRule.onNode(hasText("提问者", substring = true) and hasClickAction()).performClick()
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.FAB).assertIsDisplayed()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("blocklistSettings:questionAuthors:item:offline-asker-1").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).assertIsDisplayed()
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).performVerticalSwipeCycle()
@@ -100,9 +104,18 @@ class BlocklistSettingsScreenInstrumentedTest {
             navigator.destinations,
         )
 
-        composeRule.onNodeWithTag("blocklistSettings:questionAuthors:delete:offline-asker-1").performClick()
+        // The delete icon is nested inside a clickable row; target the icon's own semantics node,
+        // otherwise Compose merges the tap into the parent navigation action.
+        composeRule
+            .onNodeWithTag("blocklistSettings:questionAuthors:delete:offline-asker-1", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
         composeRule.waitUntil(5_000) { runBlocking { dao.getUserCount() == 1 } }
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_CLEAR_BUTTON).performClick()
+        composeRule.waitForIdle()
+        assertEquals("清空在确认前不应修改屏蔽列表", 1, runBlocking { dao.getUserCount() })
+        composeRule
+            .onNode(hasText("清空") and hasClickAction() and hasAnyAncestor(hasTestTag(BlocklistSettingsTestTags.CLEAR_DIALOG)))
+            .performClick()
         composeRule.waitUntil(5_000) { runBlocking { dao.getUserCount() == 0 } }
 
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.FAB).performClick()

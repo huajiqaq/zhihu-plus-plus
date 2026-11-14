@@ -21,9 +21,6 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlin.time.Clock
 
-/**
- * 屏蔽主题实体
- */
 @Entity(tableName = "blocked_topics")
 data class BlockedTopic(
     @PrimaryKey

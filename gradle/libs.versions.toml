@@ -46,6 +46,8 @@ tiqianMath = "0.1.0-SNAPSHOT"
 tiqianMarkdown = "0.1.0-SNAPSHOT"
 openjfx = "21.0.2"
 
+navigationeventCompose = "1.1.2"
+
 [libraries]
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashScreen" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -123,6 +125,14 @@ latex-renderer = { group = "io.github.huarangmeng", name = "latex-renderer", ver
 latex-parser = { group = "io.github.huarangmeng", name = "latex-parser", version.ref = "huarangmeng-latex" }
 markdown-parser = { group = "io.github.huarangmeng", name = "markdown-parser", version.ref = "huarangmeng-markdown" }
 markdown-renderer = { group = "io.github.huarangmeng", name = "markdown-renderer", version.ref = "huarangmeng-markdown" }
+
+androidx-navigationevent-compose = { group = "androidx.navigationevent", name = "navigationevent-compose", version.ref = "navigationeventCompose" }
+openjfx-base = { group = "org.openjfx", name = "javafx-base", version.ref = "openjfx" }
+openjfx-graphics = { group = "org.openjfx", name = "javafx-graphics", version.ref = "openjfx" }
+openjfx-controls = { group = "org.openjfx", name = "javafx-controls", version.ref = "openjfx" }
+openjfx-web = { group = "org.openjfx", name = "javafx-web", version.ref = "openjfx" }
+openjfx-swing = { group = "org.openjfx", name = "javafx-swing", version.ref = "openjfx" }
+openjfx-media = { group = "org.openjfx", name = "javafx-media", version.ref = "openjfx" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

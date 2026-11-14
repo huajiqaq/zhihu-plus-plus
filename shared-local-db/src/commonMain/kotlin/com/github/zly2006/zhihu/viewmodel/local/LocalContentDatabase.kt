@@ -28,7 +28,7 @@ import kotlinx.coroutines.Dispatchers
 
 @Database(
     entities = [CrawlingTask::class, CrawlingResult::class, LocalFeed::class, UserBehavior::class],
-    version = 5, // 增加版本号，因为添加了UserBehavior表
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(LocalDatabaseConverters::class)
@@ -41,6 +41,8 @@ abstract class LocalContentDatabase : RoomDatabase() {
 expect object LocalContentDatabaseConstructor : RoomDatabaseConstructor<LocalContentDatabase> {
     override fun initialize(): LocalContentDatabase
 }
+
+expect fun getLocalContentDatabase(): LocalContentDatabase?
 
 fun buildLocalContentDatabase(
     builder: Builder<LocalContentDatabase>,

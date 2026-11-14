@@ -78,6 +78,10 @@ private val emptyContentOpenEventDao = object : ContentOpenEventDao {
 }
 
 private val emptyBlockedKeywordDao = object : BlockedKeywordDao {
+    override fun observeKeywordsByType(type: String): Flow<List<BlockedKeyword>> = emptyFlow()
+
+    override suspend fun deleteKeywordsByType(type: String) = Unit
+
     override suspend fun getAllKeywords(): List<BlockedKeyword> = emptyList()
 
     override suspend fun insertKeyword(keyword: BlockedKeyword): Long = 0L
@@ -92,6 +96,8 @@ private val emptyBlockedKeywordDao = object : BlockedKeywordDao {
 }
 
 private val emptyBlockedUserDao = object : BlockedUserDao {
+    override fun observeAllUsers(): Flow<List<BlockedUser>> = emptyFlow()
+
     override suspend fun getAllUsers(): List<BlockedUser> = emptyList()
 
     override suspend fun insertUser(user: BlockedUser) = Unit
@@ -106,6 +112,8 @@ private val emptyBlockedUserDao = object : BlockedUserDao {
 }
 
 private val emptyBlockedQuestionAuthorDao = object : BlockedQuestionAuthorDao {
+    override fun observeAllUsers(): Flow<List<BlockedQuestionAuthor>> = emptyFlow()
+
     override suspend fun getAllUsers(): List<BlockedQuestionAuthor> = emptyList()
 
     override suspend fun insertUser(user: BlockedQuestionAuthor) = Unit
@@ -120,6 +128,8 @@ private val emptyBlockedQuestionAuthorDao = object : BlockedQuestionAuthorDao {
 }
 
 private val emptyBlockedContentRecordDao = object : BlockedContentRecordDao {
+    override fun observeRecentRecords(): Flow<List<BlockedContentRecord>> = emptyFlow()
+
     override suspend fun getRecentBlockedRecords(limit: Int): List<BlockedContentRecord> = emptyList()
 
     override suspend fun insertRecord(record: BlockedContentRecord): Long = 0L
@@ -134,6 +144,8 @@ private val emptyBlockedContentRecordDao = object : BlockedContentRecordDao {
 }
 
 private val emptyBlockedTopicDao = object : BlockedTopicDao {
+    override fun observeAllTopics(): Flow<List<BlockedTopic>> = emptyFlow()
+
     override suspend fun insertTopic(topic: BlockedTopic): Long = 0L
 
     override suspend fun deleteTopicById(topicId: String) = Unit

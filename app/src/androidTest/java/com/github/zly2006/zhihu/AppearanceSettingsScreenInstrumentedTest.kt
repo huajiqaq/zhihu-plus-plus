@@ -27,8 +27,10 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -49,9 +51,11 @@ import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_SCROLL_TAG
 import com.github.zly2006.zhihu.ui.subscreens.AppearanceSettingsScreen
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.subscreens.NavigationSettingsScreen
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_CONTENT_END_MARKER
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_FAB
 import com.github.zly2006.zhihu.ui.subscreens.PREF_VOLUME_KEY_PAGE_TURN
+import com.github.zly2006.zhihu.ui.subscreens.PageTurnSettingsScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -75,7 +79,8 @@ class AppearanceSettingsScreenInstrumentedTest {
     fun bottomBarRowsKeepUniformHeightAndMoveOrderPersists() {
         // The bottom-bar editor mixes selected rows, unselected rows, and the non-removable account
         // row. They should keep the same touch target height while reorder actions still persist.
-        setUpScreen(setting = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY)
+        setUpNavigationScreen(setting = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY)
+        clickSettingRow("底部导航栏项目")
 
         scrollUntilTagDisplayed("appearanceSettings:bottomBar:item:${HotList.name}")
         val selectedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${Daily.name}")
@@ -98,7 +103,7 @@ class AppearanceSettingsScreenInstrumentedTest {
      */
     @Test
     fun collectionDirectBrowseIsOptInAndClearlyMarkedAsExperimental() {
-        setUpScreen(setting = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY)
+        setUpNavigationScreen(setting = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY)
 
         scrollUntilTagDisplayed(APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG)
         assertFalse(preferences.getBoolean(COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false))
@@ -125,10 +130,10 @@ class AppearanceSettingsScreenInstrumentedTest {
             .putBoolean(PREF_VOLUME_KEY_PAGE_TURN, true)
             .putBoolean(PREF_SHOW_PAGE_TURN_FAB, true)
             .commit()
-        setUpScreen(setting = PREF_SHOW_PAGE_TURN_FAB, resetPreferences = false)
+        composeRule.setScreenContent { PageTurnSettingsScreen(PREF_SHOW_PAGE_TURN_FAB) }
 
         waitUntilDisplayed(hasText("显示翻页悬浮按钮"))
-        composeRule.onNodeWithText("电纸书翻页").assertExists()
+        assertTrue(composeRule.onAllNodesWithText("电纸书翻页").fetchSemanticsNodes().isNotEmpty())
         composeRule.onNodeWithText("音量键翻页").assertExists()
         composeRule.onNodeWithText("翻页切换回答").assertExists()
         composeRule.onNodeWithText("翻页距离").assertExists()
@@ -151,6 +156,13 @@ class AppearanceSettingsScreenInstrumentedTest {
         }
     }
 
+    private fun setUpNavigationScreen(setting: String) {
+        composeRule.resetAppPreferences()
+        composeRule.setScreenContent {
+            NavigationSettingsScreen(setting = setting, onExit = {})
+        }
+    }
+
     private fun scrollContainer() = composeRule.onNodeWithTag(APPEARANCE_SETTINGS_SCROLL_TAG)
 
     private fun scrollUntilDisplayed(matcher: SemanticsMatcher, maxSwipes: Int = 12) {
@@ -158,7 +170,7 @@ class AppearanceSettingsScreenInstrumentedTest {
             if (isDisplayed(matcher)) {
                 return
             }
-            scrollContainer().performTouchInput { swipeUp() }
+            composeRule.onRoot().performTouchInput { swipeUp() }
             composeRule.waitForIdle()
         }
         composeRule.onNode(matcher, useUnmergedTree = true).assertIsDisplayed()
@@ -175,14 +187,14 @@ class AppearanceSettingsScreenInstrumentedTest {
             if (isTagDisplayed(tag)) {
                 return
             }
-            scrollContainer().performTouchInput { swipeUp() }
+            composeRule.onRoot().performTouchInput { swipeUp() }
             composeRule.waitForIdle()
         }
         repeat(maxSwipes) {
             if (isTagDisplayed(tag)) {
                 return
             }
-            scrollContainer().performVerticalSwipeCycle()
+            composeRule.onRoot().performVerticalSwipeCycle()
             composeRule.waitForIdle()
         }
         composeRule.onNodeWithTag(tag).assertIsDisplayed()

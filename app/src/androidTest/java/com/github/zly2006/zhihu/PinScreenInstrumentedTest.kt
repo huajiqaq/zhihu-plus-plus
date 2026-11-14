@@ -51,14 +51,12 @@ class PinScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
     }
 
     @After
     fun tearDown() {
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
     /**

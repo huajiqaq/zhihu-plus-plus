@@ -19,11 +19,15 @@ package com.github.zly2006.zhihu.viewmodel.local
 
 import android.content.Context
 import androidx.room.Room
+import com.github.zly2006.zhihu.data.currentAndroidApplicationContext
 
 private const val LOCAL_CONTENT_DATABASE_NAME = "local_content_database"
 
 @Volatile
 private var localContentDatabase: LocalContentDatabase? = null
+
+actual fun getLocalContentDatabase(): LocalContentDatabase? =
+    localContentDatabase ?: getLocalContentDatabase(currentAndroidApplicationContext())
 
 fun getLocalContentDatabase(context: Context): LocalContentDatabase =
     localContentDatabase ?: synchronized(LocalContentDatabase::class) {

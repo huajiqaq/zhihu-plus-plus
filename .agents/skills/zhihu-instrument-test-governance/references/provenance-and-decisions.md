@@ -1,65 +1,22 @@
-# Provenance and Decision Reference
+# 测试取舍说明
 
-## Provenance audit command
+来源可为真实 issue/PR、提交、协议证据或明确产品行为，不要求同时具有 issue 和 PR URL。缺来源不是自动删除理由，也不能伪造链接补齐。
 
-Run this from the repository root after editing. It reports each `@Test` whose preceding twelve lines do not contain both a repository issue URL and a repository pull-request URL.
+| 字段 | 要记录什么 |
+| --- | --- |
+| 目标 | 文件和方法名，实际读过的断言 |
+| 长期价值 | 用户行为、协议、数据、安全或平台集成，不是“这次修改需要测试” |
+| 执行面 | 必须设备的理由；否则现有 common/JVM 覆盖在哪里 |
+| 取舍 | 保留、合并、迁移、删除、待核对 |
+| 证据 | 来源、重复覆盖、替代测试或移除的产品行为 |
+| 验证 | 实际执行结果；未执行说明，不补形式重跑 |
 
-```bash
-failed=0
-while IFS= read -r file_path; do
-  awk '
-    { source[NR] = $0 }
-    /^[[:space:]]*@Test([[:space:]]|$)/ {
-      issue = 0
-      pull = 0
-      start = NR > 12 ? NR - 12 : 1
-      for (line = start; line < NR; line++) {
-        if (source[line] ~ /https:\/\/github.com\/zly2006\/zhihu-plus-plus\/issues\/[0-9]+/) issue = 1
-        if (source[line] ~ /https:\/\/github.com\/zly2006\/zhihu-plus-plus\/pull\/[0-9]+/) pull = 1
-      }
-      if (!issue || !pull) {
-        printf "%s:%d missing%s%s provenance\n", FILENAME, NR, issue ? "" : " issue", pull ? "" : " PR"
-        failed = 1
-      }
-    }
-    END { exit failed }
-  ' "$file_path" || failed=1
-done < <(rg --files app/src/androidTest -g '*.kt')
-exit "$failed"
-```
+删除/合并应有明确证据：
 
-This is a structural gate only. It cannot prove that URLs are real or relevant; the audit must read both pages before accepting them.
+- 同一行为在保留用例中有至少同样强的覆盖；
+- 一次性取证或视觉偏好已验证，不承担独立长期契约；
+- 仅测试前缀、非空、常量或实现结构；
+- 产品行为已移除；
+- 夹具/转发函数已被消费者实际路径覆盖。
 
-The cleanup PR must include a retained-test table with the test name, classification, issue URL, PR URL, and device-only reason. Review that table against the linked pages; passing the command alone is never acceptance.
-
-## Classification
-
-| Class | Meaning | Default decision |
-| --- | --- | --- |
-| `REGRESSION` | Reproduces a bug that occurred and was fixed | Keep permanently |
-| `CONTRACT` | Protects an explicitly accepted feature behavior | Keep only at the cheapest sufficient layer |
-| `SMOKE` | Broadly proves startup or integration without a narrow past failure | Keep only with a verified issue/PR pair documenting its unique device value |
-| `UNVERIFIED` | Historical reason or linked behavior has not been proven | Investigate; never delete by assumption |
-
-## Device-necessity questions
-
-A permanent instrument test should answer yes to at least one question that cannot be covered faithfully below Android instrumentation:
-
-- Does it depend on Android window, system bars, predictive back, permissions, activity lifecycle, or platform services?
-- Does it verify Compose semantics, focus, scrolling, gesture arbitration, save/restore, or actual pixel/layout behavior tied to Android?
-- Does it protect an Android-only integration or generated implementation?
-- Did a historical bug escape cheaper coverage specifically because device behavior differed?
-
-Pure reducers, parsers, model mapping, URL construction, list transformation, settings-key lookup, and deterministic ViewModel state transitions normally belong in common/JVM tests.
-
-## Deletion evidence
-
-For every deletion, record one of:
-
-- exact duplicate of a retained test, including the same historical provenance and assertion strength;
-- migrated to a cheaper test that asserts the same contract;
-- one-time visual or implementation-detail check with no historical regression;
-- obsolete product behavior, with the PR that removed the behavior;
-- fixture-only test whose behavior is already covered by retained consumers.
-
-“Slow”, “flaky”, “old”, or “hard to understand” is never sufficient evidence by itself.
+不能只因为运行慢、flaky、旧或名称像临时测试就删除。反之，也不能只因为曾修复过一次就无限保留独立小测试。纯解析、请求构造、模型映射和状态转换优先复用便宜的 common/JVM 用例。

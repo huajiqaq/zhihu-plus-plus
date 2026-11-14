@@ -27,25 +27,19 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   </div>
 </div>
 
-
 ## 下载
 
-告别知乎 110MB+ 的 Android 客户端，Lite APK 只要不到 4 MB！
+Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推理，支持基于 LLM embedding 的智能内容过滤。
 
 [点我下载](https://github.com/zly2006/zhihu-plus-plus/releases)
 
 [下载最新开发版本](https://github.com/zly2006/zhihu-plus-plus/releases/tag/nightly)
 
+[在电脑打开：浏览器扩展使用说明](docs/open-on-pc.md)
+
 桌面版提供 Windows MSI 安装包与 Linux AppImage（均内置 Java 运行时，下载安装即可使用，无需另外安装 Java），macOS 提供 arm64 原生应用。
 
-> 关于Full和Lite两个版本的说明：
-> Full版本包含了一个onnx框架，可以在端侧进行离线AI推理，支持基于LLM embedding的智能内容过滤功能，
-> 这实际上主要是本人对端侧AI的技术尝试，实际功能还有很多没开发的，比如人本地知识库（懒）；
-> Lite版本不支持智能内容过滤，但体积更小，性能更好。您可以根据自己的需求选择下载哪个版本。
-
-## 路线图
-
-### 已经实现的功能
+## 功能
 
 - 登录与账号
   - 支持手机验证码登录
@@ -101,7 +95,7 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   - 屏蔽历史记录
 - 其他
   - 基于 Kotlin Multiplatform 共享核心代码，支持 Android 与实验性桌面端
-  - 支持 zse96 v2 签名算法（可以调用 99% 的网页端 API）
+  - 支持 zse96 v2 网页请求签名
   - 支持模拟安卓端 API 调用
   - 支持 Deep Link 与剪贴板链接识别跳转
   - 支持二维码扫码结果展示和复制，可用于提取网址、Wi-Fi 密码等信息
@@ -132,6 +126,24 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
 - [Zhihu++ HMOS （鸿蒙版）](https://github.com/zhuoyi233/zhihu-plus-plus-HMOS)
 
 注意：这里的所有项目与知乎++无关，在此列出不代表其实得到了知乎++的支持或背书。
+
+## 开发构建
+
+打包需要 Python 3.11+、Git 和可用的上游输入。APK 与桌面打包任务自动准备源码、重放已审查补丁并生成所需字体；版本目录仍使用正常上游坐标。
+
+```bash
+./gradlew :app:assembleLiteDebug
+./gradlew :desktopApp:packageReleaseUberJarForCurrentOS
+```
+
+使用补丁 API 的独立编译或测试需显式启用同一配置：
+
+```bash
+./gradlew :shared-ui-base:compileKotlinJvm -PzhihuUpstreamPatches=true
+./gradlew :shared-domain:jvmTest -PzhihuUpstreamPatches=true
+```
+
+普通依赖模式不保证提供未发布 API。离线只能复用上一次成功记录且校验完整的同版本输入；缺失、损坏或补丁冲突都会失败。缓存与生成产物不提交，维护方法见 [上游补丁](docs/upstream-dependency-patches.md)。
 
 ## 贡献者
 

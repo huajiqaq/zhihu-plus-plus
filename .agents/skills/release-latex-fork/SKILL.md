@@ -1,18 +1,14 @@
 ---
 name: release-latex-fork
-description: Maintain the legacy standalone LaTeX fork when explicitly requested. Zhihu now consumes Markdown and its supporting modules through the published me.zly2006.markdown dependency chain.
+description: 用户明确要求时维护独立的旧 LaTeX 分叉发布线。更新 Zhihu++ 依赖时以当前版本目录和上游补丁流程为准，不混入旧分叉构件。
 ---
 
-# LaTeX 分叉与当前应用依赖
+# LaTeX 分叉维护
 
-当前知乎的依赖关系和更新流程以仓库内 `docs/markdown-library-dependency.md` 为准。Markdown、LaTeX 和 CodeHigh 由独立 Markdown 工程统一构建并使用匹配版本发布，应用不再保留对应的 Gradle project 或源码副本。
+应用的当前坐标和更新方法见 [Markdown 依赖](../../../docs/markdown-library-dependency.md)。
 
-## 执行边界
-
-- 用户要求更新应用阅读库时，先核对 `me.zly2006.markdown` 实际发布版本和平台构件，再更新应用的 `markdown.version`。
-- 不得把旧 `io.github.zly2006:latex-*` 版本直接混入当前依赖链，避免出现同包名重复类。
-- 用户明确要求维护独立的旧 LaTeX 发布线时，先从其真实仓库核对版本、版权和消费方；不能假定它仍是当前知乎的依赖。
-- 保留现有字体裁剪与系统字体回退的产品行为；任何源码基线或字体行为改变都需要真实验证。
-- Maven 发布必须跟踪 deployment 至终态，并读回公共构件。上传成功、等待分发或本地构建成功均不代表发布完成。
-- 不得委派未明确支持用户批准成本配置的被动发布等待任务；由发布执行者持续跟踪状态。
-- 修改代码或依赖后按项目规则先构建、再格式化、再审查；不得覆盖工作树中的其他修改。
+- 更新应用时先核对版本目录、实际平台构件和所需补丁，不把旧 `io.github.zly2006:latex-*` 混入当前链路，避免同包名重复类。
+- 只有用户明确要求维护旧发布线时才进入其真实仓库，确认版本、许可和消费方；不能假定它仍被应用使用。
+- 保留已确认的字体裁剪和系统字体回退行为，源码基线或字体行为改变用相关真实输入验证。
+- Maven 发布跟踪至终态并从公共仓库读回；上传或本地构建成功不等于正式可用。
+- 只修改本次范围，按项目要求验证和 review，不覆盖其他工作树改动。

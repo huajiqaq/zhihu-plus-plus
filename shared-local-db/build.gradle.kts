@@ -15,27 +15,30 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask
 
 plugins {
-    kotlin("multiplatform")
+    alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
-    kotlin("plugin.serialization")
-    id("com.android.kotlin.multiplatform.library")
-    id("com.google.devtools.ksp")
-    id("org.jlleitschuh.gradle.ktlint")
+    alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.android.kmp.library)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.ktlint)
 }
 
 ktlint {
     android.set(true)
     outputToConsole.set(true)
     enableExperimentalRules.set(true)
-    filter {
-        exclude("**/generated/**")
-        exclude("**/build/**")
-        exclude("build/generated/**")
-        exclude("**/build/generated/ksp/**")
-        exclude("**/ksp/**")
-        exclude { it.file.absolutePath.contains("/build/generated/") }
+}
+
+/** KSP 源目录带生成任务依赖；格式检查只读取手写源码，避免触发 Native 编译。 */
+afterEvaluate {
+    tasks.withType<BaseKtLintCheckTask>().configureEach {
+        if (name.contains("SourceSet")) {
+            val sourceSet = name.substringAfter("Over").substringBefore("SourceSet").replaceFirstChar(Char::lowercase)
+            setSource(fileTree("src/$sourceSet/kotlin"))
+        }
     }
 }
 
@@ -49,7 +52,6 @@ kotlin {
         namespace = "com.github.zly2006.zhihu.shared.localdb"
         compileSdk = 37
         minSdk = 27
-
     }
     jvm {
     }
@@ -67,24 +69,24 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api("androidx.room:room-runtime:2.8.4")
-            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+            api(libs.room.runtime)
+            api(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
         jvmMain.dependencies {
-            implementation("androidx.sqlite:sqlite-bundled:2.6.2")
+            implementation(libs.sqlite.bundled)
         }
         nativeMain.dependencies {
-            implementation("androidx.sqlite:sqlite-bundled:2.6.2")
+            implementation(libs.sqlite.bundled)
         }
     }
 }
 
 dependencies {
-    add("kspAndroid", "androidx.room:room-compiler:2.8.4")
-    add("kspJvm", "androidx.room:room-compiler:2.8.4")
-    add("kspMacosArm64", "androidx.room:room-compiler:2.8.4")
+    add("kspAndroid", libs.room.compiler)
+    add("kspJvm", libs.room.compiler)
+    add("kspMacosArm64", libs.room.compiler)
 }

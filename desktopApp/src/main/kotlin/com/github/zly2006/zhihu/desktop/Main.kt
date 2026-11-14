@@ -22,6 +22,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.DesktopZhihuMain
+import com.github.zly2006.zhihu.ui.components.AppStartupSplash
 
 fun main() {
     System.setProperty("java.awt.im.style", "below-the-spot")
@@ -31,8 +32,10 @@ fun main() {
             title = "Zhihu++",
             icon = painterResource("desktop-icon.png"),
         ) {
-            ZhihuTheme {
-                DesktopZhihuMain()
+            AppStartupSplash {
+                ZhihuTheme {
+                    DesktopZhihuMain()
+                }
             }
         }
     }

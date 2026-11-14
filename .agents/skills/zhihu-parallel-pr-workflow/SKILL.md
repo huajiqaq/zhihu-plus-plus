@@ -1,129 +1,45 @@
 ---
 name: zhihu-parallel-pr-workflow
-description: Coordinate Zhihu++ issue implementation and pull requests when the user explicitly asks for subagents or when multiple independent issues or scopes have real parallel value. Covers issue trust gates, isolated worktrees, ownership-aware process handling, build and AVD validation, review, Chinese PR publication, and final evidence. Do not use merely because one narrow issue needs one PR.
+description: 协调 Zhihu++ 独立 issue 或能力的并行实现和 PR。用于用户要求 subagent，或独立范围确有并行收益时；涵盖可信来源、worktree、文件与进程归属、验证和中文 PR。
 ---
 
-# Zhihu++ Parallel PR Workflow
+# 并行实现与 PR
 
-## 变更边界与验收
+窄小单任务不默认拆代理。并行范围按完整能力划分，同一 common 声明、调用方和平台 actual 由同一负责人处理，不按平台拆半套契约。
 
-先确认真实数据面和既有协议，不得擅自新增未授权 action、字段或 seed。回归修复需保留基线红测和修复绿测证据，单调用 helper 应在调用点内联；证据齐全后才能创建 PR。
+## 开始
 
-Use this workflow to shorten independent Zhihu++ issue work without weakening evidence or ownership boundaries.
-
-## Decide whether to delegate
-
-- Keep one narrow issue in the main agent unless the user explicitly requests delegation.
-- Delegate only independent scopes that can progress concurrently. One cross-platform capability is one scope; do not split its common declaration, callers, and platform implementations among workers.
-- Give each worker exactly one issue or tightly coupled capability and one worktree.
-- If work becomes serial, end coordination overhead and let the main agent continue, unless the user explicitly assigned implementation or PR publication to the worker.
-When the user explicitly requests implementing the latest independent issues in parallel, and those issues contain owner-authored (`to agent:`) directions, parallel delegation is the default. Assign one complete issue/capability to each worker and keep the main agent focused on coordination, review, and final acceptance. This does not relax any trust, version, reproduction, validation, or publication gates below. Mentioning this skill alone is not authorization to use subagents.
-
-## Apply project gates first
-
-1. Record the start time.
-2. Read the repository `AGENTS.md` and any instructions under the files in scope.
-3. Before creating a branch or worktree, apply the issue trust and information gates from `AGENTS.md`: identify every requirement's author, verify the reported app version and evidence, and ignore unverified solution proposals from non-owner users.
-4. Check current work, overlap, and topology:
-   - `git status --short --branch`
-   - `git worktree list --porcelain`
-   - open PRs that may touch the same behavior
-   - the current `origin/master`
-5. Define the user-reachable success state, minimum data flow, request budget, validation surface, and files owned by each worker.
-
-Do not start implementation when the issue gate requires a warning comment, current-version reproduction, or more information. Follow the comment, close, unsubscribe, and read-back rules in `AGENTS.md` exactly.
-
-## Create isolated worktrees
-
-Create worktrees only under the repository's `.worktrees/` directory and only after the issue passes its gate.
+- 读 `AGENTS.md`/`CLAUDE.md`，先通过 issue 的作者、版本和复现要求；未通过时不创建分支或 worktree，不设计补丁。
+- 核对脏工作树、现有 worktree、重叠 PR 和 `origin/master`，给每位负责人明确的文件范围、入口、成功状态及验证预算。
+- 新实现 worktree 放在 `.worktrees/` 下，基于最新主线。用户明确指定当前工作树时按该范围工作，不擅自搬动或回退。
 
 ```bash
 git fetch origin master --prune
-git worktree add .worktrees/<short-name> origin/master -b codex/<short-name>
-cp local.properties .worktrees/<short-name>/local.properties 2>/dev/null || true
+git worktree add .worktrees/<范围> origin/master -b feat/<范围>
 ```
 
-Resolve the absolute target before creation and verify it is inside `<repo>/.worktrees/`. Never edit the user's dirty main checkout for issue implementation.
+构建需要的 `local.properties` 由当前环境提供，不提交个人 SDK 路径。
 
-## Assign ownership
+## 归属
 
-Tell every worker:
+负责人实现并返回 diff、实际验证和阻塞项。主代理协调资源、审查及验收；用户明确把实现或发布交给负责人时，主代理不越权提交或发 PR。
 
-- the absolute worktree path, issue, acceptance criteria, and owned files or capability;
-- to read `AGENTS.md` before editing;
-- that other people and agents share the repository, so it must preserve unrelated changes and never revert work it does not own;
-- to read `docs/ai-ui-design-guide.md` and `NavDestination.kt` before UI, navigation, button, or settings changes;
-- to keep one complete cross-platform contract in one worker;
-- to remove thin forwarding helpers and avoid speculative compatibility branches;
-- to return the diff, validation evidence, risks, and screenshot path before committing so the main agent can review.
+进程也按归属处理：只中断能由会话、PID/父进程、worktree 或唯一命令确认属于本任务的进程。不能按 Gradle、Java、emulator 或 ADB 名称批量结束；不运行会影响其他构建的全局 daemon 停止命令。清理后确认终态。
 
-The main agent coordinates and reviews worker-owned scopes. It must not silently implement, commit, push, or publish a worker-owned scope when the user explicitly assigned those actions to the worker.
+不默认隔离 Gradle home、改变编译策略或增加缓存参数；只有实际失败需要时才调整。
 
-## Handle processes by ownership
+## 实现与检查
 
-Process cleanup is an ownership decision, not an executable-name blacklist.
+- 复用现有底层能力，保留状态、数据和默认偏好，不加薄 client/helper 或未经验证的 fallback。
+- UI 先读 [开发指南](../../../docs/ai-ui-design-guide.md) 和导航模型。协议按需使用 [知乎验证](../zhihu-reproduce/SKILL.md)。
+- 先查已有覆盖，再运行最小相关编译、测试和实际 UI 路径。默认不跑全量 instrument，不为取图保留临时测试。
+- 使用获准且匹配的设备环境，所有 ADB 命令指向同一目标；结束只清理本任务创建的会话。缺登录、设备或网络时报告，不扩大授权。
+- Review 核对基线行为、设置读取、返回上下文、平台 actual、截断/遮挡、重复逻辑、测试价值及异常产物。阻塞反馈交回原负责人。
 
-- Never run `gradle --stop` or `./gradlew --stop`; their scope can include builds owned by other agents.
-- Never terminate a process merely because it is named Gradle, Java, Kotlin, emulator, or ADB.
-- It is valid to interrupt or terminate a process proven to belong to this task by its exact PTY session, PID and parent tree, unique worktree path, or unique command signature.
-- Prefer interrupting the exact foreground session. Use `pkill` only when its pattern uniquely identifies this task and cannot match another worker.
-- Before and after termination, read back the target process state. Do not claim cleanup from the command exit code alone.
-- Do not add build flags, environment overrides, or cache isolation rules without evidence that they solve a real failure. In particular, do not prescribe a Gradle user home, daemon mode, or Kotlin compiler execution strategy in this workflow.
+## 提交与发布
 
-## Implement and validate
+提交、推送和 PR 创建需用户授权及 review。按完整可独立验证的改动拆小提交，不夹带其他脏文件；已共享的提交用后续提交修正，不擅自改写历史。
 
-Use the repository's required order:
+PR 基于最新主线，中文标题和正文，按实际产品变化选择 `feat:`、`fix:` 或 `refactor:`，解决给定 issue 时写 `Resolves #编号`。可见 UI 变化提供真实最终截图，资产流程见 [PR 截图](../github-pr-assets/SKILL.md)。
 
-```bash
-./gradlew assembleLiteDebug
-./gradlew ktlintFormat
-```
-
-- Add only the smallest focused compile or test task needed for the changed behavior.
-- Do not run the complete instrument test suite locally unless the user explicitly requests it. Use targeted device tests or CI for device-only behavior.
-- Separate one-time acceptance evidence from durable regression coverage. Verify low-risk visual styling once with the real UI and a screenshot; add an instrument test only when repeated device execution protects a stable behavior contract whose regression risk justifies emulator cost and timing fragility.
-- Do not add Gradle flags as ceremony. Use a flag only when current evidence requires it, and report its effect.
-- For API-dependent features, trigger `zhihu-reproduce` and obtain the real request/response and decode matrix required by `AGENTS.md` before designing fallbacks.
-- For UI changes, use a healthy matching AVD, install the built APK, restore the approved test login state when needed, dump semantics before interaction, verify the changed state after interaction, and capture a real final screenshot.
-- Read `off-android-avd-ci-debug` only if the remote AVD is actually selected. Keep all ADB work on the selected host and clean up only the emulator session owned by this task.
-- Do not substitute build success, a non-empty file, process liveness, health checks, or a single HTTP 200 for the requested product success state.
-
-## Review before commit
-
-Review the complete diff against `origin/master` before approving a commit:
-
-Never amend or rebase a commit that is already present on a pull-request branch. Fix follow-ups with a new commit so the PR history remains auditable; only rewrite an unshared local commit when no PR or remote branch contains it.
-
-- intended behavior and default values;
-- duplicated logic, unused code, and thin helpers;
-- settings keys with real runtime reads and searchable/highlightable UI entries;
-- navigation and back-stack semantics;
-- visible labels or counts whose destination URL was dropped;
-- title or content truncation introduced while adding controls;
-- cross-platform implementations required by a common contract;
-- tests that prove the changed behavior rather than only setup or persistence;
-- unexpected binaries, generated artifacts, secrets, or unrelated files.
-
-When merging overlapping visual regression tests, reconcile their asserted pixel regions with the final layout before keeping both assertions. An overlay such as a badge may intentionally cover a corner of its parent content box; the parent-background assertion must exclude the covered region while the overlay gets its own geometry and pixel assertions. Do not combine test bodies mechanically and claim the feature is preserved without checking the final bounds relationship.
-
-Return blocking findings to the same worker. After approval, let the owner commit and continue publication.
-
-## Publish the PR
-
-- Base the branch on current `origin/master` and keep unrelated feature branches out.
-- Use a Chinese title and body. Prefix the title with `feat:`, `fix:`, or `refactor:` according to the product change relative to baseline.
-- Include `Resolves #<issue>` when the PR resolves the supplied issue.
-- For visible UI changes, include a screenshot from the actual app, AVD, or reproducible UI render.
-- Describe the behavior, reason, scope, validation commands and results, screenshot source, and any genuine boundary.
-- Read the PR back and verify title prefix and language, head/base, issue linkage, screenshot rendering, and check status. Never describe checks that are still running as green.
-- For every added or changed test, the PR body must explicitly record whether red-to-green verification against the pre-fix and fixed implementations was completed, including commands and terminal results or a precise blocker. Do not describe compilation or a pending CI check as red-to-green evidence.
-
-Workers create draft PRs themselves.
-
-## Finish
-
-1. Clean up only task-owned AVD sessions and foreground processes; preserve other agents' work.
-2. Recheck the worker worktree, published commit, remote branch, PR body, and validation evidence.
-3. Record the end time and calculate elapsed runtime.
-4. If runtime exceeds five minutes, send the repository-required `terminal-notifier` message.
-5. Report each branch and PR, validation terminal state, screenshot, and any unresolved evidence gap.
+读回 PR 的语言、分支、关联和截图；验证与 CI 仍在运行时不能说已通过。结束报告各范围的实际结果、未完成项与所需下一步，不另建共享提交账本。

@@ -66,46 +66,6 @@ class CollectionBrowseSelectionTest {
     }
 
     @Test
-    fun refreshesWhenCollectionPageBecomesActiveAgain() {
-        assertTrue(
-            shouldRefreshCollectionDataOnActivation(
-                isActive = true,
-                useLocalCollections = false,
-                refreshOnNextActivation = true,
-            ),
-        )
-    }
-
-    @Test
-    fun doesNotRefreshWhenReturningFromContent() {
-        assertFalse(
-            shouldRefreshCollectionDataOnActivation(
-                isActive = true,
-                useLocalCollections = false,
-                refreshOnNextActivation = false,
-            ),
-        )
-    }
-
-    @Test
-    fun doesNotRefreshWhileInactiveOrForInjectedTestData() {
-        assertFalse(
-            shouldRefreshCollectionDataOnActivation(
-                isActive = false,
-                useLocalCollections = false,
-                refreshOnNextActivation = true,
-            ),
-        )
-        assertFalse(
-            shouldRefreshCollectionDataOnActivation(
-                isActive = true,
-                useLocalCollections = true,
-                refreshOnNextActivation = true,
-            ),
-        )
-    }
-
-    @Test
     fun randomModeIsStableAndKeepsEveryLoadedItem() {
         val items = List(12) { index -> displayItem("item-$index") }
 

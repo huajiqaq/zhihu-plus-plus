@@ -1,17 +1,15 @@
-# Markdown Maven 依赖
+# Markdown 依赖
 
-知乎使用独立开源库 [zly2006/Markdown](https://github.com/zly2006/Markdown)。依赖版本统一由根 `gradle.properties` 的 `markdown.version` 管理，Android app 与 shared 模块引用 `me.zly2006.markdown:markdown-renderer`。
+版本与坐标以 [版本目录](../gradle/libs.versions.toml) 为准：
 
-renderer 的 API 依赖传递 parser、runtime、LaTeX 和 CodeHigh。应用不再维护这八个模块的 Gradle project，也不保留相应 `third_party` 源码。Markdown import 使用 `me.zly2006.markdown.*`；LaTeX 与高亮类型保留库本身的 `com.hrm.latex`、`com.hrm.codehigh` 包名。
+- HRM Markdown：`io.github.huarangmeng:markdown-parser`、`markdown-renderer`；代码使用 `com.hrm.markdown.*`。
+- HRM LaTeX：`io.github.huarangmeng:latex-parser`、`latex-renderer`；代码使用 `com.hrm.latex.*`。
+- 提椠：`org.tiqian:markdown-compose` 及配套数学字体，供对应平台源集使用。
 
-## 更新流程
+应用不保留这些库的源码副本。未发布 API 通过 [上游补丁模式](upstream-dependency-patches.md) 接入；准备后的源码和生成产物只在忽略的缓存目录中。
 
-先在独立仓库完成修改与发布，确认 Central 状态为 `PUBLISHED`，并从公共 Maven 仓库读回根构件、平台构件和 metadata，再更新应用版本。不得用本机 Maven 仓库、composite build 或源码替代来证明线上构件已经可用。
+## 更新
 
-更新后检查 Lite、Full、JVM 和 macOS 的实际依赖解析及构建。阅读与编辑功能共用 parser AST，提椠编译器、导出、段评和平台 Markdown 实现的 import 应同时迁移。需要业务运行验证时使用既有定向用例或离屏调试，不能只以依赖下载成功代替功能验收。
+先在独立上游仓库验证修复和平台构件。正式版本发布后，从公共仓库核对根构件、平台构件及 metadata，再更新版本目录并移除已包含的补丁。不要混入旧分叉坐标，避免同包名重复类。
 
-## 维护边界
-
-库中的 LaTeX、CodeHigh 修改需要在独立 Markdown 工程同步验证并发布匹配版本。旧 `io.github.zly2006:latex-*` 发布线不能直接替代当前 `me.zly2006.markdown` 支持模块；同时引入两套相同 `com.hrm.*` 类型会产生重复类。
-
-此前描述 vendored 目录或旧 Gradle project 任务的性能报告只作为历史证据保留。当前依赖关系及更新流程以本文件为准；库的源码来源和版权记录以独立仓库的 `docs/source-snapshot.json`、`NOTICE.md` 为准。
+阅读、编辑、导出和段评共用 AST。更新时同时核对 parser、渲染器、提椠适配及平台 actual，选择已有相关测试和必要构建；依赖下载成功不等于行为通过。

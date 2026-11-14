@@ -24,7 +24,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ## 理念
 
-UI 自动化的目标是证明用户可达状态，不是表演鼠标操作。调试器应直接驱动产品的 Compose 语义树，在内存中的离屏 Skia 画布完成布局和绘制，并留下可审计的输入、输出与截图。
+调试器直接驱动 Compose 语义树，在离屏 Skia 画布中布局和绘制，用输入、状态与截图确认页面行为。
 
 必须遵守以下边界：
 

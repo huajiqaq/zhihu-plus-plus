@@ -17,8 +17,6 @@
 
 package com.github.zly2006.zhihu.test
 
-import com.github.zly2006.zhihu.account.accountHttpClientEngineForTesting
-import com.github.zly2006.zhihu.account.replaceAndroidZhihuAccountStoreForTesting
 import com.github.zly2006.zhihu.notification.ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -48,28 +46,13 @@ object ZhihuMockApi {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     private var enabled = true
 
-    fun install(enabled: Boolean = true) {
-        this.enabled = enabled
-        if (!enabled) {
-            replaceAndroidZhihuAccountStoreForTesting(null)
-            accountHttpClientEngineForTesting = null
-            routes.clear()
-            requests.clear()
-            return
-        }
-        if (accountHttpClientEngineForTesting == null) {
-            replaceAndroidZhihuAccountStoreForTesting(null)
-            accountHttpClientEngineForTesting = mockEngine()
-        }
-    }
-
     fun isEnabled(): Boolean = enabled
 
-    fun reset() {
-        if (!enabled) return
+    fun reset(enabled: Boolean = this.enabled) {
+        this.enabled = enabled
         routes.clear()
         requests.clear()
-        installDefaultRoutes()
+        if (enabled) installDefaultRoutes()
     }
 
     fun recordedRequests(): List<RecordedRequest> = requests.toList()
@@ -278,7 +261,7 @@ object ZhihuMockApi {
         headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
     )
 
-    private fun mockEngine() = MockEngine { request ->
+    fun mockEngine() = MockEngine { request ->
         requests += RecordedRequest(request.method, request.url.toString())
         val route = routes.firstOrNull { it.predicate(request) }
         if (route != null) {

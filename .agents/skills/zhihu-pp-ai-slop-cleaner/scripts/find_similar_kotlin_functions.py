@@ -17,29 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_SOURCE_ROOTS = (
-    "app/src/main/java",
-    "app/src/main/kotlin",
-    "app/src/full/java",
-    "app/src/full/kotlin",
-    "app/src/lite/java",
-    "app/src/lite/kotlin",
-    "shared/src/commonMain/kotlin",
-    "shared/src/androidMain/kotlin",
-    "shared/src/jvmMain/kotlin",
-    "shared/src/iosMain/kotlin",
-    "shared/src/nativeMain/kotlin",
-    "desktopApp/src/main/kotlin",
-    "app/src/test/java",
-    "app/src/test/kotlin",
-    "app/src/androidTest/java",
-    "app/src/androidTest/kotlin",
-    "shared/src/commonTest/kotlin",
-    "shared/src/androidUnitTest/kotlin",
-    "shared/src/jvmTest/kotlin",
-)
-
-TEST_MARKERS = ("/test/", "/androidTest/", "/commonTest/", "/jvmTest/", "/nativeTest/")
+DEFAULT_SOURCE_ROOTS = ("*/src/*/java", "*/src/*/kotlin")
+TEST_SOURCE_SET_RE = re.compile(r"/src/(?:test[A-Za-z0-9_]*|[A-Za-z0-9_]*Test[A-Za-z0-9_]*)/")
 SKIP_DIRS = {".git", ".gradle", ".idea", ".worktrees", "build", ".kotlin"}
 
 KOTLIN_KEYWORDS = {
@@ -314,17 +293,15 @@ def line_number(starts: list[int], position: int) -> int:
 def source_files(root: Path, include_tests: bool) -> list[Path]:
     files: list[Path] = []
     for source_root in DEFAULT_SOURCE_ROOTS:
-        base = root / source_root
-        if not base.exists():
-            continue
-        for path in sorted(base.rglob("*.kt")):
-            rel = "/" + path.relative_to(root).as_posix()
-            if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
-                continue
-            if not include_tests and any(marker in rel for marker in TEST_MARKERS):
-                continue
-            files.append(path)
-    return files
+        for base in sorted(root.glob(source_root)):
+            for path in sorted(base.rglob("*.kt")):
+                rel = "/" + path.relative_to(root).as_posix()
+                if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+                    continue
+                if not include_tests and TEST_SOURCE_SET_RE.search(rel):
+                    continue
+                files.append(path)
+    return sorted(files)
 
 
 def normalize_tokens(body: str) -> tuple[str, ...]:
