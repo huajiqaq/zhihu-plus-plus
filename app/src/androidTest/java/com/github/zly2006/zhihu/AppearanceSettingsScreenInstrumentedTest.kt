@@ -21,9 +21,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -83,12 +86,21 @@ class AppearanceSettingsScreenInstrumentedTest {
         clickSettingRow("底部导航栏项目")
 
         scrollUntilTagDisplayed("appearanceSettings:bottomBar:item:${HotList.name}")
-        val selectedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${Daily.name}")
-        val unselectedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${HotList.name}")
-        val lockedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${Account.name}")
-
-        assertEquals(selectedHeight.toDouble(), unselectedHeight.toDouble(), 0.5)
-        assertEquals(selectedHeight.toDouble(), lockedHeight.toDouble(), 0.5)
+        val rows = listOf(Daily.name to "日报", HotList.name to "热榜", Account.name to "账号设置").map { (key, title) ->
+            val tag = "appearanceSettings:bottomBar:item:$key"
+            val rowMatcher = hasAnyDescendant(hasText(title)) and (hasTestTag(tag) or hasAnyDescendant(hasTestTag(tag)))
+            composeRule
+                .onAllNodes(rowMatcher and !hasAnyDescendant(rowMatcher), useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .single()
+        }
+        assertEquals("必须测量同一列表层的完整行", 1, rows.map { it.parent?.id }.distinct().size)
+        val selectedHeight = rows[0].size.height.toDouble()
+        assertEquals(selectedHeight, rows[1].size.height.toDouble(), 0.5)
+        assertEquals(selectedHeight, rows[2].size.height.toDouble(), 0.5)
+        assertTrue(selectedHeight >= 48 * composeRule.activity.resources.displayMetrics.density)
+        composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${HotList.name}").assertIsNotEnabled()
+        composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${Account.name}").assertIsNotEnabled().assertIsOn()
 
         composeRule.onNodeWithTag("appearanceSettings:bottomBar:moveDown:${Daily.name}").performClick()
         waitUntilStringPreference(
@@ -219,12 +231,6 @@ class AppearanceSettingsScreenInstrumentedTest {
                     .isNotEmpty()
         }
     }
-
-    private fun boundsHeightForTag(tag: String): Float = composeRule
-        .onNodeWithTag(tag)
-        .fetchSemanticsNode()
-        .boundsInRoot
-        .height
 
     private fun waitUntilNodeDoesNotExist(matcher: SemanticsMatcher, timeoutMillis: Long = 5_000) {
         composeRule.waitUntil(timeoutMillis) {

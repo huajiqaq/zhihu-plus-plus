@@ -68,7 +68,7 @@ class SettingsSearchScreenInstrumentedTest {
             .performClick()
 
         assertEquals(
-            listOf(Account.AppearanceSettings(setting = "showSearchHotSearch")),
+            listOf(Account.NavigationSettings(setting = "showSearchHotSearch")),
             navigator.destinations,
         )
     }

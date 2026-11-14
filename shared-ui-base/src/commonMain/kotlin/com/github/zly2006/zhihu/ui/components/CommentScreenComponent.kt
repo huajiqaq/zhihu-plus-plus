@@ -17,9 +17,13 @@
 
 package com.github.zly2006.zhihu.ui.components
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +72,7 @@ fun CommentScreenComponent(
     content: NavDestination,
     isZhPlusAuthorContent: Boolean = false,
     commentSegments: Map<String, com.github.zly2006.zhihu.util.SegmentHighlightSpan> = emptyMap(),
+    rootHeader: (@Composable () -> Unit)? = null,
 ) {
     val settings = rememberSettingsStore()
     val initialPendingCommentId = consumePendingCommentId(content)
@@ -162,31 +167,44 @@ fun CommentScreenComponent(
                 dragHandle = { DragHandleTitle("评论") },
                 usePlatformWindow = content !is Article,
             ) {
-                CommentScreen(
-                    content = { content },
-                    initialCommentId = pendingCommentId,
-                    onChildCommentClick = { commentItem ->
-                        if (commentItem.clickTarget != null) {
-                            pendingChildComment = null
-                            activeChildComment = commentItem
+                val rootComments: @Composable () -> Unit = {
+                    CommentScreen(
+                        content = { content },
+                        initialCommentId = pendingCommentId,
+                        onChildCommentClick = { commentItem ->
+                            if (commentItem.clickTarget != null) {
+                                pendingChildComment = null
+                                activeChildComment = commentItem
+                            }
+                        },
+                        commentInput = commentDrafts[contentStateKey].orEmpty(),
+                        onCommentInputChange = { updateCommentDraft(contentStateKey, it) },
+                        listState = rootListState,
+                        commentSegments = commentSegments,
+                        sentenceCommentsState = sentenceCommentsState,
+                        sentenceListState = sentenceListState,
+                        pageTurnEnabled =
+                            (content is Article || content is Pin) &&
+                                activeChildComment == null &&
+                                (authorCommentPolicyAcknowledged || !isZhPlusAuthorContent),
+                        showPageTurnFab = content is Pin,
+                        onInitialChildCommentResolved = { rootComment, childComment ->
+                            pendingChildComment = childComment
+                            activeChildComment = rootComment
+                        },
+                    )
+                }
+                if (rootHeader == null) {
+                    rootComments()
+                } else {
+                    BoxWithConstraints {
+                        val availableHeight = maxHeight
+                        Column(Modifier.height(availableHeight)) {
+                            Box(Modifier.fillMaxWidth().heightIn(max = availableHeight / 2)) { rootHeader() }
+                            Box(Modifier.weight(1f)) { rootComments() }
                         }
-                    },
-                    commentInput = commentDrafts[contentStateKey].orEmpty(),
-                    onCommentInputChange = { updateCommentDraft(contentStateKey, it) },
-                    listState = rootListState,
-                    commentSegments = commentSegments,
-                    sentenceCommentsState = sentenceCommentsState,
-                    sentenceListState = sentenceListState,
-                    pageTurnEnabled =
-                        (content is Article || content is Pin) &&
-                            activeChildComment == null &&
-                            (authorCommentPolicyAcknowledged || !isZhPlusAuthorContent),
-                    showPageTurnFab = content is Pin,
-                    onInitialChildCommentResolved = { rootComment, childComment ->
-                        pendingChildComment = childComment
-                        activeChildComment = rootComment
-                    },
-                )
+                    }
+                }
             }
         }
 

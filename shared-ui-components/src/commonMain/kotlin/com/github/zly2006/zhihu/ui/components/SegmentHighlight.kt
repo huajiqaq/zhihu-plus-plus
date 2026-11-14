@@ -34,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -518,6 +519,7 @@ fun SegmentHighlightInteractionHost(
     metaStates: SnapshotStateMap<String, SegmentInfoMeta> = remember { mutableStateMapOf() },
     commentSnapshot: SegmentCommentEvents.Snapshot? = null,
     onError: (String) -> Unit = {},
+    onOpenQuotedComments: ((SegmentCommentHolder) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
@@ -573,12 +575,11 @@ fun SegmentHighlightInteractionHost(
             showSegmentActionSheet(null)
             return@LaunchedEffect
         }
-        if (selectedMeta.commentCount > 0) {
-            selected.copy(meta = selectedMeta).toSegmentCommentHolder()?.let { target ->
-                selectedHighlight = null
-                showSegmentActionSheet(null)
-                openSegmentComments(target)
-            }
+        val commentTarget = selected.copy(meta = selectedMeta).toSegmentCommentHolder()
+        if (selectedMeta.commentCount > 0 && commentTarget != null && onOpenQuotedComments == null) {
+            selectedHighlight = null
+            showSegmentActionSheet(null)
+            openSegmentComments(commentTarget)
             return@LaunchedEffect
         }
         showSegmentActionSheet(
@@ -613,10 +614,14 @@ fun SegmentHighlightInteractionHost(
                     }
                 },
                 onCommentClick = {
-                    selectedHighlight = null
-                    showSegmentActionSheet(null)
-                    selected.copy(meta = selectedMeta).toSegmentCommentHolder()?.let { target ->
-                        openSegmentComments(target)
+                    when {
+                        commentTarget == null -> onError("缺少段落定位，无法打开段评")
+                        onOpenQuotedComments != null -> onOpenQuotedComments(commentTarget)
+                        else -> {
+                            selectedHighlight = null
+                            showSegmentActionSheet(null)
+                            openSegmentComments(commentTarget)
+                        }
                     }
                 },
                 onCopyClick = {
@@ -626,6 +631,9 @@ fun SegmentHighlightInteractionHost(
                 },
             ),
         )
+        if (selectedMeta.commentCount > 0 && commentTarget != null) {
+            onOpenQuotedComments?.invoke(commentTarget)
+        }
     }
     DisposableEffect(Unit) {
         onDispose {
@@ -664,8 +672,16 @@ suspend fun toggleSegmentLike(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SegmentActionSheet(state: SegmentActionSheetState) {
-    val highlight = state.highlight
     val sheetState = rememberModalBottomSheetState()
+    MyModalBottomSheet(onDismissRequest = state.onDismiss, sheetState = sheetState) {
+        SegmentActionSheetContent(state, sheetState)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetState? = null) {
+    val highlight = state.highlight
     val textScrollState = rememberScrollState()
     val overflowTolerance = with(LocalDensity.current) { 1.dp.roundToPx() }
     val hasMeasuredOverflow = textScrollState.viewportSize > 0 &&
@@ -673,11 +689,7 @@ fun SegmentActionSheet(state: SegmentActionSheetState) {
     val showTopDivider = hasMeasuredOverflow && textScrollState.value > overflowTolerance
     val showBottomDivider = hasMeasuredOverflow &&
         textScrollState.value < textScrollState.maxValue - overflowTolerance
-    MyModalBottomSheet(
-        onDismissRequest = state.onDismiss,
-        sheetState = sheetState,
-    ) {
-        Layout(
+    Layout(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
@@ -770,9 +782,9 @@ fun SegmentActionSheet(state: SegmentActionSheetState) {
                 .maxIntrinsicHeight(constraints.maxWidth)
                 .coerceAtMost(constraints.maxHeight)
             val naturalHeight = title.height + naturalTextHeight + actions.height + spacing * 2
-            val needsPartialExpansion = naturalHeight > constraints.maxHeight / 2
-            val layoutHeight = if (needsPartialExpansion) constraints.maxHeight else naturalHeight
-            val visibleHeight = if (needsPartialExpansion) {
+            val needsPartialExpansion = sheetState != null && naturalHeight > constraints.maxHeight / 2
+            val layoutHeight = if (needsPartialExpansion) constraints.maxHeight else naturalHeight.coerceAtMost(constraints.maxHeight)
+            val visibleHeight = if (needsPartialExpansion && sheetState != null) {
                 val sheetOffset = runCatching { sheetState.requireOffset() }
                     .getOrDefault(constraints.maxHeight.toFloat())
                 (constraints.maxHeight - sheetOffset.roundToInt()).coerceIn(
@@ -798,7 +810,6 @@ fun SegmentActionSheet(state: SegmentActionSheetState) {
                 actions.placeRelative(0, actionsTop)
             }
         }
-    }
 }
 
 fun Map<String, String>.toSegmentHighlightSpan(fallbackText: String? = null): SegmentHighlightSpan? {

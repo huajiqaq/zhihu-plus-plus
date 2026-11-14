@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -801,25 +802,21 @@ private fun QuestionDetailAnimatedViewport(
             )
         val contentPlaceable =
             subcompose("content") {
-                QuestionDetailContent(questionId = questionId, html = questionContent)
-            }.single().measure(looseConstraints)
-        if (contentPlaceable.height > 0) {
-            onMeasuredFullHeight(contentPlaceable.height)
-        }
-        val layoutHeight = viewportHeightPx.coerceIn(0, contentPlaceable.height.coerceAtLeast(0))
-        val viewportPlaceable =
-            subcompose("viewport") {
-                Box(Modifier.fillMaxWidth().clipToBounds()) {
-                    QuestionDetailContent(questionId = questionId, html = questionContent)
+                Layout(
+                    content = { QuestionDetailContent(questionId = questionId, html = questionContent) },
+                    modifier = Modifier.fillMaxWidth().clipToBounds(),
+                ) { measurables, contentConstraints ->
+                    val content = measurables.single().measure(
+                        contentConstraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+                    )
+                    if (content.height > 0) onMeasuredFullHeight(content.height)
+                    val height = viewportHeightPx.coerceIn(0, content.height)
+                    layout(width = content.width, height = height) {
+                        content.place(0, 0)
+                    }
                 }
-            }.single().measure(
-                Constraints(
-                    minWidth = constraints.maxWidth,
-                    maxWidth = constraints.maxWidth,
-                    minHeight = layoutHeight.coerceAtLeast(0),
-                    maxHeight = layoutHeight.coerceAtLeast(0),
-                ),
-            )
+            }.single().measure(looseConstraints)
+        val layoutHeight = contentPlaceable.height
         val buttonPlaceable =
             subcompose("button") {
                 QuestionDetailToggleButton(
@@ -842,7 +839,7 @@ private fun QuestionDetailAnimatedViewport(
                 ),
             )
         layout(width = constraints.maxWidth, height = layoutHeight + buttonPlaceable.height) {
-            viewportPlaceable.place(0, 0)
+            contentPlaceable.place(0, 0)
             if (overlayAlpha > 0f) {
                 overlayPlaceable.place(0, (layoutHeight - minOf(maskHeightPx, overlayPlaceable.height)).coerceAtLeast(0))
             }

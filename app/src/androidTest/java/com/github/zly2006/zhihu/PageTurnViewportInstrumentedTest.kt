@@ -341,7 +341,7 @@ class PageTurnViewportInstrumentedTest {
                         modifier = Modifier.fillMaxSize().appPageTitleBarScroll(titleBarState),
                         topBar = {
                             AppPageTitleBar(
-                                title = (1..20).joinToString("\n") { "第 $it 行实际超高标题" },
+                                title = (1..8).joinToString("\n") { "第 $it 行实际超高标题" },
                                 scrollState = titleBarState,
                                 multilineTitle = true,
                             )
@@ -368,10 +368,16 @@ class PageTurnViewportInstrumentedTest {
             .apply { isAccessible = true }
             .get(titleBarState) as androidx.compose.material3.TopAppBarScrollBehavior
         val toolbarState = materialScroll.state
-        val viewportHeight = composeRule
-            .onNodeWithTag("oversized_title_body")
-            .fetchSemanticsNode()
-            .boundsInRoot.height
+        composeRule.waitUntil(5_000) {
+            toolbarState.heightOffsetLimit > -Float.MAX_VALUE &&
+                composeRule
+                    .onNodeWithTag("oversized_title_body")
+                    .fetchSemanticsNode()
+                    .boundsInRoot.height > 0f
+        }
+        val viewport = composeRule.onNodeWithTag("oversized_title_body").fetchSemanticsNode()
+        val viewportHeight = viewport.size.height.toFloat()
+        assertTrue("实际正文视口必须完整位于可见布局内", viewportHeight > 0f && viewport.boundsInRoot.height == viewportHeight)
         val expectedPage = viewportHeight * 0.9f
         assertTrue(expectedPage > 0f)
         assertTrue(toolbarState.heightOffsetLimit > -Float.MAX_VALUE)

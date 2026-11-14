@@ -17,6 +17,9 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -185,7 +188,10 @@ class QuestionScreenInstrumentedTest {
             .onNodeWithTag(QUESTION_SCREEN_LIST_TAG)
             .performScrollToNode(hasText(lastDetailParagraph))
         composeRule.onNodeWithTag(QUESTION_DETAIL_CONTENT_TAG).assertIsDisplayed()
-        composeRule.onNodeWithText(lastDetailParagraph).assertIsDisplayed()
+        val paragraph = hasText(lastDetailParagraph) and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
+        composeRule.onAllNodes(paragraph, useUnmergedTree = true).assertCountEquals(1)
+        composeRule.onNode(paragraph, useUnmergedTree = true).assertIsDisplayed()
     }
 
     /**

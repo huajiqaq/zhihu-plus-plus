@@ -19,9 +19,11 @@ package com.github.zly2006.zhihu
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
@@ -31,7 +33,6 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -75,19 +76,7 @@ class WriteAnswerScreenInstrumentedTest {
             )
         }
 
-        val markdownMode = hasText("Markdown") and hasClickAction() and isEnabled()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodes(markdownMode).fetchSemanticsNodes().size == 1
-        }
-        composeRule.onNode(markdownMode).assertIsDisplayed().performClick()
-
-        val editorMatcher = hasTestTag(WRITE_ANSWER_CONTENT_TAG) and
-            hasSetTextAction() and
-            SemanticsMatcher.keyIsDefined(SemanticsActions.RequestFocus)
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodes(editorMatcher).fetchSemanticsNodes().size == 1
-        }
-        val editor = composeRule.onNode(editorMatcher).assertIsDisplayed()
+        val editor = switchToMarkdownEditor()
         val content = (1..80).joinToString("\n") { "回答正文第 $it 行" }
         editor.performTextInput(content)
         editor.assertTextEquals(content)
@@ -124,22 +113,41 @@ class WriteAnswerScreenInstrumentedTest {
             )
         }
 
-        composeRule.onNodeWithTag(WRITE_ANSWER_CONTENT_TAG).performTextInput(
-            buildString {
-                appendLine("[回答预览正文][docs]")
+        val editor = switchToMarkdownEditor()
+        val content = buildString {
+            appendLine("[回答预览正文][docs]")
+            appendLine()
+            repeat(12) { index ->
+                appendLine("[引用 $index][ref-$index]")
+                appendLine("[ref-$index]: https://example.com/preview/$index")
+                appendLine("${'$'}${'$'}x_$index${'$'}${'$'} 同行尾随正文 $index")
                 appendLine()
-                repeat(12) { index ->
-                    appendLine("[引用 $index][ref-$index]")
-                    appendLine("[ref-$index]: https://example.com/preview/$index")
-                    appendLine("${'$'}${'$'}x_$index${'$'}${'$'} 同行尾随正文 $index")
-                    appendLine()
-                }
-                appendLine("[docs]: https://example.com/preview")
-            },
-        )
-        composeRule.onNodeWithTag(WRITE_ANSWER_FAB_PREVIEW_TAG).performClick()
+            }
+            appendLine("[docs]: https://example.com/preview")
+        }
+        editor.performTextInput(content)
+        editor.assertTextEquals(content)
+        composeRule.onNodeWithTag(WRITE_ANSWER_FAB_PREVIEW_TAG).assertIsDisplayed().performClick()
 
-        composeRule.onNodeWithText("Markdown").assertIsDisplayed()
+        composeRule
+            .onNode(hasText("Markdown") and hasAnyAncestor(hasTestTag("write_content_preview_header")))
+            .assertIsDisplayed()
         composeRule.onAllNodesWithText("回答预览正文", substring = true).assertCountEquals(2)
+    }
+
+    private fun switchToMarkdownEditor(): SemanticsNodeInteraction {
+        val markdownMode = hasText("Markdown") and hasClickAction() and isEnabled()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodes(markdownMode).fetchSemanticsNodes().size == 1
+        }
+        composeRule.onNode(markdownMode).assertIsDisplayed().performClick()
+
+        val editorMatcher = hasTestTag(WRITE_ANSWER_CONTENT_TAG) and
+            hasSetTextAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.RequestFocus)
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodes(editorMatcher).fetchSemanticsNodes().size == 1
+        }
+        return composeRule.onNode(editorMatcher).assertIsDisplayed()
     }
 }

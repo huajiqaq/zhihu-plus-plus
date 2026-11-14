@@ -78,10 +78,13 @@ class SystemBarsInstrumentedTest {
         val deadline = SystemClock.uptimeMillis() + 10_000
         var consecutiveMatchingFrames = 0
         var statusBarColors = emptyList<Int>()
+        var bodyColor = SOLID_SURFACE_COLOR
         do {
             instrumentation.waitForIdleSync()
             SystemClock.sleep(16)
-            statusBarColors = sampleStatusBarColors(activity)
+            val sampledColors = sampleStatusBarColors(activity)
+            statusBarColors = sampledColors.take(2)
+            bodyColor = sampledColors.last()
             consecutiveMatchingFrames =
                 if (statusBarColors.all { it == SOLID_SURFACE_COLOR }) {
                     consecutiveMatchingFrames + 1
@@ -91,7 +94,9 @@ class SystemBarsInstrumentedTest {
         } while (consecutiveMatchingFrames < REQUIRED_MATCHING_FRAMES && SystemClock.uptimeMillis() < deadline)
         assertTrue(
             "$stage: expected status bar ${SOLID_SURFACE_COLOR.toUInt().toString(16)}, " +
-                "but sampled ${statusBarColors.joinToString { it.toUInt().toString(16) }}",
+                "but sampled ${statusBarColors.joinToString { it.toUInt().toString(16) }}; " +
+                "body=${bodyColor.toUInt().toString(16)}, focus=${activity.window.decorView.hasWindowFocus()}, " +
+                "flags=${activity.window.attributes.flags}, dim=${activity.window.attributes.dimAmount}",
             consecutiveMatchingFrames >= REQUIRED_MATCHING_FRAMES,
         )
     }
@@ -108,7 +113,8 @@ class SystemBarsInstrumentedTest {
         return listOf(
             screenshot.getPixel(screenshot.width / 3, y),
             screenshot.getPixel(screenshot.width * 2 / 3, y),
-        )
+            screenshot.getPixel(screenshot.width / 3, screenshot.height / 2),
+        ).also { screenshot.recycle() }
     }
 }
 

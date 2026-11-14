@@ -14,6 +14,9 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -25,6 +28,7 @@ import com.github.zly2006.zhihu.theme.ZhihuTheme
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class SortableCheckSemanticsUiTest {
@@ -170,6 +174,25 @@ class SortableCheckSemanticsUiTest {
                         }
                     }
                 }
+
+                if (style == ThemeStyle.MATERIAL_EXPRESSIVE) {
+                    val rows = listOf("locked" to "必选项", "second" to "第二项", "third" to "第三项").map { (key, title) ->
+                        val tag = "sortable_check:item:$key"
+                        val rowMatcher = hasAnyDescendant(hasText(title)) and (hasTestTag(tag) or hasAnyDescendant(hasTestTag(tag)))
+                        onAllNodes(rowMatcher and !hasAnyDescendant(rowMatcher), useUnmergedTree = true)
+                            .fetchSemanticsNodes()
+                            .single()
+                    }
+                    assertEquals(1, rows.map { it.parent?.id }.distinct().size, "${style.name} 必须测量同层完整行")
+                    val selectedHeight = rows[1].size.height.toDouble()
+                    assertEquals(selectedHeight, rows[0].size.height.toDouble(), 0.5, style.name)
+                    assertEquals(selectedHeight, rows[2].size.height.toDouble(), 0.5, style.name)
+                    assertTrue(selectedHeight >= with(density) { AppDimens.TouchTarget.toPx() }, style.name)
+                }
+                onNodeWithTag("sortable_check:item:second")
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
+                    .assertIsOn()
+                    .assertIsEnabled()
 
                 onNodeWithTag("sortable_check:item:locked", useUnmergedTree = true)
                     .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))

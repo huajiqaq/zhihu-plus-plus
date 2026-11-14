@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -81,6 +82,7 @@ import com.github.zly2006.zhihu.ui.components.LocalSegmentMetaStates
 import com.github.zly2006.zhihu.ui.components.LocalSegmentRemovedHighlights
 import com.github.zly2006.zhihu.ui.components.LocalSegmentSelectionTarget
 import com.github.zly2006.zhihu.ui.components.SegmentActionSheet
+import com.github.zly2006.zhihu.ui.components.SegmentActionSheetContent
 import com.github.zly2006.zhihu.ui.components.SegmentActionSheetState
 import com.github.zly2006.zhihu.ui.components.SegmentCreationRange
 import com.github.zly2006.zhihu.ui.components.SegmentHighlightInteractionHost
@@ -315,6 +317,7 @@ fun RenderMarkdownText(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RenderMarkdownDocument(
     document: Document,
@@ -437,9 +440,13 @@ private fun RenderMarkdownDocument(
     }
     CompositionLocalProvider(
         LocalSegmentCommentHost provides { target ->
+            segmentActionSheetState?.onDismiss?.invoke()
             segmentCommentTarget = target
         },
-        LocalSegmentActionSheetHost provides { state -> segmentActionSheetState = state },
+        LocalSegmentActionSheetHost provides { state ->
+            if (state == null && segmentActionSheetState != null) segmentCommentTarget = null
+            segmentActionSheetState = state
+        },
         LocalSegmentMetaStates provides segmentMetaStates,
         LocalSegmentRemovedHighlights provides removedSegmentHighlights,
     ) {
@@ -450,7 +457,15 @@ private fun RenderMarkdownDocument(
                 openSegmentComments(target)
             }
         }
-        SegmentHighlightInteractionHost(document, segmentMetaStates, segmentCommentSnapshot, onError = { segmentError = it }) {
+        SegmentHighlightInteractionHost(
+            document,
+            segmentMetaStates,
+            segmentCommentSnapshot,
+            onError = { segmentError = it },
+            onOpenQuotedComments = { target ->
+                if (segmentCommentTarget != target) segmentCommentTarget = target
+            },
+        ) {
             Box(
                 modifier = modifier,
             ) {
@@ -611,12 +626,14 @@ private fun RenderMarkdownDocument(
     CommentScreenComponent(
         showComments = segmentCommentTarget != null,
         onDismiss = {
+            segmentActionSheetState?.onDismiss?.invoke()
             segmentCommentTarget = null
         },
         content = segmentCommentTarget ?: SegmentCommentHolder("dummy", "dummy", "dummy", "", "", 0, 0),
+        rootHeader = segmentActionSheetState?.let { state -> { SegmentActionSheetContent(state) } },
     )
-    segmentActionSheetState?.let { state ->
-        SegmentActionSheet(state)
+    if (segmentCommentTarget == null) {
+        segmentActionSheetState?.let { state -> SegmentActionSheet(state) }
     }
     segmentError?.let { message ->
         AppDialog(

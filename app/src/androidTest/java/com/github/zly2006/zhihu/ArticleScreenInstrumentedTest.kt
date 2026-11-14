@@ -23,16 +23,12 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.MotionEvent
-import androidx.compose.foundation.ComposeFoundationFlags
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.LocalTextSelectionColors
-import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -47,10 +43,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.NativeClipboard
-import androidx.compose.ui.platform.TextToolbar
-import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -61,7 +54,11 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
@@ -101,6 +98,7 @@ import com.github.zly2006.zhihu.ui.ARTICLE_IP_INFO_TAG
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.ArticleScreen
+import com.github.zly2006.zhihu.ui.COMMENT_INPUT_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.article.ArticleActionsMenu
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
@@ -389,146 +387,140 @@ class ArticleScreenInstrumentedTest {
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/495
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/579
      */
-    @OptIn(ExperimentalFoundationApi::class)
     @Test
     fun selectionSurvivesDeferredMarkdownViewDisposal() {
-        val previousContextMenuFlag = ComposeFoundationFlags.isNewContextMenuEnabled
-        ComposeFoundationFlags.isNewContextMenuEnabled = false
-        try {
-            val textToolbar = CapturingTextToolbar()
-            val clipboard = RecordingClipboard()
-            val selectionColor = Color.Magenta
-            val firstParagraph = "FIRST_TARGET"
-            val secondParagraph = "SECOND_TARGET"
-            val codeBlock = "CODE_TARGET"
-            val quoteBlock = "QUOTE_TARGET"
-            val tableCell = "TABLE_TARGET"
-            val thirdFromLastParagraph = "TAIL_THIRD_TARGET"
-            val secondFromLastParagraph = "TAIL_PENULTIMATE_TARGET"
-            val lastParagraph = "TAIL_FINAL_TARGET"
-            val fillerParagraphs = (0 until 200).map { "FILLER_$it" }
-            val markdown = buildString {
-                appendLine(firstParagraph)
+        val clipboard = RecordingClipboard()
+        val scheme = lightColorScheme()
+        val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
+        val tag = "deferred-markdown-selection"
+        val firstParagraph = "FIRST_TARGET"
+        val secondParagraph = "SECOND_TARGET"
+        val codeBlock = "CODE_TARGET"
+        val quoteBlock = "QUOTE_TARGET"
+        val tableCell = "TABLE_TARGET"
+        val thirdFromLastParagraph = "TAIL_THIRD_TARGET"
+        val secondFromLastParagraph = "TAIL_PENULTIMATE_TARGET"
+        val lastParagraph = "TAIL_FINAL_TARGET"
+        val fillerParagraphs = (0 until 200).map { "FILLER_$it" }
+        val markdown = buildString {
+            appendLine(firstParagraph)
+            appendLine()
+            appendLine(secondParagraph)
+            appendLine()
+            fillerParagraphs.take(40).forEach {
+                appendLine(it)
                 appendLine()
-                appendLine(secondParagraph)
-                appendLine()
-                fillerParagraphs.take(40).forEach {
-                    appendLine(it)
-                    appendLine()
-                }
-                appendLine("```text")
-                appendLine(codeBlock)
-                appendLine("```")
-                appendLine()
-                fillerParagraphs.drop(40).take(40).forEach {
-                    appendLine(it)
-                    appendLine()
-                }
-                appendLine("> $quoteBlock")
-                appendLine()
-                fillerParagraphs.drop(80).take(40).forEach {
-                    appendLine(it)
-                    appendLine()
-                }
-                appendLine("| 测试列 |")
-                appendLine("| --- |")
-                appendLine("| $tableCell |")
-                appendLine()
-                fillerParagraphs.drop(120).forEach {
-                    appendLine(it)
-                    appendLine()
-                }
-                appendLine(thirdFromLastParagraph)
-                appendLine()
-                appendLine(secondFromLastParagraph)
-                appendLine()
-                appendLine(lastParagraph)
             }
-            composeRule.setScreenContent {
-                CompositionLocalProvider(
-                    LocalClipboard provides clipboard,
-                    LocalTextToolbar provides textToolbar,
-                    LocalTextSelectionColors provides TextSelectionColors(
-                        handleColor = selectionColor,
-                        backgroundColor = selectionColor,
-                    ),
-                ) {
-                    RenderMarkdownText(markdown = markdown)
-                }
+            appendLine("```text")
+            appendLine(codeBlock)
+            appendLine("```")
+            appendLine()
+            fillerParagraphs.drop(40).take(40).forEach {
+                appendLine(it)
+                appendLine()
             }
-
-            val scrollContainer = composeRule.onNode(
-                SemanticsMatcher("has vertical scroll axis") { node ->
-                    node.config.contains(SemanticsProperties.VerticalScrollAxisRange)
-                },
-            )
-
-            assertSelectionSurvivesDisposal(
-                target = secondParagraph,
-                additionallyDisposed = listOf(firstParagraph),
-                awayToEnd = true,
-                scrollContainer = scrollContainer,
-                textToolbar = textToolbar,
-                clipboard = clipboard,
-            )
-
-            // Visit the remaining renderer shapes once in document order. The paragraph above
-            // exercises detach/reattach directly; the full-document selection below verifies that
-            // code, quote, table and tail proxies retain their text after the same disposal.
-            scrollToBoundary(scrollContainer, end = false)
-            listOf(codeBlock, quoteBlock, tableCell, lastParagraph).forEach { target ->
-                scrollForwardToText(scrollContainer, target)
+            appendLine("> $quoteBlock")
+            appendLine()
+            fillerParagraphs.drop(80).take(40).forEach {
+                appendLine(it)
+                appendLine()
             }
-
-            // 逐项滚动已经让整篇文档的真实 BlockRenderer 至少注册过一次；全选必须覆盖全部
-            // 内容，随后首部节点的销毁、重建和第二次销毁都不能改变高亮或复制结果。
-            scrollToText(scrollContainer, secondParagraph)
-            composeRule.onNodeWithText(secondParagraph).performTouchInput { longClick() }
-            composeRule.runOnIdle {
-                requireNotNull(textToolbar.onSelectAllRequested).invoke()
+            appendLine("| 测试列 |")
+            appendLine("| --- |")
+            appendLine("| $tableCell |")
+            appendLine()
+            fillerParagraphs.drop(120).forEach {
+                appendLine(it)
+                appendLine()
             }
-            waitUntilSelectionHighlight(
-                text = secondParagraph,
-                failureMessage = "Select all did not highlight the second paragraph",
-            )
-            scrollToBoundary(scrollContainer, end = true)
-            composeRule.onNodeWithText(firstParagraph).assertDoesNotExist()
-            composeRule.onNodeWithText(secondParagraph).assertDoesNotExist()
-
-            scrollToText(scrollContainer, secondParagraph)
-            waitUntilSelectionHighlight(
-                text = secondParagraph,
-                failureMessage = "Full-document selection disappeared after the second paragraph was recreated",
-            )
-            val expectedUniqueTexts = listOf(
-                firstParagraph,
-                secondParagraph,
-                codeBlock,
-                quoteBlock,
-                tableCell,
-                thirdFromLastParagraph,
-                secondFromLastParagraph,
-                lastParagraph,
-            )
-            val fullDocumentCopy = copySelection(textToolbar, clipboard)
-            assertCompleteDocumentSelection(fullDocumentCopy, expectedUniqueTexts, fillerParagraphs)
-
-            composeRule.onNodeWithText(secondParagraph).performTouchInput { longClick() }
-            composeRule.runOnIdle {
-                requireNotNull(textToolbar.onSelectAllRequested).invoke()
-            }
-            waitUntilSelectionHighlight(
-                text = secondParagraph,
-                failureMessage = "Repeating select all did not highlight the second paragraph",
-            )
-            scrollToBoundary(scrollContainer, end = true)
-            composeRule.onNodeWithText(secondParagraph).assertDoesNotExist()
-            val detachedFullDocumentCopy = copySelection(textToolbar, clipboard)
-            assertCompleteDocumentSelection(detachedFullDocumentCopy, expectedUniqueTexts, fillerParagraphs)
-            assertEquals(fullDocumentCopy, detachedFullDocumentCopy)
-        } finally {
-            ComposeFoundationFlags.isNewContextMenuEnabled = previousContextMenuFlag
+            appendLine(thirdFromLastParagraph)
+            appendLine()
+            appendLine(secondFromLastParagraph)
+            appendLine()
+            appendLine(lastParagraph)
         }
+        composeRule.setScreenContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalClipboard provides clipboard) {
+                    RenderMarkdownText(markdown = markdown, modifier = Modifier.background(scheme.surface).testTag(tag))
+                }
+            }
+        }
+
+        val scrollContainer = composeRule.onNode(
+            SemanticsMatcher("has vertical scroll axis") { node ->
+                node.config.contains(SemanticsProperties.VerticalScrollAxisRange)
+            },
+        )
+
+        assertSelectionSurvivesDisposal(
+            tag = tag,
+            selectionColor = selectionColor,
+            target = secondParagraph,
+            additionallyDisposed = listOf(firstParagraph),
+            awayToEnd = true,
+            scrollContainer = scrollContainer,
+            clipboard = clipboard,
+        )
+
+        // Visit the remaining renderer shapes once in document order. The paragraph above
+        // exercises detach/reattach directly; the full-document selection below verifies that
+        // code, quote, table and tail proxies retain their text after the same disposal.
+        scrollToBoundary(scrollContainer, end = false)
+        listOf(codeBlock, quoteBlock, tableCell, lastParagraph).forEach { target ->
+            scrollForwardToText(scrollContainer, target)
+        }
+
+        // 逐项滚动已经让整篇文档的真实 BlockRenderer 至少注册过一次；全选必须覆盖全部
+        // 内容，随后首部节点的销毁、重建和第二次销毁都不能改变高亮或复制结果。
+        scrollToText(scrollContainer, secondParagraph)
+        val press = textPoint(tag, secondParagraph, 1)
+        composeRule.onRoot().performTouchInput { longClick(press) }
+        composeRule.onNodeWithText("全选").performClick()
+        waitUntilSelectionHighlight(
+            tag = tag,
+            text = secondParagraph,
+            selectionColor = selectionColor,
+            failureMessage = "Select all did not highlight the second paragraph",
+        )
+        scrollToBoundary(scrollContainer, end = true)
+        composeRule.onNodeWithText(firstParagraph).assertDoesNotExist()
+        composeRule.onNodeWithText(secondParagraph).assertDoesNotExist()
+
+        scrollToText(scrollContainer, secondParagraph)
+        waitUntilSelectionHighlight(
+            tag = tag,
+            text = secondParagraph,
+            selectionColor = selectionColor,
+            failureMessage = "Full-document selection disappeared after the second paragraph was recreated",
+        )
+        val expectedUniqueTexts = listOf(
+            firstParagraph,
+            secondParagraph,
+            codeBlock,
+            quoteBlock,
+            tableCell,
+            thirdFromLastParagraph,
+            secondFromLastParagraph,
+            lastParagraph,
+        )
+        val fullDocumentCopy = copySelection(clipboard)
+        assertCompleteDocumentSelection(fullDocumentCopy, expectedUniqueTexts, fillerParagraphs)
+
+        val restoredPress = textPoint(tag, secondParagraph, 1)
+        composeRule.onRoot().performTouchInput { longClick(restoredPress) }
+        composeRule.onNodeWithText("全选").performClick()
+        waitUntilSelectionHighlight(
+            tag = tag,
+            text = secondParagraph,
+            selectionColor = selectionColor,
+            failureMessage = "Repeating select all did not highlight the second paragraph",
+        )
+        scrollToBoundary(scrollContainer, end = true)
+        composeRule.onNodeWithText(secondParagraph).assertDoesNotExist()
+        val detachedFullDocumentCopy = copySelection(clipboard)
+        assertCompleteDocumentSelection(detachedFullDocumentCopy, expectedUniqueTexts, fillerParagraphs)
+        assertEquals(fullDocumentCopy, detachedFullDocumentCopy)
     }
 
     /**
@@ -583,7 +575,7 @@ class ArticleScreenInstrumentedTest {
                         0,
                     )
                 }
-            }.sortedWith(compareBy({ it.bounds.top }, { it.bounds.left }))
+            }.sortedWith(compareBy({ it.bounds.top + it.layout.getLineBaseline(0) }, { it.bounds.left }))
         val matches = fragments.indices.mapNotNull { first ->
             var offset = 0
             val matched = mutableListOf<MarkdownTextFragment>()
@@ -599,7 +591,16 @@ class ArticleScreenInstrumentedTest {
             }
             null
         }
-        assertEquals("The complete original paragraph must map to exactly one sequence of painted runs: $text", 1, matches.size)
+        assertEquals(
+            "The complete original paragraph must map to exactly one sequence of painted runs: $text; " +
+                fragments.joinToString {
+                    val runText = it.layout.layoutInput.text.text
+                    "${it.nodeId}: text=$runText utf16=${runText.map { char -> char.code.toString(16).padStart(4, '0') }} " +
+                        "bounds=${it.bounds} baselineInRoot=${it.bounds.top + it.layout.getLineBaseline(0)} size=${it.layout.size}"
+                },
+            1,
+            matches.size,
+        )
         return matches.single()
     }
 
@@ -635,56 +636,42 @@ class ArticleScreenInstrumentedTest {
         abs(red - expected.red) < 0.04f && abs(green - expected.green) < 0.04f && abs(blue - expected.blue) < 0.04f
 
     private fun waitUntilSelectionHighlight(
+        tag: String,
         text: String,
+        selectionColor: Color,
         failureMessage: String,
     ) {
         composeRule.waitUntil(failureMessage, timeoutMillis = 5_000) {
             runCatching {
-                composeRule
-                    .onNodeWithText(text)
-                    .captureToImage()
-                    .toPixelMap()
-                    .let { pixels ->
-                        (0 until pixels.height).any { y ->
-                            (0 until pixels.width).any { x ->
-                                val pixel = pixels[x, y]
-                                pixel.red > 0.9f && pixel.blue > 0.9f && pixel.green < 0.1f
-                            }
-                        }
+                paragraphFragments(tag, text).any { fragment ->
+                    val pixels = composeRule
+                        .onNode(SemanticsMatcher("painted text run ${fragment.nodeId}") { it.id == fragment.nodeId }, useUnmergedTree = true)
+                        .captureToImage()
+                        .toPixelMap()
+                    (0 until pixels.height).any { y ->
+                        (0 until pixels.width).any { x -> pixels[x, y].matchesPixel(selectionColor) }
                     }
+                }
             }.getOrDefault(false)
         }
     }
 
-    private fun copySelection(
-        textToolbar: CapturingTextToolbar,
-        clipboard: RecordingClipboard,
-    ): String {
-        clipboard.clear()
-        composeRule.runOnIdle {
-            requireNotNull(textToolbar.onCopyRequested).invoke()
-        }
-        composeRule.waitUntil(
-            "Selection did not publish text to the Compose clipboard",
-            timeoutMillis = 5_000,
-        ) {
-            clipboard.text != null
-        }
-        return requireNotNull(clipboard.text)
-    }
-
     private fun assertSelectionSurvivesDisposal(
+        tag: String,
+        selectionColor: Color,
         target: String,
         awayToEnd: Boolean,
         scrollContainer: SemanticsNodeInteraction,
-        textToolbar: CapturingTextToolbar,
         clipboard: RecordingClipboard,
         additionallyDisposed: List<String> = emptyList(),
     ) {
         scrollToText(scrollContainer, target)
-        composeRule.onNodeWithText(target).performTouchInput { longClick() }
+        val press = textPoint(tag, target, 1)
+        composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilSelectionHighlight(
+            tag = tag,
             text = target,
+            selectionColor = selectionColor,
             failureMessage = "Selection did not highlight $target before disposal",
         )
 
@@ -695,21 +682,26 @@ class ArticleScreenInstrumentedTest {
 
         scrollToText(scrollContainer, target)
         waitUntilSelectionHighlight(
+            tag = tag,
             text = target,
+            selectionColor = selectionColor,
             failureMessage = "Selection on $target disappeared after its renderer was recreated",
         )
-        val restoredCopy = copySelection(textToolbar, clipboard)
+        val restoredCopy = copySelection(clipboard)
         assertTrue("Restored selection did not copy $target: $restoredCopy", restoredCopy.contains(target))
 
-        composeRule.onNodeWithText(target).performTouchInput { longClick() }
+        val restoredPress = textPoint(tag, target, 1)
+        composeRule.onRoot().performTouchInput { longClick(restoredPress) }
         waitUntilSelectionHighlight(
+            tag = tag,
             text = target,
+            selectionColor = selectionColor,
             failureMessage = "Reselecting $target did not produce a visible selection",
         )
 
         scrollToBoundary(scrollContainer, end = awayToEnd)
         composeRule.onNodeWithText(target).assertDoesNotExist()
-        val detachedCopy = copySelection(textToolbar, clipboard)
+        val detachedCopy = copySelection(clipboard)
         assertTrue("Detached selection did not copy $target: $detachedCopy", detachedCopy.contains(target))
         assertEquals(restoredCopy, detachedCopy)
     }
@@ -791,157 +783,103 @@ class ArticleScreenInstrumentedTest {
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/322
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/584
      */
-    @OptIn(ExperimentalFoundationApi::class)
     @Test
     fun highlightedParagraphRemainsSelectable() {
-        val previousContextMenuFlag = ComposeFoundationFlags.isNewContextMenuEnabled
-        ComposeFoundationFlags.isNewContextMenuEnabled = false
-        try {
-            val textToolbar = CapturingTextToolbar()
-            val clipboard = RecordingClipboard()
-            val selectionColor = Color.Magenta
-            composeRule.setScreenContent {
-                CompositionLocalProvider(
-                    LocalClipboard provides clipboard,
-                    LocalTextToolbar provides textToolbar,
-                    LocalTextSelectionColors provides TextSelectionColors(
-                        handleColor = selectionColor,
-                        backgroundColor = selectionColor,
-                    ),
-                ) {
+        val clipboard = RecordingClipboard()
+        val scheme = lightColorScheme()
+        val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
+        val tag = "highlighted-selection-article"
+        composeRule.setScreenContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalClipboard provides clipboard) {
                     RenderMarkdown(
                         html = HIGHLIGHTED_PARAGRAPH_HTML,
-                        modifier = androidx.compose.ui.Modifier
-                            .width(280.dp)
-                            .testTag("highlighted-selection-article"),
+                        modifier = Modifier.width(280.dp).background(scheme.surface).testTag(tag),
                         enableScroll = false,
                     )
                 }
             }
-
-            composeRule
-                .onNodeWithText(HIGHLIGHTED_PARAGRAPH)
-                .performTouchInput { longClick() }
-            composeRule.onNodeWithText("划线片段").assertDoesNotExist()
-
-            val selectionImage = composeRule
-                .onNodeWithTag("highlighted-selection-article")
-                .captureToImage()
-            val selectedPixels = selectionImage.toPixelMap().let { pixels ->
-                (0 until pixels.height).sumOf { y ->
-                    (0 until pixels.width).count { x ->
-                        val color = pixels[x, y]
-                        color.red > 0.9f && color.green < 0.1f && color.blue > 0.9f
-                    }
-                }
-            }
-            assertTrue(
-                "A long press on a highlighted paragraph must draw a visible selection background; found $selectedPixels selected pixels",
-                selectedPixels >= 100,
-            )
-            composeRule.runOnIdle {
-                requireNotNull(textToolbar.onSelectAllRequested).invoke()
-            }
-
-            val copiedText = copySelection(textToolbar, clipboard)
-            assertEquals(HIGHLIGHTED_PARAGRAPH, copiedText)
-        } finally {
-            ComposeFoundationFlags.isNewContextMenuEnabled = previousContextMenuFlag
         }
+
+        val press = textPoint(tag, HIGHLIGHTED_PARAGRAPH, 1)
+        composeRule.onRoot().performTouchInput { longClick(press) }
+        composeRule.onNodeWithText("划线片段").assertDoesNotExist()
+
+        val selectionImage = composeRule.onNodeWithTag(tag).captureToImage()
+        val selectedPixels = selectionImage.toPixelMap().let { pixels ->
+            (0 until pixels.height).sumOf { y ->
+                (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
+            }
+        }
+        assertTrue(
+            "A long press on a highlighted paragraph must draw a visible selection background; found $selectedPixels selected pixels",
+            selectedPixels >= 100,
+        )
+        composeRule.onNodeWithText("全选").performClick()
+
+        val copiedText = copySelection(clipboard)
+        assertEquals(HIGHLIGHTED_PARAGRAPH, copiedText)
     }
 
     /**
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/322
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/584
      */
-    @OptIn(ExperimentalFoundationApi::class)
     @Test
     fun highlightedParagraphSelectionHandleCanExtendToFollowingParagraph() {
-        val previousContextMenuFlag = ComposeFoundationFlags.isNewContextMenuEnabled
-        ComposeFoundationFlags.isNewContextMenuEnabled = false
-        try {
-            val textToolbar = CapturingTextToolbar()
-            val clipboard = RecordingClipboard()
-            val selectionColor = Color.Magenta
-            composeRule.setScreenContent {
-                CompositionLocalProvider(
-                    LocalClipboard provides clipboard,
-                    LocalTextToolbar provides textToolbar,
-                    LocalTextSelectionColors provides TextSelectionColors(
-                        handleColor = selectionColor,
-                        backgroundColor = selectionColor,
-                    ),
-                ) {
+        val clipboard = RecordingClipboard()
+        val scheme = lightColorScheme()
+        val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
+        val tag = "highlighted-selection-drag-article"
+        composeRule.setScreenContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalClipboard provides clipboard) {
                     RenderMarkdown(
                         html = "$HIGHLIGHTED_PARAGRAPH_HTML<p>$HIGHLIGHT_SELECTION_TARGET</p>",
-                        modifier = androidx.compose.ui.Modifier
-                            .width(280.dp)
-                            .testTag("highlighted-selection-drag-article"),
+                        modifier = Modifier.width(280.dp).background(scheme.surface).testTag(tag),
                         enableScroll = false,
                     )
                 }
             }
-
-            composeRule
-                .onNodeWithText(HIGHLIGHTED_PARAGRAPH)
-                .performTouchInput { longClick() }
-            val endHandle = composeRule.onNode(
-                SemanticsMatcher("是划线段落选区末端手柄") { node ->
-                    node.config.any { (key, value) ->
-                        key.name == "SelectionHandleInfo" && value.toString().contains("SelectionEnd")
-                    }
-                },
-            )
-            val targetBounds = composeRule
-                .onNodeWithText(HIGHLIGHT_SELECTION_TARGET)
-                .fetchSemanticsNode()
-                .boundsInWindow
-            val handleBounds = endHandle.fetchSemanticsNode().boundsInWindow
-            endHandle.performTouchInput {
-                val start = center
-                val destination = Offset(
-                    x = targetBounds.right - handleBounds.left - 1f,
-                    y = targetBounds.bottom - handleBounds.top - 1f,
-                )
-                down(start)
-                advanceEventTime(100)
-                repeat(10) { step ->
-                    val fraction = (step + 1) / 10f
-                    moveTo(
-                        start + (destination - start) * fraction,
-                        delayMillis = 50,
-                    )
-                }
-                up()
-            }
-            val selectedPixels = composeRule
-                .onNodeWithTag("highlighted-selection-drag-article")
-                .captureToImage()
-                .toPixelMap()
-                .let { pixels ->
-                    (0 until pixels.height).sumOf { y ->
-                        (0 until pixels.width).count { x ->
-                            val color = pixels[x, y]
-                            color.red > 0.9f && color.green < 0.1f && color.blue > 0.9f
-                        }
-                    }
-                }
-            assertTrue(
-                "Dragging out of a highlighted paragraph must keep the cross-block selection visible; found $selectedPixels selected pixels",
-                selectedPixels >= 1_000,
-            )
-            waitUntilSelectionHighlight(
-                text = HIGHLIGHT_SELECTION_TARGET,
-                failureMessage = "Selection did not reach the following block after dragging the handle",
-            )
-            val copiedText = copySelection(textToolbar, clipboard)
-            assertTrue(
-                "The standard selection handle must extend from a highlighted paragraph into the following block",
-                copiedText.contains(HIGHLIGHT_SELECTION_TARGET),
-            )
-        } finally {
-            ComposeFoundationFlags.isNewContextMenuEnabled = previousContextMenuFlag
         }
+
+        val press = textPoint(tag, HIGHLIGHTED_PARAGRAPH, 1)
+        val root = composeRule.onRoot().fetchSemanticsNode()
+        composeRule.onRoot().performTouchInput { longClick(press) }
+        val endHandle = composeRule.onNodeWithContentDescription("Markdown selection end handle")
+        val point = textPoint(tag, HIGHLIGHT_SELECTION_TARGET, HIGHLIGHT_SELECTION_TARGET.length)
+        val handleBounds = endHandle.fetchSemanticsNode().boundsInWindow
+        val destination = point + root.boundsInWindow.topLeft - root.boundsInRoot.topLeft - handleBounds.topLeft
+        endHandle.performTouchInput {
+            val start = center
+            down(start)
+            advanceEventTime(100)
+            repeat(10) { step ->
+                val fraction = (step + 1) / 10f
+                moveTo(start + (destination - start) * fraction, delayMillis = 50)
+            }
+            up()
+        }
+        val selectedPixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap().let { pixels ->
+            (0 until pixels.height).sumOf { y ->
+                (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
+            }
+        }
+        assertTrue(
+            "Dragging out of a highlighted paragraph must keep the cross-block selection visible; found $selectedPixels selected pixels",
+            selectedPixels >= 1_000,
+        )
+        waitUntilSelectionHighlight(
+            tag = tag,
+            text = HIGHLIGHT_SELECTION_TARGET,
+            selectionColor = selectionColor,
+            failureMessage = "Selection did not reach the following block after dragging the handle",
+        )
+        val copiedText = copySelection(clipboard)
+        assertTrue(
+            "The standard selection handle must extend from a highlighted paragraph into the following block",
+            copiedText.contains(HIGHLIGHT_SELECTION_TARGET),
+        )
     }
 
     /**
@@ -955,15 +893,21 @@ class ArticleScreenInstrumentedTest {
         composeRule.setScreenContent {
             RenderMarkdown(
                 html = HIGHLIGHTED_PARAGRAPH_HTML,
+                modifier = Modifier.testTag("highlighted-tap-article"),
                 enableScroll = false,
             )
         }
 
-        composeRule
-            .onNodeWithText(HIGHLIGHTED_PARAGRAPH)
-            .performTouchInput { click() }
+        val point = textPoint("highlighted-tap-article", HIGHLIGHTED_PARAGRAPH, 1)
+        composeRule.onRoot().performTouchInput { click(point) }
         composeRule.onNodeWithText("划线片段").assertIsDisplayed()
         composeRule.onNodeWithText("“$HIGHLIGHTED_PARAGRAPH”").assertIsDisplayed()
+        composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsDisplayed()
+        composeRule.onNode(hasContentDescription("喜欢"), useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNode(hasContentDescription("评论"), useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("9").assertIsDisplayed()
+        composeRule.onNodeWithText("2").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("复制内容").assertIsDisplayed()
         composeRule.onNodeWithTag("segment_action_sheet_top_divider").assertDoesNotExist()
         composeRule.onNodeWithTag("segment_action_sheet_bottom_divider").assertDoesNotExist()
     }
@@ -977,18 +921,22 @@ class ArticleScreenInstrumentedTest {
         composeRule.setScreenContent {
             RenderMarkdown(
                 html = SPANNING_HIGHLIGHT_HTML,
+                modifier = Modifier.testTag("spanning-highlight-article"),
                 enableScroll = false,
             )
         }
 
-        composeRule
-            .onNodeWithText(SPANNING_HIGHLIGHT_SECOND)
-            .performTouchInput { click() }
+        val point = textPoint("spanning-highlight-article", SPANNING_HIGHLIGHT_SECOND, 1)
+        composeRule.onRoot().performTouchInput { click(point) }
 
         composeRule.onNodeWithText("划线片段").assertIsDisplayed()
         composeRule
             .onNodeWithText("“$SPANNING_HIGHLIGHT_FIRST\n\n$SPANNING_HIGHLIGHT_SECOND”")
             .assertIsDisplayed()
+        composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsDisplayed()
+        composeRule.onNodeWithText("806").assertIsDisplayed()
+        composeRule.onNodeWithText("15").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("复制内容").assertIsDisplayed()
     }
 
     /**
@@ -1007,16 +955,18 @@ class ArticleScreenInstrumentedTest {
         composeRule.setScreenContent {
             RenderMarkdown(
                 html = html,
+                modifier = Modifier.testTag("long-spanning-highlight-article"),
                 enableScroll = false,
             )
         }
 
-        composeRule
-            .onNodeWithText(SPANNING_HIGHLIGHT_SECOND)
-            .performTouchInput { click() }
+        val point = textPoint("long-spanning-highlight-article", SPANNING_HIGHLIGHT_SECOND, 1)
+        composeRule.onRoot().performTouchInput { click(point) }
 
         val text = composeRule.onNodeWithText("“$longDisplayText”")
         text.fetchSemanticsNode()
+        composeRule.onNodeWithText("划线片段").assertIsDisplayed()
+        composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag("segment_action_sheet_top_divider").assertDoesNotExist()
         composeRule.onNodeWithTag("segment_action_sheet_bottom_divider").assertIsDisplayed()
         composeRule.onNodeWithText("15").assertIsDisplayed()
@@ -1044,23 +994,13 @@ class ArticleScreenInstrumentedTest {
         composeRule.setScreenContent {
             RenderMarkdown(
                 html = FORMATTED_HIGHLIGHT_PARAGRAPH_HTML,
-                modifier = androidx.compose.ui.Modifier
-                    .width(240.dp),
+                modifier = Modifier.width(240.dp).testTag("formatted-highlight-article"),
                 enableScroll = false,
             )
         }
 
-        val paragraph = composeRule.onNodeWithText(FORMATTED_HIGHLIGHT_PARAGRAPH)
-        var highlightCenter = Offset.Unspecified
-        paragraph.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getTextLayoutResult ->
-            val results = mutableListOf<TextLayoutResult>()
-            assertTrue(getTextLayoutResult(results))
-            highlightCenter = results
-                .single()
-                .getBoundingBox(FORMATTED_HIGHLIGHT_PREFIX.length)
-                .center
-        }
-        paragraph.performTouchInput { click(highlightCenter) }
+        val point = textPoint("formatted-highlight-article", FORMATTED_HIGHLIGHT_PARAGRAPH, FORMATTED_HIGHLIGHT_PREFIX.length + 1)
+        composeRule.onRoot().performTouchInput { click(point) }
 
         composeRule.onNodeWithText("划线片段").assertIsDisplayed()
         composeRule.onNodeWithText("“$FORMATTED_HIGHLIGHT”").assertIsDisplayed()
@@ -1076,6 +1016,7 @@ class ArticleScreenInstrumentedTest {
             MaterialTheme(
                 colorScheme = lightColorScheme(
                     outlineVariant = Color.Magenta,
+                    primary = Color.Magenta,
                 ),
             ) {
                 RenderMarkdown(
@@ -1088,25 +1029,28 @@ class ArticleScreenInstrumentedTest {
             }
         }
 
-        val paragraph = composeRule.onNodeWithText(WRAPPED_HIGHLIGHT_PARAGRAPH)
-        val layouts = mutableListOf<TextLayoutResult>()
-        paragraph.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getTextLayoutResult ->
-            assertTrue(getTextLayoutResult(layouts))
-        }
-        val layout = layouts.single()
+        val fragments = paragraphFragments("wrapped-highlight-article", WRAPPED_HIGHLIGHT_PARAGRAPH)
         val highlightStart = WRAPPED_HIGHLIGHT_PREFIX.length
         val highlightEnd = highlightStart + WRAPPED_HIGHLIGHT.length
-        val startLine = layout.getLineForOffset(highlightStart)
-        val endLine = layout.getLineForOffset(highlightEnd - 1)
-        assertTrue("Fixture must wrap the highlighted text onto at least three lines", endLine - startLine >= 2)
-
-        val image = composeRule
-            .onNodeWithTag("wrapped-highlight-article")
-            .captureToImage()
-        val pixels = image.toPixelMap()
-        for (line in startLine..endLine) {
-            val top = (layout.getLineBottom(line) - 6f).toInt().coerceAtLeast(0)
-            val bottom = (layout.getLineBottom(line) + 2f).toInt().coerceAtMost(pixels.height - 1)
+        val container = composeRule.onNodeWithTag("wrapped-highlight-article")
+        val bounds = container.fetchSemanticsNode().boundsInRoot
+        val pixels = container.captureToImage().toPixelMap()
+        val highlightedLines = fragments
+            .flatMap { fragment ->
+                (0 until fragment.layout.lineCount).mapNotNull { line ->
+                    val start = fragment.startOffset + fragment.layout.getLineStart(line)
+                    val end = fragment.startOffset + fragment.layout.getLineEnd(line)
+                    if (start < highlightEnd && end > highlightStart) {
+                        fragment.bounds.top - bounds.top + fragment.layout.getLineBottom(line)
+                    } else {
+                        null
+                    }
+                }
+            }.distinct()
+        assertTrue("Fixture must wrap the highlighted text onto at least three lines", highlightedLines.size >= 3)
+        for ((line, lineBottom) in highlightedLines.withIndex()) {
+            val top = (lineBottom - 6f).toInt().coerceAtLeast(0)
+            val bottom = (lineBottom + 2f).toInt().coerceAtMost(pixels.height - 1)
             val magentaPixels = (top..bottom).sumOf { y ->
                 (0 until pixels.width).count { x ->
                     val color = pixels[x, y]
@@ -1136,18 +1080,32 @@ class ArticleScreenInstrumentedTest {
                 modifier = androidx.compose.ui.Modifier
                     .fillMaxSize(),
             ) { _ ->
-                ArticleScreen(
-                    article = ANSWER,
-                    viewModel = viewModel,
-                )
+                Box(Modifier.fillMaxSize().testTag("highlighted-answer-screen")) {
+                    ArticleScreen(
+                        article = ANSWER,
+                        viewModel = viewModel,
+                    )
+                }
             }
         }
 
-        composeRule
-            .onNodeWithText(HIGHLIGHTED_PARAGRAPH)
-            .performTouchInput { click() }
+        val point = textPoint("highlighted-answer-screen", HIGHLIGHTED_PARAGRAPH, 1)
+        composeRule.onRoot().performTouchInput { click(point) }
         composeRule.onNodeWithText("划线片段").assertIsDisplayed()
         composeRule.onNodeWithText("“$HIGHLIGHTED_PARAGRAPH”").assertIsDisplayed()
+        composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsDisplayed()
+        composeRule.onNode(hasContentDescription("喜欢"), useUnmergedTree = true).assertIsDisplayed()
+        composeRule
+            .onNode(
+                hasContentDescription("评论") and hasAnyAncestor(
+                    isDialog() and hasAnyDescendant(hasText("划线片段")) and
+                        hasAnyDescendant(hasText("2")) and hasAnyDescendant(hasContentDescription("复制内容")),
+                ),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        composeRule.onNodeWithText("9").assertIsDisplayed()
+        composeRule.onNodeWithText("2").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("复制内容").assertIsDisplayed()
     }
 
     /**
@@ -1157,20 +1115,21 @@ class ArticleScreenInstrumentedTest {
      */
     @Test
     fun highlightedParagraphDragDoesNotOpenActions() {
+        val tag = "highlighted-drag-article"
         composeRule.setScreenContent {
             RenderMarkdown(
                 html = HIGHLIGHTED_PARAGRAPH_HTML,
+                modifier = Modifier.testTag(tag),
                 enableScroll = false,
             )
         }
 
-        composeRule
-            .onNodeWithText(HIGHLIGHTED_PARAGRAPH)
-            .performTouchInput {
-                down(center)
-                moveBy(Offset(0f, -100f))
-                up()
-            }
+        val point = textPoint(tag, HIGHLIGHTED_PARAGRAPH, 1)
+        composeRule.onRoot().performTouchInput {
+            down(point)
+            moveBy(Offset(0f, -100f))
+            up()
+        }
         composeRule.onNodeWithText("划线片段").assertDoesNotExist()
     }
 
@@ -1912,30 +1871,6 @@ class ArticleScreenInstrumentedTest {
                 error: Exception,
             ) = Unit
         }
-    }
-}
-
-private class CapturingTextToolbar : TextToolbar {
-    var onCopyRequested: (() -> Unit)? = null
-    var onSelectAllRequested: (() -> Unit)? = null
-
-    override var status = TextToolbarStatus.Hidden
-        private set
-
-    override fun showMenu(
-        rect: Rect,
-        onCopyRequested: (() -> Unit)?,
-        onPasteRequested: (() -> Unit)?,
-        onCutRequested: (() -> Unit)?,
-        onSelectAllRequested: (() -> Unit)?,
-    ) {
-        this.onCopyRequested = onCopyRequested
-        this.onSelectAllRequested = onSelectAllRequested
-        status = TextToolbarStatus.Shown
-    }
-
-    override fun hide() {
-        status = TextToolbarStatus.Hidden
     }
 }
 

@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.ClipboardManager
@@ -671,19 +672,59 @@ class RenderMarkdownSegmentUiTest {
         }
     }
 
-    private fun ComposeUiTest.textPoint(text: String, index: Int, after: Boolean): Offset {
-        val matcher = hasText(text) and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
-        waitUntil(timeoutMillis = 10_000) {
-            onAllNodes(matcher, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+    private data class MarkdownTextFragment(
+        val nodeId: Int,
+        val bounds: Rect,
+        val layout: TextLayoutResult,
+        val startOffset: Int = 0,
+    ) {
+        val endOffset: Int get() = startOffset + layout.layoutInput.text.length
+    }
+
+    /** HRM 按视觉行/run 绘制；用真实布局映射原段的 UTF-16 偏移，不能假定全文属于单个节点。 */
+    private fun ComposeUiTest.paragraphFragments(text: String): List<MarkdownTextFragment> {
+        val fragments = onAllNodes(
+            SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes()
+            .mapNotNull { node ->
+                if (node.boundsInRoot.width <= 0f || node.boundsInRoot.height <= 0f) return@mapNotNull null
+                val layouts = mutableListOf<TextLayoutResult>()
+                runOnIdle {
+                    assertTrue(node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts) == true)
+                }
+                val layout = layouts.single()
+                if (layout.layoutInput.text.isEmpty()) null else MarkdownTextFragment(node.id, node.boundsInRoot, layout)
+            }.sortedWith(compareBy({ it.bounds.top + it.layout.getLineBaseline(0) }, { it.bounds.left }))
+        val matches = fragments.indices.mapNotNull { first ->
+            var offset = 0
+            val matched = mutableListOf<MarkdownTextFragment>()
+            for (fragment in fragments.drop(first)) {
+                val visibleText = fragment.layout.layoutInput.text.text
+                if (!text.startsWith(visibleText, offset)) {
+                    while (offset < text.length && (text[offset] == ' ' || text[offset] == '\t')) offset++
+                }
+                if (!text.startsWith(visibleText, offset)) break
+                matched += fragment.copy(startOffset = offset)
+                offset += visibleText.length
+                if (offset == text.length) return@mapNotNull matched
+            }
+            null
         }
-        val node = onNode(matcher, useUnmergedTree = true)
-        val layouts = mutableListOf<TextLayoutResult>()
-        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-        val layout = layouts.single()
-        assertEquals(text, layout.layoutInput.text.text)
-        val box = layout.getBoundingBox(index)
+        assertEquals(1, matches.size, "原段必须唯一映射到完整的可见文字 runs：$text")
+        return matches.single()
+    }
+
+    private fun ComposeUiTest.textPoint(text: String, index: Int, after: Boolean): Offset {
+        require(index in text.indices)
+        require(!(text[index].isLowSurrogate() && index > 0 && text[index - 1].isHighSurrogate()))
+        val fragment = paragraphFragments(text).single { index in it.startOffset until it.endOffset }
+        onNode(SemanticsMatcher("painted text run ${fragment.nodeId}") { it.id == fragment.nodeId }, useUnmergedTree = true)
+            .assertIsDisplayed()
+        val box = fragment.layout.getBoundingBox(index - fragment.startOffset)
+        assertTrue(box.width > 0f && box.height > 0f, "选区端点必须命中实际字形：$text index=$index box=$box")
         val x = if (after) box.right - box.width * 0.1f else box.left + box.width * 0.1f
-        return node.fetchSemanticsNode().boundsInRoot.topLeft + Offset(x, box.center.y)
+        return fragment.bounds.topLeft + Offset(x, box.center.y)
     }
 
     private fun ComposeUiTest.selectBetween(start: Offset, end: Offset) {

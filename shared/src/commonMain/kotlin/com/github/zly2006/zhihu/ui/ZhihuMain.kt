@@ -70,6 +70,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -418,13 +419,21 @@ fun ZhihuMain(
         }
     }
     var previousReadingItemKey by remember { mutableStateOf(readingPlayerState.currentItem?.key) }
+    val currentOpenReadingDestination by rememberUpdatedState<(NavDestination) -> Unit> { destination ->
+        openReadingDestination(destination, onlyIfReading = true)
+    }
     LaunchedEffect(readingPlayerState.currentItem?.key) {
         val currentItem = readingPlayerState.currentItem
         val currentItemKey = currentItem?.key
+        if (currentItem != null && previousReadingItemKey != null && previousReadingItemKey != currentItemKey) {
+            /** 第一帧回调先于重组和约束测量；跨完该帧后再用最新导航回调，避免改宽与切队列同时发生时按旧窄屏清栈。 */
+            withFrameNanos { }
+            withFrameNanos { }
+        }
         val itemChanged = previousReadingItemKey != null && previousReadingItemKey != currentItemKey
         previousReadingItemKey = currentItemKey
         if (itemChanged && currentItem != null) {
-            openReadingDestination(currentItem.toDestination(readingPlayerState.sourceId), onlyIfReading = true)
+            currentOpenReadingDestination(currentItem.toDestination(readingPlayerState.sourceId))
         }
     }
 

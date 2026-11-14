@@ -339,7 +339,7 @@ class FloatingPlacementUiTest {
                     runOnIdle { scale = 2f }
                     for (label in listOf("手机号登录", "扫码登录")) {
                         val layouts = mutableListOf<TextLayoutResult>()
-                        val node = onNodeWithText(label, useUnmergedTree = true)
+                        val node = onNode(hasText(label) and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult), useUnmergedTree = true)
                         node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                         assertEquals(2f, layouts.single().layoutInput.density.fontScale)
                         assertEquals(1, layouts.single().lineCount)
@@ -347,7 +347,7 @@ class FloatingPlacementUiTest {
                         assertTrue(node.fetchSemanticsNode().boundsInRoot.height >= layouts.single().size.height - 1f)
                     }
                     onNodeWithTag("phone_choice").assertIsSelected()
-                    if (style == ThemeStyle.MIUIX) onNodeWithText("手机号登录").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+                    if (style == ThemeStyle.MIUIX) onNodeWithTag("phone_choice").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
                     onNodeWithTag("qr_choice").performClick().assertIsSelected()
                     assertEquals(1, changes)
                     runOnIdle { enabled = false; scale = 3f }
@@ -364,7 +364,8 @@ class FloatingPlacementUiTest {
                             assertTrue(node.fetchSemanticsNode().boundsInRoot.height >= layouts.single().size.height - 1f)
                         }
                         val disabled = mutableListOf<TextLayoutResult>()
-                        onNodeWithText("手机号登录", useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(disabled) }
+                        onNode(hasText("手机号登录") and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult), useUnmergedTree = true)
+                            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(disabled) }
                         assertEquals(disabledColour, disabled.single().layoutInput.style.color)
                         runOnIdle { scale = 2f }
                         for (label in listOf("回答", "文章", "关注订阅")) {

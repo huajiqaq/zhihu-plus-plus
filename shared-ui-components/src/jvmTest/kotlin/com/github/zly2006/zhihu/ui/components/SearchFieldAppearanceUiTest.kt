@@ -23,10 +23,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
@@ -38,6 +40,8 @@ import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -127,20 +131,41 @@ class SearchFieldAppearanceUiTest {
                             AppSearchBar("搜索设置名称或关键词", {}, modifier = Modifier.testTag("search_entry"))
                         }
                     }
-                    val pixels = onNodeWithTag("search_entry").captureToImage().toPixelMap()
+                    val entry = onNodeWithTag("search_entry")
+                    val pixels = entry.captureToImage().toPixelMap()
+                    val hintNode = onNode(
+                        hasText("搜索设置名称或关键词") and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+                        useUnmergedTree = true,
+                    )
+                    val hintLayouts = mutableListOf<TextLayoutResult>()
+                    hintNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(hintLayouts) }
+                    val hintLayout = hintLayouts.single()
                     val background = pixels[pixels.width - 12, pixels.height / 2]
                     val bright = background.luminance()
-                    val textStart = with(density) { 58.dp.roundToPx() }
-                    val textEnd = (pixels.width * 3 / 4).coerceAtLeast(textStart)
+                    val entryBounds = entry.fetchSemanticsNode().boundsInRoot
+                    val textBounds = hintNode.fetchSemanticsNode().boundsInRoot
+                    val left = floor(textBounds.left - entryBounds.left).toInt().coerceIn(0, pixels.width)
+                    val right = ceil(textBounds.right - entryBounds.left).toInt().coerceIn(left, pixels.width)
+                    val top = floor(textBounds.top - entryBounds.top).toInt().coerceIn(0, pixels.height)
+                    val bottom = ceil(textBounds.bottom - entryBounds.top).toInt().coerceIn(top, pixels.height)
+                    assertTrue(right > left && bottom > top, "MIUIX $mode OLED=$oled 提示必须有真实可见文字边界：$textBounds")
                     var readablePixels = 0
-                    for (y in 0 until pixels.height) {
-                        for (x in textStart until textEnd) {
+                    for (y in top until bottom) {
+                        for (x in left until right) {
                             val value = pixels[x, y].luminance()
                             val contrast = (maxOf(value, bright) + 0.05f) / (minOf(value, bright) + 0.05f)
                             if (contrast >= 4.5f) readablePixels++
                         }
                     }
-                    assertTrue(readablePixels >= 10, "$mode OLED=$oled 搜索入口提示对比不足：$readablePixels")
+                    assertTrue(
+                        readablePixels >= 10,
+                        "MIUIX $mode OLED=$oled fontScale=${hintLayout.layoutInput.density.fontScale} 搜索入口提示对比不足：$readablePixels " +
+                            "pixels=${pixels.width}x${pixels.height} scan=$left,$top-$right,$bottom background=$background " +
+                            "foreground=${hintLayout.layoutInput.style.color} textBounds=$textBounds " +
+                            "entryBounds=$entryBounds size=${hintLayout.size} " +
+                            "paragraphHeight=${hintLayout.multiParagraph.height} constraints=${hintLayout.layoutInput.constraints} " +
+                            "os=${System.getProperty("os.name")} java=${System.getProperty("java.version")}",
+                    )
                 }
             }
         } finally {
@@ -170,6 +195,7 @@ class SearchFieldAppearanceUiTest {
                         val placeholderLayouts = mutableListOf<TextLayoutResult>()
                         val placeholderNode = onNodeWithText("搜索内容", useUnmergedTree = true)
                         placeholderNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(placeholderLayouts) }
+                        assertEquals(fontScale, placeholderLayouts.single().layoutInput.density.fontScale, 0.01f, "提示必须保留系统字号比例")
                         assertTrue(!placeholderLayouts.single().didOverflowHeight, "$themeStyle fontScale=$fontScale 提示字形不能被裁切")
                         assertTrue(
                             placeholderNode.fetchSemanticsNode().boundsInRoot.height >= placeholderLayouts.single().size.height - 1f,
@@ -177,12 +203,26 @@ class SearchFieldAppearanceUiTest {
                         )
                         runOnIdle { query.value = "搜索内容" }
                         val inputLayouts = mutableListOf<TextLayoutResult>()
-                        onNodeWithText("搜索内容", useUnmergedTree = true)
-                            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(inputLayouts) }
+                        val inputNode = onNodeWithText("搜索内容", useUnmergedTree = true)
+                        inputNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(inputLayouts) }
                         val placeholder = placeholderLayouts.single().layoutInput.style
                         val input = inputLayouts.single().layoutInput.style
                         assertEquals(placeholder.fontSize, input.fontSize, "$themeStyle fontScale=$fontScale 输入不应继承顶栏的大标题字号")
-                        assertTrue(!inputLayouts.single().didOverflowHeight, "$themeStyle fontScale=$fontScale 输入字形不能被裁切")
+                        val inputLayout = inputLayouts.single()
+                        assertEquals(fontScale, inputLayout.layoutInput.density.fontScale, 0.01f, "输入必须保留系统字号比例")
+                        assertTrue(
+                            !inputLayout.didOverflowHeight,
+                            "$themeStyle fontScale=$fontScale 输入字形不能被裁切：size=${inputLayout.size} " +
+                                "paragraphHeight=${inputLayout.multiParagraph.height} exceededMaxLines=${inputLayout.multiParagraph.didExceedMaxLines} " +
+                                "density=${inputLayout.layoutInput.density} constraints=${inputLayout.layoutInput.constraints} " +
+                                "lineBottom=${inputLayout.getLineBottom(0)} textBounds=${inputNode.fetchSemanticsNode().boundsInRoot} " +
+                                "fieldBounds=${onNodeWithTag("search_probe").fetchSemanticsNode().boundsInRoot} style=${inputLayout.layoutInput.style} " +
+                                "os=${System.getProperty("os.name")} java=${System.getProperty("java.version")}",
+                        )
+                        assertTrue(
+                            inputNode.fetchSemanticsNode().boundsInRoot.height >= inputLayout.size.height - 1f,
+                            "$themeStyle fontScale=$fontScale 输入可见区须包含全部字高",
+                        )
                     }
                 }
             }

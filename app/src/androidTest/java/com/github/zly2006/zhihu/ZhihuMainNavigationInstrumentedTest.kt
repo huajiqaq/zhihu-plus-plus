@@ -404,6 +404,7 @@ class ZhihuMainNavigationInstrumentedTest {
     @Test
     fun readingQueueCanSwitchFromDetailToQuestion() {
         val width = mutableStateOf(1000.dp)
+        var questionHost: AppNavHost? = null
         val player = ReadingPlayerState(
             status = ReadingPlaybackStatus.Playing,
             queue = listOf(
@@ -414,9 +415,15 @@ class ZhihuMainNavigationInstrumentedTest {
         )
         try {
             AndroidReadingPlayerBridge.publish(player)
-            composeRule.launchZhihuMainWithFakeArticle(width = { width.value })
+            composeRule.launchZhihuMainWithFakeArticle(
+                width = { width.value },
+                onQuestionHost = { questionHost = it },
+            )
             composeRule.runOnIdle { composeRule.activity.navigate(Article(type = ArticleType.Answer, id = 318L)) }
             composeRule.onNodeWithTag("article_content").assertIsDisplayed()
+            val readingEntryId = composeRule.runOnIdle { checkNotNull(composeRule.activity.navHost.topEntryId) }
+            composeRule.onNodeWithTag("article_state").performClick()
+            composeRule.onNodeWithText("状态已保留").assertIsDisplayed()
             composeRule.runOnIdle { width.value = 400.dp }
             composeRule.onNodeWithTag("reading_player_queue").performTouchInput { click() }
             composeRule.onNodeWithTag("reading_queue_sheet").assertIsDisplayed()
@@ -434,13 +441,88 @@ class ZhihuMainNavigationInstrumentedTest {
                     .isEmpty()
             }
             composeRule.runOnIdle { AndroidReadingPlayerBridge.publish(player.copy(currentIndex = 1)) }
+            composeRule.waitUntil(timeoutMillis = 5_000) { questionHost?.top is Question }
             composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).assertIsDisplayed()
+            composeRule.onNodeWithTag("article_content").assertIsNotDisplayed()
+            val detailHost = checkNotNull(questionHost)
+            val questionEntryId = composeRule.runOnIdle {
+                assertTrue("Question must use the secondary host", detailHost !== composeRule.activity.navHost)
+                assertEquals(readingEntryId, composeRule.activity.navHost.topEntryId)
+                checkNotNull(detailHost.topEntryId)
+            }
+            val narrowQuestionBounds = composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).fetchSemanticsNode().boundsInRoot
+            val narrowListBounds = composeRule.onNodeWithTag("list_pane").fetchSemanticsNode().boundsInRoot
+            assertEquals(narrowListBounds.left, narrowQuestionBounds.left, 0.5f)
+            assertEquals(narrowListBounds.right, narrowQuestionBounds.right, 0.5f)
             composeRule.runOnIdle {
                 width.value = 1000.dp
                 AndroidReadingPlayerBridge.publish(player)
             }
+            val expandedWidthPx = with(composeRule.density) { 1000.dp.toPx() }
+            var expandedLayoutDiagnostics = "readingEntry=$readingEntryId questionEntry=$questionEntryId"
+            try {
+                /** 自动队列导航跨测量帧，等待原条目在新宽度完成左右栏布局，而非采样中间帧。 */
+                composeRule.waitUntil(timeoutMillis = 5_000) {
+                    val questionBounds = composeRule
+                        .onAllNodesWithTag(QUESTION_SCREEN_LIST_TAG)
+                        .fetchSemanticsNodes()
+                        .singleOrNull()
+                        ?.boundsInRoot
+                    val listBounds = composeRule
+                        .onAllNodesWithTag("list_pane")
+                        .fetchSemanticsNodes()
+                        .singleOrNull()
+                        ?.boundsInRoot
+                    val articleBounds = composeRule
+                        .onAllNodesWithTag("article_content")
+                        .fetchSemanticsNodes()
+                        .singleOrNull()
+                        ?.boundsInRoot
+                    composeRule.runOnIdle {
+                        expandedLayoutDiagnostics = "readingEntry=$readingEntryId questionEntry=$questionEntryId " +
+                            "mainEntries=${composeRule.activity.navHost.pageEntries.map { "${it.id}/${it.destination::class.simpleName}" }.toList()} " +
+                            "detailEntries=${detailHost.pageEntries.map { "${it.id}/${it.destination::class.simpleName}" }.toList()} " +
+                            "narrowQuestion=$narrowQuestionBounds narrowList=$narrowListBounds expandedWidth=$expandedWidthPx " +
+                            "expandedQuestion=$questionBounds expandedList=$listBounds expandedArticle=$articleBounds"
+                        assertEquals(expandedLayoutDiagnostics, readingEntryId, composeRule.activity.navHost.topEntryId)
+                        assertEquals(expandedLayoutDiagnostics, questionEntryId, detailHost.topEntryId)
+                    }
+                    questionBounds != null &&
+                        listBounds != null &&
+                        articleBounds != null &&
+                        questionBounds.width > 0f &&
+                        questionBounds.height > 0f &&
+                        listBounds.width > 0f &&
+                        listBounds.height > 0f &&
+                        articleBounds.width > 0f &&
+                        articleBounds.height > 0f &&
+                        questionBounds.left in (listBounds.left - 0.5f)..(listBounds.left + 0.5f) &&
+                        questionBounds.right in (listBounds.right - 0.5f)..(listBounds.right + 0.5f) &&
+                        articleBounds.left >= listBounds.right &&
+                        articleBounds.right - listBounds.left in (expandedWidthPx - 0.5f)..(expandedWidthPx + 0.5f)
+                }
+            } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                throw AssertionError("Expanded reading queue layout did not settle: $expandedLayoutDiagnostics", error)
+            }
             composeRule.onNodeWithTag("article_content").assertIsDisplayed()
             composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).assertIsDisplayed()
+            composeRule.onNodeWithText("状态已保留").assertIsDisplayed()
+            val questionNode = composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).fetchSemanticsNode()
+            val listNode = composeRule.onNodeWithTag("list_pane").fetchSemanticsNode()
+            val articleNode = composeRule.onNodeWithTag("article_content").fetchSemanticsNode()
+            val (questionBounds, listBounds, articleBounds) = composeRule.runOnIdle {
+                assertEquals(expandedLayoutDiagnostics, readingEntryId, composeRule.activity.navHost.topEntryId)
+                assertEquals(expandedLayoutDiagnostics, questionEntryId, detailHost.topEntryId)
+                Triple(questionNode.boundsInRoot, listNode.boundsInRoot, articleNode.boundsInRoot)
+            }
+            assertTrue(
+                "Question must remain in the left pane: question=$questionBounds list=$listBounds",
+                questionBounds.right <= listBounds.right + 0.5f,
+            )
+            assertTrue(
+                "Article must remain in the right pane: article=$articleBounds list=$listBounds",
+                articleBounds.left >= listBounds.right,
+            )
         } finally {
             AndroidReadingPlayerBridge.publish(ReadingPlayerState())
         }
@@ -543,6 +625,7 @@ class ZhihuMainNavigationInstrumentedTest {
     private fun MainActivityComposeRule.launchZhihuMainWithFakeArticle(
         width: (() -> Dp)? = null,
         onVideo: ((AppNavHost) -> Unit)? = null,
+        onQuestionHost: ((AppNavHost) -> Unit)? = null,
     ) {
         activity.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE).edit(commit = true) {
             putString(START_DESTINATION_PREFERENCE_KEY, Home.name)
@@ -568,6 +651,7 @@ class ZhihuMainNavigationInstrumentedTest {
                         if (destination is Video && onVideo != null) onVideo(navHost) else activity.navigate(destination)
                     },
                     navigateContent = { destination, controller ->
+                        if (destination is Question) onQuestionHost?.invoke(controller)
                         if (destination is Video && onVideo != null) onVideo(controller) else activity.navigate(destination, controller)
                     },
                     enableLandscapeListDetail = true,

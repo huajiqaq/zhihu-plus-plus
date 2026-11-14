@@ -20,18 +20,26 @@ package com.github.zly2006.zhihu
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.github.zly2006.zhihu.data.CommonFeed
+import com.github.zly2006.zhihu.data.Feed
+import com.github.zly2006.zhihu.data.RecommendationMode
+import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
@@ -45,8 +53,11 @@ import com.github.zly2006.zhihu.reading.ReadingPlaybackStatus
 import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
+import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.resetAppPreferences
+import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.test.setZhihuMainContent
+import com.github.zly2006.zhihu.ui.HOME_FEED_LIST_TAG
 import com.github.zly2006.zhihu.ui.HOME_REFRESH_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.HOME_SEARCH_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
@@ -58,6 +69,9 @@ import com.github.zly2006.zhihu.ui.components.READING_QUEUE_SETTINGS_TAG
 import com.github.zly2006.zhihu.ui.components.READING_QUEUE_SHEET_TAG
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
+import io.ktor.http.HttpMethod
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.jsonArray
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,15 +113,69 @@ class ReadingPlayerUiInstrumentedTest {
      */
     @Test
     fun outsideDetailPlayerCompactsForBackgroundGestureWithoutSwallowingNavigation() {
+        composeRule.setScreenContent {}
+        composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE).edit(commit = true) {
+            putString("recommendationMode", RecommendationMode.WEB.key)
+        }
+        val sample = ZhihuJson.decodeJson<CommonFeed>(
+            ZhihuJson.json
+                .parseToJsonElement(
+                    InstrumentationRegistry
+                        .getInstrumentation()
+                        .context.assets
+                        .open("home-follow/moments-feed-items.json")
+                        .bufferedReader()
+                        .use { it.readText() },
+                ).jsonArray
+                .last(),
+        )
+        assertTrue("合成主页夹具必须是回答", sample.target is Feed.AnswerTarget)
+        val target = sample.target as Feed.AnswerTarget
+        // 曝光记录跨进程保留；每次夹具使用新内容身份，不能靠清数据库绕过真实过滤。
+        val contentIdBase = java.util.UUID
+            .randomUUID()
+            .mostSignificantBits and 0x3fffffffffffffffL
+        val feedItems: List<Feed> = List(8) { index ->
+            sample.copy(
+                id = "reading-feed-$contentIdBase-$index",
+                target = target.copy(
+                    id = contentIdBase + index,
+                    url = "https://www.zhihu.com/question/${contentIdBase + 16 + index}/answer/${contentIdBase + index}",
+                    question = target.question.copy(
+                        id = contentIdBase + 16 + index,
+                        url = "https://www.zhihu.com/question/${contentIdBase + 16 + index}",
+                        _title = "朗读背景条目 $index",
+                    ),
+                ),
+            )
+        }
+        ZhihuMockApi.mockJsonPrefix(
+            HttpMethod.Get,
+            "https://api.zhihu.com/topstory/recommend",
+            """{"data":${ZhihuJson.json.encodeToString(feedItems)},"paging":{"is_end":true,"next":""}}""",
+        )
         composeRule.setZhihuMainContent()
 
         composeRule.waitForTag(READING_PLAYER_COMPACT_TAG)
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodes(hasText("朗读背景条目 0")).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToNode(hasText("朗读背景条目 4"))
+        composeRule.onNodeWithText("朗读背景条目 4").assertIsDisplayed()
+        assertTrue(
+            composeRule
+                .onNodeWithTag(HOME_FEED_LIST_TAG)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.VerticalScrollAxisRange]
+                .value() > 0f,
+        )
         composeRule.waitForTag(HOME_REFRESH_BUTTON_TAG)
         val compactBounds = composeRule.onNodeWithTag(READING_PLAYER_COMPACT_TAG).fetchSemanticsNode().boundsInRoot
         val refreshBounds = composeRule.onNodeWithTag(HOME_REFRESH_BUTTON_TAG).fetchSemanticsNode().boundsInRoot
+        val feedBounds = composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).fetchSemanticsNode().boundsInRoot
         val rootBounds = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue("compact=$compactBounds root=$rootBounds", compactBounds.center.x < rootBounds.center.x)
-        assertTrue("refresh=$refreshBounds root=$rootBounds", refreshBounds.center.x > rootBounds.center.x)
+        assertTrue("refresh=$refreshBounds feed=$feedBounds", refreshBounds.center.x > feedBounds.center.x)
         assertFalse(
             "compact=$compactBounds refresh=$refreshBounds",
             compactBounds.left < refreshBounds.right &&
@@ -121,8 +189,8 @@ class ReadingPlayerUiInstrumentedTest {
 
         composeRule.onRoot().performTouchInput {
             swipe(
-                start = Offset(rootBounds.center.x, rootBounds.height * 0.65f),
-                end = Offset(rootBounds.center.x, rootBounds.height * 0.45f),
+                start = Offset(feedBounds.center.x, feedBounds.top + feedBounds.height * 0.65f),
+                end = Offset(feedBounds.center.x, feedBounds.top + feedBounds.height * 0.45f),
                 durationMillis = 400,
             )
         }

@@ -17,6 +17,8 @@
 
 package com.github.zly2006.zhihu
 
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -29,11 +31,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
@@ -51,6 +55,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.github.zly2006.zhihu.data.CommentSortOrder
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
@@ -474,11 +479,26 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag("comment_more_button_root-1").performClick()
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
-        Espresso.pressBack()
-        composeRule.onNodeWithTag("comment_reply_button_root-1").performClick()
-        composeRule.onNodeWithTag("comment_like_button_root-1").performClick()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val activeRoot = checkNotNull(automation.rootInActiveWindow)
+        assertEquals(composeRule.activity.packageName, activeRoot.packageName.toString())
+        val downTime = SystemClock.uptimeMillis()
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),
+        )
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0), true),
+        )
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("举报").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithTag("comment_reply_button_root-1").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("comment_like_button_root-1").assertIsDisplayed().performClick()
 
         assertEquals(listOf("root-1"), childEntryCommentIds)
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            ZhihuMockApi.requestCount(HttpMethod.Post, "/comments/root-1/like") == 1
+        }
     }
 
     /**
@@ -615,6 +635,7 @@ class CommentScreenInstrumentedTest {
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment_comment"))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment/root_comment"))
+        composeRule.onNodeWithTag("comment_tab_normal").assertIsSelected()
         composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).performScrollToNode(hasTestTag(COMMENT_SORT_TIME_TAG))
         val selectTime = checkNotNull(
             composeRule
@@ -634,17 +655,51 @@ class CommentScreenInstrumentedTest {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
         }
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("comment_row_root-1").fetchSemanticsNodes().isEmpty()
+            val layout = listState.layoutInfo
+            val visibleComments = layout.visibleItemsInfo.filter {
+                it.offset < layout.viewportEndOffset &&
+                    it.offset + it.size > layout.viewportStartOffset &&
+                    it.key != "sorting"
+            }
+            visibleComments.firstOrNull()?.key == "root-24" &&
+                visibleComments.none { it.key == "root-1" } &&
+                visibleComments.map { it.key } == timeComments.take(visibleComments.size).map { it.id }
         }
         composeRule.runOnIdle {
             assertEquals(0, listState.firstVisibleItemIndex)
             assertEquals(0, listState.firstVisibleItemScrollOffset)
+            assertEquals(timeComments.map { it.id }, model.allData.map { it.id })
+        }
+        val viewport = composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNode().boundsInRoot
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            val layout = listState.layoutInfo
+            val visibleTags = layout.visibleItemsInfo
+                .filter {
+                    it.key != "sorting" && it.offset < layout.viewportEndOffset && it.offset + it.size > layout.viewportStartOffset
+                }.mapTo(mutableSetOf()) { "comment_row_${it.key}" }
+            val drawnTags = composeRule
+                .onAllNodes(
+                    SemanticsMatcher("评论行") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("comment_row_") == true },
+                ).fetchSemanticsNodes()
+                .filter {
+                    it.boundsInRoot.width > 0f && it.boundsInRoot.height > 0f && it.boundsInRoot.overlaps(viewport)
+                }.mapTo(mutableSetOf()) { it.config[SemanticsProperties.TestTag] }
+            drawnTags == visibleTags
         }
         composeRule.onNodeWithTag("comment_row_root-24").assertIsDisplayed()
-        composeRule.onNodeWithTag("comment_row_root-1").assertDoesNotExist()
+        composeRule.onNodeWithTag("comment_row_root-1").assertIsNotDisplayed()
         composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).performScrollToNode(hasTestTag("comment_row_root-5"))
+        val scrollPosition = composeRule.runOnIdle {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+        val visibleKeys = composeRule.runOnIdle { listState.layoutInfo.visibleItemsInfo.map { it.key } }
         composeRule.runOnIdle { assertTrue(selectTime()) }
         composeRule.onNodeWithTag("comment_row_root-5").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(scrollPosition, listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset)
+            assertEquals(visibleKeys, listState.layoutInfo.visibleItemsInfo.map { it.key })
+            assertEquals(timeComments.map { it.id }, model.allData.map { it.id })
+        }
         assertEquals(2, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
     }
 

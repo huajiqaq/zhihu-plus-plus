@@ -134,6 +134,7 @@ fun <T> PaginatedList(
     onRetry: () -> Unit,
     itemContent: @Composable LazyItemScope.(T) -> Unit,
 ) {
+    val displayedItems = items.toList()
     val settings = rememberSettingsStore()
     val showContentEndMarker by rememberObservedSetting(settings, PREF_SHOW_CONTENT_END_MARKER) {
         getBoolean(PREF_SHOW_CONTENT_END_MARKER, DEFAULT_SHOW_CONTENT_END_MARKER)
@@ -155,8 +156,8 @@ fun <T> PaginatedList(
     val ended = isEnd()
     val loading = isLoading()
     val error = loadError()
-    LaunchedEffect(shouldLoadMore, items.size, ended, loading, error) {
-        if (shouldLoadMore && items.isNotEmpty() && !ended && !loading && error == null) {
+    LaunchedEffect(shouldLoadMore, displayedItems.size, ended, loading, error) {
+        if (shouldLoadMore && displayedItems.isNotEmpty() && !ended && !loading && error == null) {
             loadMore()
         }
     }
@@ -170,12 +171,12 @@ fun <T> PaginatedList(
         topContent(this)
 
         if (key != null) {
-            val itemKeys = uniquePaginatedListKeys(items, key)
-            itemsIndexed(items, key = { index, _ -> itemKeys[index] }) { _, item ->
+            val itemKeys = uniquePaginatedListKeys(displayedItems, key)
+            itemsIndexed(displayedItems, key = { index, _ -> itemKeys[index] }) { _, item ->
                 PaginatedListItem(item, animateItemPlacement, itemContent)
             }
         } else {
-            items(items) { item ->
+            items(displayedItems) { item ->
                 PaginatedListItem(item, animateItemPlacement, itemContent)
             }
         }
@@ -192,7 +193,7 @@ fun <T> PaginatedList(
                     )
                 }
                 loading -> (footer ?: ProgressIndicatorFooter).invoke(listState)
-                ended && items.isEmpty() -> {
+                ended && displayedItems.isEmpty() -> {
                     AppEmptyState(
                         title = "暂无内容",
                         description = "这里还没有可显示的内容",
@@ -214,7 +215,7 @@ fun <T> PaginatedList(
                 }
             }
         }
-        if (ended && !loading && error == null && items.isNotEmpty() && showContentEndMarker) {
+        if (ended && !loading && error == null && displayedItems.isNotEmpty() && showContentEndMarker) {
             pageTurnContentEndMarker()
         }
     }

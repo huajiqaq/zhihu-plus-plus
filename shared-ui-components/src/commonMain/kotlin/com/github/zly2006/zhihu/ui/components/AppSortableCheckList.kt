@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.ui.components
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -69,6 +70,8 @@ fun AppSortableCheckList(
         }
         val toggleable = blockedReason == null
         SettingItem(
+            /** 复合行内容占满宽度，勾选禁用前后共用同一骨架，排序按钮仍独立可用。 */
+            contentModifier = Modifier.fillMaxWidth(),
             title = { Text(item.title) },
             description = (blockedReason ?: item.description)?.let { text -> { Text(text) } },
             icon = {

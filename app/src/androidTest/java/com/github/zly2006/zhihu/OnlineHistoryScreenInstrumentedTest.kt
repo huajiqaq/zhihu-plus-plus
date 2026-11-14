@@ -21,10 +21,13 @@ import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -33,6 +36,8 @@ import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.data.HistoryType
+import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
@@ -46,7 +51,9 @@ import com.github.zly2006.zhihu.ui.components.HISTORY_DELETE_SELECTED_TAG
 import com.github.zly2006.zhihu.ui.components.HISTORY_SELECT_ALL_TAG
 import com.github.zly2006.zhihu.ui.components.HISTORY_SELECT_TOGGLE_TAG
 import com.github.zly2006.zhihu.viewmodel.feed.OnlineHistoryViewModel
+import io.ktor.client.engine.mock.MockEngine
 import io.ktor.http.HttpMethod
+import io.ktor.http.content.TextContent
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -80,11 +87,31 @@ class OnlineHistoryScreenInstrumentedTest {
     fun historyItemOverflowOffersSingleDeleteAction() {
         setOnlineHistoryScreen()
 
-        // 第一个“更多选项”属于顶栏，第二个才是可见历史项的菜单。
-        composeRule.onAllNodesWithContentDescription("更多选项")[1].performClick()
-        composeRule.onNodeWithText("删除此条浏览记录").assertIsDisplayed()
-        composeRule.onNodeWithText("删除此条浏览记录").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) { onlineHistoryViewModel.displayItems.size == 23 }
+        val targetKey = onlineHistoryViewModel.displayItems.single { it.title == seedTitle(1) }.stableKey
+        assertEquals("online:answer:token-1", targetKey)
+        val targetCard = hasClickAction() and hasAnyDescendant(hasTestTag("feed_card_title") and hasText(seedTitle(1)))
+        composeRule
+            .onNode(
+                hasContentDescription("更多选项") and hasAnyAncestor(targetCard),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithText("删除此条浏览记录").assertIsDisplayed().performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            onlineHistoryViewModel.displayItems.size == 23 &&
+                onlineHistoryViewModel.displayItems.none { it.stableKey == targetKey }
+        }
+        val deletion = (InstrumentedTestEnvironment.accountStore.engine as MockEngine).requestHistory.single {
+            it.method == HttpMethod.Post && it.url.toString() == "https://api.zhihu.com/read_history/batch_del"
+        }
+        assertEquals(
+            ZhihuJson.json.parseToJsonElement("""{"pairs":[{"content_token":"token-1","content_type":"answer"}],"clear":false}"""),
+            ZhihuJson.json.parseToJsonElement((deletion.body as TextContent).text),
+        )
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText(seedTitle(1)).fetchSemanticsNodes().isEmpty()
+        }
+        assertEquals(23, onlineHistoryViewModel.displayItems.size)
         composeRule.onNodeWithText(seedTitle(1)).assertDoesNotExist()
         composeRule.onNodeWithText(seedTitle(2)).assertIsDisplayed()
     }
