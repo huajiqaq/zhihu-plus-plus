@@ -1,38 +1,17 @@
 #!/usr/bin/env python3
-"""
-Zhihu++ LLM 自动化测试辅助脚本
-
-通过 UIAutomator dump + adb 精准交互 UI 元素，替代硬编码坐标。
-
-用法:
-    python3 .agents/skills/ui-test/llm_test_helper.py dump
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag nav_tab_home
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --text "推荐"
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card --index 1
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text "ChatGPT"
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text "AI" --index 1
-
-多元素消歧规则（LLM 必读）:
-    同一 tag（如 feed_card_more_btn）在屏幕上可能出现多个。消歧步骤：
-    1. 先运行 dump，获取所有元素的序号和文字内容。
-    2. 若知道目标卡片标题/关键词：用 --within-text TEXT 缩小范围到该卡片内。
-    3. 若同一卡片内仍有多个同 tag 元素，再加 --index N 选第 N 个（0-based）。
-    4. 若只知道位置不知道内容：只用 --index N（序号来自 dump 输出）。
-    --within-text 和 --index 可以同时使用，--within-text 先过滤，--index 再选。
-"""
+"""通过 UIAutomator 和 ADB 定位并操作语义节点；用法见同目录 SKILL.md。"""
 
 import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 PACKAGE_LITE = "com.github.zly2006.zhplus.lite"
 PACKAGE_FULL = "com.github.zly2006.zhplus"
-UI_DUMP_DEVICE = "/sdcard/ui_dump.xml"
-UI_DUMP_LOCAL = "/tmp/zhihu_ui_dump.xml"
 
 
 def adb(*args: str) -> subprocess.CompletedProcess:
@@ -45,19 +24,24 @@ def get_package() -> str:
 
 
 def dump_ui() -> ET.Element:
-    dump_result = adb("shell", "uiautomator", "dump", UI_DUMP_DEVICE)
-    if dump_result.returncode != 0:
-        print(f"uiautomator dump 失败: {dump_result.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    pull_result = adb("pull", UI_DUMP_DEVICE, UI_DUMP_LOCAL)
-    if pull_result.returncode != 0:
-        print(f"adb pull dump 失败: {pull_result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    if not os.path.exists(UI_DUMP_LOCAL):
-        print(f"adb pull 后未找到 dump 文件: {UI_DUMP_LOCAL}", file=sys.stderr)
-        sys.exit(1)
-    return ET.parse(UI_DUMP_LOCAL).getroot()
+    remote = f"/sdcard/zhpp-ui-{time.time_ns()}.xml"
+    local = os.path.join(tempfile.gettempdir(), os.path.basename(remote))
+    try:
+        dump_result = adb("shell", "uiautomator", "dump", remote)
+        # 部分模拟器在成功写出 XML 后仍返回 1；使用本次唯一文件并实际解析，不复用旧 dump。
+        written = "UI hierchary dumped to:" in dump_result.stdout or "UI hierarchy dumped to:" in dump_result.stdout
+        if dump_result.returncode != 0 and not written:
+            print(f"uiautomator dump 失败: {dump_result.stdout}{dump_result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        pull_result = adb("pull", remote, local)
+        if pull_result.returncode != 0:
+            print(f"adb pull dump 失败: {pull_result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        return ET.parse(local).getroot()
+    finally:
+        adb("shell", "rm", "-f", remote)
+        if os.path.exists(local):
+            os.unlink(local)
 
 
 def get_bounds(node: ET.Element) -> Optional[tuple[int, int, int, int]]:
@@ -343,7 +327,7 @@ def get_content_recursive(node: ET.Element) -> str:
 
 def cmd_dump(args):
     root = dump_ui()
-    print(f"已保存 UI dump → {UI_DUMP_LOCAL}")
+    print("已读取本次 UI dump（临时文件已清理）")
     scope = detect_dialog_scope(root)
     if scope is not None:
         print("\n检测到弹窗：仅显示弹窗内元素（已过滤无用节点）")

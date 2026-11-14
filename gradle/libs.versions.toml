@@ -1,0 +1,138 @@
+[versions]
+jvm = "21"
+kotlin = "2.4.21"
+agp = "9.4.0"
+composeMultiplatform = "1.12.2"
+material3 = "1.12.0-alpha03"
+composeBom = "2026.09.00"
+ksp = "2.3.12"
+ktlint = "14.2.0"
+aboutlibraries = "15.0.0"
+miuix = "0.9.4"
+kotlinxCoroutines = "1.11.0"
+kotlinxSerializationJson = "1.11.0"
+kotlinxDatetime = "0.8.0"
+kotlinxIo = "0.8.1"
+ktor = "3.5.0"
+huarangmeng-latex = "1.6.3"
+huarangmeng-markdown = "1.7.1"
+coil = "3.5.0"
+jetbrainsLifecycle = "2.10.0"
+androidxLifecycle = "2.11.0"
+navigationevent = "1.0.1"
+uiBackhandler = "1.12.2"
+sqliteBundled = "2.6.2"
+ksoup = "0.2.6"
+materialkolor = "5.0.1"
+room = "2.8.4"
+zxingEmbedded = "4.3.0"
+zxingCore = "3.5.4"
+telephoto = "0.19.0"
+jsoup = "1.22.2"
+webkit = "1.16.0"
+browser = "1.10.0"
+activityCompose = "1.13.0"
+androidxCore = "1.19.0"
+splashScreen = "1.2.0"
+appcompat = "1.7.1"
+media = "1.7.1"
+onnxruntime = "1.26.0"
+junit = "4.13.2"
+androidxTestJunit = "1.3.0"
+espresso = "3.7.0"
+hanlp = "portable-1.8.6"
+tiqian = "0.1.0-SNAPSHOT"
+tiqianMath = "0.1.0-SNAPSHOT"
+tiqianMarkdown = "0.1.0-SNAPSHOT"
+openjfx = "21.0.2"
+
+[libraries]
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashScreen" }
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+jb-compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime", version.ref = "composeMultiplatform" }
+jb-compose-foundation = { group = "org.jetbrains.compose.foundation", name = "foundation", version.ref = "composeMultiplatform" }
+jb-compose-ui = { group = "org.jetbrains.compose.ui", name = "ui", version.ref = "composeMultiplatform" }
+jb-compose-ui-graphics = { group = "org.jetbrains.compose.ui", name = "ui-graphics", version.ref = "composeMultiplatform" }
+jb-compose-animation = { group = "org.jetbrains.compose.animation", name = "animation", version.ref = "composeMultiplatform" }
+jb-compose-animation-core = { group = "org.jetbrains.compose.animation", name = "animation-core", version.ref = "composeMultiplatform" }
+jb-compose-components-resources-android = { group = "org.jetbrains.compose.components", name = "components-resources-android", version.ref = "composeMultiplatform" }
+jb-compose-ui-test = { group = "org.jetbrains.compose.ui", name = "ui-test", version.ref = "composeMultiplatform" }
+jb-ui-backhandler-desktop = { group = "org.jetbrains.compose.ui", name = "ui-backhandler-desktop", version.ref = "uiBackhandler" }
+material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "material3" }
+miuix-blur = { group = "top.yukonga.miuix.kmp", name = "miuix-blur", version.ref = "miuix" }
+miuix-core = { group = "top.yukonga.miuix.kmp", name = "miuix-core", version.ref = "miuix" }
+miuix-ui = { group = "top.yukonga.miuix.kmp", name = "miuix-ui", version.ref = "miuix" }
+miuix-preference = { group = "top.yukonga.miuix.kmp", name = "miuix-preference", version.ref = "miuix" }
+miuix-icons = { group = "top.yukonga.miuix.kmp", name = "miuix-icons", version.ref = "miuix" }
+miuix-nav = { group = "top.yukonga.miuix.kmp", name = "miuix-nav", version.ref = "miuix" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinxDatetime" }
+kotlinx-io-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinxIo" }
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-core-jvm = { group = "io.ktor", name = "ktor-client-core-jvm", version.ref = "ktor" }
+ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
+ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
+ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-client-content-negotiation-jvm = { group = "io.ktor", name = "ktor-client-content-negotiation-jvm", version.ref = "ktor" }
+ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-core = { group = "io.coil-kt.coil3", name = "coil-network-core", version.ref = "coil" }
+coil-network-ktor3 = { group = "io.coil-kt.coil3", name = "coil-network-ktor3", version.ref = "coil" }
+coil-network-ktor3-android = { group = "io.coil-kt.coil3", name = "coil-network-ktor3-android", version.ref = "coil" }
+coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil" }
+jetbrains-lifecycle-runtime-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "jetbrainsLifecycle" }
+jetbrains-lifecycle-viewmodel-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "jetbrainsLifecycle" }
+androidx-lifecycle-livedata-ktx = { group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "androidxLifecycle" }
+navigationevent = { group = "androidx.navigationevent", name = "navigationevent", version.ref = "navigationevent" }
+sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqliteBundled" }
+ksoup = { group = "com.fleeksoft.ksoup", name = "ksoup", version.ref = "ksoup" }
+materialkolor = { group = "com.materialkolor", name = "material-kolor", version.ref = "materialkolor" }
+aboutlibraries-compose-m3 = { group = "com.mikepenz", name = "aboutlibraries-compose-m3", version.ref = "aboutlibraries" }
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingEmbedded" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
+telephoto-zoomable-image-coil3 = { group = "me.saket.telephoto", name = "zoomable-image-coil3", version.ref = "telephoto" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+junit4 = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+hanlp = { group = "com.hankcs", name = "hanlp", version.ref = "hanlp" }
+tiqian-markdown-compose = { group = "org.tiqian", name = "markdown-compose", version.ref = "tiqianMarkdown" }
+tiqian-math-font-stix = { group = "org.tiqian", name = "math-font-stix", version.ref = "tiqianMath" }
+kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+
+latex-renderer = { group = "io.github.huarangmeng", name = "latex-renderer", version.ref = "huarangmeng-latex" }
+latex-parser = { group = "io.github.huarangmeng", name = "latex-parser", version.ref = "huarangmeng-latex" }
+markdown-parser = { group = "io.github.huarangmeng", name = "markdown-parser", version.ref = "huarangmeng-markdown" }
+markdown-renderer = { group = "io.github.huarangmeng", name = "markdown-renderer", version.ref = "huarangmeng-markdown" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-plugin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-plugin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+compose = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+aboutlibraries = { id = "com.mikepenz.aboutlibraries.plugin.android", version.ref = "aboutlibraries" }

@@ -1,3 +1,10 @@
 model.onnx filter=lfs diff=lfs merge=lfs -text
 tokenizer.json filter=lfs diff=lfs merge=lfs -text
 *.aar filter=lfs diff=lfs merge=lfs -text
+
+# 打包输入按原字节校验，Windows checkout 也必须保留 LF。
+gradle/*.py text eol=lf
+gradle/*.toml text eol=lf
+gradle/*.json text eol=lf
+# 补丁空行的上下文标记必须保留空格。
+gradle/upstream-patches/*.patch text eol=lf whitespace=-blank-at-eol

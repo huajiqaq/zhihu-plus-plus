@@ -1,0 +1,45 @@
+diff --git a/platforms/android/rendering/build.gradle.kts b/platforms/android/rendering/build.gradle.kts
+index 725ed0024392941be1340f8f95413c67d824535a..689609fd4029eca05efe0b1156d2f42f755dde36 100644
+--- a/platforms/android/rendering/build.gradle.kts
++++ b/platforms/android/rendering/build.gradle.kts
+@@ -22,7 +22,6 @@ dependencies {
+     api(project(":platforms:android:shaping"))
+ 
+     testImplementation(kotlin("test-junit"))
+-    androidTestImplementation(project(":platforms:android:native-font"))
+     androidTestImplementation("androidx.test:runner:1.7.0")
+     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+     androidTestImplementation(kotlin("test"))
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 029e72bc15b5997efd00d421d8cf80801f75d13c..2f0981807e4010c04b7fc3a09015e45cdcc4e78d 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -13,7 +13,9 @@ dependencyResolutionManagement {
+     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+     repositories {
+         google()
+-        mavenCentral()
++        mavenCentral {
++            content { excludeGroup("org.tiqian") }
++        }
+         // Kotlin/JS downloads a Node toolchain for webpack; under
+         // FAIL_ON_PROJECT_REPOS the download source must be declared here. These
+         // exclusive-content ivy repos serve ONLY org.nodejs:node / com.yarnpkg:yarn.
+@@ -58,17 +60,7 @@ include(
+     ":platforms:jvm:shaping",
+     ":platforms:jvm:skia",
+     ":platforms:android:shaping",
+-    ":platforms:android:native-font",
+     ":platforms:android:rendering",
+-    ":platforms:android:view",
+-    ":platforms:android:benchmark",
+-    ":platforms:apple:shaping",
+-    ":platforms:apple:frontend",
+-    ":platforms:apple:frontend:coretext-render",
+     ":platforms:compose:compose",
+     ":platforms:compose:material3",
+-    ":ffi:js",
+-    ":demo",
+-    ":demo:android",
+-    ":demo:font-diagnostics",
+ )

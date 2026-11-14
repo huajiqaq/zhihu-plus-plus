@@ -15,6 +15,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// JNI 导出符号编码了原包名；改名会断开已发布的原生绑定。
+@file:Suppress("ktlint:standard:package-name")
+
 package com.ml.shubham0204.sentence_embeddings
 
 import org.json.JSONObject
@@ -28,9 +31,13 @@ class HFTokenizer(
         val tokenTypeIds: LongArray = longArrayOf(),
     )
 
-    private val tokenizerPtr: Long = createTokenizer(tokenizerBytes)
+    private var tokenizerPtr: Long = createTokenizer(tokenizerBytes).also {
+        check(it != 0L) { "Tokenizer initialization failed" }
+    }
 
+    @Synchronized
     fun tokenize(text: String): Result {
+        check(tokenizerPtr != 0L) { "Tokenizer is closed" }
         val output = tokenize(tokenizerPtr, text)
         val jsonObject = JSONObject(output)
         val idsArray = jsonObject.getJSONArray("ids")
@@ -51,8 +58,11 @@ class HFTokenizer(
         return Result(ids, attentionMask, tokenTypeIds)
     }
 
+    @Synchronized
     fun close() {
-        deleteTokenizer(tokenizerPtr)
+        val pointer = tokenizerPtr
+        tokenizerPtr = 0L
+        if (pointer != 0L) deleteTokenizer(pointer)
     }
 
     private external fun createTokenizer(tokenizerBytes: ByteArray): Long

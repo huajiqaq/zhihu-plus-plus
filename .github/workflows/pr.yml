@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
@@ -50,7 +50,8 @@ jobs:
             exit 0
           fi
 
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(app/|shared/|\.github/scripts/run-instrumented-shard\.sh$|\.github/workflows/(instrument-test|pr)\.yml$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/)'; then
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          if grep -Eq '^(app/|shared(-[^/]+)?/|build-logic/|buildSrc/|\.github/scripts/run-instrumented-shard\.sh$|\.github/workflows/(instrument-test|pr)\.yml$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/)' <<< "$changed_files"; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
@@ -60,7 +61,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
@@ -69,7 +70,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 默认的 tools 包已无法安装；失败记录：https://github.com/zly2006/zhihu-plus-plus/actions/runs/35182179380/job/105076511639
+          # 只安装需要的 platform-tools，避免已下架的 tools 包。
           packages: platform-tools
 
       - name: Build Lite APKs
@@ -127,7 +128,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
@@ -146,14 +147,21 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "23"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
       - name: Run unit tests
-        run: ./gradlew :shared:jvmTest :app:testLiteDebugUnitTest --max-workers=2
+        run: |
+          tasks=(:app:testLiteDebugUnitTest)
+          for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
+            [[ -f "$build_script" ]] || continue
+            module="${build_script%%/*}"
+            tasks+=(":$module:jvmTest")
+          done
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite --max-workers=2
 
       - name: Upload test reports
         if: always()
@@ -162,7 +170,8 @@ jobs:
           name: PR Test Reports
           path: |
             app/build/reports
-            shared/build/reports
+            shared*/build/reports
+            shared*/build/test-results
 
   mock-instrumented-shards:
     name: Mock Instrumented Shard (${{ matrix.shard_label }}/5)
@@ -199,7 +208,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 默认的 tools 包已无法安装；失败记录：https://github.com/zly2006/zhihu-plus-plus/actions/runs/35182179380/job/105076511639
+          # 只安装需要的 platform-tools，避免已下架的 tools 包。
           packages: platform-tools
 
       - name: Enable KVM
@@ -237,6 +246,7 @@ jobs:
       - ktlint
       - build_pr
       - unit-tests
+      - desktop-jar
       - mock-instrumented-shards
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -246,12 +256,14 @@ jobs:
           KTLINT_RESULT: ${{ needs.ktlint.result }}
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
+          DESKTOP_RESULT: ${{ needs.desktop-jar.result }}
           RUN_INSTRUMENTED_TESTS: ${{ needs.build_pr.outputs.run_instrumented_tests }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
           test "$KTLINT_RESULT" = "success"
           test "$BUILD_RESULT" = "success"
           test "$UNIT_TEST_RESULT" = "success"
+          test "$DESKTOP_RESULT" = "success"
           if [[ "$RUN_INSTRUMENTED_TESTS" == "true" ]]; then
             test "$SHARD_RESULT" = "success"
           else

@@ -1,0 +1,150 @@
+diff --git a/engine/build.gradle.kts b/engine/build.gradle.kts
+index 3d1d4e3cc4c150f8f1f62f86830551c48cb19dca..fad149a10d66a9b32a8db77705e3f552e303fefe 100644
+--- a/engine/build.gradle.kts
++++ b/engine/build.gradle.kts
+@@ -8,12 +8,16 @@ plugins {
+ 
+ val leteRegularLayoutFont = providers.gradleProperty("tiqianLeteRegularLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteRegularRuntimeFont = providers.gradleProperty("tiqianLeteRegularRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldLayoutFont = providers.gradleProperty("tiqianLeteBoldLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldRuntimeFont = providers.gradleProperty("tiqianLeteBoldRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val compiledMathResourcesEnabled = providers.gradleProperty("tiqianCompiledMathResources")
+     .map(String::toBoolean)
+     .getOrElse(false)
+diff --git a/font/metadata-generator/build.gradle.kts b/font/metadata-generator/build.gradle.kts
+index 035edfd721c0ab8db26340fe363b0eb7431e3dc6..9c1f047ad57fbf83b7277b2c6691ccc56752bc6c 100644
+--- a/font/metadata-generator/build.gradle.kts
++++ b/font/metadata-generator/build.gradle.kts
+@@ -17,18 +17,24 @@ tasks.named<JavaExec>("run") {
+ 
+ val stixLayoutFont = providers.gradleProperty("tiqianStixLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_STIX_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val stixRuntimeFont = providers.gradleProperty("tiqianStixRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_STIX_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val stixRuntimeMetadataDirectory = rootProject.layout.buildDirectory.dir("generated/stixRuntimeMetadata")
+ 
+ val leteRegularLayoutFont = providers.gradleProperty("tiqianLeteRegularLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteRegularRuntimeFont = providers.gradleProperty("tiqianLeteRegularRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldLayoutFont = providers.gradleProperty("tiqianLeteBoldLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldRuntimeFont = providers.gradleProperty("tiqianLeteBoldRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteRuntimeMetadataDirectory = rootProject.layout.buildDirectory.dir("generated/leteRuntimeMetadata")
+ 
+ tasks.register<JavaExec>("bakeStixRuntimeMetadata") {
+diff --git a/font/stix/build.gradle.kts b/font/stix/build.gradle.kts
+index bff9a74c0fe126ea786875763215bcaf33296ee2..c283cbded0b30c3f418925bc152f7f70e3fe22ec 100644
+--- a/font/stix/build.gradle.kts
++++ b/font/stix/build.gradle.kts
+@@ -7,8 +7,10 @@ plugins {
+ 
+ val stixRuntimeFont = providers.gradleProperty("tiqianStixRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_STIX_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val stixLayoutFont = providers.gradleProperty("tiqianStixLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_STIX_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val compiledMathResourcesEnabled = providers.gradleProperty("tiqianCompiledMathResources")
+     .map(String::toBoolean)
+     .getOrElse(false)
+diff --git a/gradle.properties b/gradle.properties
+index 154fc73590394b864e699f01c286a750f5e1da6a..847bb5ea5d9f6e5fbf64f2bdff39443f2dffef08 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -2,3 +2,11 @@ org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+ org.gradle.parallel=true
+ kotlin.code.style=official
+ kotlin.daemon.jvmargs=-Xmx2g
++
++tiqianCompiledMathResources=true
++tiqianLeteRegularLayoutFont=build/upstream-font-inputs/lete-regular-layout.otf
++tiqianLeteRegularRuntimeFont=build/upstream-font-inputs/lete-regular-runtime.otf
++tiqianLeteBoldLayoutFont=build/upstream-font-inputs/lete-bold-layout.otf
++tiqianLeteBoldRuntimeFont=build/upstream-font-inputs/lete-bold-runtime.otf
++tiqianStixLayoutFont=build/upstream-font-inputs/stix-regular-layout.otf
++tiqianStixRuntimeFont=build/upstream-font-inputs/stix-regular-runtime.otf
+diff --git a/platforms/android/font/build.gradle.kts b/platforms/android/font/build.gradle.kts
+index ff85ae63c17d1acb397638db717fc913c7ac26e5..b041cb429ce471d7f34b0da640c8b771a5403115 100644
+--- a/platforms/android/font/build.gradle.kts
++++ b/platforms/android/font/build.gradle.kts
+@@ -6,12 +6,16 @@ plugins {
+ 
+ val leteRegularLayoutFont = providers.gradleProperty("tiqianLeteRegularLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteRegularRuntimeFont = providers.gradleProperty("tiqianLeteRegularRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_REGULAR_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldLayoutFont = providers.gradleProperty("tiqianLeteBoldLayoutFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_LAYOUT_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val leteBoldRuntimeFont = providers.gradleProperty("tiqianLeteBoldRuntimeFont")
+     .orElse(providers.environmentVariable("TIQIAN_LETE_BOLD_RUNTIME_FONT"))
++    .map { rootProject.file(it).absolutePath }
+ val compiledMathResourcesEnabled = providers.gradleProperty("tiqianCompiledMathResources")
+     .map(String::toBoolean)
+     .getOrElse(false)
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb80577876afb 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -1,5 +1,3 @@
+-val tiqianSampleRepository = providers.gradleProperty("tiqianSampleRepository").orNull
+-
+ pluginManagement {
+     repositories {
+         google()
+@@ -12,13 +10,8 @@ dependencyResolutionManagement {
+     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+     repositories {
+         google()
+-        mavenCentral()
+-        tiqianSampleRepository?.let { repositoryPath ->
+-            maven {
+-                name = "tiqianSample"
+-                url = uri(repositoryPath)
+-                content { includeGroup("org.tiqian") }
+-            }
++        mavenCentral {
++            content { excludeGroup("org.tiqian") }
+         }
+         exclusiveContent {
+             forRepository {
+@@ -50,21 +43,9 @@ rootProject.name = "tiqian-math"
+ include(
+     ":engine",
+     ":font:tooling",
+-    ":font:gradle-plugin",
+     ":font:metadata-generator",
+     ":font:stix",
+     ":platforms:android:font",
+     ":platforms:jvm:skia",
+     ":platforms:compose:compose",
+-    ":scanner",
+-    ":preview",
+-    ":demo:android-app",
+ )
+-
+-project(":demo:android-app").projectDir = file("demo/android")
+-
+-// README artwork is an explicit cross-repository integration check. Keep it out of the normal
+-// build graph; readme-sample/generate.sh publishes one Tiqian checkout to an isolated repository.
+-if (tiqianSampleRepository != null) {
+-    include(":readme-sample")
+-}

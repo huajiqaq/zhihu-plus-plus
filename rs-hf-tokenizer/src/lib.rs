@@ -1,15 +1,14 @@
-use jni::objects::{JByteArray, JClass, JString, ReleaseMode};
+use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::jlong;
 use jni::JNIEnv;
 use serde::Serialize;
-use serde_json;
 use tokenizers::Tokenizer;
 
 #[derive(Serialize)]
 struct TokenizationResult {
     ids: Vec<u32>,
     attention_mask: Vec<u32>,
-    token_type_ids: Vec<u32>
+    token_type_ids: Vec<u32>,
 }
 
 #[no_mangle]
@@ -18,14 +17,19 @@ pub extern "C" fn Java_com_ml_shubham0204_sentence_1embeddings_HFTokenizer_creat
     _: JClass<'a>,
     tokenizer_bytes: JByteArray<'a>,
 ) -> jlong {
-    unsafe {
-        let tokenizer_bytes_rs: Vec<u8> = env
-            .get_array_elements(&tokenizer_bytes, ReleaseMode::CopyBack)
-            .expect("Could not read tokenizer_bytes")
-            .iter()
-            .map(|x| *x as u8)
-            .collect();
-        Box::into_raw(Box::new(Tokenizer::from_bytes(&tokenizer_bytes_rs))) as jlong
+    let bytes = match env.convert_byte_array(&tokenizer_bytes) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return 0;
+        }
+    };
+    match Tokenizer::from_bytes(&bytes) {
+        Ok(tokenizer) => Box::into_raw(Box::new(tokenizer)) as jlong,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            0
+        }
     }
 }
 
@@ -36,21 +40,45 @@ pub extern "C" fn Java_com_ml_shubham0204_sentence_1embeddings_HFTokenizer_token
     tokenizer_ptr: jlong,
     text: JString<'a>,
 ) -> JString<'a> {
-    let tokenizer = unsafe { &mut *(tokenizer_ptr as *mut Tokenizer) };
-    let text: String = env
-        .get_string(&text)
-        .expect("Could not convert text to Rust String")
-        .into();
-    let encoding = tokenizer.encode(text, true).expect("Could not encode text");
+    if tokenizer_ptr == 0 {
+        let _ = env.throw_new("java/lang/IllegalStateException", "Tokenizer is closed");
+        return JString::default();
+    }
+    // 句柄只指向创建时的 Tokenizer；Kotlin 同步访问并在关闭前清空句柄。
+    let tokenizer = unsafe { &*(tokenizer_ptr as *const Tokenizer) };
+    let text: String = match env.get_string(&text).map(|text| text.into()) {
+        Ok(text) => text,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return JString::default();
+        }
+    };
+    let encoding = match tokenizer.encode(text, true) {
+        Ok(encoding) => encoding,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return JString::default();
+        }
+    };
     let result = TokenizationResult {
         ids: encoding.get_ids().to_vec(),
         attention_mask: encoding.get_attention_mask().to_vec(),
-        token_type_ids: encoding.get_type_ids().to_vec()
+        token_type_ids: encoding.get_type_ids().to_vec(),
     };
-    let result_json_str =
-        serde_json::to_string(&result).expect("Could not convert tokenization result to JSON");
-    env.new_string(result_json_str)
-        .expect("Could not convert result_json_str to jstring")
+    let json = match serde_json::to_string(&result) {
+        Ok(json) => json,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            return JString::default();
+        }
+    };
+    match env.new_string(json) {
+        Ok(text) => text,
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            JString::default()
+        }
+    }
 }
 
 #[no_mangle]
@@ -59,5 +87,7 @@ pub extern "C" fn Java_com_ml_shubham0204_sentence_1embeddings_HFTokenizer_delet
     _: JClass,
     tokenizer_ptr: jlong,
 ) {
-    let _ptr = unsafe { Box::from_raw(tokenizer_ptr as *mut Tokenizer) };
+    if tokenizer_ptr != 0 {
+        unsafe { drop(Box::from_raw(tokenizer_ptr as *mut Tokenizer)) };
+    }
 }

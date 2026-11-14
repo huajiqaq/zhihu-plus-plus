@@ -17,7 +17,6 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
-import buildlogic.gitHash
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import kotlin.io.encoding.Base64
@@ -97,7 +96,21 @@ android {
     }
 
     buildTypes {
-        val gitHash = gitHash(rootProject.projectDir)
+        val gitRevision =
+            providers.exec {
+                workingDir(rootProject.projectDir)
+                commandLine("git", "--no-replace-objects", "rev-parse", "--short=7", "HEAD")
+                setEnvironment(environment.filterKeys { !it.startsWith("GIT_") })
+                isIgnoreExitValue = true
+            }
+        val gitHash =
+            if (gitRevision.result.get().exitValue == 0) {
+                gitRevision.standardOutput.asText
+                    .get()
+                    .trim()
+            } else {
+                "unknown"
+            }
         debug {
             buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
             manifestPlaceholders["zhihuBuildType"] = "debug"
@@ -116,11 +129,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
     buildFeatures {
         viewBinding = true

@@ -15,12 +15,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
 import org.jlleitschuh.gradle.ktlint.tasks.KtLintFormatTask
 
 plugins {
     kotlin("multiplatform")
+    id("zhihu.kmp-conventions")
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
     id("com.android.kotlin.multiplatform.library")
@@ -92,26 +92,16 @@ mapOf(
 }
 
 kotlin {
-    compilerOptions {
-        freeCompilerArgs.add("-Xexpect-actual-classes")
-    }
-
-    androidLibrary {
+    android {
         namespace = "com.github.zly2006.zhihu.shared"
         compileSdk = 37
         minSdk = 27
 
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_17
-        }
         androidResources {
             enable = true
         }
     }
     jvm {
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_17
-        }
     }
 
     listOf(
@@ -141,27 +131,6 @@ kotlin {
             create("androidLite") {
                 dependsOn(commonMain.get())
             }
-        val androidVariantTaskPattern = Regex("^(?:assemble|bundle|install|test|connected|compile)(Full|Lite)")
-        val requestedAndroidVariants =
-            gradle.startParameter.taskNames
-                .mapNotNull { taskName ->
-                    val task = taskName.substringAfterLast(':')
-                    androidVariantTaskPattern
-                        .find(task)
-                        ?.groupValues
-                        ?.get(1)
-                        ?.lowercase()
-                }
-        val selectedAndroidVariants = requestedAndroidVariants.toSet()
-        require(selectedAndroidVariants.size <= 1) {
-            "Full and Lite Android tasks require separate Gradle invocations"
-        }
-        when (selectedAndroidVariants.singleOrNull()) {
-            "full" -> androidMain.get().dependsOn(androidFull)
-            "lite" -> androidMain.get().dependsOn(androidLite)
-            null -> Unit
-        }
-
         commonMain.dependencies {
             api(project(":shared-local-db"))
             implementation(compose.runtime)

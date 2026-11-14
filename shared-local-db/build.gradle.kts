@@ -15,10 +15,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform")
+    id("zhihu.kmp-conventions")
     kotlin("plugin.serialization")
     id("com.android.kotlin.multiplatform.library")
     id("com.google.devtools.ksp")
@@ -45,23 +45,13 @@ ksp {
 }
 
 kotlin {
-    compilerOptions {
-        freeCompilerArgs.add("-Xexpect-actual-classes")
-    }
-
-    androidLibrary {
+    android {
         namespace = "com.github.zly2006.zhihu.shared.localdb"
         compileSdk = 37
         minSdk = 27
 
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_17
-        }
     }
     jvm {
-        compilerOptions {
-            jvmTarget = JvmTarget.JVM_17
-        }
     }
 
     listOf(

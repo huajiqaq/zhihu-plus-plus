@@ -1,0 +1,583 @@
+diff --git a/platforms/android/rendering/src/main/kotlin/org/tiqian/android/rendering/AndroidParagraphRenderer.kt b/platforms/android/rendering/src/main/kotlin/org/tiqian/android/rendering/AndroidParagraphRenderer.kt
+index 8c81f5be8328926208299ba4bfbd59bd18e5d1de..b8b2e316a0f5d35fd6a65eaf30e65f1437a51a8e 100644
+--- a/platforms/android/rendering/src/main/kotlin/org/tiqian/android/rendering/AndroidParagraphRenderer.kt
++++ b/platforms/android/rendering/src/main/kotlin/org/tiqian/android/rendering/AndroidParagraphRenderer.kt
+@@ -770,7 +770,10 @@ private fun drawAndroidRichTextLines(
+                 strokePaint.pathEffect = null
+             }
+         }
+-        val skipBandPad = strokePaint.strokeWidth.coerceAtLeast(1f)
++        val skipBandPad = when (val pattern = seg.span.paint.linePattern) {
++            is RichTextLinePattern.Dotted -> pattern.dotDiameter / 2f
++            else -> strokePaint.strokeWidth.coerceAtLeast(1f)
++        }
+         val style = spans.lastOrNull { seg.range.start >= it.range.start && seg.range.start < it.range.end }?.style
+             ?: result.input.textStyle
+         val lineY = result.richTextDecorationLineY(seg, strokePaint.strokeWidth)
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkInlineObjectProjection.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkInlineObjectProjection.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..56a78938464614e370838d8998af713e785e23e6
+--- /dev/null
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkInlineObjectProjection.kt
+@@ -0,0 +1,91 @@
++package org.tiqian.compose
++
++import androidx.compose.ui.text.AnnotatedString
++import org.tiqian.core.TextRange
++
++private const val RenderOnlyInlineObjectTag = "tiqian:render-only-inline-object"
++
++/** Marks one internal U+FFFC layout slot as having no logical, copy or selection characters. */
++fun AnnotatedString.Builder.addCjkRenderOnlyInlineObject(start: Int, end: Int) {
++    require(start >= 0 && end == start + 1) { "A render-only slot must cover one layout character" }
++    addStringAnnotation(RenderOnlyInlineObjectTag, "", start, end)
++}
++
++/** Offset records belong to the layout node, not public selection text or annotations. */
++internal class CjkInlineObjectOffsetMapping(source: AnnotatedString) {
++    private val sourceLength = source.length
++    private val slots = source.getStringAnnotations(RenderOnlyInlineObjectTag, 0, Int.MAX_VALUE)
++        .sortedBy { it.start }
++        .also { ranges ->
++            var end = 0
++            for (slot in ranges) {
++                require(slot.start >= end && slot.end == slot.start + 1 && slot.end <= sourceLength && source[slot.start] == '\uFFFC') {
++                    "Render-only slots must be non-overlapping U+FFFC characters"
++                }
++                end = slot.end
++            }
++        }.map { it.start }.toIntArray()
++    private val logicalSlots = IntArray(slots.size) { slots[it] - it }
++    private val logicalLength = sourceLength - slots.size
++    val logicalText: AnnotatedString = if (slots.isEmpty()) {
++        source
++    } else {
++        val text = buildString(logicalLength) {
++            var cursor = 0
++            for (slot in slots) {
++                append(source.text, cursor, slot)
++                cursor = slot + 1
++            }
++            append(source.text, cursor, sourceLength)
++        }
++        val annotations = mutableListOf<AnnotatedString.Range<AnnotatedString.Annotation>>()
++        // Mapping authored ranges once preserves Link/TTS identity and independent adjacent ranges.
++        source.flatMapAnnotations { annotation ->
++            val start = toLogical(annotation.start)
++            val end = toLogical(annotation.end)
++            if (annotation.tag != RenderOnlyInlineObjectTag && (start < end || annotation.start == annotation.end)) {
++                annotations += AnnotatedString.Range(annotation.item, start, end, annotation.tag)
++            }
++            emptyList()
++        }
++        AnnotatedString(text, annotations)
++    }
++
++    fun toLayout(offset: Int, after: Boolean = true): Int {
++        val logical = offset.coerceIn(0, logicalLength)
++        var removed = 0
++        for (slot in logicalSlots) {
++            if (slot > logical || !after && slot == logical) break
++            removed++
++        }
++        return logical + removed
++    }
++
++    fun toLogical(offset: Int): Int {
++        val layout = offset.coerceIn(0, sourceLength)
++        var removed = 0
++        for (slot in slots) {
++            if (slot >= layout) break
++            removed++
++        }
++        return layout - removed
++    }
++
++    fun toLogical(range: TextRange): TextRange = TextRange(toLogical(range.start), toLogical(range.end))
++
++    /** Exclude every internal object from selection paint and copy, including objects inside a range. */
++    fun layoutRanges(range: TextRange): List<TextRange> {
++        if (range.isEmpty) return emptyList()
++        var cursor = toLayout(range.start)
++        val end = toLayout(range.end, after = false)
++        val ranges = mutableListOf<TextRange>()
++        for (slot in slots) {
++            if (slot >= end) break
++            if (slot + 1 <= cursor) continue
++            if (slot > cursor) ranges += TextRange(cursor, slot)
++            cursor = maxOf(cursor, slot + 1)
++        }
++        if (cursor < end) ranges += TextRange(cursor, end)
++        return ranges
++    }
++}
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelection.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelection.kt
+index e07275f44b287747317c3793d0c39414e4d0fc2b..81cf204330fe711674a460d6f2038c96fea9b4fd 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelection.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelection.kt
+@@ -26,13 +26,29 @@ import androidx.compose.ui.text.AnnotatedString
+ import androidx.compose.ui.text.buildAnnotatedString
+ import org.tiqian.core.SourceBoundaryBias
+ import org.tiqian.core.TextRange
++import org.tiqian.core.sourceGraphemeBoundaries
+ import kotlin.math.abs
+ 
+ /** Observable state for one [CjkSelectionContainer]. */
+ @Stable
+ class CjkSelectionState internal constructor() {
+-    var selectedText: AnnotatedString? by mutableStateOf(null)
+-        private set
++    private var selectionProjection by mutableStateOf(CjkSelectionProjection())
++
++    /** The source text and separators in the current selection, or null when nothing is selected. */
++    val selectedText: AnnotatedString?
++        get() = selectionProjection.text
++
++    /**
++     * A snapshot of every touched fragment in document order, including fragments not currently
++     * composed. Offsets are UTF-16 and half-open. Empty ranges preserve both touched boundaries
++     * and empty intervening fragments; separators are present only in [selectedText]. Each range
++     * includes the original fragment text. Returns null without a [CjkSelectionDocument] or when
++     * [selectedText] is null, including selections containing no source or separator characters.
++     * Reading the list copies its entries without copying fragment text, and cannot modify state.
++     */
++    val selectedRanges: List<CjkSelectionDocumentRange>?
++        get() = selectionProjection.ranges?.toList()
++
+     /** Owners retained only while their pointer coroutine is actively dragging. */
+     var activeGestureOwnerKeys: Set<Any> by mutableStateOf(emptySet())
+         private set
+@@ -92,7 +108,7 @@ class CjkSelectionState internal constructor() {
+         if (ownedSelectionOrGesture) hideContextMenuToolbar()
+         selection = null
+         selectionRanges = emptyMap()
+-        selectedText = null
++        selectionProjection = CjkSelectionProjection()
+         hasSelection = false
+         startHandlePosition = null
+         endHandlePosition = null
+@@ -122,6 +138,19 @@ class CjkSelectionState internal constructor() {
+         clipboardManager?.setText(selected) ?: return false
+         return true
+     }
++    /** Selects a non-empty half-open UTF-16 range in the attached logical document. Invalid input leaves selection unchanged. */
++    fun selectRange(fragmentKey: Any, start: Int, end: Int): Boolean {
++        val currentDocument = document ?: return false
++        val fragment = currentDocument.fragments[currentDocument.indexByKey[fragmentKey] ?: return false]
++        if (start < 0 || start >= end || end > fragment.text.length) return false
++        val boundaries = fragment.text.text.sourceGraphemeBoundaries(TextRange(0, fragment.text.length))
++        val range = TextRange(boundaries.last { it <= start }, boundaries.first { it >= end })
++        gestureInitialSelection = null
++        handleFixedAnchor = null
++        setSelection(CjkSelectionAnchor(fragment.key, range.start), CjkSelectionAnchor(fragment.key, range.end), touch = isTouchSelection)
++        finishSelection()
++        return true
++    }
+ 
+     /** Selects the logical document without composing or measuring off-screen fragments. */
+     fun selectAll(): Boolean {
+@@ -363,6 +392,7 @@ class CjkSelectionState internal constructor() {
+         activeDragIsStart = null
+         currentDragPosition = Offset.Unspecified
+         isSelectionAutoScrollArmed = false
++        updateHandlePositions()
+         showContextMenuToolbarIfTouch()
+     }
+ 
+@@ -460,7 +490,7 @@ class CjkSelectionState internal constructor() {
+         if (changed && touch) {
+             hapticFeedback?.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+         }
+-        if (changed) updateDerivedSelection()
++        if (changed) updateDerivedSelection(selectionChanged = true)
+     }
+ 
+     private fun selectionAt(
+@@ -502,13 +532,17 @@ class CjkSelectionState internal constructor() {
+         else -> initial
+     }
+ 
+-    private fun updateDerivedSelection() {
++    private fun updateDerivedSelection(selectionChanged: Boolean = false) {
+         contextMenuPositionEpoch++
+         val previousRanges = selectionRanges
+         val ordered = orderedSelectables()
+-        selectionRanges = buildSelectionRanges(ordered)
+-        selectedText = buildSelectedText()
+-        hasSelection = selectedText != null
++        val normalized = normalizedSelection()
++        selectionRanges = buildSelectionRanges(ordered, normalized)
++        // Logical document text does not change when only visible geometry changes.
++        if (selectionChanged || document == null) {
++            selectionProjection = buildSelectionProjection(normalized, ordered)
++        }
++        hasSelection = selectionProjection.text != null
+         updateHandlePositions()
+         if (contextMenuToolbarRequested && systemContextMenu == null) {
+             showLegacyTextToolbar()
+@@ -525,8 +559,9 @@ class CjkSelectionState internal constructor() {
+ 
+     private fun buildSelectionRanges(
+         ordered: List<CjkSelectable>,
++        normalized: Pair<CjkSelectionAnchor, CjkSelectionAnchor>?,
+     ): Map<CjkSelectable, TextRange> {
+-        val normalized = normalizedSelection() ?: return emptyMap()
++        normalized ?: return emptyMap()
+         if (normalized.first == normalized.second) return emptyMap()
+         val ranges = LinkedHashMap<CjkSelectable, TextRange>()
+         val startIndex = orderOf(normalized.first.key)
+@@ -545,13 +580,15 @@ class CjkSelectionState internal constructor() {
+         return ranges
+     }
+ 
+-    private fun buildSelectedText(): AnnotatedString? {
+-        val normalized = normalizedSelection() ?: return null
+-        if (normalized.first == normalized.second) return null
++    private fun buildSelectionProjection(
++        normalized: Pair<CjkSelectionAnchor, CjkSelectionAnchor>?,
++        ordered: List<CjkSelectable>,
++    ): CjkSelectionProjection {
++        normalized ?: return CjkSelectionProjection()
++        if (normalized.first == normalized.second) return CjkSelectionProjection()
+         val logicalDocument = document
+         if (logicalDocument == null) {
+-            val ordered = orderedSelectables()
+-            return buildAnnotatedString {
++            val text = buildAnnotatedString {
+                 var first = true
+                 for (selectable in ordered) {
+                     val range = selectionRanges[selectable] ?: continue
+@@ -560,18 +597,24 @@ class CjkSelectionState internal constructor() {
+                     append(selectable.selectionText, range.start, range.end)
+                 }
+             }.takeIf { it.isNotEmpty() }
++            return CjkSelectionProjection(text)
+         }
+         val startIndex = logicalDocument.indexByKey.getValue(normalized.first.key)
+         val endIndex = logicalDocument.indexByKey.getValue(normalized.second.key)
+-        return buildAnnotatedString {
++        val ranges = mutableListOf<CjkSelectionDocumentRange>()
++        val text = buildAnnotatedString {
+             for (index in startIndex..endIndex) {
+                 val fragment = logicalDocument.fragments[index]
+-                val start = if (index == startIndex) normalized.first.offset else 0
+-                val end = if (index == endIndex) normalized.second.offset else fragment.text.length
++                val start = (if (index == startIndex) normalized.first.offset else 0)
++                    .coerceIn(0, fragment.text.length)
++                val end = (if (index == endIndex) normalized.second.offset else fragment.text.length)
++                    .coerceIn(0, fragment.text.length)
++                ranges += CjkSelectionDocumentRange(fragment.key, start, end, fragment.text)
+                 if (end > start) append(fragment.text, start, end)
+                 if (index < endIndex) append(fragment.separatorAfter)
+             }
+         }.takeIf { it.isNotEmpty() }
++        return CjkSelectionProjection(text, if (text == null) null else ranges.toList())
+     }
+ 
+     private fun buildClipboardText(): AnnotatedString? {
+@@ -952,18 +995,3 @@ class CjkSelectionState internal constructor() {
+     }
+ 
+ }
+-
+-internal class CjkSystemContextMenu(
+-    val show: () -> Unit,
+-    val hide: () -> Unit,
+-)
+-
+-private data class CjkSelectionAnchor(
+-    val key: Any,
+-    val offset: Int,
+-)
+-
+-private data class CjkSelection(
+-    val anchor: CjkSelectionAnchor,
+-    val extent: CjkSelectionAnchor,
+-)
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelectionModel.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelectionModel.kt
+index 0513f67cf65d0714e41403513ffd04c80e10557b..97da0c93f0a1ccc84acf282a6a3139bff9b8ab65 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelectionModel.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkSelectionModel.kt
+@@ -32,6 +32,24 @@ class CjkSelectionDocument(fragments: List<CjkSelectionDocumentFragment>) {
+     }
+ }
+ 
++/**
++ * A half-open UTF-16 source range in a [CjkSelectionDocumentFragment]. [fragmentText] is the
++ * fragment's original annotated source, independent of its copy projection. A range may be empty
++ * when the selection touches a fragment boundary or crosses an empty fragment.
++ */
++@Immutable
++data class CjkSelectionDocumentRange(
++    val fragmentKey: Any,
++    val start: Int,
++    val end: Int,
++    val fragmentText: AnnotatedString,
++)
++
++internal data class CjkSelectionProjection(
++    val text: AnnotatedString? = null,
++    val ranges: List<CjkSelectionDocumentRange>? = null,
++)
++
+ internal data class CjkSelectionScopeInfo(
+     val ownerKey: Any,
+     val retentionKey: Any,
+@@ -55,3 +73,18 @@ internal interface CjkSelectable {
+     fun selectionBoxes(range: TextRange): List<org.tiqian.core.Rect>
+     fun invalidateSelection()
+ }
++
++internal class CjkSystemContextMenu(
++    val show: () -> Unit,
++    val hide: () -> Unit,
++)
++
++internal data class CjkSelectionAnchor(
++    val key: Any,
++    val offset: Int,
++)
++
++internal data class CjkSelection(
++    val anchor: CjkSelectionAnchor,
++    val extent: CjkSelectionAnchor,
++)
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkText.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkText.kt
+index 77248e448ca94d391550d572fe21a2bc3462ce99..56a37a163e36cfc17769d8cbf27fb2de2077971f 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkText.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkText.kt
+@@ -227,7 +227,8 @@ fun CjkText(
+     }
+     CjkTextLayout(
+         text = renderText.text,
+-        semanticsText = text,
++        semanticsText = renderText,
++        linkText = renderText,
+         modifier = modifier,
+         textStyle = coreStyle,
+         paragraphStyle = resolvedParagraphStyle,
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayout.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayout.kt
+index 595c21cf0d6b447ef1696f2e52f85696e11b0474..c9f95191564d2f352f974d92e7827bd53fd25e4c 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayout.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayout.kt
+@@ -45,6 +45,7 @@ import kotlin.math.floor
+ internal fun CjkTextLayout(
+     text: String,
+     semanticsText: AnnotatedString = AnnotatedString(text),
++    linkText: AnnotatedString = semanticsText,
+     modifier: Modifier = Modifier,
+     textStyle: TextStyle = TextStyle(),
+     paragraphStyle: ParagraphStyle = ParagraphStyle(),
+@@ -99,7 +100,7 @@ internal fun CjkTextLayout(
+     // modifier with a pointer node after an annotation-only update can otherwise leave the new
+     // node without hit-test bounds until a later relayout; updating a stable node also avoids
+     // changing the modifier topology when links appear or disappear.
+-    val linkModifier = CjkTextLinkElement(semanticsText, latestResult, uriHandler, hoveringLink)
++    val linkModifier = CjkTextLinkElement(linkText, latestResult, uriHandler, hoveringLink)
+     val selectionModifier = if (selectionState != null) {
+         Modifier.foundationSelectionGestures(selectionState, selectionBridge)
+     } else {
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayoutNode.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayoutNode.kt
+index d9e212ea7757f442297bdca74b29684f49066260..844faca286d175add6c41cae7154c40cf7bc9092 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayoutNode.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLayoutNode.kt
+@@ -141,7 +141,7 @@ internal class CjkTextLayoutElement(
+ 
+ internal class CjkTextLayoutNode(
+     private var text: String,
+-    private var semanticsText: AnnotatedString,
++    semanticsText: AnnotatedString,
+     private var textStyle: TextStyle,
+     private var paragraphStyle: ParagraphStyle,
+     private var color: Int,
+@@ -193,6 +193,10 @@ internal class CjkTextLayoutNode(
+     private var drawClipBottom: Float = 0f
+     override var selectionCoordinates: androidx.compose.ui.layout.LayoutCoordinates? = null
+         private set
++    private var semanticsSource = semanticsText
++    private var inlineOffsetMapping = CjkInlineObjectOffsetMapping(semanticsText)
++    private val semanticsText: AnnotatedString
++        get() = inlineOffsetMapping.logicalText
+     override val selectionText: AnnotatedString
+         get() = semanticsText
+ 
+@@ -200,14 +204,17 @@ internal class CjkTextLayoutNode(
+         val start = range.start.coerceIn(0, semanticsText.length)
+         val end = range.end.coerceIn(start, semanticsText.length)
+         val layout = result
+-        // `wbr()` markers are left out by projecting each range between them on its own. Ruby
+-        // builders take a plain String base, so a ruby base never contains a marker.
++        // Exclude wbr in logical coordinates before mapping around render-only layout slots.
++        // Ruby builders take a plain String base, so a ruby base never contains a marker.
+         return buildString {
+             semanticsText.cjkWbrOffsets().forEachWbrFreeRange(start, end) { from, to ->
+-                append(
+-                    layout?.getTextForCopy(org.tiqian.core.TextRange(from, to))
+-                        ?: semanticsText.text.substring(from, to),
+-                )
++                if (layout == null) {
++                    append(semanticsText.text, from, to)
++                } else {
++                    inlineOffsetMapping.layoutRanges(org.tiqian.core.TextRange(from, to)).forEach {
++                        append(layout.getTextForCopy(it))
++                    }
++                }
+             }
+         }
+     }
+@@ -293,13 +300,14 @@ internal class CjkTextLayoutNode(
+         val richTextChanged = richTextSpans != this.richTextSpans
+         val drawChanged = color != this.color || colorSpans != this.colorSpans ||
+             richTextChanged || overflow != this.overflow
+-        val semanticsChanged = semanticsText != this.semanticsText
++        val semanticsChanged = semanticsText != this.semanticsSource
+         val oldSelectionState = this.selectionState
+         val oldSelectionScope = this.selectionScope
+         val callbackChanged = onTextLayout !== this.onTextLayout
+         val precomputedChanged = precomputedLayout !== this.precomputedLayout
+         this.text = text
+-        this.semanticsText = semanticsText
++        this.semanticsSource = semanticsText
++        this.inlineOffsetMapping = CjkInlineObjectOffsetMapping(semanticsText)
+         this.textStyle = textStyle
+         this.paragraphStyle = paragraphStyle
+         this.color = color
+@@ -383,13 +391,13 @@ internal class CjkTextLayoutNode(
+     override fun selectionOffsetAt(localPosition: Offset): Int? {
+         val layout = result ?: return null
+         val index = replayIndex ?: return null
+-        return index.selectionOffsetForPosition(layout, localPosition.x, localPosition.y)
++        return inlineOffsetMapping.toLogical(index.selectionOffsetForPosition(layout, localPosition.x, localPosition.y))
+     }
+ 
+     override fun selectionWordRangeAt(localPosition: Offset): org.tiqian.core.TextRange? {
+         val layout = result ?: return null
+         val index = replayIndex ?: return null
+-        return index.selectionWordRangeForPosition(layout, localPosition.x, localPosition.y)
++        return index.selectionWordRangeForPosition(layout, localPosition.x, localPosition.y)?.let(inlineOffsetMapping::toLogical)
+     }
+ 
+     override fun selectionParagraphRangeAt(localPosition: Offset): org.tiqian.core.TextRange? {
+@@ -397,8 +405,7 @@ internal class CjkTextLayoutNode(
+         val index = replayIndex ?: return null
+         val source = semanticsText.text
+         if (source.isEmpty()) return org.tiqian.core.TextRange(0, 0)
+-        val rawOffset = index.selectionOffsetForPosition(layout, localPosition.x, localPosition.y)
+-            .coerceIn(0, source.length)
++        val rawOffset = inlineOffsetMapping.toLogical(index.selectionOffsetForPosition(layout, localPosition.x, localPosition.y))
+         var start = rawOffset
+         while (start > 0 && source[start - 1] != '\n') start--
+         var end = rawOffset
+@@ -407,23 +414,23 @@ internal class CjkTextLayoutNode(
+     }
+ 
+     override fun coerceSelectionOffset(offset: Int, bias: SourceBoundaryBias): Int =
+-        result?.coerceSelectionOffset(offset, bias) ?: offset.coerceIn(0, semanticsText.length)
++        result?.let { inlineOffsetMapping.toLogical(it.coerceSelectionOffset(inlineOffsetMapping.toLayout(offset), bias)) } ?: offset.coerceIn(0, semanticsText.length)
+ 
+     override fun selectionCursorPosition(offset: Int): Offset? {
+         val layout = result ?: return null
+-        val cursor = replayIndex?.cursorRect(layout, offset) ?: return null
++        val cursor = replayIndex?.cursorRect(layout, inlineOffsetMapping.toLayout(offset)) ?: return null
+         return Offset(cursor.left, cursor.bottom)
+     }
+ 
+     override fun selectionLineRange(offset: Int): org.tiqian.core.TextRange? {
+         val layout = result ?: return null
+-        val lineIndex = layout.getLineForOffset(offset)
+-        return layout.lines.getOrNull(lineIndex)?.range
++        val lineIndex = layout.getLineForOffset(inlineOffsetMapping.toLayout(offset))
++        return layout.lines.getOrNull(lineIndex)?.range?.let(inlineOffsetMapping::toLogical)
+     }
+ 
+     override fun selectionLineLeft(offset: Int): Float {
+         val layout = result ?: return -1f
+-        val lineIndex = layout.getLineForOffset(offset)
++        val lineIndex = layout.getLineForOffset(inlineOffsetMapping.toLayout(offset))
+         val line = layout.lines.getOrNull(lineIndex) ?: return -1f
+         return replayIndex?.positionedClustersByLine?.getOrNull(lineIndex)
+             ?.firstOrNull()?.left ?: line.indent
+@@ -431,7 +438,7 @@ internal class CjkTextLayoutNode(
+ 
+     override fun selectionLineRight(offset: Int): Float {
+         val layout = result ?: return -1f
+-        val lineIndex = layout.getLineForOffset(offset)
++        val lineIndex = layout.getLineForOffset(inlineOffsetMapping.toLayout(offset))
+         val line = layout.lines.getOrNull(lineIndex) ?: return -1f
+         return replayIndex?.positionedClustersByLine?.getOrNull(lineIndex)
+             ?.lastOrNull()?.right ?: line.indent
+@@ -439,20 +446,20 @@ internal class CjkTextLayoutNode(
+ 
+     override fun selectionLineCenterY(offset: Int): Float {
+         val layout = result ?: return -1f
+-        val lineIndex = layout.getLineForOffset(offset)
++        val lineIndex = layout.getLineForOffset(inlineOffsetMapping.toLayout(offset))
+         val line = layout.lines.getOrNull(lineIndex) ?: return -1f
+         return (line.top + line.bottom) / 2f
+     }
+ 
+     override fun selectionLineHeight(offset: Int): Float {
+         val layout = result ?: return 0f
+-        val lineIndex = layout.getLineForOffset(offset)
++        val lineIndex = layout.getLineForOffset(inlineOffsetMapping.toLayout(offset))
+         val line = layout.lines.getOrNull(lineIndex) ?: return 0f
+         return line.bottom - line.top
+     }
+ 
+     override fun selectionBoxes(range: org.tiqian.core.TextRange): List<org.tiqian.core.Rect> =
+-        result?.let { layout -> replayIndex?.selectionBoxes(layout, range) }.orEmpty()
++        result?.let { layout -> inlineOffsetMapping.layoutRanges(range).flatMap { replayIndex?.selectionBoxes(layout, it).orEmpty() } }.orEmpty()
+ 
+     override fun invalidateSelection() {
+         invalidateDraw()
+@@ -561,7 +568,7 @@ internal class CjkTextLayoutNode(
+             val drawCache = drawCache ?: return
+             val drawScope = this
+             val selectionRange = selectionState?.rangeFor(this@CjkTextLayoutNode)
+-            val selectionBoxes = selectionRange?.let { replayIndex.selectionBoxes(result, it) }.orEmpty()
++            val selectionBoxes = selectionRange?.let { range -> inlineOffsetMapping.layoutRanges(range).flatMap { replayIndex.selectionBoxes(result, it) } }.orEmpty()
+             val selectionColor = selectionRange?.let { selectionState?.selectionBackgroundArgb }
+             if (overflow == TextOverflow.Visible) {
+                 tiqianTraceSection("TiqianParagraph.paint") {
+diff --git a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLink.kt b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLink.kt
+index 15f1c1464509a689e9188a26d4625188461de976..2f7c705d315a3f9a5992885dddf89684b490f191 100644
+--- a/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLink.kt
++++ b/platforms/compose/compose/src/commonMain/kotlin/org/tiqian/compose/CjkTextLink.kt
+@@ -156,8 +156,10 @@ private data class LinkHit(
+ private fun linkHitAt(text: AnnotatedString, result: LayoutResult, position: Offset): LinkHit? {
+     if (text.length == 0) return null
+     val offset = result.getOffsetForPosition(position.x, position.y)
+-    val queryStart = offset.coerceIn(0, text.length - 1)
+-    val composeLink = text.getLinkAnnotations(queryStart, queryStart + 1)
++    // The nearest caret can be after the linked glyph; inspect both sides before checking its boxes.
++    val queryStart = (offset - 1).coerceIn(0, text.length - 1)
++    val queryEnd = (offset + 1).coerceIn(queryStart + 1, text.length)
++    val composeLink = text.getLinkAnnotations(queryStart, queryEnd)
+         .firstOrNull { range ->
+             result.getBoundingBoxes(range.start, range.end).any { box ->
+                 position.x >= box.left && position.x <= box.right &&
+@@ -166,7 +168,7 @@ private fun linkHitAt(text: AnnotatedString, result: LayoutResult, position: Off
+         }
+         ?.let { LinkHit(link = it.item, start = it.start, end = it.end) }
+     if (composeLink != null) return composeLink
+-    return text.getUrlAnnotations(queryStart, queryStart + 1)
++    return text.getUrlAnnotations(queryStart, queryEnd)
+         .firstOrNull { range ->
+             result.getBoundingBoxes(range.start, range.end).any { box ->
+                 position.x >= box.left && position.x <= box.right &&
+diff --git a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt b/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
+index d5e45ef151e596125febcf8f76be747cdbdba72c..596712552f9e826915e345b2d2e717e3a1548043 100644
+--- a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
++++ b/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
+@@ -343,7 +343,10 @@ private fun drawSkiaRichTextLines(
+                 paint.pathEffect = null
+             }
+         }
+-        val skipBandPad = paint.strokeWidth.coerceAtLeast(1f)
++        val skipBandPad = when (val pattern = seg.span.paint.linePattern) {
++            is RichTextLinePattern.Dotted -> pattern.dotDiameter / 2f
++            else -> paint.strokeWidth.coerceAtLeast(1f)
++        }
+         val style = spans.lastOrNull { seg.range.start >= it.range.start && seg.range.start < it.range.end }?.style
+             ?: result.input.textStyle
+         val lineY = result.richTextDecorationLineY(seg, paint.strokeWidth)

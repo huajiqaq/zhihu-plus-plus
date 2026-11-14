@@ -19,8 +19,6 @@ output.json
 # IntelliJ
 *.iml
 .idea/
-!.idea/codeStyles/*
-!.idea/dictionaries/*
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml

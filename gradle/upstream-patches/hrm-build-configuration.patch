@@ -1,0 +1,45 @@
+diff --git a/markdown-renderer/build.gradle.kts b/markdown-renderer/build.gradle.kts
+index 9196364b278d631be028b5693a68a0e10572b666..1bb36e1486fbbb85ae5a8c46df15a14eebbcc4d6 100644
+--- a/markdown-renderer/build.gradle.kts
++++ b/markdown-renderer/build.gradle.kts
+@@ -114,14 +114,6 @@ tasks.register<JavaExec>("renderCompilerScalingBenchmark") {
+         languageVersion.set(JavaLanguageVersion.of(21))
+     })
+     jvmArgs("-Xms256m", "-Xmx512m")
+-    mustRunAfter(
+-        ":markdown-benchmark:performanceGate",
+-        ":markdown-benchmark:fullParsingBenchmark",
+-        ":markdown-benchmark:incrementalScalingBenchmark",
+-        ":markdown-benchmark:failedInlineScalingBenchmark",
+-        ":markdown-benchmark:parserCallSampleTimeBenchmark",
+-        ":markdown-benchmark:growingBlockStreamingBenchmark",
+-    )
+ }
+ 
+ mavenPublishing {
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 77db423fc1435f4d584d0ae84d49998d91223057..93ad413763ded71c8084be866330f269fef46d23 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -24,7 +24,11 @@ dependencyResolutionManagement {
+                 includeGroupAndSubgroups("com.google")
+             }
+         }
+-        mavenCentral()
++        mavenCentral {
++            content {
++                excludeModuleByRegex("io[.]github[.]huarangmeng", "markdown-(parser|runtime|renderer)(-.*)?")
++            }
++        }
+     }
+ }
+ 
+@@ -35,8 +39,3 @@ plugins {
+ include(":markdown-parser")
+ include(":markdown-runtime")
+ include(":markdown-renderer")
+-include(":markdown-preview")
+-include(":markdown-benchmark")
+-include(":composeApp")
+-include(":androidapp")
+-include(":macrobenchmark")

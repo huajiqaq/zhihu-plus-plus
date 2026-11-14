@@ -1,0 +1,203 @@
+{
+  "schema": 2,
+  "sources": {
+    "tiqian-core": {
+      "repository": "https://github.com/tiqian-cjk/tiqian.git",
+      "versionKey": "tiqian",
+      "sourceGroup": "org.tiqian.source.core",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "patches": {
+        "upstream-patches/tiqian-core-build.patch": {
+          "base": "93517138a564d642ef56708dfc587653f1e3600a",
+          "sha256": "995ed65b5d635b6904a91a24d49ccc1c78e50bb04c5558981ab12d1055ddb98b",
+          "reason": "选区、注解和绘制接口"
+        },
+        "upstream-patches/tiqian-windows-fonts.patch": {
+          "base": "93517138a564d642ef56708dfc587653f1e3600a",
+          "sha256": "22c47da531ee6abc2e59ad16f0e1b6ce43186bcedf9f4a3c676783be58c61815",
+          "reason": "补齐 Windows 默认字体，避免中文零字宽"
+        },
+        "upstream-patches/tiqian-core-build-configuration.patch": {
+          "base": "671bf2261daf361a8235e8473d0f4508e9e221cb",
+          "sha256": "cd77177c6525e77f76056b03be16729f7a7b7f27a19f3414b8d824904578ebe5",
+          "reason": "对齐组合构建配置"
+        }
+      },
+      "modules": {
+        "org.tiqian:tiqian-engine": ":engine",
+        "org.tiqian:tiqian-compose": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-material3": ":platforms:compose:material3",
+        "org.tiqian:tiqian-jvm-skia": ":platforms:jvm:skia",
+        "org.tiqian:tiqian-jvm-shaping": ":platforms:jvm:shaping",
+        "org.tiqian:tiqian-android-shaping": ":platforms:android:shaping",
+        "org.tiqian:tiqian-android-rendering": ":platforms:android:rendering",
+        "org.tiqian:tiqian-engine-android": ":engine",
+        "org.tiqian:tiqian-engine-jvm": ":engine",
+        "org.tiqian:tiqian-compose-android": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-jvm": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-material3-android": ":platforms:compose:material3",
+        "org.tiqian:tiqian-compose-material3-jvm": ":platforms:compose:material3",
+        "org.tiqian:tiqian-jvm-skia-jvm": ":platforms:jvm:skia",
+        "org.tiqian:tiqian-jvm-shaping-jvm": ":platforms:jvm:shaping"
+      }
+    },
+    "tiqian-markdown": {
+      "repository": "https://github.com/tiqian-cjk/tiqian-markdown.git",
+      "versionKey": "tiqianMarkdown",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "patches": {
+        "upstream-patches/tiqian-markdown-build.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "b801fa02ff463c598fa90b084e7b5284ac4b74132128a586f3cc20f758b59707",
+          "reason": "完整 AST 字段、节点事件和段末标记"
+        },
+        "upstream-patches/tiqian-markdown-build-configuration.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "d5a33a26af65f3452cfa25ae828038c3f92200ec25e2b1d6994bfe2575a30119",
+          "reason": "对齐组合构建配置"
+        }
+      },
+      "modules": {
+        "org.tiqian:markdown-compose": ":",
+        "org.tiqian:markdown-compose-android": ":",
+        "org.tiqian:markdown-compose-jvm": ":"
+      }
+    },
+    "hrm-markdown": {
+      "repository": "https://github.com/huarangmeng/Markdown.git",
+      "versionKey": "huarangmeng-markdown",
+      "androidPluginCatalog": "gradle/libs.versions.toml",
+      "releaseRef": "refs/tags/release-{version}",
+      "snapshotRef": "refs/heads/master",
+      "patches": {
+        "upstream-patches/hrm-build-configuration.patch": {
+          "base": "37a8dcad4ccaeb43d1f9992b4ffa1e22f37a202f",
+          "sha256": "349c4fd99bea4f80a9039bb84003ba713e6c686747192f05e8bde83a04f0f427",
+          "reason": "对齐组合构建配置"
+        }
+      },
+      "modules": {
+        "io.github.huarangmeng:markdown-parser": ":markdown-parser",
+        "io.github.huarangmeng:markdown-runtime": ":markdown-runtime",
+        "io.github.huarangmeng:markdown-renderer": ":markdown-renderer",
+        "io.github.huarangmeng:markdown-parser-android": ":markdown-parser",
+        "io.github.huarangmeng:markdown-parser-jvm": ":markdown-parser",
+        "io.github.huarangmeng:markdown-runtime-android": ":markdown-runtime",
+        "io.github.huarangmeng:markdown-runtime-jvm": ":markdown-runtime",
+        "io.github.huarangmeng:markdown-renderer-android": ":markdown-renderer",
+        "io.github.huarangmeng:markdown-renderer-jvm": ":markdown-renderer"
+      }
+    },
+    "tiqian-math": {
+      "repository": "https://github.com/tiqian-cjk/tiqian-math.git",
+      "versionKey": "tiqianMath",
+      "sourceGroup": "org.tiqian.source.math",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "patches": {
+        "upstream-patches/tiqian-math-build-configuration.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "e73c8c3b2fcfba7d380f3d9f74bb79f74104fc91d727694f45beb875cbfa43a4",
+          "reason": "对齐组合构建配置"
+        }
+      },
+      "modules": {
+        "org.tiqian:math-engine": ":engine",
+        "org.tiqian:math-compose": ":platforms:compose:compose",
+        "org.tiqian:math-font-stix": ":font:stix",
+        "org.tiqian:math-jvm-skia": ":platforms:jvm:skia",
+        "org.tiqian:math-android-font": ":platforms:android:font",
+        "org.tiqian:math-font-tooling": ":font:tooling",
+        "org.tiqian:math-engine-android": ":engine",
+        "org.tiqian:math-engine-jvm": ":engine",
+        "org.tiqian:math-compose-android": ":platforms:compose:compose",
+        "org.tiqian:math-compose-jvm": ":platforms:compose:compose",
+        "org.tiqian:math-font-stix-android": ":font:stix",
+        "org.tiqian:math-font-stix-jvm": ":font:stix",
+        "org.tiqian:math-jvm-skia-jvm": ":platforms:jvm:skia"
+      }
+    }
+  },
+  "artifacts": {
+    "top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.aar": {
+      "sha256": "2cb7f0d59231e30ab1b079af97ad1245fc542d25c7c8d66dbc812e3cfa8d79d6",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.aar"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.module": {
+      "sha256": "4ec7e450ed1f56fa0fb616f9fdda86a982e9f4ff21121893167dfeecb0ca568a",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.module"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.pom": {
+      "sha256": "de94b6dd3130b7d2146415237ce491c0da27bf47bf0ac51a3fef46af6bb51c8f",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-android/0.9.4/miuix-icons-android-0.9.4.pom"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.jar": {
+      "sha256": "0a0975749aa5be1bed5e1d632757c8d1c5f859efb5e6009e1f95cb9e6f71e469",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.jar"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.module": {
+      "sha256": "41875137bac5e6902ebf780bd5f0fa92d3e9cf023234e97992786714181c9731",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.module"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.pom": {
+      "sha256": "af81f6c4aac7074415988ed8489d028f9440da7ee0cbf04884fe5f18cb9108e9",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons-desktop/0.9.4/miuix-icons-desktop-0.9.4.pom"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons/0.9.4/miuix-icons-0.9.4.module": {
+      "sha256": "f6b278969ea086dec7a154194e27565da9a7dd1113b1403fc924f7311e377913",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons/0.9.4/miuix-icons-0.9.4.module"
+    },
+    "top/yukonga/miuix/kmp/miuix-icons/0.9.4/miuix-icons-0.9.4.pom": {
+      "sha256": "a9ad3c7b0460eb329a956e972d563c65f117214a56a99389b34e9e3210aab52b",
+      "url": "https://repo.maven.apache.org/maven2/top/yukonga/miuix/kmp/miuix-icons/0.9.4/miuix-icons-0.9.4.pom"
+    }
+  },
+  "math": {
+    "source": "tiqian-math",
+    "output": "build/upstream-font-inputs",
+    "compiler": {
+      "path": "font/metadata-generator/tools/compile_runtime_font.py",
+      "sha256": "541e7bf3b791f02c3abb9723e1bbb15b897e969ecb072ee3b2e25ca2b0064fc8"
+    },
+    "fonts": [
+      {
+        "name": "lete-regular",
+        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Regular.otf",
+        "sha256": "ead643895be03f42f6fa201fb1176323f60dd330d4109387bac90bdf980fcf3e",
+        "property": "tiqianLeteRegular"
+      },
+      {
+        "name": "lete-bold",
+        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Bold.otf",
+        "sha256": "a521f128db0821a9943e4f703103204d8982aeb39c933e12344c43e9d3b0907a",
+        "property": "tiqianLeteBold"
+      },
+      {
+        "name": "stix-regular",
+        "path": "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/regular.otf",
+        "sha256": "95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b",
+        "property": "tiqianStix"
+      }
+    ],
+    "resources": {
+      "build/upstream-font-inputs/lete-regular-runtime.otf": "2ce41922dcfd6c98ffcd882f17bf7458e94574d83b5af04441cad0628f9ea1a8",
+      "build/upstream-font-inputs/lete-bold-runtime.otf": "20f690463874b6615638a398187a7029766167fcb371a32a5a0a3a48092ab670",
+      "build/upstream-font-inputs/stix-regular-runtime.otf": "1d565c9537e2c5938711426e3be6f2bb4224541706e3195be42255299f553b2f",
+      "build/generated/leteRuntimeMetadata/LeteSansMath-Regular.tqmath": "d0bbca52bc3d179824731f0f4cdf1c6f9c2429c4d6f1bc3d326d2b44fe7be53f",
+      "build/generated/leteRuntimeMetadata/LeteSansMath-Bold.tqmath": "ebd8a71d4e2cbe5b443b0b19b848738f3bb5147ec4c8f7460d3f4558ce786cbd",
+      "build/generated/stixRuntimeMetadata/regular.tqmath": "3332d022a4a8b99d54051d1777b046c598ecdbe9e7f261fbf99d133b3f13a028",
+      "build/generated/stixRuntimeMetadata/manifest.tqfont": "361a163b12bc36a4406685ae4872264df030821ec293f82766a27f7a03dc9d65",
+      "engine/src/jvmMain/resources/org/tiqian/math/fonts/OFL.txt": "81b36224f7e45447419a4d88b957b2d7a37acc3fd7052746cf32365ae99cc8af",
+      "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/STIX-OFL.txt": "ccee2172d0b1deb40e216efb0b7adec41573a14e813f3b17c143063607e54ec6"
+    },
+    "wheel": {
+      "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl",
+      "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d"
+    }
+  }
+}
