@@ -56,6 +56,7 @@ val cargoLock = rustProjectDir.resolve("Cargo.lock")
 
 val androidTargets = mapOf(
     "aarch64-linux-android" to "arm64-v8a",
+    "x86_64-linux-android" to "x86_64",
 )
 
 tasks.register<Exec>("buildRustLib") {
@@ -72,7 +73,7 @@ tasks.register<Exec>("buildRustLib") {
     inputs.property("androidTargets", androidTargets.toString())
     inputs.property("ndkVersion", android.ndkVersion)
 
-    outputs.dir(jniLibsDir)
+    outputs.files(androidTargets.values.map { jniLibsDir.resolve("$it/libhftokenizer.so") })
 
     val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 
@@ -81,8 +82,8 @@ tasks.register<Exec>("buildRustLib") {
         val buildCommands = androidTargets.entries.joinToString(" && ") { (rustTarget, androidAbi) ->
             listOf(
                 "echo Building for $androidAbi...",
-                "cargo ndk --target $androidAbi --platform 24 build --release",
-                "if not exist \"$jniLibsPath\\$androidAbi\" mkdir \"$jniLibsPath\\$androidAbi\"",
+                "cargo ndk --target $androidAbi --platform 24 build --release --locked",
+                "(if not exist \"$jniLibsPath\\$androidAbi\" mkdir \"$jniLibsPath\\$androidAbi\")",
                 "copy /Y target\\$rustTarget\\release\\libhftokenizer.so \"$jniLibsPath\\$androidAbi\\\""
             ).joinToString(" && ")
         }
@@ -99,13 +100,13 @@ tasks.register<Exec>("buildRustLib") {
         val buildCommands = androidTargets.entries.joinToString("\n") { (rustTarget, androidAbi) ->
             listOf(
                 "echo \"Building for $androidAbi...\"",
-                "cargo ndk --target $androidAbi --platform 24 build --release",
+                "cargo ndk --target $androidAbi --platform 24 build --release --locked",
                 "mkdir -p \"$jniLibsPath/$androidAbi\"",
                 "cp target/$rustTarget/release/libhftokenizer.so \"$jniLibsPath/$androidAbi/\""
             ).joinToString("\n")
         }
         val addTargetCommands = androidTargets.keys.joinToString("\n") {
-            "rustup target add $it || true"
+            "rustup target add $it"
         }
         commandLine("sh", "-c", listOf(
             "set -e",
@@ -140,4 +141,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.onnxruntime.android)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

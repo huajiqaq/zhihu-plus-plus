@@ -4,6 +4,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: pull-request-check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -173,6 +176,129 @@ jobs:
             shared*/build/reports
             shared*/build/test-results
 
+  rust-verification:
+    name: Rust and Android JNI Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          override: true
+
+      - name: Add Rust components and Android targets
+        run: |
+          rustup component add rustfmt clippy
+          rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Check and test Rust
+        working-directory: rs-hf-tokenizer
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --color never | tee "$RUNNER_TEMP/rust-tests.log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/rust-tests.log"
+
+      - name: Build tokenizer AAR and test APK
+        run: ./gradlew :sentence_embeddings:assembleDebug :sentence_embeddings:assembleDebugAndroidTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test HFTokenizer JNI on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: default
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew :sentence_embeddings:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
+
+      - name: Verify JNI tests ran
+        run: python3 -I .github/scripts/verify-test-results.py sentence_embeddings/build/outputs/androidTest-results --class-name com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest
+
+      - name: Upload JNI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HFTokenizer JNI Test Reports
+          path: |
+            sentence_embeddings/build/reports/androidTests/**
+            sentence_embeddings/build/outputs/androidTest-results/**
+          if-no-files-found: warn
+
+  macos-native:
+    name: macOS Native Compile and Tests
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Compile macOS executable and run shared native tests
+        run: ./gradlew :macosApp:linkDebugExecutableMacosArm64 :shared-core:macosArm64Test :shared-domain:macosArm64Test -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
+
+      - name: Verify native tests ran
+        run: python3 -I .github/scripts/verify-test-results.py shared-core/build/test-results/macosArm64Test shared-domain/build/test-results/macosArm64Test
+
+      - name: Upload native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS Native Test Reports
+          path: |
+            shared-core/build/reports/tests/macosArm64Test/**
+            shared-core/build/test-results/macosArm64Test/**
+            shared-domain/build/reports/tests/macosArm64Test/**
+            shared-domain/build/test-results/macosArm64Test/**
+          if-no-files-found: warn
+
   mock-instrumented-shards:
     name: Mock Instrumented Shard (${{ matrix.shard_label }}/5)
     if: needs.build_pr.outputs.run_instrumented_tests == 'true'
@@ -247,6 +373,8 @@ jobs:
       - build_pr
       - unit-tests
       - desktop-jar
+      - rust-verification
+      - macos-native
       - mock-instrumented-shards
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -257,6 +385,8 @@ jobs:
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
           DESKTOP_RESULT: ${{ needs.desktop-jar.result }}
+          RUST_RESULT: ${{ needs.rust-verification.result }}
+          MACOS_RESULT: ${{ needs.macos-native.result }}
           RUN_INSTRUMENTED_TESTS: ${{ needs.build_pr.outputs.run_instrumented_tests }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
@@ -264,6 +394,8 @@ jobs:
           test "$BUILD_RESULT" = "success"
           test "$UNIT_TEST_RESULT" = "success"
           test "$DESKTOP_RESULT" = "success"
+          test "$RUST_RESULT" = "success"
+          test "$MACOS_RESULT" = "success"
           if [[ "$RUN_INSTRUMENTED_TESTS" == "true" ]]; then
             test "$SHARD_RESULT" = "success"
           else

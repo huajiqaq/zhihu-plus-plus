@@ -39,6 +39,7 @@ media = "1.7.1"
 onnxruntime = "1.26.0"
 junit = "4.13.2"
 androidxTestJunit = "1.3.0"
+androidxTestRunner = "1.7.0"
 espresso = "3.7.0"
 hanlp = "portable-1.8.6"
 tiqian = "0.1.0-SNAPSHOT"
@@ -115,6 +116,7 @@ androidx-media = { group = "androidx.media", name = "media", version.ref = "medi
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 junit4 = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
 hanlp = { group = "com.hankcs", name = "hanlp", version.ref = "hanlp" }
 tiqian-markdown-compose = { group = "org.tiqian", name = "markdown-compose", version.ref = "tiqianMarkdown" }
