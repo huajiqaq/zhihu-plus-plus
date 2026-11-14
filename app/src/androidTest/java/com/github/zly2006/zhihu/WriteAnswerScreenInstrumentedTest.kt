@@ -17,8 +17,16 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -67,8 +75,22 @@ class WriteAnswerScreenInstrumentedTest {
             )
         }
 
-        val editor = composeRule.onNodeWithTag(WRITE_ANSWER_CONTENT_TAG)
-        editor.performTextInput((1..80).joinToString("\n") { "回答正文第 $it 行" })
+        val markdownMode = hasText("Markdown") and hasClickAction() and isEnabled()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodes(markdownMode).fetchSemanticsNodes().size == 1
+        }
+        composeRule.onNode(markdownMode).assertIsDisplayed().performClick()
+
+        val editorMatcher = hasTestTag(WRITE_ANSWER_CONTENT_TAG) and
+            hasSetTextAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.RequestFocus)
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodes(editorMatcher).fetchSemanticsNodes().size == 1
+        }
+        val editor = composeRule.onNode(editorMatcher).assertIsDisplayed()
+        val content = (1..80).joinToString("\n") { "回答正文第 $it 行" }
+        editor.performTextInput(content)
+        editor.assertTextEquals(content)
 
         composeRule.onNodeWithTag(WRITE_ANSWER_FAB_PREVIEW_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(WRITE_ANSWER_FAB_SAVE_TAG).assertIsDisplayed()

@@ -90,7 +90,7 @@ class SettingsSearchScreenInstrumentedTest {
             .performClick()
 
         assertEquals(
-            listOf(Account.AppearanceSettings(setting = "appearanceSettings.bottomBarSection")),
+            listOf(Account.NavigationSettings(setting = "appearanceSettings.bottomBarSection")),
             navigator.destinations,
         )
     }

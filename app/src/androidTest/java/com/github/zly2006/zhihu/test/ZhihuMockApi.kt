@@ -127,6 +127,22 @@ object ZhihuMockApi {
                 }
                 """.trimIndent(),
         )
+        mockJson(
+            method = HttpMethod.Get,
+            url = "https://www.zhihu.com/api/v4/sticker-groups/1114161698310770688",
+            body =
+                """
+                {
+                  "data": {
+                    "stickers": [{
+                      "id": "android-test-surprise",
+                      "placeholder": "[惊喜]",
+                      "static_image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+                    }]
+                  }
+                }
+                """.trimIndent(),
+        )
         mockJsonPrefix(
             method = HttpMethod.Get,
             urlPrefix = "$ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL?version=",

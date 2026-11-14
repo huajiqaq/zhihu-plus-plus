@@ -25,8 +25,8 @@ package com.github.zly2006.zhihu.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.backhandler.LocalCompatNavigationEventDispatcherOwner
 import androidx.navigationevent.NavigationEventInput
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import platform.AppKit.NSEvent
 import platform.AppKit.NSResponder
 import platform.AppKit.NSWindow
@@ -58,7 +58,7 @@ fun MacosBackNavigationHost(
     window: NSWindow,
     content: @Composable () -> Unit,
 ) {
-    val dispatcherOwner = checkNotNull(LocalCompatNavigationEventDispatcherOwner.current) {
+    val dispatcherOwner = checkNotNull(LocalNavigationEventDispatcherOwner.current) {
         "Compose window navigation event dispatcher is unavailable"
     }
     val dispatcher = dispatcherOwner.navigationEventDispatcher

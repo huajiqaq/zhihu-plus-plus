@@ -227,7 +227,7 @@ fun SearchScreen(
             while (searchHistoryItems.size > SEARCH_HISTORY_MAX_SIZE) {
                 searchHistoryItems.removeAt(searchHistoryItems.lastIndex)
             }
-            settings.putString(SEARCH_HISTORY_KEY, ZhihuJson.json.encodeToString(searchHistoryItems))
+            settings.putString(SEARCH_HISTORY_KEY, ZhihuJson.json.encodeToString(searchHistoryItems.toList()))
         }
         navigator.onNavigate(search.copy(query = trimmedQuery))
     }
@@ -298,7 +298,7 @@ fun SearchScreen(
                 onConfirm = {
                     showClearHistoryConfirm = false
                     searchHistoryItems.clear()
-                    settings.putString(SEARCH_HISTORY_KEY, ZhihuJson.json.encodeToString(searchHistoryItems))
+                    settings.putString(SEARCH_HISTORY_KEY, ZhihuJson.json.encodeToString(searchHistoryItems.toList()))
                 },
                 dismissText = "取消",
                 onDismissRequest = { showClearHistoryConfirm = false },

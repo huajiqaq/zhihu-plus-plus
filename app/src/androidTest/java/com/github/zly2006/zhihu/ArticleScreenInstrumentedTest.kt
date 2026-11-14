@@ -25,6 +25,7 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
@@ -58,6 +60,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
@@ -120,6 +124,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class ArticleScreenInstrumentedTest {
@@ -544,6 +549,90 @@ class ArticleScreenInstrumentedTest {
         composeRule.activityRule.scenario.recreate()
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
+
+    private data class MarkdownTextFragment(
+        val nodeId: Int,
+        val bounds: Rect,
+        val layout: TextLayoutResult,
+        val startOffset: Int,
+    ) {
+        val endOffset: Int get() = startOffset + layout.layoutInput.text.length
+    }
+
+    /** HRM 按视觉行/run 绘制；完整原段只用于校验和 UTF-16 偏移，不另测文字布局。 */
+    private fun paragraphFragments(tag: String, text: String): List<MarkdownTextFragment> {
+        val fragments = composeRule
+            .onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and
+                    (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes()
+            .mapNotNull { node ->
+                val results = mutableListOf<TextLayoutResult>()
+                composeRule.runOnIdle {
+                    assertTrue(node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results) == true)
+                }
+                val layout = results.single()
+                if (layout.layoutInput.text.isEmpty()) {
+                    null
+                } else {
+                    MarkdownTextFragment(
+                        node.id,
+                        node.boundsInRoot,
+                        layout,
+                        0,
+                    )
+                }
+            }.sortedWith(compareBy({ it.bounds.top }, { it.bounds.left }))
+        val matches = fragments.indices.mapNotNull { first ->
+            var offset = 0
+            val matched = mutableListOf<MarkdownTextFragment>()
+            for (fragment in fragments.drop(first)) {
+                val visibleText = fragment.layout.layoutInput.text.text
+                if (!text.startsWith(visibleText, offset)) {
+                    while (offset < text.length && (text[offset] == ' ' || text[offset] == '\t')) offset++
+                }
+                if (!text.startsWith(visibleText, offset)) break
+                matched += fragment.copy(startOffset = offset)
+                offset += visibleText.length
+                if (offset == text.length) return@mapNotNull matched
+            }
+            null
+        }
+        assertEquals("The complete original paragraph must map to exactly one sequence of painted runs: $text", 1, matches.size)
+        return matches.single()
+    }
+
+    private fun textPoint(tag: String, text: String, offset: Int): Offset {
+        require(text.isNotEmpty() && offset in 0..text.length)
+        require(!(offset in text.indices && text[offset].isLowSurrogate() && offset > 0 && text[offset - 1].isHighSurrogate()))
+        val fragments = paragraphFragments(tag, text)
+        val fragment = if (offset == text.length) fragments.last() else fragments.single { offset in it.startOffset until it.endOffset }
+        composeRule
+            .onNode(SemanticsMatcher("painted text run ${fragment.nodeId}") { it.id == fragment.nodeId }, useUnmergedTree = true)
+            .assertIsDisplayed()
+        val localOffset = offset - fragment.startOffset
+        val point = if (localOffset == fragment.layout.layoutInput.text.length) {
+            val box = fragment.layout.getBoundingBox(localOffset - 1)
+            Offset(box.right, box.center.y)
+        } else {
+            val box = fragment.layout.getBoundingBox(localOffset)
+            Offset(box.left, box.center.y)
+        }
+        return fragment.bounds.topLeft + point
+    }
+
+    private fun copySelection(clipboard: RecordingClipboard): String {
+        clipboard.clear()
+        composeRule.onNodeWithText("复制").performClick()
+        composeRule.waitUntil("Selection did not publish text to the Compose clipboard", timeoutMillis = 5_000) {
+            clipboard.text != null
+        }
+        return requireNotNull(clipboard.text)
+    }
+
+    private fun Color.matchesPixel(expected: Color): Boolean =
+        abs(red - expected.red) < 0.04f && abs(green - expected.green) < 0.04f && abs(blue - expected.blue) < 0.04f
 
     private fun waitUntilSelectionHighlight(
         text: String,
@@ -1089,149 +1178,111 @@ class ArticleScreenInstrumentedTest {
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/495
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/579
      */
-    @OptIn(ExperimentalFoundationApi::class)
     @Test
     fun selectAllHighlightsEveryVisualLineOfLongParagraph() {
-        val previousContextMenuFlag = ComposeFoundationFlags.isNewContextMenuEnabled
-        ComposeFoundationFlags.isNewContextMenuEnabled = false
-        try {
-            val textToolbar = CapturingTextToolbar()
-            val selectionColor = Color.Magenta
-            val paragraph = "长段落的选中背景必须跟随真实换行，".repeat(12)
-            composeRule.setScreenContent {
-                CompositionLocalProvider(
-                    LocalTextToolbar provides textToolbar,
-                    LocalTextSelectionColors provides TextSelectionColors(
-                        handleColor = selectionColor,
-                        backgroundColor = selectionColor,
-                    ),
-                ) {
+        val clipboard = RecordingClipboard()
+        val scheme = lightColorScheme()
+        val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
+        val paragraph = "长段落的选中背景必须跟随真实换行，".repeat(12)
+        val tag = "multiline-selection-article"
+        composeRule.setScreenContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalClipboard provides clipboard) {
                     RenderMarkdownText(
                         markdown = paragraph,
-                        modifier = androidx.compose.ui.Modifier
-                            .width(240.dp)
-                            .testTag("multiline-selection-article"),
+                        modifier = Modifier.width(240.dp).background(scheme.surface).testTag(tag),
                         enableScroll = false,
                     )
                 }
             }
-
-            composeRule
-                .onNodeWithText("长段落的选中背景", substring = true)
-                .performTouchInput { longClick() }
-            composeRule.runOnIdle {
-                requireNotNull(textToolbar.onSelectAllRequested).invoke()
-            }
-
-            val selectionImage = composeRule
-                .onNodeWithTag("multiline-selection-article")
-                .captureToImage()
-            val pixels = selectionImage.toPixelMap()
-            val highlightedRows = (0 until pixels.height).count { y ->
-                var selectedPixels = 0
-                for (x in 0 until pixels.width) {
-                    val color = pixels[x, y]
-                    if (color.red > 0.9f && color.green < 0.1f && color.blue > 0.9f) {
-                        selectedPixels++
-                    }
-                }
-                selectedPixels >= 100
-            }
-            Log.i("MarkdownSelection", "multilineSelectionHighlightedRows=$highlightedRows")
-            assertTrue(
-                "Select-all highlight only covered $highlightedRows pixel rows; a wrapped paragraph must highlight every line.",
-                highlightedRows >= 180,
-            )
-        } finally {
-            ComposeFoundationFlags.isNewContextMenuEnabled = previousContextMenuFlag
         }
+
+        val fragments = paragraphFragments(tag, paragraph)
+        val press = textPoint(tag, paragraph, 1)
+        composeRule.onRoot().performTouchInput { longClick(press) }
+        composeRule.onNodeWithText("全选").performClick()
+
+        val container = composeRule.onNodeWithTag(tag)
+        val bounds = container.fetchSemanticsNode().boundsInRoot
+        val pixels = container.captureToImage().toPixelMap()
+        val highlightedRows = (0 until pixels.height).count { y ->
+            (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) } >= 100
+        }
+        Log.i("MarkdownSelection", "multilineSelectionHighlightedRows=$highlightedRows")
+        assertTrue(
+            "Select-all highlight only covered $highlightedRows pixel rows; a wrapped paragraph must highlight every line.",
+            highlightedRows >= 180,
+        )
+        for (fragment in fragments) {
+            val top = (fragment.bounds.top - bounds.top).toInt().coerceAtLeast(0)
+            val bottom = (fragment.bounds.bottom - bounds.top).toInt().coerceAtMost(pixels.height)
+            val selectedPixels = (top until bottom).sumOf { y ->
+                (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
+            }
+            assertTrue("Every painted line must retain its selection background at UTF-16 ${fragment.startOffset}", selectedPixels >= 100)
+        }
+        assertEquals(paragraph, copySelection(clipboard))
     }
 
     /**
      * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/495
      * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/579
      */
-    @OptIn(ExperimentalFoundationApi::class)
     @Test
     fun draggingSelectionHandleUsesSameCompleteTextLayer() {
-        val previousContextMenuFlag = ComposeFoundationFlags.isNewContextMenuEnabled
-        ComposeFoundationFlags.isNewContextMenuEnabled = false
-        try {
-            val textToolbar = CapturingTextToolbar()
-            val clipboard = RecordingClipboard()
-            composeRule.setScreenContent {
-                CompositionLocalProvider(
-                    LocalClipboard provides clipboard,
-                    LocalTextToolbar provides textToolbar,
-                    LocalTextSelectionColors provides TextSelectionColors(
-                        handleColor = Color.Magenta,
-                        backgroundColor = Color.Magenta,
-                    ),
-                ) {
+        val clipboard = RecordingClipboard()
+        val scheme = lightColorScheme()
+        val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
+        val paragraphs = listOf(
+            "起始段落从这里开始拖动。",
+            "中间段落确保选区跨越多个文字块。",
+            "末段拖动必须到达这里。",
+        )
+        val tag = "selection-handle-article"
+        composeRule.setScreenContent {
+            MaterialTheme(colorScheme = scheme) {
+                CompositionLocalProvider(LocalClipboard provides clipboard) {
                     RenderMarkdownText(
-                        markdown =
-                            """
-                            起始段落从这里开始拖动。
-
-                            中间段落确保选区跨越多个文字块。
-
-                            末段拖动必须到达这里。
-                            """.trimIndent(),
-                        modifier = androidx.compose.ui.Modifier
-                            .width(280.dp),
+                        markdown = paragraphs.joinToString("\n\n"),
+                        modifier = Modifier.width(280.dp).background(scheme.surface).testTag(tag),
                         enableScroll = false,
                     )
                 }
             }
-
-            composeRule
-                .onNodeWithText("起始段落从这里开始拖动。")
-                .performTouchInput { longClick() }
-
-            // AndroidX 的手柄语义 key 仍是 internal，测试按 key 名匹配真实弹出层，
-            // 避免另写一套选区计算来假装验证拖动。
-            // https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:compose/foundation/foundation/src/commonMain/kotlin/androidx/compose/foundation/text/selection/SelectionHandles.kt
-            val endHandle = composeRule.onNode(
-                SemanticsMatcher("是选区末端手柄") { node ->
-                    node.config.any { (key, value) ->
-                        key.name == "SelectionHandleInfo" && value.toString().contains("SelectionEnd")
-                    }
-                },
-            )
-            val targetBounds = composeRule
-                .onNodeWithText("末段拖动必须到达这里。")
-                .fetchSemanticsNode()
-                .boundsInWindow
-            val handleBounds = endHandle.fetchSemanticsNode().boundsInWindow
-            endHandle.performTouchInput {
+        }
+        val press = textPoint(tag, paragraphs.first(), 1)
+        val root = composeRule.onRoot().fetchSemanticsNode()
+        composeRule.onRoot().performTouchInput { longClick(press) }
+        for ((description, text, offset) in listOf(
+            Triple("Markdown selection start handle", paragraphs.first(), 0),
+            Triple("Markdown selection end handle", paragraphs.last(), paragraphs.last().length),
+        )) {
+            val point = textPoint(tag, text, offset)
+            val handle = composeRule.onNodeWithContentDescription(description)
+            val handleBounds = handle.fetchSemanticsNode().boundsInWindow
+            val destination = point + root.boundsInWindow.topLeft - root.boundsInRoot.topLeft - handleBounds.topLeft
+            handle.performTouchInput {
                 val start = center
-                val destination = Offset(
-                    x = targetBounds.right - handleBounds.left - 1f,
-                    y = targetBounds.bottom - handleBounds.top - 1f,
-                )
                 down(start)
                 advanceEventTime(100)
-                repeat(10) { step ->
-                    val fraction = (step + 1) / 10f
-                    moveTo(
-                        start + (destination - start) * fraction,
-                        delayMillis = 50,
-                    )
-                }
+                repeat(10) { step -> moveTo(start + (destination - start) * ((step + 1) / 10f), delayMillis = 50) }
                 up()
             }
-            waitUntilSelectionHighlight(
-                text = "末段拖动必须到达这里。",
-                failureMessage = "Selection did not reach the final block after dragging the handle",
-            )
-            val copiedText = copySelection(textToolbar, clipboard)
-            assertTrue(
-                "Dragging the standard selection handle must reach later blocks through the same selection layer",
-                copiedText.contains("起始段落") && copiedText.contains("末段拖动必须到达这里"),
-            )
-        } finally {
-            ComposeFoundationFlags.isNewContextMenuEnabled = previousContextMenuFlag
         }
+        val container = composeRule.onNodeWithTag(tag)
+        val bounds = container.fetchSemanticsNode().boundsInRoot
+        val pixels = container.captureToImage().toPixelMap()
+        for (paragraph in paragraphs) {
+            for (fragment in paragraphFragments(tag, paragraph)) {
+                val top = (fragment.bounds.top - bounds.top).toInt().coerceAtLeast(0)
+                val bottom = (fragment.bounds.bottom - bounds.top).toInt().coerceAtMost(pixels.height)
+                val selectedPixels = (top until bottom).sumOf { y ->
+                    (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
+                }
+                assertTrue("Dragging must highlight every crossed block and line: $paragraph", selectedPixels >= 100)
+            }
+        }
+        assertEquals(paragraphs.joinToString("\n"), copySelection(clipboard))
     }
 
     /**

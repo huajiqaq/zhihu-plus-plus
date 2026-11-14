@@ -92,11 +92,11 @@ class OnlineHistoryScreenInstrumentedTest {
     @Test
     fun typeFilterAndSelectionModeUseStableTags() {
         setOnlineHistoryScreen()
-        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         composeRule.onNodeWithTag("history_type_filter_" + HistoryType.ARTICLE).performClick()
         composeRule.waitForIdle()
-        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ARTICLE).fetchSemanticsNodes().isNotEmpty())
-        composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER).assertCountEquals(0)
+        assertTrue(composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ARTICLE, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        composeRule.onAllNodesWithTag("history_badge_" + HistoryType.ANSWER, useUnmergedTree = true).assertCountEquals(0)
         composeRule.onNodeWithTag(HISTORY_SELECT_TOGGLE_TAG).performClick()
         composeRule.onNodeWithTag(HISTORY_SELECT_ALL_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertIsDisplayed()

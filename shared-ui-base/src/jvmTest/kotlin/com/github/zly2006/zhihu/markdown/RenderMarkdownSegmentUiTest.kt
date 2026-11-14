@@ -672,10 +672,11 @@ class RenderMarkdownSegmentUiTest {
     }
 
     private fun ComposeUiTest.textPoint(text: String, index: Int, after: Boolean): Offset {
-        val node = onNode(
-            hasText(text) and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
-            useUnmergedTree = true,
-        )
+        val matcher = hasText(text) and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
+        waitUntil(timeoutMillis = 10_000) {
+            onAllNodes(matcher, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        val node = onNode(matcher, useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
         node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val layout = layouts.single()

@@ -19,6 +19,8 @@ package com.github.zly2006.zhihu
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -188,6 +190,9 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
         composeRule.onNodeWithContentDescription("切换到键盘").assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag(COMMENT_EMOJI_ITEM_TAG_PREFIX + "[惊喜]").fetchSemanticsNodes().size == 1
+        }
         composeRule.onNodeWithTag(COMMENT_EMOJI_ITEM_TAG_PREFIX + "[惊喜]").performClick()
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.InputText, AnnotatedString("[惊喜]已有草稿")),
@@ -589,7 +594,8 @@ class CommentScreenInstrumentedTest {
                 """.trimIndent(),
             beforeRespond = { gate.await() },
         )
-        setCommentScreen()
+        val listState = LazyListState()
+        setCommentScreen(listState = listState)
         composeRule.onNodeWithTag("comment_tab_normal").assertIsDisplayed().assertIsSelected()
         composeRule.onNodeWithTag("comment_tab_sentence").assertIsDisplayed()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment_comment"))
@@ -609,14 +615,35 @@ class CommentScreenInstrumentedTest {
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment_comment"))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment/root_comment"))
-        composeRule.onNodeWithTag(COMMENT_SORT_TIME_TAG).performClick()
+        composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).performScrollToNode(hasTestTag(COMMENT_SORT_TIME_TAG))
+        val selectTime = checkNotNull(
+            composeRule
+                .onNodeWithTag(COMMENT_SORT_TIME_TAG)
+                .fetchSemanticsNode()
+                .config[SemanticsActions.OnClick]
+                .action,
+        )
+        composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).performScrollToNode(hasTestTag("comment_row_root-20"))
+        composeRule.onNodeWithTag("comment_row_root-20").assertIsDisplayed()
+        // 排序控件已滚出懒列表，调用当前 tab 的真实语义动作以保留归顶起点。
+        composeRule.runOnIdle { assertTrue(selectTime()) }
         composeRule.waitUntil(timeoutMillis = 5_000) { model.isLoading && model.sortOrder == CommentSortOrder.TIME }
         gate.complete(Unit)
-        composeRule.waitUntil(timeoutMillis = 5_000) { !model.isLoading && model.allData.firstOrNull()?.id == "root-24" }
+        composeRule.waitUntil(timeoutMillis = 5_000) { !model.isLoading && model.allData.map { it.id } == timeComments.map { it.id } }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("comment_row_root-1").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.runOnIdle {
+            assertEquals(0, listState.firstVisibleItemIndex)
+            assertEquals(0, listState.firstVisibleItemScrollOffset)
+        }
         composeRule.onNodeWithTag("comment_row_root-24").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_row_root-1").assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_SCREEN_LIST_TAG).performScrollToNode(hasTestTag("comment_row_root-5"))
-        composeRule.onNodeWithTag(COMMENT_SORT_TIME_TAG).performClick()
+        composeRule.runOnIdle { assertTrue(selectTime()) }
         composeRule.onNodeWithTag("comment_row_root-5").assertIsDisplayed()
         assertEquals(2, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
     }
@@ -640,6 +667,7 @@ class CommentScreenInstrumentedTest {
         content: NavDestination = ROOT_ARTICLE,
         activeCommentItem: CommentItem? = null,
         onChildCommentClick: (CommentItem) -> Unit = {},
+        listState: LazyListState? = null,
     ): RecordingNavigator = composeRule.setScreenContent {
         val commentInput = remember { mutableStateOf("") }
         CommentScreen(
@@ -648,6 +676,7 @@ class CommentScreenInstrumentedTest {
             onChildCommentClick = onChildCommentClick,
             commentInput = commentInput.value,
             onCommentInputChange = { commentInput.value = it },
+            listState = listState ?: rememberLazyListState(),
             commentSegments = mapOf(
                 "seg-9001" to com.github.zly2006.zhihu.util.SegmentHighlightSpan(
                     text = "被评论的句子",
