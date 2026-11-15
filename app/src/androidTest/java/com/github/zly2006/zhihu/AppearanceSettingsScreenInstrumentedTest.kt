@@ -19,11 +19,13 @@ package com.github.zly2006.zhihu
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -94,11 +96,28 @@ class AppearanceSettingsScreenInstrumentedTest {
                 .fetchSemanticsNodes()
                 .single()
         }
-        assertEquals("必须测量同一列表层的完整行", 1, rows.map { it.parent?.id }.distinct().size)
+        val metrics = composeRule.activity.resources.displayMetrics
+        val rowGeometry = rows.joinToString("; ") { row ->
+            val parent = row.parent
+            val textNodes = composeRule
+                .onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.Text) and
+                        hasAnyAncestor(SemanticsMatcher("完整行 ${row.id}") { it.id == row.id }),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes()
+            "row=${row.id} size=${row.size} bounds=${row.boundsInRoot} " +
+                "parent=${parent?.id} parentSize=${parent?.size} parentBounds=${parent?.boundsInRoot} " +
+                "text=${textNodes.map { "${it.config[SemanticsProperties.Text]} size=${it.size} bounds=${it.boundsInRoot}" }}"
+        } + " density=${metrics.density} fontScale=${composeRule.activity.resources.configuration.fontScale}"
+        assertTrue("完整行必须有列表父节点: $rowGeometry", rows.all { it.parent != null })
+        assertEquals("必须测量同一列表层的完整行: $rowGeometry", 1, rows.map { it.parent?.id }.distinct().size)
+        val selectedWidth = rows[0].size.width.toDouble()
         val selectedHeight = rows[0].size.height.toDouble()
-        assertEquals(selectedHeight, rows[1].size.height.toDouble(), 0.5)
-        assertEquals(selectedHeight, rows[2].size.height.toDouble(), 0.5)
-        assertTrue(selectedHeight >= 48 * composeRule.activity.resources.displayMetrics.density)
+        assertEquals("同层完整行必须同宽: $rowGeometry", selectedWidth, rows[1].size.width.toDouble(), 0.5)
+        assertEquals("同层完整行必须同宽: $rowGeometry", selectedWidth, rows[2].size.width.toDouble(), 0.5)
+        assertEquals("日报与热榜必须同高: $rowGeometry", selectedHeight, rows[1].size.height.toDouble(), 0.5)
+        assertEquals("日报与账号设置必须同高: $rowGeometry", selectedHeight, rows[2].size.height.toDouble(), 0.5)
+        assertTrue("完整行至少48dp: $rowGeometry", selectedHeight >= 48 * metrics.density)
         composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${HotList.name}").assertIsNotEnabled()
         composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${Account.name}").assertIsNotEnabled().assertIsOn()
 

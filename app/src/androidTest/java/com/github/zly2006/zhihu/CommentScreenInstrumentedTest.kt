@@ -480,8 +480,12 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val activeRoot = checkNotNull(automation.rootInActiveWindow)
-        assertEquals(composeRule.activity.packageName, activeRoot.packageName.toString())
+        var activePackage: String? = null
+        composeRule.waitUntil("Expected the comment menu to have an active app window", timeoutMillis = 5_000) {
+            activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            activePackage != null
+        }
+        assertEquals(composeRule.activity.packageName, activePackage)
         val downTime = SystemClock.uptimeMillis()
         assertTrue(
             automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),

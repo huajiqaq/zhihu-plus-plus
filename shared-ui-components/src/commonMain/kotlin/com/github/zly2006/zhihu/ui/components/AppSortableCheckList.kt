@@ -20,6 +20,7 @@ package com.github.zly2006.zhihu.ui.components
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -37,6 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+
+internal object SortableCheckRowLayoutId
 
 /** [AppSortableCheckList] 的一行。[lockedReason] 非空时这一行不能改勾选状态，摘要显示原因。 */
 data class SortableCheckItem(
@@ -59,6 +63,7 @@ fun AppSortableCheckList(
     maxCheckedReason: String = "最多选择 ${maxChecked ?: 0} 项",
     testTagPrefix: String = "sortable_check",
 ) {
+    val miuix = settingSkinIsMiuix()
     items.forEach { item ->
         val checked = item.key in checkedKeys
         val position = checkedKeys.indexOf(item.key)
@@ -71,7 +76,7 @@ fun AppSortableCheckList(
         val toggleable = blockedReason == null
         SettingItem(
             /** 复合行内容占满宽度，勾选禁用前后共用同一骨架，排序按钮仍独立可用。 */
-            contentModifier = Modifier.fillMaxWidth(),
+            contentModifier = Modifier.fillMaxWidth().then(if (miuix) Modifier else Modifier.wrapContentHeight(Alignment.CenterVertically)),
             title = { Text(item.title) },
             description = (blockedReason ?: item.description)?.let { text -> { Text(text) } },
             icon = {
@@ -95,16 +100,18 @@ fun AppSortableCheckList(
                 )
             },
             onClick = if (toggleable) ({ onCheckedChange(item.key, !checked) }) else null,
-            modifier = if (toggleable) {
-                Modifier
-                    .testTag("$testTagPrefix:item:${item.key}")
-                    .semantics {
-                        role = Role.Checkbox
-                        toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
-                    }
-            } else {
-                Modifier
-            },
+            modifier = (if (miuix) Modifier else Modifier.layoutId(SortableCheckRowLayoutId)).then(
+                if (toggleable) {
+                    Modifier
+                        .testTag("$testTagPrefix:item:${item.key}")
+                        .semantics {
+                            role = Role.Checkbox
+                            toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                        }
+                } else {
+                    Modifier
+                },
+            ),
             endAction = if (checked) {
                 {
                     Row(verticalAlignment = Alignment.CenterVertically) {

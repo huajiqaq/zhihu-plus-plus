@@ -17,20 +17,20 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.clickable
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -148,8 +148,9 @@ fun AppSegmentedControl(
                             ToggleButtonDefaults.toggleButtonColors()
                         },
                     ) {
+                        /** String 快速路径的语义重建可能扩大段宽；标签测量、绘制和选项语义须共用真实段落布局。 */
                         Text(
-                            text = option,
+                            text = AnnotatedString(option),
                             style = style,
                             textAlign = TextAlign.Center,
                         )

@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.Role
@@ -223,7 +224,19 @@ fun SettingItemGroup(
             content = content,
             modifier = Modifier.clip(MaterialTheme.shapes.large),
         ) { measurables, constraints ->
-            val placeables = measurables.map { it.measure(constraints) }
+            val sortableHeight = measurables
+                .filter { it.layoutId == SortableCheckRowLayoutId }
+                .maxOfOrNull { it.minIntrinsicHeight(constraints.maxWidth) }
+                ?.coerceIn(constraints.minHeight, constraints.maxHeight)
+            val placeables = measurables.map { measurable ->
+                measurable.measure(
+                    if (sortableHeight != null && measurable.layoutId == SortableCheckRowLayoutId) {
+                        constraints.copy(minHeight = sortableHeight)
+                    } else {
+                        constraints
+                    },
+                )
+            }
             val spacing = ListItemDefaults.SegmentedGap.roundToPx()
             val baseItemHeight = AppDimens.TouchTarget.toPx()
 

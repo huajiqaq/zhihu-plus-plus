@@ -343,7 +343,13 @@ class FloatingPlacementUiTest {
                         node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                         assertEquals(2f, layouts.single().layoutInput.density.fontScale)
                         assertEquals(1, layouts.single().lineCount)
-                        assertTrue(!layouts.single().hasVisualOverflow && !layouts.single().isLineEllipsized(0))
+                        val layout = layouts.single()
+                        assertTrue(
+                            !layout.hasVisualOverflow && !layout.isLineEllipsized(0),
+                            "$style scale=2 $label 字形必须完整：size=${layout.size} paragraph=${layout.multiParagraph.width}x${layout.multiParagraph.height} " +
+                                "overflowWidth=${layout.didOverflowWidth} overflowHeight=${layout.didOverflowHeight} ellipsized=${layout.isLineEllipsized(0)} " +
+                                "constraints=${layout.layoutInput.constraints} bounds=${node.fetchSemanticsNode().boundsInRoot} style=${layout.layoutInput.style}",
+                        )
                         assertTrue(node.fetchSemanticsNode().boundsInRoot.height >= layouts.single().size.height - 1f)
                     }
                     onNodeWithTag("phone_choice").assertIsSelected()

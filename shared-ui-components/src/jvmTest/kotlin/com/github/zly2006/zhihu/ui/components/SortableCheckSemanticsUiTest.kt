@@ -153,13 +153,13 @@ class SortableCheckSemanticsUiTest {
             val checkedKeys = mutableStateOf(listOf("locked", "second"))
             val changes = mutableListOf<Pair<String, Boolean>>()
             val moves = mutableListOf<Pair<String, Int>>()
-            runDesktopComposeUiTest(width = 480, height = 600) {
+            runDesktopComposeUiTest(width = 360, height = 600) {
                 setContent {
                     ZhihuTheme {
                         SettingItemGroup {
                             AppSortableCheckList(
                                 items = listOf(
-                                    SortableCheckItem("locked", "必选项", lockedReason = "必须保留"),
+                                    SortableCheckItem("locked", "账号设置", lockedReason = "底栏需要账号入口以保留设置出口"),
                                     SortableCheckItem("second", "第二项"),
                                     SortableCheckItem("third", "第三项"),
                                 ),
@@ -176,17 +176,18 @@ class SortableCheckSemanticsUiTest {
                 }
 
                 if (style == ThemeStyle.MATERIAL_EXPRESSIVE) {
-                    val rows = listOf("locked" to "必选项", "second" to "第二项", "third" to "第三项").map { (key, title) ->
+                    val rows = listOf("locked" to "账号设置", "second" to "第二项", "third" to "第三项").map { (key, title) ->
                         val tag = "sortable_check:item:$key"
                         val rowMatcher = hasAnyDescendant(hasText(title)) and (hasTestTag(tag) or hasAnyDescendant(hasTestTag(tag)))
                         onAllNodes(rowMatcher and !hasAnyDescendant(rowMatcher), useUnmergedTree = true)
                             .fetchSemanticsNodes()
                             .single()
                     }
-                    assertEquals(1, rows.map { it.parent?.id }.distinct().size, "${style.name} 必须测量同层完整行")
+                    val geometry = rows.joinToString("; ") { "row=${it.id} size=${it.size} bounds=${it.boundsInRoot} parent=${it.parent?.id}" }
+                    assertEquals(1, rows.map { it.parent?.id }.distinct().size, "${style.name} 必须测量同层完整行：$geometry")
                     val selectedHeight = rows[1].size.height.toDouble()
-                    assertEquals(selectedHeight, rows[0].size.height.toDouble(), 0.5, style.name)
-                    assertEquals(selectedHeight, rows[2].size.height.toDouble(), 0.5, style.name)
+                    assertEquals(selectedHeight, rows[0].size.height.toDouble(), 0.5, "${style.name} 账号长摘要仍须与完整行同高：$geometry")
+                    assertEquals(selectedHeight, rows[2].size.height.toDouble(), 0.5, "${style.name} 最大选择限制仍须与完整行同高：$geometry")
                     assertTrue(selectedHeight >= with(density) { AppDimens.TouchTarget.toPx() }, style.name)
                 }
                 onNodeWithTag("sortable_check:item:second")
@@ -198,7 +199,7 @@ class SortableCheckSemanticsUiTest {
                     .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
                     .assertIsOn()
                     .assertIsNotEnabled()
-                    .assertContentDescriptionEquals("必选项，必须保留")
+                    .assertContentDescriptionEquals("账号设置，底栏需要账号入口以保留设置出口")
                     .performTouchInput { click() }
                 onNodeWithTag("sortable_check:item:third", useUnmergedTree = true)
                     .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))

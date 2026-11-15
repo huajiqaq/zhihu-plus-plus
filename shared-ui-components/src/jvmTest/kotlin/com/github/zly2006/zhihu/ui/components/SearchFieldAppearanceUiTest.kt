@@ -1,12 +1,10 @@
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Column
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.performClick
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.captureToImage
@@ -31,6 +30,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.text.TextLayoutResult
@@ -150,10 +150,16 @@ class SearchFieldAppearanceUiTest {
                     val bottom = ceil(textBounds.bottom - entryBounds.top).toInt().coerceIn(top, pixels.height)
                     assertTrue(right > left && bottom > top, "MIUIX $mode OLED=$oled 提示必须有真实可见文字边界：$textBounds")
                     var readablePixels = 0
+                    var strongestContrast = 1f
+                    var strongestPixel = background
                     for (y in top until bottom) {
                         for (x in left until right) {
                             val value = pixels[x, y].luminance()
                             val contrast = (maxOf(value, bright) + 0.05f) / (minOf(value, bright) + 0.05f)
+                            if (contrast > strongestContrast) {
+                                strongestContrast = contrast
+                                strongestPixel = pixels[x, y]
+                            }
                             if (contrast >= 4.5f) readablePixels++
                         }
                     }
@@ -161,7 +167,7 @@ class SearchFieldAppearanceUiTest {
                         readablePixels >= 10,
                         "MIUIX $mode OLED=$oled fontScale=${hintLayout.layoutInput.density.fontScale} 搜索入口提示对比不足：$readablePixels " +
                             "pixels=${pixels.width}x${pixels.height} scan=$left,$top-$right,$bottom background=$background " +
-                            "foreground=${hintLayout.layoutInput.style.color} textBounds=$textBounds " +
+                            "foreground=${hintLayout.layoutInput.style.color} strongestPixel=$strongestPixel maxContrast=$strongestContrast textBounds=$textBounds " +
                             "entryBounds=$entryBounds size=${hintLayout.size} " +
                             "paragraphHeight=${hintLayout.multiParagraph.height} constraints=${hintLayout.layoutInput.constraints} " +
                             "os=${System.getProperty("os.name")} java=${System.getProperty("java.version")}",
@@ -195,8 +201,21 @@ class SearchFieldAppearanceUiTest {
                         val placeholderLayouts = mutableListOf<TextLayoutResult>()
                         val placeholderNode = onNodeWithText("搜索内容", useUnmergedTree = true)
                         placeholderNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(placeholderLayouts) }
-                        assertEquals(fontScale, placeholderLayouts.single().layoutInput.density.fontScale, 0.01f, "提示必须保留系统字号比例")
-                        assertTrue(!placeholderLayouts.single().didOverflowHeight, "$themeStyle fontScale=$fontScale 提示字形不能被裁切")
+                        assertEquals(
+                            fontScale,
+                            placeholderLayouts
+                                .single()
+                                .layoutInput.density.fontScale,
+                            0.01f,
+                            "提示必须保留系统字号比例",
+                        )
+                        val placeholderLayout = placeholderLayouts.single()
+                        assertTrue(
+                            !placeholderLayout.didOverflowHeight,
+                            "$themeStyle fontScale=$fontScale 提示字形不能被裁切：size=${placeholderLayout.size} " +
+                                "paragraphHeight=${placeholderLayout.multiParagraph.height} constraints=${placeholderLayout.layoutInput.constraints} " +
+                                "lineBottom=${placeholderLayout.getLineBottom(0)} bounds=${placeholderNode.fetchSemanticsNode().boundsInRoot}",
+                        )
                         assertTrue(
                             placeholderNode.fetchSemanticsNode().boundsInRoot.height >= placeholderLayouts.single().size.height - 1f,
                             "$themeStyle fontScale=$fontScale 提示可见区须包含全部字高",

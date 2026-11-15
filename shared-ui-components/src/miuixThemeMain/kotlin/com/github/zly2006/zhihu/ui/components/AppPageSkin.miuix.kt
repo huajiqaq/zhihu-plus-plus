@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -42,10 +43,14 @@ internal actual object MiuixPageRenderer {
     ) {
         val colors = MiuixTheme.colorScheme
         val textStyle = MiuixTheme.textStyles.main.copy(fontWeight = FontWeight.Normal)
+        val container = LocalAppSkinTokens.current.surfaceContainerHigh
+
+        /** 输入仅为启用搜索入口的外观；按实际胶囊底色预合成同一提示色，只在局部桥接不透明前景。 */
+        val hintColor = colors.onSurfaceVariantSummary.compositeOver(container)
         Box(modifier = modifier.fillMaxWidth()) {
             SearchBar(
                 inputField = {
-                    MiuixTheme(colors = colors.copy(onSurfaceContainerHigh = colors.onSurfaceVariantSummary)) {
+                    MiuixTheme(colors = colors.copy(onSurfaceContainerHigh = hintColor)) {
                         InputField(
                             query = "",
                             onQueryChange = {},
@@ -56,7 +61,7 @@ internal actual object MiuixPageRenderer {
                             label = hint,
                             textStyle = textStyle,
                             modifier = Modifier.fillMaxWidth().heightIn(min = AppDimens.SearchBarHeightMiuix),
-                            color = LocalAppSkinTokens.current.surfaceContainerHigh,
+                            color = container,
                             trailingIcon = trailing?.let { { Spacer(Modifier.width(AppDimens.TouchTarget)) } },
                         )
                     }

@@ -20,6 +20,7 @@ package com.github.zly2006.zhihu
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
@@ -30,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
@@ -60,6 +62,7 @@ import com.github.zly2006.zhihu.test.setZhihuMainContent
 import com.github.zly2006.zhihu.ui.HOME_FEED_LIST_TAG
 import com.github.zly2006.zhihu.ui.HOME_REFRESH_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.HOME_SEARCH_BUTTON_TAG
+import com.github.zly2006.zhihu.ui.HOME_TOP_ACTIONS_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.components.READING_PLAYER_BAR_TAG
 import com.github.zly2006.zhihu.ui.components.READING_PLAYER_COMPACT_TAG
@@ -135,15 +138,17 @@ class ReadingPlayerUiInstrumentedTest {
         val contentIdBase = java.util.UUID
             .randomUUID()
             .mostSignificantBits and 0x3fffffffffffffffL
-        val feedItems: List<Feed> = List(8) { index ->
+        val feedItemCount = 24
+        val middleFeedIndex = feedItemCount / 2
+        val feedItems: List<Feed> = List(feedItemCount) { index ->
             sample.copy(
                 id = "reading-feed-$contentIdBase-$index",
                 target = target.copy(
                     id = contentIdBase + index,
-                    url = "https://www.zhihu.com/question/${contentIdBase + 16 + index}/answer/${contentIdBase + index}",
+                    url = "https://www.zhihu.com/question/${contentIdBase + feedItemCount + index}/answer/${contentIdBase + index}",
                     question = target.question.copy(
-                        id = contentIdBase + 16 + index,
-                        url = "https://www.zhihu.com/question/${contentIdBase + 16 + index}",
+                        id = contentIdBase + feedItemCount + index,
+                        url = "https://www.zhihu.com/question/${contentIdBase + feedItemCount + index}",
                         _title = "朗读背景条目 $index",
                     ),
                 ),
@@ -160,14 +165,18 @@ class ReadingPlayerUiInstrumentedTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodes(hasText("朗读背景条目 0")).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToNode(hasText("朗读背景条目 4"))
-        composeRule.onNodeWithText("朗读背景条目 4").assertIsDisplayed()
+        // 宽视口可能直接显示目标条目；先用真实 LazyColumn 滚到中部，不能仅依赖滚到可见。
+        composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToIndex(middleFeedIndex)
+        composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToNode(hasText("朗读背景条目 $middleFeedIndex"))
+        composeRule.onNodeWithText("朗读背景条目 $middleFeedIndex").assertIsDisplayed()
+        val positionedFeedNode = composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).fetchSemanticsNode()
+        val positionedScrollRange = positionedFeedNode.config[SemanticsProperties.VerticalScrollAxisRange]
+        val positionedScroll = positionedScrollRange.value()
+        val positionedScrollMax = positionedScrollRange.maxValue()
         assertTrue(
-            composeRule
-                .onNodeWithTag(HOME_FEED_LIST_TAG)
-                .fetchSemanticsNode()
-                .config[SemanticsProperties.VerticalScrollAxisRange]
-                .value() > 0f,
+            "背景手势前必须离开首屏且下方仍可滚动: middle=$middleFeedIndex " +
+                "scroll=$positionedScroll max=$positionedScrollMax feed=${positionedFeedNode.boundsInRoot}",
+            positionedScroll > 0f && positionedScroll < positionedScrollMax,
         )
         composeRule.waitForTag(HOME_REFRESH_BUTTON_TAG)
         val compactBounds = composeRule.onNodeWithTag(READING_PLAYER_COMPACT_TAG).fetchSemanticsNode().boundsInRoot
@@ -187,15 +196,72 @@ class ReadingPlayerUiInstrumentedTest {
         composeRule.waitForTag(READING_PLAYER_BAR_TAG)
         composeRule.onNodeWithTag(READING_PLAYER_STOP_TAG).assertIsDisplayed()
 
-        composeRule.onRoot().performTouchInput {
+        // 展开会改变遮挡范围；在当前主栏的信息流内、播放器和顶栏之外完成真实滑动。
+        val gestureRoot = composeRule.onRoot()
+        val gestureRootBounds = gestureRoot.fetchSemanticsNode().boundsInRoot
+        val currentFeedNode = composeRule.onNodeWithTag(HOME_FEED_LIST_TAG).fetchSemanticsNode()
+        val currentFeedBounds = currentFeedNode.boundsInRoot
+        val mainPaneBounds = composeRule.onNodeWithTag("list_pane").fetchSemanticsNode().boundsInRoot
+        val playerBarBounds = composeRule.onNodeWithTag(READING_PLAYER_BAR_TAG).fetchSemanticsNode().boundsInRoot
+        val topActionsBounds = composeRule
+            .onAllNodes(hasTestTag(HOME_TOP_ACTIONS_TAG))
+            .fetchSemanticsNodes()
+            .singleOrNull()
+            ?.boundsInRoot
+            ?.takeIf { it.width > 0f && it.height > 0f }
+        val backgroundBounds = Rect(
+            left = maxOf(gestureRootBounds.left, currentFeedBounds.left, mainPaneBounds.left),
+            top = maxOf(gestureRootBounds.top, currentFeedBounds.top, mainPaneBounds.top, topActionsBounds?.bottom ?: currentFeedBounds.top),
+            right = minOf(gestureRootBounds.right, currentFeedBounds.right, mainPaneBounds.right),
+            bottom = minOf(gestureRootBounds.bottom, currentFeedBounds.bottom, mainPaneBounds.bottom, playerBarBounds.top),
+        )
+        val swipeStart = Offset(backgroundBounds.center.x, backgroundBounds.top + backgroundBounds.height * 0.8f)
+        val swipeEnd = Offset(backgroundBounds.center.x, backgroundBounds.top + backgroundBounds.height * 0.2f)
+        val gestureDescription = "root=$gestureRootBounds feed=$currentFeedBounds mainPane=$mainPaneBounds " +
+            "playerBar=$playerBarBounds topActions=$topActionsBounds viewport=$backgroundBounds start=$swipeStart end=$swipeEnd"
+        assertTrue(
+            gestureDescription,
+            backgroundBounds.width > 0f &&
+                backgroundBounds.height > 0f &&
+                swipeStart.y > swipeEnd.y &&
+                currentFeedBounds.contains(swipeStart) &&
+                currentFeedBounds.contains(swipeEnd) &&
+                mainPaneBounds.contains(swipeStart) &&
+                mainPaneBounds.contains(swipeEnd) &&
+                !playerBarBounds.contains(swipeStart) &&
+                !playerBarBounds.contains(swipeEnd),
+        )
+        val backgroundScrollRange = currentFeedNode.config[SemanticsProperties.VerticalScrollAxisRange]
+        val scrollBefore = backgroundScrollRange.value()
+        val scrollMaxBefore = backgroundScrollRange.maxValue()
+        assertTrue(
+            "背景滑动前必须仍处于可继续滚动的中部: $gestureDescription scroll=$scrollBefore max=$scrollMaxBefore",
+            scrollBefore > 0f && scrollBefore < scrollMaxBefore,
+        )
+        gestureRoot.performTouchInput {
             swipe(
-                start = Offset(feedBounds.center.x, feedBounds.top + feedBounds.height * 0.65f),
-                end = Offset(feedBounds.center.x, feedBounds.top + feedBounds.height * 0.45f),
+                start = swipeStart - gestureRootBounds.topLeft,
+                end = swipeEnd - gestureRootBounds.topLeft,
                 durationMillis = 400,
             )
         }
 
-        composeRule.waitForTag(READING_PLAYER_COMPACT_TAG)
+        try {
+            composeRule.waitForTag(READING_PLAYER_COMPACT_TAG)
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val scrollAfter = composeRule
+                .onNodeWithTag(HOME_FEED_LIST_TAG)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.VerticalScrollAxisRange]
+                .value()
+            throw AssertionError("背景滑动未收起播放器: $gestureDescription scrollBefore=$scrollBefore scrollAfter=$scrollAfter", failure)
+        }
+        val scrollAfter = composeRule
+            .onNodeWithTag(HOME_FEED_LIST_TAG)
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange]
+            .value()
+        assertTrue("背景滑动未滚动信息流: $gestureDescription scrollBefore=$scrollBefore scrollAfter=$scrollAfter", scrollAfter > scrollBefore)
         composeRule.onNodeWithTag(READING_PLAYER_BAR_TAG).assertDoesNotExist()
         composeRule.onNodeWithText("1/2").assertIsDisplayed()
 

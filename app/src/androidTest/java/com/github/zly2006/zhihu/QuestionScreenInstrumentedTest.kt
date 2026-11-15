@@ -18,16 +18,22 @@
 package com.github.zly2006.zhihu
 
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.data.CommonFeed
@@ -184,14 +190,31 @@ class QuestionScreenInstrumentedTest {
             .performScrollToNode(hasTestTag(farAnswerTag))
         composeRule.onNodeWithTag(farAnswerTag).assertIsDisplayed()
 
-        composeRule
-            .onNodeWithTag(QUESTION_SCREEN_LIST_TAG)
-            .performScrollToNode(hasText(lastDetailParagraph))
-        composeRule.onNodeWithTag(QUESTION_DETAIL_CONTENT_TAG).assertIsDisplayed()
         val paragraph = hasText(lastDetailParagraph) and
             SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
+        composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).performScrollToIndex(0)
+        try {
+            composeRule.waitUntil("Expected the expanded question header to lay out paragraph 36", timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag(QUESTION_DETAIL_CONTENT_TAG).fetchSemanticsNodes().size == 1 &&
+                    composeRule.onAllNodes(paragraph, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+            }
+        } catch (error: ComposeTimeoutException) {
+            val list = composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).fetchSemanticsNode()
+            val scrollRange = list.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+            val detailBounds = composeRule
+                .onAllNodesWithTag(QUESTION_DETAIL_CONTENT_TAG)
+                .fetchSemanticsNodes()
+                .map { it.boundsInRoot }
+            throw AssertionError(
+                "Paragraph 36 layout missing after return: listBounds=${list.boundsInRoot} " +
+                    "scroll=${scrollRange?.value?.invoke()}/${scrollRange?.maxValue?.invoke()} detailBounds=$detailBounds",
+                error,
+            )
+        }
+        composeRule.onNode(paragraph, useUnmergedTree = true).performScrollTo()
         composeRule.onAllNodes(paragraph, useUnmergedTree = true).assertCountEquals(1)
         composeRule.onNode(paragraph, useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag(QUESTION_DETAIL_CONTENT_TAG).assertIsDisplayed()
     }
 
     /**

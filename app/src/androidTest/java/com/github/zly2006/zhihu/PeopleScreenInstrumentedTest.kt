@@ -17,13 +17,19 @@
 
 package com.github.zly2006.zhihu
 
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
@@ -32,11 +38,14 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
-import androidx.test.espresso.Espresso
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.FollowedQuestion
@@ -176,7 +185,7 @@ class PeopleScreenInstrumentedTest {
      */
     @Test
     fun denseProfileBadgesKeepHeaderActionsVisibleOffline() {
-        val viewModel = seededViewModel(itemCount = 1)
+        val viewModel = seededViewModel(itemCount = 12)
         setPeopleScreen()
         composeRule.waitUntil("用户资料必须加载完成后再设置四项认证", timeoutMillis = 5_000) {
             viewModel.hasLoadedProfile && !viewModel.isProfileLoading
@@ -290,21 +299,69 @@ class PeopleScreenInstrumentedTest {
             composeRule.onNode(isPopup()).assertDoesNotExist()
         }
 
-        val listNode = composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG)
-        listNode.performTouchInput {
-            swipe(
-                start = Offset(centerX, height * 0.85f),
-                end = Offset(centerX, height * 0.35f),
-            )
+        val listNode = composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG).assertIsDisplayed()
+        val listBefore = listNode.fetchSemanticsNode()
+        val listBounds = listBefore.boundsInRoot
+        val listUnclippedBounds = listNode.getUnclippedBoundsInRoot()
+        val root = composeRule.onRoot()
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val systemBars = composeRule.runOnIdle {
+            checkNotNull(ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView))
+                .getInsets(WindowInsetsCompat.Type.systemBars())
+        }
+        val safeRootBounds = Rect(
+            rootBounds.left + systemBars.left,
+            rootBounds.top + systemBars.top,
+            rootBounds.right - systemBars.right,
+            rootBounds.bottom - systemBars.bottom,
+        )
+        val gestureBounds = listBounds.intersect(safeRootBounds)
+        val startInRoot = Offset(gestureBounds.center.x, gestureBounds.top + gestureBounds.height * 0.8f)
+        // 短列表视口限制不了已捕获的拖动；继续拖过页头，避免松手前只有很小的折叠进度。
+        val endInRoot = Offset(gestureBounds.center.x, safeRootBounds.top + safeRootBounds.height * 0.1f)
+        val gestureMetrics = "listBounds=$listBounds listSize=${listBefore.size} unclippedBounds=$listUnclippedBounds " +
+            "rootBounds=$rootBounds systemBars=$systemBars safeRootBounds=$safeRootBounds gestureBounds=$gestureBounds " +
+            "start=$startInRoot end=$endInRoot"
+        assertTrue(
+            "回答列表必须有真实可见手势视口：$gestureMetrics",
+            listBounds.width > 0f &&
+                listBounds.height > 0f &&
+                safeRootBounds.width > 0f &&
+                safeRootBounds.height > 0f &&
+                gestureBounds.width > 0f &&
+                gestureBounds.height > 0f,
+        )
+        assertTrue(
+            "手势须从列表开始，并在非系统栏的根视口内持续拖动：$gestureMetrics",
+            listBounds.contains(startInRoot) &&
+                rootBounds.contains(startInRoot) &&
+                rootBounds.contains(endInRoot) &&
+                safeRootBounds.contains(startInRoot) &&
+                safeRootBounds.contains(endInRoot),
+        )
+        assertTrue("折叠手势必须向上：$gestureMetrics", startInRoot.x == endInRoot.x && startInRoot.y > endInRoot.y)
+        val scrollBefore = checkNotNull(listBefore.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange))
+        val scrollValueBefore = scrollBefore.value()
+        val scrollMaxBefore = scrollBefore.maxValue()
+        assertTrue(
+            "回答列表必须可向前滚动：$gestureMetrics scroll=$scrollValueBefore/$scrollMaxBefore",
+            !scrollBefore.reverseScrolling && scrollMaxBefore > scrollValueBefore,
+        )
+        root.performTouchInput {
+            swipe(start = startInRoot - rootBounds.topLeft, end = endInRoot - rootBounds.topLeft)
         }
         composeRule.waitForIdle()
+        val scrollAfter = checkNotNull(listNode.fetchSemanticsNode().config.getOrNull(SemanticsProperties.VerticalScrollAxisRange))
+        val scrollValueAfter = scrollAfter.value()
+        val scrollMaxAfter = scrollAfter.maxValue()
         val collapsedTabBounds = composeRule
             .onNodeWithTag(PEOPLE_SCREEN_TAB_ROW_TAG)
             .fetchSemanticsNode()
             .boundsInRoot
         assertTrue("收起态标签栏必须保持可见", collapsedTabBounds.height > 0f)
         assertTrue(
-            "滚动后标签栏必须上移，证明资料头已收起：展开=$expandedTabTop，收起=${collapsedTabBounds.top}",
+            "滚动后标签栏必须上移，证明资料头已收起：展开=$expandedTabTop，收起=${collapsedTabBounds.top} " +
+                "$gestureMetrics scrollBefore=$scrollValueBefore/$scrollMaxBefore scrollAfter=$scrollValueAfter/$scrollMaxAfter",
             expandedTabTop > collapsedTabBounds.top,
         )
         listOf(
@@ -337,7 +394,20 @@ class PeopleScreenInstrumentedTest {
                     buttonBounds.bottom <= collapsedMenuViewport.bottom,
             )
         }
-        Espresso.pressBack()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        var activePackage: String? = null
+        composeRule.waitUntil("更多菜单必须存在活跃应用窗口", timeoutMillis = 5_000) {
+            activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            activePackage != null
+        }
+        assertEquals(composeRule.activity.packageName, activePackage)
+        val downTime = SystemClock.uptimeMillis()
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),
+        )
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0), true),
+        )
         composeRule.waitUntil("Android 返回后更多菜单必须关闭", timeoutMillis = 5_000) {
             composeRule.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
         }

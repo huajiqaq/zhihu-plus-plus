@@ -17,18 +17,25 @@
 
 package com.github.zly2006.zhihu.ui.components
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -65,7 +72,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -75,15 +81,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
@@ -947,25 +958,55 @@ fun AppSearchField(
         return
     }
     val container = MaterialTheme.colorScheme.surfaceContainerHigh
-    TextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier,
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge,
-        placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder, style = MaterialTheme.typography.bodyLarge) }),
-        leadingIcon = leadingIcon,
-        trailingIcon = trailingIcon,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        shape = CircleShape,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = container,
-            unfocusedContainerColor = container,
-            disabledContainerColor = container,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent,
-        ),
+    val colors = TextFieldDefaults.colors(
+        focusedContainerColor = container,
+        unfocusedContainerColor = container,
+        disabledContainerColor = container,
+        focusedIndicatorColor = Color.Transparent,
+        unfocusedIndicatorColor = Color.Transparent,
+        disabledIndicatorColor = Color.Transparent,
     )
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val textStyle = MaterialTheme.typography.bodyLarge
+    val textMeasurer = rememberTextMeasurer()
+    val textHeight = with(LocalDensity.current) {
+        textMeasurer
+            .measure(value.ifEmpty { " " }, textStyle, softWrap = false, maxLines = 1)
+            .size.height
+            .toDp()
+    }
+    CompositionLocalProvider(LocalTextSelectionColors provides colors.textSelectionColors) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.defaultMinSize(minWidth = TextFieldDefaults.MinWidth, minHeight = TextFieldDefaults.MinHeight),
+            singleLine = true,
+            textStyle = textStyle.copy(color = textStyle.color.takeOrElse { if (focused) colors.focusedTextColor else colors.unfocusedTextColor }),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            cursorBrush = SolidColor(colors.cursorColor),
+            interactionSource = interactionSource,
+            decorationBox = { innerTextField ->
+                TextFieldDefaults.DecorationBox(
+                    value = value,
+                    innerTextField = {
+                        /** Skia 单行末端 floor 可少于 paragraph 字高；最小约束须覆盖完整字形，不能只增高顶栏。 */
+                        Box(Modifier.heightIn(min = textHeight), propagateMinConstraints = true) {
+                            innerTextField()
+                        }
+                    },
+                    enabled = true,
+                    singleLine = true,
+                    visualTransformation = VisualTransformation.None,
+                    interactionSource = interactionSource,
+                    placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder, style = textStyle) }),
+                    leadingIcon = leadingIcon,
+                    trailingIcon = trailingIcon,
+                    shape = CircleShape,
+                    colors = colors,
+                )
+            },
+        )
+    }
 }
