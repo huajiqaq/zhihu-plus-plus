@@ -168,24 +168,26 @@ actual fun PlatformTiqianMarkdown(
         mathFontFamilyId = mathFontFamilyId,
     )
     val inlineSlots = rememberZhihuInlineSlots(imageUrls, segmentCommentSnapshot)
-    val imageProvider: MarkdownImageProvider = { block ->
-        ZhihuMarkdownImageContent(block, imageUrls)
+    val imageProvider: MarkdownImageProvider = remember(imageUrls) {
+        { block -> ZhihuMarkdownImageContent(block, imageUrls) }
     }
     val saveImage = rememberImageSaver()
     val shareImage = rememberImageSharer()
-    val slots = MarkdownBlockSlots(
-        customBlock = { block, _ ->
-            if (block.kind == "zhihu-video") {
-                val videoId = block.attributes["id"]?.toLongOrNull()
-                if (videoId != null) {
-                    RenderVideoBox(
-                        videoId = videoId,
-                        thumbnailUrl = block.attributes["thumb"]?.takeIf(String::isNotBlank),
-                    )
+    val slots = remember {
+        MarkdownBlockSlots(
+            customBlock = { block, _ ->
+                if (block.kind == "zhihu-video") {
+                    val videoId = block.attributes["id"]?.toLongOrNull()
+                    if (videoId != null) {
+                        RenderVideoBox(
+                            videoId = videoId,
+                            thumbnailUrl = block.attributes["thumb"]?.takeIf(String::isNotBlank),
+                        )
+                    }
                 }
-            }
-        },
-    )
+            },
+        )
+    }
     val selectionState = rememberCjkSelectionState()
     val paragraphsByKey = remember(compiled) {
         val paragraphs = mutableMapOf<MarkdownNodeKey, MarkdownParagraph>()
@@ -360,111 +362,126 @@ private fun rememberZhihuInlineSlots(
     val removedSnapshot = removedHighlights.toMap()
     val commentDeltas = commentSnapshot?.asMap().orEmpty()
     val ownCommentDeltas = commentSnapshot?.asMap(ownComments = true).orEmpty()
+    val hasSegmentClick = onSegmentHighlightClick != null
 
-    return MarkdownInlineSlots(
-        image = { mark, _, _ ->
-            val width = (mark.widthPixels?.toFloat() ?: 200f).sp
-            val height = (mark.heightPixels?.toFloat() ?: 150f).sp
-            val widthPx = with(density) { width.toPx() }
-            val heightPx = with(density) { height.toPx() }
-            MarkdownInlineContent(
-                alternateText = "",
-                placeholder = Placeholder(
-                    width = width,
-                    height = height,
-                    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
-                ),
-                /** 行内图片没有文字基线，使用已知盒子底边。 */
-                metrics = MarkdownInlineMetrics(
-                    widthPx = widthPx,
-                    heightPx = heightPx,
-                    baselineFromTopPx = heightPx,
-                ),
-            ) {
-                Box(Modifier.testTag("tiqian_inline_image")) {
-                    RenderImage(
-                        data = MarkdownImageData(
-                            url = mark.destination,
-                            altText = mark.description,
-                            title = mark.title,
-                            width = mark.widthPixels,
-                            height = mark.heightPixels,
-                            attributes = mark.attributes,
-                        ),
-                        modifier = Modifier,
-                        imageUrls = imageUrls,
-                    )
+    return remember(
+        imageUrls,
+        density,
+        segmentUnderlineColor,
+        segmentCommentColor,
+        segmentCommentPainter,
+        metaSnapshot,
+        removedSnapshot,
+        commentDeltas,
+        ownCommentDeltas,
+        hasSegmentClick,
+        removedHighlights,
+    ) {
+        MarkdownInlineSlots(
+            image = { mark, _, _ ->
+                val width = (mark.widthPixels?.toFloat() ?: 200f).sp
+                val height = (mark.heightPixels?.toFloat() ?: 150f).sp
+                val widthPx = with(density) { width.toPx() }
+                val heightPx = with(density) { height.toPx() }
+                MarkdownInlineContent(
+                    alternateText = "",
+                    placeholder = Placeholder(
+                        width = width,
+                        height = height,
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+                    ),
+                    /** 行内图片没有文字基线，使用已知盒子底边。 */
+                    metrics = MarkdownInlineMetrics(
+                        widthPx = widthPx,
+                        heightPx = heightPx,
+                        baselineFromTopPx = heightPx,
+                    ),
+                ) {
+                    Box(Modifier.testTag("tiqian_inline_image")) {
+                        RenderImage(
+                            data = MarkdownImageData(
+                                url = mark.destination,
+                                altText = mark.description,
+                                title = mark.title,
+                                width = mark.widthPixels,
+                                height = mark.heightPixels,
+                                attributes = mark.attributes,
+                            ),
+                            modifier = Modifier,
+                            imageUrls = imageUrls,
+                        )
+                    }
                 }
-            }
-        },
-        custom = { mark, _, _ ->
-            if (mark.kind != ZHIHU_SEGMENT_HIGHLIGHT_KIND) {
-                null
-            } else {
-                val span = mark.attributes.toSegmentHighlightSpan()
-                val meta = span?.let { segmentMeta ->
-                    val live = metaSnapshot[segmentMeta.threadKey()]
-                    segmentMeta.meta.copy(isLike = live?.isLike ?: segmentMeta.meta.isLike, likeCount = live?.likeCount ?: segmentMeta.meta.likeCount)
-                }
-                val localDelta = span
-                    ?.meta
-                    ?.segIds
-                    ?.map(String::trim)
-                    ?.distinct()
-                    ?.sumOf { commentDeltas[it] ?: 0 } ?: 0
-                val state = resolveSegmentDecorationState(
-                    meta = meta,
-                    removed = span != null && removedSnapshot[span.threadKey()] == true,
-                    localCommentDelta = localDelta,
-                    localOwnCommentDelta = span
+            },
+            custom = { mark, _, _ ->
+                if (mark.kind != ZHIHU_SEGMENT_HIGHLIGHT_KIND) {
+                    null
+                } else {
+                    val span = mark.attributes.toSegmentHighlightSpan()
+                    val meta = span?.let { segmentMeta ->
+                        val live = metaSnapshot[segmentMeta.threadKey()]
+                        segmentMeta.meta.copy(isLike = live?.isLike ?: segmentMeta.meta.isLike, likeCount = live?.likeCount ?: segmentMeta.meta.likeCount)
+                    }
+                    val localDelta = span
                         ?.meta
                         ?.segIds
                         ?.map(String::trim)
                         ?.distinct()
-                        ?.sumOf { ownCommentDeltas[it] ?: 0 } ?: 0,
-                )
-                if (!state.visible) {
-                    null
-                } else {
-                    val underlineColor = if (state.hasComments) segmentCommentColor else segmentUnderlineColor
-                    MarkdownCustomInlinePresentation(
-                        decoration = if (state.mine) {
-                            /** 上游虚线要求间隔为正值，使用超长线段呈现实线。 */
-                            MarkdownInlineDecoration.DashedUnderline(
-                                color = underlineColor,
-                                strokeWidth = if (state.hasComments) 1.5.dp else 1.dp,
-                                dashWidth = 10_000.dp,
-                                gapWidth = 0.5.dp,
-                            )
-                        } else {
-                            MarkdownInlineDecoration.DottedUnderline(
-                                color = underlineColor,
-                                dotDiameter = 2.dp,
-                                gapWidth = 3.dp,
-                            )
-                        },
-                        onClick = if (onSegmentHighlightClick == null) {
-                            null
-                        } else {
-                            { text ->
-                                val clicked = mark.attributes.toSegmentHighlightSpan(fallbackText = text)
-                                /** 点击读取实时取消态，不使用布局装饰的旧快照。 */
-                                if (clicked != null && removedHighlights[clicked.threadKey()] != true) {
-                                    onSegmentHighlightClick?.invoke(clicked)
-                                }
-                            }
-                        },
-                        accessibilityLabel = { text -> "打开划线片段：$text" },
-                        endMarker = if (state.hasComments) {
-                            MarkdownInlineEndMarker(painter = segmentCommentPainter, color = segmentCommentColor)
-                        } else {
-                            null
-                        },
+                        ?.sumOf { commentDeltas[it] ?: 0 } ?: 0
+                    val state = resolveSegmentDecorationState(
+                        meta = meta,
+                        removed = span != null && removedSnapshot[span.threadKey()] == true,
+                        localCommentDelta = localDelta,
+                        localOwnCommentDelta = span
+                            ?.meta
+                            ?.segIds
+                            ?.map(String::trim)
+                            ?.distinct()
+                            ?.sumOf { ownCommentDeltas[it] ?: 0 } ?: 0,
                     )
+                    if (!state.visible) {
+                        null
+                    } else {
+                        val underlineColor = if (state.hasComments) segmentCommentColor else segmentUnderlineColor
+                        MarkdownCustomInlinePresentation(
+                            decoration = if (state.mine) {
+                                /** 上游虚线要求间隔为正值，使用超长线段呈现实线。 */
+                                MarkdownInlineDecoration.DashedUnderline(
+                                    color = underlineColor,
+                                    strokeWidth = if (state.hasComments) 1.5.dp else 1.dp,
+                                    dashWidth = 10_000.dp,
+                                    gapWidth = 0.5.dp,
+                                )
+                            } else {
+                                MarkdownInlineDecoration.DottedUnderline(
+                                    color = underlineColor,
+                                    dotDiameter = 2.dp,
+                                    gapWidth = 3.dp,
+                                )
+                            },
+                            onClick = if (!hasSegmentClick) {
+                                null
+                            } else {
+                                { text ->
+                                    val clicked = mark.attributes.toSegmentHighlightSpan(fallbackText = text)
+                                    /** 点击读取实时取消态，不使用布局装饰的旧快照。 */
+                                    if (clicked != null && removedHighlights[clicked.threadKey()] != true) {
+                                        onSegmentHighlightClick?.invoke(clicked)
+                                    }
+                                }
+                            },
+                            accessibilityLabel = { text -> "打开划线片段：$text" },
+                            endMarker = if (state.hasComments) {
+                                MarkdownInlineEndMarker(painter = segmentCommentPainter, color = segmentCommentColor)
+                            } else {
+                                null
+                            },
+                        )
+                    }
                 }
-            }
-        },
-    )
+            },
+        )
+    }
 }
 
 @Composable

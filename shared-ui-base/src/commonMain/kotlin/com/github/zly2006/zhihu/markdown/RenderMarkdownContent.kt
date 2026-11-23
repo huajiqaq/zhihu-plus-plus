@@ -113,43 +113,6 @@ internal fun RenderMarkdownContent(
     removedSegmentHighlights: Map<String, Boolean>,
     segmentMetaStates: Map<String, SegmentInfoMeta>,
 ) {
-    val removedHighlightsSnapshot = removedSegmentHighlights.toMap()
-    val segmentMetaSnapshot = segmentMetaStates.toMap()
-    val commentDeltas = segmentCommentSnapshot?.asMap().orEmpty()
-    val ownCommentDeltas = segmentCommentSnapshot?.asMap(ownComments = true).orEmpty()
-    val inlineDecoration: (MarkdownInlineDecorationRequest) -> MarkdownInlineUnderline? =
-        { request ->
-            if (request.kind == InlineElementKinds.Highlight) {
-                request.attributes.toSegmentHighlightSpan()?.let { span ->
-                    val live = segmentMetaSnapshot[span.threadKey()]
-                    val meta = span.meta.copy(isLike = live?.isLike ?: span.meta.isLike, likeCount = live?.likeCount ?: span.meta.likeCount)
-                    val ids = span.meta.segIds
-                        .map(String::trim)
-                        .distinct()
-                    val localDelta = ids.sumOf { commentDeltas[it] ?: 0 }
-                    val state = resolveSegmentDecorationState(
-                        meta = meta,
-                        removed = removedHighlightsSnapshot[span.threadKey()] == true,
-                        localCommentDelta = localDelta,
-                        localOwnCommentDelta = ids.sumOf { ownCommentDeltas[it] ?: 0 },
-                    )
-                    if (!state.visible) return@let null
-                    MarkdownInlineUnderline(
-                        color = if (state.hasComments) segmentCommentColor else segmentUnderlineColor,
-                        strokeWidth = if (state.hasComments) 1.5.dp else 1.dp,
-                        dotDiameter = if (state.mine) null else 2.dp,
-                        dotGap = 3.dp,
-                        endMarker = if (state.hasComments) {
-                            MarkdownInlineEndMarker(color = segmentCommentColor, diameter = 8.dp, painter = segmentCommentPainter)
-                        } else {
-                            null
-                        },
-                    )
-                }
-            } else {
-                null
-            }
-        }
     if (useTiqianRenderer && isTiqianMarkdownRendererAvailable) {
         PlatformTiqianMarkdown(
             document = document,
@@ -175,6 +138,43 @@ internal fun RenderMarkdownContent(
             searchState = searchState,
         )
     } else {
+        val removedHighlightsSnapshot = removedSegmentHighlights.toMap()
+        val segmentMetaSnapshot = segmentMetaStates.toMap()
+        val commentDeltas = segmentCommentSnapshot?.asMap().orEmpty()
+        val ownCommentDeltas = segmentCommentSnapshot?.asMap(ownComments = true).orEmpty()
+        val inlineDecoration: (MarkdownInlineDecorationRequest) -> MarkdownInlineUnderline? =
+            { request ->
+                if (request.kind == InlineElementKinds.Highlight) {
+                    request.attributes.toSegmentHighlightSpan()?.let { span ->
+                        val live = segmentMetaSnapshot[span.threadKey()]
+                        val meta = span.meta.copy(isLike = live?.isLike ?: span.meta.isLike, likeCount = live?.likeCount ?: span.meta.likeCount)
+                        val ids = span.meta.segIds
+                            .map(String::trim)
+                            .distinct()
+                        val localDelta = ids.sumOf { commentDeltas[it] ?: 0 }
+                        val state = resolveSegmentDecorationState(
+                            meta = meta,
+                            removed = removedHighlightsSnapshot[span.threadKey()] == true,
+                            localCommentDelta = localDelta,
+                            localOwnCommentDelta = ids.sumOf { ownCommentDeltas[it] ?: 0 },
+                        )
+                        if (!state.visible) return@let null
+                        MarkdownInlineUnderline(
+                            color = if (state.hasComments) segmentCommentColor else segmentUnderlineColor,
+                            strokeWidth = if (state.hasComments) 1.5.dp else 1.dp,
+                            dotDiameter = if (state.mine) null else 2.dp,
+                            dotGap = 3.dp,
+                            endMarker = if (state.hasComments) {
+                                MarkdownInlineEndMarker(color = segmentCommentColor, diameter = 8.dp, painter = segmentCommentPainter)
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                } else {
+                    null
+                }
+            }
         val defaultTypography = MarkdownDefaults.typography()
         val defaultLayout = MarkdownDefaults.layout()
         val scaledFontSize = 16.sp * fontSize / 100

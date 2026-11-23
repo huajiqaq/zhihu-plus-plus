@@ -54,6 +54,11 @@
           "sha256": "78d7649bfb12dd30c8ef9d236842916f244aeb0ca8673eb8a9a85dc3bc379a53",
           "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的选区/行内占位几何及 /pull/38 的点线半径避墨；当所选源码具备相同实现且相关原测试通过时移除"
         },
+        "upstream-patches/tiqian-core-performance.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "9566a4d243183ef581bb9ff297b90b7797f714aa562a55f17c4ce9be312b2f5a",
+          "reason": "https://github.com/tiqian-cjk/tiqian/pull/61 减少重复字形扫描，在文档与字体来源内复用精确段落布局并保留正确重绘；所选上游包含实现且相关回归通过后移除"
+        },
         "upstream-patches/tiqian-windows-fonts.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
           "sha256": "c400d541c70305ccc3b6f5a265f3c60c4a5f3441d3027cd3b8528e0bfb70ee77",
@@ -99,6 +104,11 @@
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
           "sha256": "ad0a38d9adf2fe79fb0905ac417627428cc1b9e2b7e08d720f69d544cf3d22f0",
           "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/3 至 /pull/7 的搜索、选区键、图片预算/兼容、范围末标记和递归 AST 默认导航；划线点击走官方 custom.onClick，正式源码覆盖对应能力时分项移除"
+        },
+        "upstream-patches/tiqian-markdown-visible-block-layers.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "a50ad004717b8c22f011e085abdae655e1540057634f0f4db548b774c08c1579",
+          "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/9 为已物化正文块保留独立绘制层，滚动时未变化的相邻段落不再重新塑造字形；所选上游包含修复且邻块绘制与越界像素回归通过后移除"
         },
         "upstream-patches/tiqian-markdown-build-configuration.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
