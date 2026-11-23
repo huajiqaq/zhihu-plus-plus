@@ -70,11 +70,8 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 只安装需要的 platform-tools，避免已下架的 tools 包。
-          packages: platform-tools
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Build Lite APKs
         env:
@@ -136,6 +133,9 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
       - name: Build Desktop Release Package
         run: ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS --max-workers=2
 
@@ -154,6 +154,9 @@ jobs:
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
+
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Run unit tests
         run: |
@@ -192,10 +195,8 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Install Android NDK
         run: |
@@ -275,10 +276,8 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Compile macOS executable and run shared native tests
         run: ./gradlew :macosApp:linkDebugExecutableMacosArm64 :shared-core:macosArm64Test :shared-domain:macosArm64Test -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
@@ -333,7 +332,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 只安装需要的 platform-tools，避免已下架的 tools 包。
           packages: platform-tools
 
       - name: Enable KVM

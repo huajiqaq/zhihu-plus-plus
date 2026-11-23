@@ -47,6 +47,9 @@ jobs:
           java-version: '21'
           cache: 'gradle'
 
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
       - name: Change wrapper permissions
         shell: bash
         run: chmod +x ./gradlew
@@ -209,7 +212,7 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
       - name: Cache Rust
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -221,7 +224,7 @@ jobs:
           restore-keys: |
             rust-cache-
       - name: Cache Gradle
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -230,11 +233,8 @@ jobs:
             ./.gradle
             ./**/.gradle
           key: gradle-cache-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties', 'gradle/upstream-sources.lock.json') }}
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 只安装需要的 platform-tools，避免已下架的 tools 包。
-          packages: platform-tools
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Install Android NDK
         run: |
@@ -243,11 +243,15 @@ jobs:
       - name: Run KtLint
         run: ./gradlew ktlintCheck
       - name: Build App
-        # 构建 APK。
         run: |
+          if [[ "$PUBLISH_RELEASE" == "true" && -z "${signingKey//[[:space:]]/}" ]]; then
+            printf '%s\n' 'A signing key is required to publish Android release artifacts.' >&2
+            exit 1
+          fi
           bash ./gradlew ${{inputs.args}} assembleFullRelease
           bash ./gradlew ${{inputs.args}} assembleLiteRelease
         env:
+          PUBLISH_RELEASE: ${{ inputs.release || inputs.nightly_release }}
           signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
           keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -255,8 +259,8 @@ jobs:
       - name: Move files
         run: |
           mkdir -p app/build/upload
-          mv app/build/outputs/apk/full/release/app-full-release.apk app/build/upload/zhihu++-full.apk
-          mv app/build/outputs/apk/lite/release/app-lite-release.apk app/build/upload/zhihu++-lite.apk
+          mv app/build/outputs/apk/full/release/app-full-release*.apk app/build/upload/zhihu++-full.apk
+          mv app/build/outputs/apk/lite/release/app-lite-release*.apk app/build/upload/zhihu++-lite.apk
       - name: Compress lite mapping file
         if: ${{ inputs.minify }}
         run: |

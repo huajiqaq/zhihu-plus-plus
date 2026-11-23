@@ -15,12 +15,12 @@
           "boring": {
             "repository": "https://github.com/Losses/boring.git",
             "commit": "b3c2c1395f70ec12301a5beb3fe7c939dbe04502",
-            "sha256": "e5b71e462ff4259d70741f19941c17dfbd9490dd8def4c05ffe37432d6110564"
+            "sha256": "24307ce4a926f209bcda29367fdde35f4da6c31d2d3a7d75836500dc2791fba3"
           },
           "reflaxe": {
             "repository": "https://github.com/SomeRanDev/reflaxe.git",
             "commit": "9fa459a0b4436d1706db6495823b81f2947ff7a0",
-            "sha256": "42df774723ccd45fddaac53e30bd37237df5fa6b5f6c2bc03749cf4c3a6876c9"
+            "sha256": "e0c26ca37efc81701277b1b8cda3c86e1b249a33b6ecf64ed0b106628108c600"
           },
           "format": {
             "version": "3.8.0",

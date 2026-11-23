@@ -1,0 +1,29 @@
+name: Prepare build inputs
+description: Install the host SDK and the locked Tiqian generation tools
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Read Haxe version
+      id: haxe
+      shell: bash
+      run: |
+        python -I -c 'import json; from pathlib import Path; version = json.loads(Path("gradle/upstream-sources.lock.json").read_text(encoding="utf-8"))["sources"]["tiqian-core"]["generation"]["haxeVersion"]; print("version=" + version)' >> "$GITHUB_OUTPUT"
+    - name: Set up Haxe
+      uses: krdlab/setup-haxe@18e4b483cfffca2fb8881530bf8a6cec39dac8fb
+      with:
+        haxe-version: ${{ steps.haxe.outputs.version }}
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: platform-tools
+    - name: Prepare locked generation tools
+      shell: bash
+      run: python -I .github/scripts/prepare-tiqian-toolchain.py --output "$RUNNER_TEMP/zhihu-tiqian-toolchain" --env "$GITHUB_ENV"

@@ -43,6 +43,8 @@ ktlint {
     }
 }
 
+val signingKey = providers.environmentVariable("signingKey").orNull?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "com.github.zly2006.zhihu"
     compileSdk {
@@ -90,11 +92,11 @@ android {
     }
 
     signingConfigs {
-        if (System.getenv("signingKey") != null) {
+        if (signingKey != null) {
             register("env") {
                 storeFile =
                     file("zhihu.jks").apply {
-                        writeBytes(Base64.decode(System.getenv("signingKey")))
+                        writeBytes(Base64.decode(signingKey))
                     }
                 storePassword = System.getenv("keyStorePassword")
                 keyAlias = System.getenv("keyAlias")
@@ -131,7 +133,7 @@ android {
             buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
             manifestPlaceholders["zhihuBuildType"] = "release"
             manifestPlaceholders["zhihuGitHash"] = gitHash
-            if (System.getenv("signingKey") != null) {
+            if (signingKey != null) {
                 signingConfig = signingConfigs["env"]
             }
         }
