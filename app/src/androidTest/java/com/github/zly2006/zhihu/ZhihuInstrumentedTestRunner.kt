@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu
 
+import android.app.Application
 import android.os.Bundle
 import androidx.test.runner.AndroidJUnitRunner
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
@@ -42,9 +43,25 @@ class ZhihuInstrumentedTestRunner : AndroidJUnitRunner() {
         super.onCreate(arguments)
     }
 
+    override fun callApplicationOnCreate(app: Application) {
+        // Application 的后台入口也必须持有同一个合成账号，不能先初始化真实存储再替换。
+        if (InstrumentedTestEnvironment.isMockMode()) InstrumentedTestEnvironment.reseed(app)
+        super.callApplicationOnCreate(app)
+    }
+
     override fun onStart() {
         InstrumentedTestEnvironment.reseed(targetContext)
         super.onStart()
+    }
+
+    override fun finish(resultCode: Int, results: Bundle?) {
+        try {
+            InstrumentedTestEnvironment.close()
+        } catch (error: Exception) {
+            android.util.Log.e("ZHPP_TEST", "关闭设备测试账号根对象失败", error)
+        } finally {
+            super.finish(resultCode, results)
+        }
     }
 
     private companion object {

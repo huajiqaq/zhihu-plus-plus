@@ -20,7 +20,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 /**
  * 内容打开事件。
@@ -46,5 +46,3 @@ data class ContentOpenEvent(
         const val TABLE_NAME = "content_open_events"
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

@@ -1,4 +1,4 @@
-//! AIGC vote backend service.
+//! AIGC 投票后端服务。
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;

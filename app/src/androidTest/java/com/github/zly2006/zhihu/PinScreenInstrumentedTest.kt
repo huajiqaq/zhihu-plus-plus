@@ -18,14 +18,22 @@
 package com.github.zly2006.zhihu
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
@@ -33,12 +41,24 @@ import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.mockRootComments
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.COMMENT_COMPOSER_ENTRY_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_INPUT_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SCREEN_LIST_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_AUTHOR_FOLLOW_ERROR_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_AUTHOR_FOLLOW_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_AUTHOR_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_IP_INFO_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_LINK_CARD_TAG
+import com.github.zly2006.zhihu.ui.PIN_SCREEN_TIMESTAMP_TAG
+import com.github.zly2006.zhihu.ui.PinScreen
 import com.github.zly2006.zhihu.ui.components.CommentScreenComponent
+import com.github.zly2006.zhihu.util.formatFullDateTime
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.encodeToString
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -51,26 +71,23 @@ class PinScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
     }
 
     @After
     fun tearDown() {
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/534
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/546
+     * 关闭并重开评论面板须保留未发送草稿；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/534
      */
     @Test
     fun commentDraftSurvivesSheetDismissAndReopen() {
         /*
-         * Expected behavior:
-         * 1. A long draft typed in the comment sheet remains stored after its production Back handler dismisses it.
-         * 2. Reopening the same content's comments must restore the entire unsent draft.
+         * 预期行为：
+         * 1. 评论面板关闭后，输入的长草稿应继续保存。
+         * 2. 重新打开同一内容的评论时，必须恢复完整的未发送草稿。
          */
         mockRootComments("https://www.zhihu.com/api/v4/comment_v5/pins/101/root_comment")
         val showComments = mutableStateOf(true)
@@ -83,6 +100,8 @@ class PinScreenInstrumentedTest {
         }
         val draft = "这是一段尚未发送的长评论，用来验证关闭评论区后重新打开仍然保留全部内容。".repeat(8)
 
+        composeRule.waitUntilTagExists(COMMENT_COMPOSER_ENTRY_TAG)
+        composeRule.onNodeWithTag(COMMENT_COMPOSER_ENTRY_TAG).performClick()
         composeRule.waitUntilTagExists(COMMENT_INPUT_TAG)
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).performTextInput(draft)
         composeRule.runOnIdle {
@@ -95,37 +114,75 @@ class PinScreenInstrumentedTest {
         composeRule.runOnIdle {
             showComments.value = true
         }
+        composeRule.waitUntilTagExists(COMMENT_COMPOSER_ENTRY_TAG)
+        composeRule.onNodeWithTag(COMMENT_COMPOSER_ENTRY_TAG).performClick()
         composeRule.waitUntilTagExists(COMMENT_INPUT_TAG)
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertTextEquals(draft)
     }
 
-    private fun mockPinPollVote(pollId: String = "poll-101") {
-        ZhihuMockApi.mockJson(
-            method = HttpMethod.Post,
-            url = "https://www.zhihu.com/api/v4/polls/$pollId",
-            body = "{}",
-        )
+    @Test
+    fun authorNavigationAndFollowAreSeparateAndTimestampsFollowContent() {
+        val pin = seededPinContent().copy(updated = 1_713_460_389L, ipInfo = "IP 属地合成属地")
+        mockPinDetailBody(101, ZhihuJson.json.encodeToString(pin))
+        val followUrl = "https://www.zhihu.com/api/v4/members/${pin.author.urlToken}/followers"
+        ZhihuMockApi.mockJson(HttpMethod.Post, followUrl, "{}")
+        ZhihuMockApi.mockJson(HttpMethod.Delete, followUrl, "{}", HttpStatusCode.ServiceUnavailable)
+        val navigator = composeRule.setScreenContent { PinScreen(Pin(101)) }
+        composeRule.waitUntilTagExists(PIN_SCREEN_AUTHOR_FOLLOW_TAG)
+        composeRule.onNodeWithText("想法标题 <原文>").assertIsDisplayed()
+        val author = composeRule.onNodeWithTag(PIN_SCREEN_AUTHOR_TAG).assertHasClickAction()
+        val follow = composeRule.onNodeWithTag(PIN_SCREEN_AUTHOR_FOLLOW_TAG).assertHasClickAction()
+        val ip = composeRule.onNodeWithTag(PIN_SCREEN_IP_INFO_TAG).assertTextEquals("IP 属地合成属地").getUnclippedBoundsInRoot()
+        val initialBody = composeRule.onNodeWithText("PinScreen", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("IP 应在作者下、正文前", author.getUnclippedBoundsInRoot().bottom <= ip.top && ip.bottom <= initialBody.top)
+        assertEquals("IP 与作者区左缘对齐", author.getUnclippedBoundsInRoot().left, ip.left)
+        assertTrue("关注按钮不能并入作者导航区域", author.getUnclippedBoundsInRoot().right <= follow.getUnclippedBoundsInRoot().left)
+        author.performClick()
+        assertEquals(listOf(Person(pin.author.id, pin.author.urlToken, pin.author.name)), navigator.destinations)
+        assertEquals(0, ZhihuMockApi.requestCount(urlSubstring = "/followers"))
+        navigator.reset()
+
+        follow.assertTextEquals("关注").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("已关注").fetchSemanticsNodes().isNotEmpty()
+        }
+        follow.assertTextEquals("已关注")
+        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Post, followUrl))
+        assertTrue(navigator.destinations.isEmpty())
+        follow.performClick()
+        composeRule.waitUntilTagExists(PIN_SCREEN_AUTHOR_FOLLOW_ERROR_TAG)
+        follow.assertTextEquals("已关注")
+        composeRule.onNodeWithTag(PIN_SCREEN_AUTHOR_FOLLOW_ERROR_TAG).assertTextEquals("取消关注失败，请重试")
+        ZhihuMockApi.mockJson(HttpMethod.Delete, followUrl, "{}")
+        follow.performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("关注").fetchSemanticsNodes().isNotEmpty()
+        }
+        follow.assertTextEquals("关注")
+        assertTrue(navigator.destinations.isEmpty())
+
+        composeRule.onNodeWithTag(PIN_SCREEN_TIMESTAMP_TAG).performScrollTo().assertIsDisplayed()
+        val body = composeRule.onNodeWithText("PinScreen", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val card = composeRule.onNodeWithTag(PIN_SCREEN_LINK_CARD_TAG).getUnclippedBoundsInRoot()
+        val topic = composeRule.onNodeWithText("# 离线话题一").getUnclippedBoundsInRoot()
+        val timestamp = composeRule.onNodeWithTag(PIN_SCREEN_TIMESTAMP_TAG).getUnclippedBoundsInRoot()
+        assertTrue("正文、关联卡片、话题、时间应依序排列", body.bottom <= card.top && card.bottom <= topic.top && topic.bottom <= timestamp.top)
+        assertEquals("时间与内容整体左缘对齐", card.left, timestamp.left)
+        composeRule.onNodeWithText("发布于 ${formatFullDateTime(pin.created)}").assertExists()
+        composeRule.onNodeWithText("编辑于 ${formatFullDateTime(pin.updated)}").assertExists()
     }
 
-    private fun mockPinLike(
-        pinId: Long = 101,
-        likedCount: Int,
-    ) {
-        ZhihuMockApi.mockJson(
-            method = HttpMethod.Post,
-            url = "https://www.zhihu.com/api/v4/pins/$pinId/voters/up",
-            body = """{"liked_count":$likedCount}""",
-        )
-    }
-
-    private fun mockPinDetail(
-        pinId: Long = 101,
-        content: DataHolder.Pin,
-    ) {
-        mockPinDetailBody(
-            pinId = pinId,
-            body = ZhihuJson.json.encodeToString(content),
-        )
+    @Test
+    fun missingTimestampsAndSelfAuthorDoNotExposePlaceholderOrFollow() {
+        val pin = seededPinContent().copy(created = 0, updated = 0, selfCreate = true)
+        mockPinDetailBody(102, ZhihuJson.json.encodeToString(pin.copy(id = "102")))
+        composeRule.setScreenContent { PinScreen(Pin(102)) }
+        composeRule.waitUntilTagExists(PIN_SCREEN_AUTHOR_TAG)
+        composeRule.onNodeWithTag(PIN_SCREEN_TIMESTAMP_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(PIN_SCREEN_IP_INFO_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(PIN_SCREEN_AUTHOR_FOLLOW_TAG).assertDoesNotExist()
+        composeRule.onNodeWithText("1970", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithTag(PIN_SCREEN_AUTHOR_TAG).assertHasClickAction()
     }
 
     private fun mockPinDetailBody(
@@ -135,25 +192,15 @@ class PinScreenInstrumentedTest {
     ) {
         ZhihuMockApi.mockJson(
             method = HttpMethod.Get,
-            url = "https://www.zhihu.com/api/v4/pins/$pinId?include=topics",
+            url = "https://api.zhihu.com/v2/pins/$pinId",
             body = body,
             beforeRespond = beforeRespond,
         )
     }
 
     private fun MainActivityComposeRule.waitUntilTagExists(tag: String) {
-        waitUntil("Expected node with tag $tag", timeoutMillis = 5_000) {
+        waitUntil("等待标签为 $tag 的节点", timeoutMillis = 5_000) {
             onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
-    private fun MainActivityComposeRule.waitUntilRequestCount(
-        method: HttpMethod,
-        urlSubstring: String,
-        count: Int,
-    ) {
-        waitUntil("Expected $count $method requests containing $urlSubstring", timeoutMillis = 5_000) {
-            ZhihuMockApi.requestCount(method, urlSubstring) == count
         }
     }
 
@@ -190,7 +237,7 @@ class PinScreenInstrumentedTest {
         content = listOf(
             DataHolder.Pin.ContentText(
                 content = "这是 PinScreen instrumented test 的离线正文。",
-                title = "",
+                title = "想法标题 <原文>",
             ),
             DataHolder.Pin.ContentLinkCard(
                 dataContentId = "987654321",
@@ -226,35 +273,4 @@ class PinScreenInstrumentedTest {
             ),
         ),
     )
-
-    private fun seededPollPinContent(): DataHolder.Pin =
-        seededPinContent().let { pin ->
-            pin.copy(
-                content = pin.content + DataHolder.Pin.ContentPoll(
-                    duration = 0,
-                    pollId = 2051253919255360130L,
-                ),
-                bottomPoll = DataHolder.Pin.BottomPoll(
-                    voting = DataHolder.Pin.Poll(
-                        id = "poll-101",
-                        title = "知乎++好用吗",
-                        maxSelections = 1,
-                        type = "single",
-                        endAt = -1,
-                        options = listOf(
-                            DataHolder.Pin.PollOption(
-                                id = "option-a",
-                                title = "五颗星",
-                                votingCount = 0,
-                            ),
-                            DataHolder.Pin.PollOption(
-                                id = "option-b",
-                                title = "四颗星",
-                                votingCount = 0,
-                            ),
-                        ),
-                    ),
-                ),
-            )
-        }
 }

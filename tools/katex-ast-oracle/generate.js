@@ -6,7 +6,7 @@ const katex = require("katex");
 const projectRoot = path.resolve(__dirname, "../..");
 const corpusRoot = path.join(
   projectRoot,
-  "shared/src/jvmTest/resources/zhihu-formula-corpus",
+  "shared-domain/src/jvmTest/resources/zhihu-formula-corpus",
 );
 const formulas = JSON.parse(
   fs.readFileSync(path.join(corpusRoot, "formulas.json"), "utf8"),

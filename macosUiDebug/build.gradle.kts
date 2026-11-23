@@ -21,10 +21,10 @@ import org.gradle.api.tasks.Sync
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.DEBUG
 
 plugins {
-    kotlin("multiplatform")
-    kotlin("plugin.compose")
-    id("org.jetbrains.compose")
-    id("org.jlleitschuh.gradle.ktlint")
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.plugin.compose)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.ktlint)
 }
 
 ktlint {
@@ -52,10 +52,14 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared"))
-            implementation(compose.runtime)
-            implementation(compose.ui)
-            implementation("org.jetbrains.compose.ui:ui-test:1.11.1")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+            implementation(project(":shared-local-db"))
+            implementation(project(":shared-domain"))
+            implementation(project(":shared-ui-foundation"))
+            implementation(project(":shared-feature-settings"))
+            implementation(libs.jb.compose.runtime)
+            implementation(libs.jb.compose.ui)
+            implementation(libs.jb.compose.ui.test)
+            implementation(libs.kotlinx.serialization.json)
         }
     }
 }

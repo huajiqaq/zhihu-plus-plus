@@ -18,27 +18,28 @@
 package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BlockedKeywordDao {
     @Query("SELECT * FROM ${BlockedKeyword.TABLE_NAME} ORDER BY createdTime DESC")
     suspend fun getAllKeywords(): List<BlockedKeyword>
 
+    @Query("SELECT * FROM ${BlockedKeyword.TABLE_NAME} WHERE keywordType = :type AND scope = :scope ORDER BY createdTime DESC")
+    fun observeKeywordsByType(type: String, scope: String = KeywordScope.ALL.name): Flow<List<BlockedKeyword>>
+
+    /** 关键词与 NLP 短语共用这张表，清空只能删除当前类型和作用范围。 */
+    @Query("DELETE FROM ${BlockedKeyword.TABLE_NAME} WHERE keywordType = :type AND scope = :scope")
+    suspend fun deleteKeywordsByType(type: String, scope: String = KeywordScope.ALL.name)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKeyword(keyword: BlockedKeyword): Long
 
-    @Delete
-    suspend fun deleteKeyword(keyword: BlockedKeyword)
-
-    @Query("DELETE FROM ${BlockedKeyword.TABLE_NAME} WHERE id = :id")
-    suspend fun deleteKeywordById(id: Long)
-
-    @Query("DELETE FROM ${BlockedKeyword.TABLE_NAME}")
-    suspend fun clearAllKeywords()
+    @Query("DELETE FROM ${BlockedKeyword.TABLE_NAME} WHERE id = :id AND keywordType = :type AND scope = :scope")
+    suspend fun deleteKeywordById(id: Long, type: String = KeywordType.EXACT_MATCH.name, scope: String = KeywordScope.ALL.name)
 
     @Query("SELECT COUNT(*) FROM ${BlockedKeyword.TABLE_NAME}")
     suspend fun getKeywordCount(): Int

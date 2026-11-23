@@ -298,7 +298,7 @@ fn recompress_apk(input_path: &str, output_path: &str) -> Result<(), Box<dyn std
 
 /// 判断文件是否应该保持未压缩状态
 fn should_store_uncompressed(file_name: &str) -> bool {
-    // Native库文件必须保持未压缩
+    // 原生库文件必须保持未压缩
     if file_name.ends_with(".so") {
         return true;
     }

@@ -179,7 +179,7 @@ mod tests {
     fn decrypt_roundtrip_ascii() {
         let input = "hello world?a=1&b=2";
         let encrypted = encrypt_zse_v4(input);
-        let decrypted = decrypt_zse_v4(&encrypted).expect("decrypt should succeed");
+        let decrypted = decrypt_zse_v4(&encrypted).expect("解密应成功");
         assert_eq!(decrypted, input);
     }
 
@@ -187,7 +187,7 @@ mod tests {
     fn decrypt_roundtrip_unicode() {
         let input = "你好，知乎++ Rust 解密";
         let encrypted = encrypt_zse_v4(input);
-        let decrypted = decrypt_zse_v4(&encrypted).expect("decrypt should succeed");
+        let decrypted = decrypt_zse_v4(&encrypted).expect("解密应成功");
         assert_eq!(decrypted, input);
     }
 

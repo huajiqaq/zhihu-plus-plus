@@ -165,7 +165,7 @@ fn custom_encode(mut bytes: Vec<u8>) -> String {
 }
 
 pub fn encrypt_zse_v4(input: &str) -> String {
-    let seed = 12u8; // matches zse-v4.js: Math.random = () => 0.1 → Math.floor(0.1 * 127)
+    let seed = 12u8; // 对齐 zse-v4.js 的固定随机值：Math.random = () => 0.1 → Math.floor(0.1 * 127)
 
     let mut plain = Vec::new();
     plain.push(seed);

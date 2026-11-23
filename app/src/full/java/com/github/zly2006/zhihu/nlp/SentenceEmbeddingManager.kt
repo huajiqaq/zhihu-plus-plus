@@ -20,15 +20,13 @@ package com.github.zly2006.zhihu.nlp
 import android.annotation.SuppressLint
 import android.content.Context
 import com.ml.shubham0204.sentence_embeddings.SentenceEmbedding
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/**
- * 统一管理 Sentence-Transformers 模型的懒加载与状态。
- */
 @SuppressLint("StaticFieldLeak")
 object SentenceEmbeddingManager {
     private const val MODEL_URL = "https://huggingface.co/shibing624/text2vec-base-chinese/resolve/main/onnx/model_O4.onnx"
@@ -54,6 +52,7 @@ object SentenceEmbeddingManager {
         return mutex.withLock {
             embedding?.let { return it }
             _state.value = ModelState.Loading
+            val model = SentenceEmbedding()
             try {
                 val downloadedFiles = ModelManager.downloadModel(
                     resolvedContext,
@@ -71,7 +70,6 @@ object SentenceEmbeddingManager {
                 val modelFile = downloadedFiles["model_O4.onnx"] ?: throw IllegalStateException("Model file not found")
                 val tokenizerFile = downloadedFiles["tokenizer.json"] ?: throw IllegalStateException("Tokenizer file not found")
 
-                val model = SentenceEmbedding()
                 model.init(
                     modelFilepath = modelFile.absolutePath,
                     tokenizerBytes = tokenizerFile.readBytes(),
@@ -83,9 +81,13 @@ object SentenceEmbeddingManager {
                 _state.value = ModelState.Ready
                 model
             } catch (e: Exception) {
-                _state.value = ModelState.Error(e.message ?: "模型加载失败")
-                embedding?.close()
+                try {
+                    model.close()
+                } catch (closeError: Exception) {
+                    e.addSuppressed(closeError)
+                }
                 embedding = null
+                _state.value = if (e is CancellationException) ModelState.Uninitialized else ModelState.Error(e.message ?: "模型加载失败")
                 throw e
             }
         }
@@ -94,7 +96,10 @@ object SentenceEmbeddingManager {
     suspend fun encode(text: String, context: Context? = null): FloatArray? {
         if (mutex.isLocked && embedding == null) return null // 模型正在加载，返回 null 表示无法编码
         val model = ensureModel(context)
-        return model.encode(text)
+        return mutex.withLock {
+            if (embedding !== model) return@withLock null
+            model.encode(text)
+        }
     }
 
     suspend fun unload() {

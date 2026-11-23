@@ -20,10 +20,12 @@
 package com.github.zly2006.zhihu.macos
 
 import androidx.compose.ui.window.Window
+import com.github.zly2006.zhihu.notification.installAppleSystemNotificationDelegate
 import com.github.zly2006.zhihu.platform.MacosBackNavigationHost
 import com.github.zly2006.zhihu.platform.isMacosQuitOnWindowCloseEnabled
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.MacosZhihuMain
+import com.github.zly2006.zhihu.ui.components.AppStartupSplash
 import kotlinx.cinterop.autoreleasepool
 import platform.AppKit.NSApplication
 import platform.AppKit.NSApplicationActivationPolicy
@@ -50,6 +52,7 @@ fun main() {
         application.setActivationPolicy(NSApplicationActivationPolicy.NSApplicationActivationPolicyRegular)
         val applicationDelegate = MacosApplicationDelegate(application)
         application.delegate = applicationDelegate
+        installAppleSystemNotificationDelegate()
         NSBundle.mainBundle
             .pathForResource("desktop-icon", ofType = "png")
             ?.let { iconPath -> NSImage(contentsOfFile = iconPath) }
@@ -60,13 +63,21 @@ fun main() {
             applicationDelegate.window = window
             window.delegate = applicationDelegate
             MacosBackNavigationHost(window) {
-                ZhihuTheme {
-                    MacosZhihuMain { chrome, content ->
-                        MacosNativeWindowChrome(
-                            window = window,
-                            chrome = chrome,
-                            content = content,
-                        )
+                AppStartupSplash {
+                    ZhihuTheme {
+                        MacosZhihuMain(
+                            onNotificationOpen = {
+                                if (window.miniaturized) window.deminiaturize(null)
+                                window.makeKeyAndOrderFront(null)
+                                application.activateIgnoringOtherApps(true)
+                            },
+                        ) { chrome, content ->
+                            MacosNativeWindowChrome(
+                                window = window,
+                                chrome = chrome,
+                                content = content,
+                            )
+                        }
                     }
                 }
             }

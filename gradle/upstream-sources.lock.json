@@ -1,0 +1,200 @@
+{
+  "schema": 3,
+  "sources": {
+    "tiqian-core": {
+      "repository": "https://github.com/tiqian-cjk/tiqian.git",
+      "versionKey": "tiqian",
+      "sourceGroup": "org.tiqian.source.core",
+      "snapshotCommit": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "generation": {
+        "haxeVersion": "4.3.7",
+        "tools": {
+          "boring": {
+            "repository": "https://github.com/Losses/boring.git",
+            "commit": "b3c2c1395f70ec12301a5beb3fe7c939dbe04502",
+            "sha256": "e5b71e462ff4259d70741f19941c17dfbd9490dd8def4c05ffe37432d6110564"
+          },
+          "reflaxe": {
+            "repository": "https://github.com/SomeRanDev/reflaxe.git",
+            "commit": "9fa459a0b4436d1706db6495823b81f2947ff7a0",
+            "sha256": "42df774723ccd45fddaac53e30bd37237df5fa6b5f6c2bc03749cf4c3a6876c9"
+          },
+          "format": {
+            "version": "3.8.0",
+            "url": "https://lib.haxe.org/files/3.0/format-3,8,0.zip",
+            "archiveSha256": "ea3a6725ee707d54965550d5331c8b1eab5c548c35b3680622fb0ffa15b509fd",
+            "sha256": "ca62d1c5269002657f6ec413789eae318eeca735b4aa02484fcc143c03c49572"
+          },
+          "formatter": {
+            "version": "1.18.0",
+            "url": "https://lib.haxe.org/files/3.0/formatter-1,18,0.zip",
+            "archiveSha256": "2d29c9b56e54b2643e07ee64003c3fc30a5bc133bdcb4cc15c48f09acda7a047",
+            "sha256": "fff1e6130e4f6919c2114b4f0d3f5acf66445f7246c620b2c0273c52e47e4b00"
+          }
+        },
+        "patches": {
+          "upstream-patches/tiqian-boring-windows-paths.patch": {
+            "base": "b3c2c1395f70ec12301a5beb3fe7c939dbe04502",
+            "sha256": "e3a824d1f2e5a557bd18a36d5ae5e415a8f1e9a05324fdc83943376a40dbe74c",
+            "reason": "官方 Windows driver 传反斜杠绝对路径时，测试输出相对路径必须先统一分隔符；不改代码生成语义"
+          }
+        },
+        "outputs": [
+          "engine-haxe/out/kotlin-f32/gen",
+          "engine-haxe/out/kotlin-f32/gen-tests",
+          ".haxelib/boring/git/tools/kotlin-publication"
+        ]
+      },
+      "patches": {
+        "upstream-patches/tiqian-core-build.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "78d7649bfb12dd30c8ef9d236842916f244aeb0ca8673eb8a9a85dc3bc379a53",
+          "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的选区/行内占位几何及 /pull/38 的点线半径避墨；当所选源码具备相同实现且相关原测试通过时移除"
+        },
+        "upstream-patches/tiqian-windows-fonts.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "c400d541c70305ccc3b6f5a265f3c60c4a5f3441d3027cd3b8528e0bfb70ee77",
+          "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的 Skia Windows 字体候选，与既有 YaHei UI 后备合并；当上游候选覆盖同一字体集时移除"
+        },
+        "upstream-patches/tiqian-core-build-configuration.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "86a44993f6e5143326e96bf31aa6b4f9be55a1dd5694cae332102356678385c5",
+          "reason": "组合构建禁止回落到未替换的 Tiqian Maven；保留官方完整模块与测试"
+        },
+        "upstream-patches/tiqian-core-skiko-alignment.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "dee031e763c2337f37060e9c2ec188eff2bc8292a79382efb9255ac98970a15e",
+          "reason": "宿主的 Compose Multiplatform 运行在 Skiko 0.156.1，其 FontStyle 改为 value class、三参构造改收 FontWeight/FontWidth，按 0.144.6 编译的桌面类会 NoSuchMethodError；JVM 类路径按宿主 Skiko 解析，FontStyle 构造改用两代 Skiko 通用的 withWeight/withSlant。跑上游自带桌面测试加 -PtiqianUpstreamSkiko=true；宿主 Skiko 变更时同步补丁内版本号，所选上游自身使用同代 Skiko 后移除"
+        }
+      },
+      "modules": {
+        "org.tiqian:tiqian-engine": ":boring-kotlin-f32",
+        "org.tiqian:tiqian-compose": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-material3": ":platforms:compose:material3",
+        "org.tiqian:tiqian-jvm-skia": ":platforms:compose:skia-jvm",
+        "org.tiqian:tiqian-android-shaping": ":platforms:android:shaping",
+        "org.tiqian:tiqian-android-native-font": ":platforms:android:native-font",
+        "org.tiqian:tiqian-android-rendering": ":platforms:android:rendering",
+        "org.tiqian:tiqian-engine-android": ":boring-kotlin-f32",
+        "org.tiqian:tiqian-engine-jvm": ":boring-kotlin-f32",
+        "org.tiqian:tiqian-compose-android": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-jvm": ":platforms:compose:compose",
+        "org.tiqian:tiqian-compose-material3-android": ":platforms:compose:material3",
+        "org.tiqian:tiqian-compose-material3-jvm": ":platforms:compose:material3",
+        "org.tiqian:tiqian-jvm-skia-jvm": ":platforms:compose:skia-jvm"
+      }
+    },
+    "tiqian-markdown": {
+      "repository": "https://github.com/tiqian-cjk/tiqian-markdown.git",
+      "versionKey": "tiqianMarkdown",
+      "snapshotCommit": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "patches": {
+        "upstream-patches/tiqian-markdown-build.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "ad0a38d9adf2fe79fb0905ac417627428cc1b9e2b7e08d720f69d544cf3d22f0",
+          "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/3 至 /pull/7 的搜索、选区键、图片预算/兼容、范围末标记和递归 AST 默认导航；划线点击走官方 custom.onClick，正式源码覆盖对应能力时分项移除"
+        },
+        "upstream-patches/tiqian-markdown-build-configuration.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "d5a33a26af65f3452cfa25ae828038c3f92200ec25e2b1d6994bfe2575a30119",
+          "reason": "对齐组合构建配置"
+        },
+        "upstream-patches/tiqian-markdown-skiko-alignment.patch": {
+          "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
+          "sha256": "7935c0368161a3632d839552e3b45d475fc51a31e61f0322b16a80be68232486",
+          "reason": "同 tiqian-core-skiko-alignment 的 JVM 类路径对齐；数学宿主文字的 FontStyle 构造与字重读取改用两代 Skiko 通用写法。所选上游自身使用同代 Skiko 后移除"
+        }
+      },
+      "modules": {
+        "org.tiqian:markdown-compose": ":",
+        "org.tiqian:markdown-compose-android": ":",
+        "org.tiqian:markdown-compose-jvm": ":"
+      }
+    },
+    "tiqian-math": {
+      "repository": "https://github.com/tiqian-cjk/tiqian-math.git",
+      "versionKey": "tiqianMath",
+      "sourceGroup": "org.tiqian.source.math",
+      "snapshotCommit": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+      "androidPluginScript": "build.gradle.kts",
+      "releaseRef": "refs/tags/v{version}",
+      "snapshotRef": "refs/heads/main",
+      "patches": {
+        "upstream-patches/tiqian-math-build-configuration.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "3ae585c6d9a3ca066c426a3b7b02d680174eeb1640109c6568cffda520147541",
+          "reason": "组合构建配置；字体路径使用官方 Gradle 属性，不修改上游路径解析"
+        },
+        "upstream-patches/tiqian-math-skiko-alignment.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "0089087692b2f78efff5678b5ca1e1eced1a159dd9ed497cc71cd1538eac1657",
+          "reason": "同 tiqian-core-skiko-alignment 的 JVM 类路径对齐，无源码改动；所选上游自身使用同代 Skiko 后移除"
+        }
+      },
+      "modules": {
+        "org.tiqian:math-engine": ":engine",
+        "org.tiqian:math-compose": ":platforms:compose:compose",
+        "org.tiqian:math-font-stix": ":font:stix",
+        "org.tiqian:math-jvm-skia": ":platforms:jvm:skia",
+        "org.tiqian:math-android-font": ":platforms:android:font",
+        "org.tiqian:math-font-tooling": ":font:tooling",
+        "org.tiqian:math-engine-android": ":engine",
+        "org.tiqian:math-engine-jvm": ":engine",
+        "org.tiqian:math-compose-android": ":platforms:compose:compose",
+        "org.tiqian:math-compose-jvm": ":platforms:compose:compose",
+        "org.tiqian:math-font-stix-android": ":font:stix",
+        "org.tiqian:math-font-stix-jvm": ":font:stix",
+        "org.tiqian:math-jvm-skia-jvm": ":platforms:jvm:skia"
+      }
+    }
+  },
+  "math": {
+    "source": "tiqian-math",
+    "output": "build/upstream-font-inputs",
+    "compiler": {
+      "path": "font/metadata-generator/tools/compile_runtime_font.py",
+      "sha256": "541e7bf3b791f02c3abb9723e1bbb15b897e969ecb072ee3b2e25ca2b0064fc8"
+    },
+    "fonts": [
+      {
+        "name": "lete-regular",
+        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Regular.otf",
+        "sha256": "ead643895be03f42f6fa201fb1176323f60dd330d4109387bac90bdf980fcf3e",
+        "property": "tiqianLeteRegular"
+      },
+      {
+        "name": "lete-bold",
+        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Bold.otf",
+        "sha256": "a521f128db0821a9943e4f703103204d8982aeb39c933e12344c43e9d3b0907a",
+        "property": "tiqianLeteBold"
+      },
+      {
+        "name": "stix-regular",
+        "path": "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/regular.otf",
+        "sha256": "95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b",
+        "property": "tiqianStix"
+      }
+    ],
+    "resources": {
+      "build/upstream-font-inputs/lete-regular-runtime.otf": "2ce41922dcfd6c98ffcd882f17bf7458e94574d83b5af04441cad0628f9ea1a8",
+      "build/upstream-font-inputs/lete-bold-runtime.otf": "20f690463874b6615638a398187a7029766167fcb371a32a5a0a3a48092ab670",
+      "build/upstream-font-inputs/stix-regular-runtime.otf": "1d565c9537e2c5938711426e3be6f2bb4224541706e3195be42255299f553b2f",
+      "build/generated/leteRuntimeMetadata/LeteSansMath-Regular.tqmath": "d0bbca52bc3d179824731f0f4cdf1c6f9c2429c4d6f1bc3d326d2b44fe7be53f",
+      "build/generated/leteRuntimeMetadata/LeteSansMath-Bold.tqmath": "ebd8a71d4e2cbe5b443b0b19b848738f3bb5147ec4c8f7460d3f4558ce786cbd",
+      "build/generated/stixRuntimeMetadata/regular.tqmath": "3332d022a4a8b99d54051d1777b046c598ecdbe9e7f261fbf99d133b3f13a028",
+      "build/generated/stixRuntimeMetadata/manifest.tqfont": "361a163b12bc36a4406685ae4872264df030821ec293f82766a27f7a03dc9d65",
+      "engine/src/jvmMain/resources/org/tiqian/math/fonts/OFL.txt": "81b36224f7e45447419a4d88b957b2d7a37acc3fd7052746cf32365ae99cc8af",
+      "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/STIX-OFL.txt": "ccee2172d0b1deb40e216efb0b7adec41573a14e813f3b17c143063607e54ec6"
+    },
+    "wheel": {
+      "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl",
+      "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d"
+    }
+  }
+}

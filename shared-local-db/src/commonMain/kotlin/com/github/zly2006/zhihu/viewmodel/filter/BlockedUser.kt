@@ -19,12 +19,8 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
-/**
- * 屏蔽用户实体
- * 用于屏蔽特定用户发布的内容
- */
 @Entity(tableName = BlockedUser.TABLE_NAME)
 data class BlockedUser(
     @PrimaryKey val userId: String, // 用户ID
@@ -37,5 +33,3 @@ data class BlockedUser(
         const val TABLE_NAME = "blocked_users"
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

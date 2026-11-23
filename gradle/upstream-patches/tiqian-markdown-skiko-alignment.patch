@@ -1,0 +1,60 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index cb0ec28fb95a9b386df153ad429d0f5816a98e25..684f526a22ed8e7d52db0821170a11ca869ef174 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -199,3 +199,21 @@ afterEvaluate {
+         }
+     }
+ }
++
++// The host application runs on the Skiko that ships with its Compose Multiplatform release.
++// Skiko 0.156 turned FontStyle into a value class, so JVM classes compiled against 0.144.6
++// fail there with NoSuchMethodError. Resolve Skiko at the host version on JVM classpaths.
++// -PtiqianUpstreamSkiko=true keeps the Skiko this build declares, for running its own tests.
++if (providers.gradleProperty("tiqianUpstreamSkiko").orNull != "true") {
++    allprojects {
++        configurations.configureEach {
++            val attributes = attributes
++            resolutionStrategy.eachDependency {
++                val jvm = attributes.keySet().any {
++                    it.name == "org.jetbrains.kotlin.platform.type" && attributes.getAttribute(it).toString() == "jvm"
++                }
++                if (jvm && requested.group == "org.jetbrains.skiko") useVersion("0.156.1")
++            }
++        }
++    }
++}
+diff --git a/src/jvmMain/kotlin/org/tiqian/markdown/compose/MarkdownMathHostText.jvm.kt b/src/jvmMain/kotlin/org/tiqian/markdown/compose/MarkdownMathHostText.jvm.kt
+index 9260de0f8c3b39304874a109467f6f8cb84751d4..d685f86243129110e777c73a03ffe2dcee44f8e9 100644
+--- a/src/jvmMain/kotlin/org/tiqian/markdown/compose/MarkdownMathHostText.jvm.kt
++++ b/src/jvmMain/kotlin/org/tiqian/markdown/compose/MarkdownMathHostText.jvm.kt
+@@ -63,11 +63,9 @@ internal class SkiaMarkdownMathTextRunProvider(
+             return MathTextRunProviderResult.CapabilityIssue(it)
+         }
+         val locale = request.locale ?: MarkdownMathTextLocale
+-        val skiaStyle = FontStyle(
+-            request.requestedWeight.cssWeight,
+-            FontStyle.NORMAL.width,
+-            FontSlant.UPRIGHT,
+-        )
++        val skiaStyle = FontStyle.NORMAL
++            .withWeight(request.requestedWeight.cssWeight)
++            .withSlant(FontSlant.UPRIGHT)
+         val glyphs = mutableListOf<MeasuredMathGlyph>()
+         var penX = 0f
+         var ascent = 0f
+@@ -90,9 +88,12 @@ internal class SkiaMarkdownMathTextRunProvider(
+                     ),
+                 ),
+             )
+-            val resolvedWeight = MathFontWeight.nearest(typeface.fontStyle.weight)
++            // Skiko 0.156 returns a FontWeight value class from fontStyle.weight; the packed low 16 bits are
++            // the weight in both layouts.
++            val typefaceWeight = typeface.fontStyle._value and 0xFFFF
++            val resolvedWeight = MathFontWeight.nearest(typefaceWeight)
+             val faceId = MathFaceId(
+-                "tiqian-host-skia:${typeface.familyName}:${typeface.fontStyle.weight}:${typeface.fontStyle.slant}",
++                "tiqian-host-skia:${typeface.familyName}:$typefaceWeight:${typeface.fontStyle.slant}",
+             )
+             replayFaces.getOrPut(faceId) {
+                 TiqianSkiaMathReplayFace(faceId, typeface, resolvedWeight)

@@ -1,0 +1,3510 @@
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownFootnotePlacement.kt b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownFootnotePlacement.kt
+index a4ba3d7c5e708391d41ac1cae0fa233003cac7de..638256db1bc84db05b492e351a67f0ffc3d07bbd 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownFootnotePlacement.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownFootnotePlacement.kt
+@@ -32,20 +32,13 @@ private fun collectFootnoteDefinitions(
+     destination: LinkedHashMap<String, MarkdownFootnoteDefinition>,
+ ) {
+     blocks.forEach { block ->
+-        when (block) {
+-            is MarkdownFootnoteDefinition -> {
+-                destination.putIfAbsent(
+-                    block.label,
+-                    block.copy(blocks = stripFootnoteDefinitions(block.blocks)),
+-                )
+-                collectFootnoteDefinitions(block.blocks, destination)
+-            }
+-            is MarkdownBlockQuote -> collectFootnoteDefinitions(block.blocks, destination)
+-            is MarkdownList -> block.items.forEach { item ->
+-                collectFootnoteDefinitions(item.blocks, destination)
+-            }
+-            else -> Unit
++        if (block is MarkdownFootnoteDefinition) {
++            destination.putIfAbsent(
++                block.label,
++                block.copy(blocks = stripFootnoteDefinitions(block.blocks)),
++            )
+         }
++        collectFootnoteDefinitions(block.childBlocks(), destination)
+     }
+ }
+ 
+@@ -59,6 +52,8 @@ private fun stripFootnoteDefinitions(blocks: List<MarkdownBlock>): List<Markdown
+                     item.copy(blocks = stripFootnoteDefinitions(item.blocks))
+                 },
+             )
++            is MarkdownContainerBlock -> block.copy(blocks = stripFootnoteDefinitions(block.blocks))
++            is MarkdownCustomBlock -> block.copy(blocks = stripFootnoteDefinitions(block.blocks))
+             else -> block
+         }
+     }
+@@ -116,21 +111,9 @@ private fun List<MarkdownBlock>.placeFootnotesAtSectionEnds(
+     return result
+ }
+ 
+-private fun MarkdownBlock.directFootnoteReferences(): List<String> = when (this) {
+-    is MarkdownParagraph -> text.footnoteReferences()
+-    is MarkdownHeading -> text.footnoteReferences()
+-    is MarkdownImageBlock -> caption?.footnoteReferences().orEmpty()
+-    is MarkdownTable -> buildList {
+-        caption?.let { addAll(it.footnoteReferences()) }
+-        rows.forEach { row -> row.cells.forEach { cell -> addAll(cell.text.footnoteReferences()) } }
+-    }
+-    else -> emptyList()
+-}
+-
+-private fun MarkdownBlock.allFootnoteReferences(): List<String> = when (this) {
+-    is MarkdownBlockQuote -> blocks.flatMap { it.allFootnoteReferences() }
+-    is MarkdownList -> items.flatMap { item -> item.blocks.flatMap { it.allFootnoteReferences() } }
+-    else -> directFootnoteReferences()
++private fun MarkdownBlock.allFootnoteReferences(): List<String> = buildList {
++    directTexts().forEach { addAll(it.footnoteReferences()) }
++    childBlocks().forEach { addAll(it.allFootnoteReferences()) }
+ }
+ 
+ private fun MarkdownText.footnoteReferences(): List<String> = buildList {
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownImageGallery.kt b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownImageGallery.kt
+index 02d3b3037d033fb67f67cfe3f17d6aa2a5a7c8f5..4de7181b4cefc491e568e90fff418e7aa31a3407 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownImageGallery.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownImageGallery.kt
+@@ -9,11 +9,6 @@ internal fun List<MarkdownBlock>.markdownImageGallery(): List<MarkdownImageBlock
+ }
+ 
+ private fun MutableList<MarkdownImageBlock>.addMarkdownImages(block: MarkdownBlock) {
+-    when (block) {
+-        is MarkdownImageBlock -> add(block)
+-        is MarkdownBlockQuote -> block.blocks.forEach(::addMarkdownImages)
+-        is MarkdownList -> block.items.forEach { item -> item.blocks.forEach(::addMarkdownImages) }
+-        is MarkdownFootnoteDefinition -> block.blocks.forEach(::addMarkdownImages)
+-        else -> Unit
+-    }
++    if (block is MarkdownImageBlock) add(block)
++    block.childBlocks().forEach(::addMarkdownImages)
+ }
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownRenderModel.kt b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownRenderModel.kt
+index c0cae8e671e6407c7c040dba67def72cc2645fd1..4ea073aa33f8f56960332b142c64c6b1f4e57849 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownRenderModel.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownRenderModel.kt
+@@ -4,6 +4,8 @@ package org.tiqian.markdown
+ data class MarkdownRenderDocument(
+     val blocks: List<MarkdownBlock>,
+     val issues: List<MarkdownCapabilityIssue> = emptyList(),
++    val metadata: MarkdownNodeMetadata? = null,
++    val revision: Long? = null,
+ )
+ 
+ data class MarkdownNodeKey(
+@@ -25,8 +27,31 @@ data class MarkdownNodeMetadata(
+     val sourceSpan: MarkdownSourceSpan,
+     /** Exact Markdown covered by this node when the compiler was given the source text. */
+     val sourceMarkdown: String? = null,
++    /** Original parser type, attributes and semantic data; visual marks remain independent. */
++    val nodeType: String? = null,
++    val attributes: Map<String, String> = emptyMap(),
++    val payload: Map<String, String> = emptyMap(),
++    val persistentId: Long? = null,
++    /** False when the adapter has no exact source position, including generated display nodes. */
++    val hasSourceSpan: Boolean = true,
++    /** Lossless public semantic fields, kept separate from interpreted visual attributes. */
++    val properties: Map<String, MarkdownNodeValue> = emptyMap(),
++    /** Original reading-order children, including definitions which have no hit region. */
++    val children: List<MarkdownNodeMetadata> = emptyList(),
++    val contentHash: Long? = null,
+ )
+ 
++/** Parser-independent snapshot values; adapters defensively copy lists and maps. */
++sealed interface MarkdownNodeValue {
++    data object Null : MarkdownNodeValue
++    data class Text(val value: String) : MarkdownNodeValue
++    data class Boolean(val value: kotlin.Boolean) : MarkdownNodeValue
++    data class Integer(val value: Long) : MarkdownNodeValue
++    data class Decimal(val value: Double) : MarkdownNodeValue
++    data class ListValue(val values: List<MarkdownNodeValue>) : MarkdownNodeValue
++    data class ObjectValue(val values: Map<String, MarkdownNodeValue>) : MarkdownNodeValue
++}
++
+ sealed interface MarkdownBlock {
+     val metadata: MarkdownNodeMetadata
+ }
+@@ -77,11 +102,14 @@ data class MarkdownCodeBlock(
+     val showLineNumbers: Boolean = true,
+     /** Source ranges classified by a parser or highlighter without leaking its node types. */
+     val highlights: List<MarkdownCodeHighlight> = emptyList(),
++    val startLineNumber: Int = 1,
++    val highlightedLines: List<IntRange> = emptyList(),
+ ) : MarkdownBlock
+ 
+ data class MarkdownCodeHighlight(
+     val range: MarkdownTextRange,
+     val kind: MarkdownCodeHighlightKind,
++    val metadata: MarkdownNodeMetadata? = null,
+ )
+ 
+ enum class MarkdownCodeHighlightKind {
+@@ -147,6 +175,8 @@ data class MarkdownTableRow(
+     val cells: List<MarkdownTableCell>,
+     val header: Boolean,
+     val metadata: MarkdownNodeMetadata,
++    /** Optional table head/body identity, retained while rows stay in display order. */
++    val sectionMetadata: MarkdownNodeMetadata? = null,
+ )
+ 
+ data class MarkdownTableCell(
+@@ -168,6 +198,7 @@ data class MarkdownCustomBlock(
+     val kind: String,
+     val attributes: Map<String, String> = emptyMap(),
+     override val metadata: MarkdownNodeMetadata,
++    val blocks: List<MarkdownBlock> = emptyList(),
+ ) : MarkdownBlock
+ 
+ /**
+@@ -198,7 +229,9 @@ data class MarkdownTextRange(
+ 
+ data class MarkdownTextSpan(
+     val range: MarkdownTextRange,
+-    val mark: MarkdownTextMark,
++    /** Null retains an ordinary or unsupported node without inventing a visual mark. */
++    val mark: MarkdownTextMark? = null,
++    val metadata: MarkdownNodeMetadata? = null,
+ )
+ 
+ sealed interface MarkdownTextMark {
+@@ -211,6 +244,9 @@ sealed interface MarkdownTextMark {
+     data object Subscript : MarkdownTextMark
+     data object Inserted : MarkdownTextMark
+     data object KeyboardInput : MarkdownTextMark
++    data object Spoiler : MarkdownTextMark
++
++    data class Citation(val key: String) : MarkdownTextMark
+ 
+     data class Link(
+         val destination: String,
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownSemanticBlocks.kt b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownSemanticBlocks.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..90bb00082525e45ff52c9b95fe0a58475aa69e43
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownSemanticBlocks.kt
+@@ -0,0 +1,66 @@
++package org.tiqian.markdown
++
++/** Shared structural roles, not parser types. Source types and all fields live in metadata. */
++enum class MarkdownContainerKind {
++    DefinitionList,
++    DefinitionTerm,
++    DefinitionDescription,
++    Admonition,
++    Custom,
++    Columns,
++    Column,
++    Tabs,
++    Tab,
++    Unknown,
++}
++
++data class MarkdownContainerBlock(
++    val kind: MarkdownContainerKind,
++    val blocks: List<MarkdownBlock>,
++    override val metadata: MarkdownNodeMetadata,
++    val title: MarkdownText? = null,
++    val width: String? = null,
++) : MarkdownBlock
++
++data class MarkdownBibliographyEntry(
++    val key: String,
++    val text: MarkdownText,
++    /** An entry may be generated by its parser; do not invent parser persistent IDs. */
++    val metadata: MarkdownNodeMetadata,
++)
++
++data class MarkdownBibliographyBlock(
++    val entries: List<MarkdownBibliographyEntry>,
++    override val metadata: MarkdownNodeMetadata,
++    val title: String = "References",
++) : MarkdownBlock
++
++data class MarkdownTocBlock(
++    override val metadata: MarkdownNodeMetadata,
++    val minDepth: Int = 1,
++    val maxDepth: Int = 6,
++    val excludedIds: List<String> = emptyList(),
++    val reversed: Boolean = false,
++) : MarkdownBlock
++
++/** Diagram source is selectable code; diagram execution and remote rendering are host-owned. */
++data class MarkdownDiagramBlock(
++    val language: String,
++    val source: String,
++    override val metadata: MarkdownNodeMetadata,
++) : MarkdownBlock
++
++/** Screen presentation is a separator; print hosts may replace it with an actual page boundary. */
++data class MarkdownPageBreakBlock(
++    override val metadata: MarkdownNodeMetadata,
++) : MarkdownBlock
++
++/** One reading-order traversal shared by galleries, navigation, selection and prelayout. */
++internal fun MarkdownBlock.childBlocks(): List<MarkdownBlock> = when (this) {
++    is MarkdownBlockQuote -> blocks
++    is MarkdownList -> items.flatMap { it.blocks }
++    is MarkdownFootnoteDefinition -> blocks
++    is MarkdownContainerBlock -> blocks
++    is MarkdownCustomBlock -> blocks
++    else -> emptyList()
++}
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/MarkdownTraversal.kt b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownTraversal.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..1fda2be3791453aaeaad0a1218dc1c43dfc9d4c8
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/MarkdownTraversal.kt
+@@ -0,0 +1,17 @@
++package org.tiqian.markdown
++
++/** Direct prose in reading order; structural descendants are supplied by [childBlocks]. */
++internal fun MarkdownBlock.directTexts(): Sequence<MarkdownText> = sequence {
++    when (val block = this@directTexts) {
++        is MarkdownParagraph -> yield(block.text)
++        is MarkdownHeading -> yield(block.text)
++        is MarkdownImageBlock -> block.caption?.let { yield(it) }
++        is MarkdownTable -> {
++            block.caption?.let { yield(it) }
++            block.rows.forEach { row -> row.cells.forEach { cell -> yield(cell.text) } }
++        }
++        is MarkdownContainerBlock -> block.title?.let { yield(it) }
++        is MarkdownBibliographyBlock -> block.entries.forEach { yield(it.text) }
++        else -> Unit
++    }
++}
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownBlockRendering.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownBlockRendering.kt
+index 33fee040504cf61eec4a0357741c2d7ce50e1795..9de362fb375e328e572eb3e647197ede11a8f525 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownBlockRendering.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownBlockRendering.kt
+@@ -1,6 +1,12 @@
+ package org.tiqian.markdown.compose
+ 
+ import org.tiqian.markdown.MarkdownBlock
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownContainerKind
++import org.tiqian.markdown.MarkdownBibliographyBlock
++import org.tiqian.markdown.MarkdownTocBlock
++import org.tiqian.markdown.MarkdownDiagramBlock
++import org.tiqian.markdown.MarkdownPageBreakBlock
+ import org.tiqian.markdown.MarkdownBlockQuote
+ import org.tiqian.markdown.MarkdownCodeBlock
+ import org.tiqian.markdown.MarkdownCustomBlock
+@@ -16,8 +22,6 @@ import org.tiqian.markdown.MarkdownTableAlignment
+ import org.tiqian.markdown.MarkdownTaskState
+ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownTextMark
+-import org.tiqian.markdown.MarkdownTextRange
+-import org.tiqian.markdown.MarkdownTextSpan
+ import org.tiqian.markdown.MarkdownThematicBreak
+ import org.tiqian.markdown.MarkdownUnsupportedBlock
+ import org.tiqian.markdown.resolveMarkdownCodeLanguage
+@@ -101,7 +105,7 @@ import org.tiqian.core.LastLineAlignment
+ import org.tiqian.core.LineLengthGrid
+ import org.tiqian.core.ParagraphStyle
+ import org.tiqian.core.TextStyle as CoreTextStyle
+-import org.tiqian.core.ic
++import org.tiqian.core.Ic
+ import org.jetbrains.compose.resources.painterResource
+ import org.jetbrains.compose.resources.stringResource
+ import org.tiqian.markdown.compose.generated.resources.Res
+@@ -290,6 +294,7 @@ internal fun MarkdownBlock(
+                 inlineSlots,
+                 onLinkClick,
+                 onFootnoteClick,
++                modifier = Modifier.markdownHeadingTarget(block),
+             )
+         }
+         is MarkdownBlockQuote -> {
+@@ -354,8 +359,27 @@ internal fun MarkdownBlock(
+                 inlineSlots,
+                 footnoteMarkerWidth,
+             )
+-        is MarkdownCustomBlock -> slots.customBlock?.invoke(block, style)
+-            ?: DefaultMarkdownCustomBlock(block, style)
++        is MarkdownCustomBlock -> Column {
++            slots.customBlock?.invoke(block, style) ?: DefaultMarkdownCustomBlock(block, style)
++            if (block.blocks.isNotEmpty()) MarkdownBlocks(block.blocks, modifier = Modifier.fillMaxWidth(), style = style, slots = slots, inlineSlots = inlineSlots,
++                onLinkClick = onLinkClick, onFootnoteClick = onFootnoteClick, compact = false)
++        }
++        is MarkdownContainerBlock -> {
++            val defaultContent: @Composable () -> Unit = {
++                DefaultMarkdownContainerBlock(block, style, slots, inlineSlots, onLinkClick, onFootnoteClick)
++            }
++            slots.container?.invoke(block, style, defaultContent) ?: defaultContent()
++        }
++        is MarkdownBibliographyBlock -> {
++            val content: @Composable () -> Unit = { DefaultMarkdownBibliographyBlock(block, style, inlineSlots, onLinkClick, onFootnoteClick) }
++            slots.bibliography?.invoke(block, style, content) ?: content()
++        }
++        is MarkdownTocBlock -> {
++            val content: @Composable () -> Unit = { DefaultMarkdownTocBlock(block, style, inlineSlots, onLinkClick, onFootnoteClick) }
++            slots.tableOfContents?.invoke(block, style, content) ?: content()
++        }
++        is MarkdownDiagramBlock -> slots.diagram?.invoke(block, style) ?: DefaultMarkdownDiagramBlock(block, style)
++        is MarkdownPageBreakBlock -> slots.pageBreak?.invoke(block, style) ?: DefaultMarkdownThematicBreak(style)
+         is MarkdownThematicBreak -> slots.thematicBreak?.invoke(block, style) ?: DefaultMarkdownThematicBreak(style)
+         is MarkdownUnsupportedBlock -> slots.unsupportedBlock?.invoke(block, style)
+             ?: DefaultMarkdownUnsupportedBlock(block, style)
+@@ -375,7 +399,7 @@ private fun MarkdownListBlock(
+     val markerMeasurer = rememberMarkdownParagraphMeasurer()
+     val markerMeasureParagraphStyle = remember {
+         ParagraphStyle(
+-            firstLineIndent = 0.ic,
++            firstLineIndent = Ic.Zero,
+             lineLengthGrid = LineLengthGrid(enabled = false),
+         )
+     }
+@@ -424,10 +448,12 @@ private fun MarkdownListBlock(
+     val markerWidth = with(density) { widestMarkerWidthPx.toDp() }
+     // This whole-cell band controls only where left-aligned bullets/tasks sit.
+     // It is not the width subtracted from the body measure.
+-    val markerAlignmentBand = ceil(widestMarkerWidthPx / coreMarkerTextStyle.fontSize)
+-        .toInt()
+-        .coerceAtLeast(1)
+-        .ic
++    val markerAlignmentBand = Ic(
++        ceil(widestMarkerWidthPx / coreMarkerTextStyle.fontSize)
++            .toInt()
++            .coerceAtLeast(1)
++            .toFloat(),
++    )
+     val bodyLineHeight = style.bodyLineHeightSpOrNull()?.let { lineHeight ->
+         with(density) { lineHeight.toDp() }
+     }
+@@ -645,9 +671,16 @@ fun DefaultMarkdownCodeBlock(block: MarkdownCodeBlock, style: MarkdownStyle) {
+             codeHighlighter.highlight(block.code, codeLanguage?.tokenizerLabel)
+         }
+     }
+-    val highlightedCode = remember(block.code, highlights, style.codeHighlight) {
++    val highlightedCode = remember(block.code, highlights, style.codeHighlight, block.highlightedLines, style.highlight.background) {
+         buildAnnotatedString {
+             append(block.code)
++            var start = 0
++            block.code.split('\n').forEachIndexed { index, line ->
++                if (block.highlightedLines.any { index + 1 in it } && line.isNotEmpty()) {
++                    addStyle(androidx.compose.ui.text.SpanStyle(background = style.highlight.background), start, start + line.length)
++                }
++                start += line.length + 1
++            }
+             highlights.forEach { highlight ->
+                 val start = highlight.range.start.coerceIn(0, block.code.length)
+                 val end = highlight.range.endExclusive.coerceIn(start, block.code.length)
+@@ -656,7 +689,7 @@ fun DefaultMarkdownCodeBlock(block: MarkdownCodeBlock, style: MarkdownStyle) {
+         }
+     }
+     val lineCount = remember(block.code) { block.code.count { it == '\n' } + 1 }
+-    val lineNumbers = remember(lineCount) { (1..lineCount).joinToString("\n") }
++    val lineNumbers = remember(lineCount, block.startLineNumber) { (0 until lineCount).joinToString("\n") { (block.startLineNumber + it).toString() } }
+     val language = codeLanguage?.displayLabel
+     val fileName = block.fileName?.takeIf { it.isNotBlank() }
+     @Suppress("DEPRECATION")
+@@ -903,7 +936,10 @@ fun DefaultMarkdownFigureCaption(
+ 
+ @Composable
+ fun DefaultMarkdownCustomBlock(block: MarkdownCustomBlock, style: MarkdownStyle) {
+-    BasicText(text = block.metadata.sourceMarkdown.orEmpty(), style = style.body)
++    val text = block.attributes["text"].orEmpty().ifEmpty { if (block.blocks.isEmpty()) block.metadata.sourceMarkdown.orEmpty() else "" }
++    if (text.isNotEmpty()) MarkdownSelectionScope(markdownSelectionKey(block.metadata.key, "custom")) {
++        BasicText(text = text, style = style.body)
++    }
+ }
+ 
+ @Composable
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
+index 5f1496c4abdea0469fc8c262fe93079822503e79..2826b94e517522c7dd797abc2904ab5739eb4333 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
+@@ -1,20 +1,27 @@
+ package org.tiqian.markdown.compose
+ 
++import org.tiqian.markdown.MarkdownBibliographyBlock
+ import org.tiqian.markdown.MarkdownBlock
+ import org.tiqian.markdown.MarkdownBlockQuote
+ import org.tiqian.markdown.MarkdownCodeBlock
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownContainerKind
+ import org.tiqian.markdown.MarkdownCustomBlock
++import org.tiqian.markdown.MarkdownDiagramBlock
+ import org.tiqian.markdown.MarkdownFootnoteDefinition
+ import org.tiqian.markdown.MarkdownHeading
+ import org.tiqian.markdown.MarkdownHtmlBlock
+ import org.tiqian.markdown.MarkdownImageBlock
+ import org.tiqian.markdown.MarkdownList
+ import org.tiqian.markdown.MarkdownMathBlock
++import org.tiqian.markdown.MarkdownPageBreakBlock
+ import org.tiqian.markdown.MarkdownParagraph
+ import org.tiqian.markdown.MarkdownTable
+ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownThematicBreak
++import org.tiqian.markdown.MarkdownTocBlock
+ import org.tiqian.markdown.MarkdownUnsupportedBlock
++import org.tiqian.markdown.childBlocks
+ 
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+@@ -208,6 +215,13 @@ internal fun estimateMarkdownBlockHeightDp(
+     fun childrenHeight(children: List<MarkdownBlock>): Float = children
+         .sumOf { estimateMarkdownBlockHeightDp(it, safeWidth, style).toDouble() }
+         .toFloat() + spacing * (children.size - 1).coerceAtLeast(0)
++    fun codeHeight(code: String): Float {
++        val codeLineHeight = style.codeBlock.lineHeight.value
++            .takeIf { it.isFinite() && it > 0f }
++            ?: lineHeight
++        return code.lineSequence().count().coerceAtLeast(1) * codeLineHeight +
++            style.codePadding.value * 2f
++    }
+ 
+     return when (block) {
+         is MarkdownParagraph -> textHeight(block.text)
+@@ -217,17 +231,27 @@ internal fun estimateMarkdownBlockHeightDp(
+             3 -> 1.2f
+             else -> 1f
+         }
+-        is MarkdownBlockQuote -> childrenHeight(block.blocks)
++        is MarkdownBlockQuote -> childrenHeight(block.childBlocks())
+         is MarkdownList -> block.items.sumOf { item ->
+             childrenHeight(item.blocks).toDouble()
+         }.toFloat()
+-        is MarkdownCodeBlock -> {
+-            val codeLineHeight = style.codeBlock.lineHeight.value
+-                .takeIf { it.isFinite() && it > 0f }
+-                ?: lineHeight
+-            block.code.lineSequence().count().coerceAtLeast(1) * codeLineHeight +
+-                style.codePadding.value * 2f
++        is MarkdownContainerBlock -> {
++            val children = block.childBlocks()
++            // `StructuralPlaceholderHeight`: columns share a row and tabs display one child;
++            // only their placeholder uses the largest child, never the actual layout.
++            val contentHeight = when (block.kind) {
++                MarkdownContainerKind.Columns,
++                MarkdownContainerKind.Tabs,
++                -> children.maxOfOrNull { estimateMarkdownBlockHeightDp(it, safeWidth, style) } ?: 0f
++                else -> childrenHeight(children)
++            }
++            (block.title?.let(::textHeight) ?: 0f) + contentHeight
+         }
++        is MarkdownBibliographyBlock -> textHeight(MarkdownText(block.title)) +
++            block.entries.sumOf { textHeight(it.text).toDouble() }.toFloat() +
++            spacing * block.entries.size
++        is MarkdownCodeBlock -> codeHeight(block.code)
++        is MarkdownDiagramBlock -> codeHeight(block.source)
+         is MarkdownImageBlock -> {
+             val ratio = block.widthPixels
+                 ?.takeIf { it > 0 }
+@@ -237,10 +261,15 @@ internal fun estimateMarkdownBlockHeightDp(
+         }
+         is MarkdownMathBlock -> lineHeight * 2f
+         is MarkdownTable -> block.rows.size.coerceAtLeast(1) * lineHeight * 1.6f
+-        is MarkdownFootnoteDefinition -> childrenHeight(block.blocks)
+-        is MarkdownThematicBreak -> style.tableBorderWidth.value.coerceAtLeast(1f)
++        is MarkdownFootnoteDefinition -> childrenHeight(block.childBlocks())
++        is MarkdownThematicBreak,
++        is MarkdownPageBreakBlock,
++        -> style.tableBorderWidth.value.coerceAtLeast(1f)
++        is MarkdownCustomBlock -> (block.attributes["text"]?.takeIf(String::isNotEmpty)
++            ?.let { textHeight(MarkdownText(it)) } ?: lineHeight * 1.5f) +
++            childrenHeight(block.childBlocks())
++        is MarkdownTocBlock -> lineHeight
+         is MarkdownHtmlBlock,
+-        is MarkdownCustomBlock,
+         is MarkdownUnsupportedBlock,
+         -> lineHeight * 1.5f
+     }.coerceAtLeast(0f) + spacing
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownFootnoteNavigation.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownFootnoteNavigation.kt
+index 70926d5ae7d343a26dd9ae26cb5d24fa26f871ba..de594e7a4f2ced580c6db59d8f16e96a2fbb540b 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownFootnoteNavigation.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownFootnoteNavigation.kt
+@@ -7,6 +7,9 @@ import androidx.compose.runtime.Stable
+ import androidx.compose.runtime.compositionLocalOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.runtime.withFrameNanos
++import org.tiqian.markdown.MarkdownRenderDocument
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.launch
+ 
+@@ -21,7 +24,11 @@ internal class MarkdownFootnoteNavigationState(
+     fun registerDefinition(label: String, requester: BringIntoViewRequester) {
+         definitions[label] = requester
+         if (pendingLabels.remove(label)) {
+-            coroutineScope.launch { requester.bringIntoView() }
++            coroutineScope.launch {
++                // Registration precedes placement; relocation needs the target's attached coordinates.
++                withFrameNanos { }
++                if (definitions[label] === requester) requester.bringIntoView()
++            }
+         }
+     }
+ 
+@@ -44,10 +51,12 @@ internal val LocalMarkdownFootnoteNavigationState =
+ 
+ @Composable
+ internal fun rememberMarkdownFootnoteNavigationState(
++    document: MarkdownRenderDocument? = null,
+     materializeDefinition: (String) -> Boolean = { false },
+ ): MarkdownFootnoteNavigationState {
+     val coroutineScope = rememberCoroutineScope()
+-    return remember(coroutineScope, materializeDefinition) {
+-        MarkdownFootnoteNavigationState(coroutineScope, materializeDefinition)
++    val currentMaterializeDefinition = rememberUpdatedState(materializeDefinition)
++    return remember(coroutineScope, document) {
++        MarkdownFootnoteNavigationState(coroutineScope) { currentMaterializeDefinition.value(it) }
+     }
+ }
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5aa04f2bff
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt
+@@ -0,0 +1,88 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.relocation.BringIntoViewRequester
++import androidx.compose.foundation.relocation.bringIntoViewRequester
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.mutableStateMapOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.runtime.staticCompositionLocalOf
++import androidx.compose.ui.Modifier
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.launch
++import org.tiqian.markdown.MarkdownBlock
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownContainerKind
++import org.tiqian.markdown.MarkdownHeading
++import org.tiqian.markdown.MarkdownNodeKey
++import org.tiqian.markdown.childBlocks
++
++internal val LocalMarkdownDocumentBlocks = staticCompositionLocalOf<List<MarkdownBlock>> { emptyList() }
++internal val LocalMarkdownHeadingNavigation = staticCompositionLocalOf<MarkdownHeadingNavigation?> { null }
++
++internal class MarkdownHeadingNavigation(
++    private val scope: CoroutineScope,
++    private val blocks: List<MarkdownBlock>,
++    private val materialize: (MarkdownNodeKey) -> Unit,
++) {
++    val selectedTabs = mutableStateMapOf<MarkdownNodeKey, Int>()
++    private val requesters = mutableMapOf<MarkdownNodeKey, BringIntoViewRequester>()
++    private val pending = mutableSetOf<MarkdownNodeKey>()
++
++    fun register(key: MarkdownNodeKey, requester: BringIntoViewRequester) {
++        requesters[key] = requester
++        if (pending.remove(key)) scope.launch { requester.bringIntoView() }
++    }
++
++    fun unregister(key: MarkdownNodeKey, requester: BringIntoViewRequester) {
++        if (requesters[key] === requester) requesters.remove(key)
++    }
++
++    fun activateAncestors(key: MarkdownNodeKey): MarkdownNodeKey? {
++        fun activate(block: MarkdownBlock): Boolean {
++            if (block.metadata.key == key) return true
++            val children = block.childBlocks()
++            for ((index, child) in children.withIndex()) {
++                if (activate(child)) {
++                    if (block is MarkdownContainerBlock && block.kind == MarkdownContainerKind.Tabs) selectedTabs[block.metadata.key] = index
++                    return true
++                }
++            }
++            return false
++        }
++        return blocks.firstOrNull(::activate)?.metadata?.key
++    }
++
++    fun navigate(key: MarkdownNodeKey) {
++        val ownerKey = activateAncestors(key) ?: return
++        val requester = requesters[key]
++        if (requester != null) scope.launch { requester.bringIntoView() }
++        else {
++            pending += key
++            materialize(ownerKey)
++        }
++    }
++}
++
++@Composable
++internal fun rememberMarkdownHeadingNavigation(
++    blocks: List<MarkdownBlock>,
++    deferred: MarkdownDeferredLayout?,
++): MarkdownHeadingNavigation {
++    val scope = rememberCoroutineScope()
++    val currentDeferred = rememberUpdatedState(deferred)
++    return remember(scope, blocks) { MarkdownHeadingNavigation(scope, blocks) { currentDeferred.value?.onMaterializeOwner?.invoke(it) } }
++}
++
++@Composable
++internal fun Modifier.markdownHeadingTarget(heading: MarkdownHeading): Modifier {
++    val navigation = LocalMarkdownHeadingNavigation.current
++    val requester = remember { BringIntoViewRequester() }
++    DisposableEffect(navigation, heading.metadata.key, requester) {
++        navigation?.register(heading.metadata.key, requester)
++        onDispose { navigation?.unregister(heading.metadata.key, requester) }
++    }
++    return bringIntoViewRequester(requester)
++}
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
+index 157107d85b801ca45b35ac6fb53450231e596c83..220cfd05d617f742623b34564376e0d5360ac9ac 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
+@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.heightIn
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.requiredSize
+ import androidx.compose.foundation.layout.size
+@@ -98,7 +99,6 @@ import org.tiqian.core.LastLineAlignment
+ import org.tiqian.core.LineLengthGrid
+ import org.tiqian.core.ParagraphStyle
+ import org.tiqian.core.TextStyle as CoreTextStyle
+-import org.tiqian.core.ic
+ import org.jetbrains.compose.resources.painterResource
+ import org.jetbrains.compose.resources.stringResource
+ import org.tiqian.markdown.compose.generated.resources.Res
+@@ -121,9 +121,9 @@ fun DefaultMarkdownImageBlock(
+     inlineSlots: MarkdownInlineSlots = DefaultMarkdownInlineSlots,
+ ) {
+     val label = block.description.ifBlank { block.destination }
+-    val imageContent = markdownImageContent(block)
+-    val viewerState = currentMarkdownImageViewerState()
+-    val imageGallery = currentMarkdownImageGallery()
++    val imageContent = LocalMarkdownImageProvider.current?.invoke(block)
++    val viewerState = LocalMarkdownImageViewerState.current
++    val imageGallery = LocalMarkdownImageGallery.current
+     Column(Modifier.fillMaxWidth()) {
+         if (imageContent == null || imageContent.loadState == MarkdownImageLoadState.Error) {
+             val fallbackImageText = @Composable {
+@@ -176,16 +176,24 @@ fun DefaultMarkdownImageBlock(
+                 } else {
+                     null
+                 }
+-                val imageWidth = widthHint?.dp?.coerceAtMost(maxWidth) ?: maxWidth
+-                val captionWidth = maxOf(imageWidth, style.figureCaptionMinimumWidthDp())
++                val naturalWidth = widthHint?.dp?.coerceAtMost(maxWidth) ?: maxWidth
++                val widthLimit = naturalWidth.coerceAtMost(imageContent.maxDisplayWidth)
++                val maxImageHeight = imageContent.maxDisplayHeight
++                val imageWidth = if (ratio != null && ratio > 0f) {
++                    widthLimit.coerceAtMost(maxImageHeight * ratio)
++                } else {
++                    widthLimit
++                }
++                val captionWidth = maxOf(naturalWidth, style.figureCaptionMinimumWidthDp())
+                     .coerceAtMost(maxWidth)
+                 val imageShape = RoundedCornerShape(style.imageCornerRadius)
+                 val imageModifier = Modifier
+                     .width(imageWidth)
++                    .then(if (maxImageHeight != Dp.Infinity) Modifier.heightIn(max = maxImageHeight) else Modifier)
+                     .then(if (ratio != null && ratio > 0f) Modifier.aspectRatio(ratio) else Modifier)
+                     .border(style.imageOutlineWidth, style.imageOutlineColor, imageShape)
+                     .clip(imageShape)
+-                    .openMarkdownImageOnClick(viewerState, block, imageGallery)
++                    .openMarkdownImageOnClick(viewerState, block, imageGallery, imageContent.onLongClick)
+                 Column(
+                     modifier = Modifier.width(captionWidth),
+                     horizontalAlignment = Alignment.CenterHorizontally,
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageContent.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageContent.kt
+index cd6b631f5240960b04102c548af99e12d450513a..1362c4b50c45b1578bf719c49e9de7c39baf28e1 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageContent.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageContent.kt
+@@ -6,7 +6,9 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.Immutable
+ import androidx.compose.runtime.staticCompositionLocalOf
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.Dp
+ import androidx.compose.ui.unit.IntSize
++import androidx.compose.ui.unit.dp
+ 
+ /** Loading information supplied by the host's image library. */
+ enum class MarkdownImageLoadState {
+@@ -24,13 +26,26 @@ class MarkdownImageContent(
+     val intrinsicSize: IntSize?,
+     val loadState: MarkdownImageLoadState,
+     val progress: Float? = null,
++    /** 正文预览宽度上限，不改变原图尺寸、图注或查看器。 */
++    val maxDisplayWidth: Dp = Dp.Infinity,
++    /** 正文预览高度上限，已知比例时等比缩小；默认不限制。 */
++    val maxDisplayHeight: Dp = Dp.Infinity,
++    /** 宿主的正文图片长按动作；默认保持仅点击查看。 */
++    val onLongClick: (() -> Unit)? = null,
+     val content: @Composable (Modifier) -> Unit,
+-)
++) {
++    constructor(
++        intrinsicSize: IntSize?,
++        loadState: MarkdownImageLoadState,
++        progress: Float? = null,
++        content: @Composable (Modifier) -> Unit,
++    ) : this(intrinsicSize, loadState, progress, Dp.Infinity, Dp.Infinity, null, content)
++
++    init {
++        require(maxDisplayWidth >= 0.dp && maxDisplayHeight >= 0.dp)
++    }
++}
+ 
+ typealias MarkdownImageProvider = @Composable (MarkdownImageBlock) -> MarkdownImageContent
+ 
+ internal val LocalMarkdownImageProvider = staticCompositionLocalOf<MarkdownImageProvider?> { null }
+-
+-@Composable
+-internal fun markdownImageContent(block: MarkdownImageBlock): MarkdownImageContent? =
+-    LocalMarkdownImageProvider.current?.invoke(block)
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageViewerHost.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageViewerHost.kt
+index c807abbfd5e772d4b496330898bb81cb9376c573..65a3fd4280306935fa90cdcc13c33d3941603497 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageViewerHost.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageViewerHost.kt
+@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
+ import androidx.compose.animation.fadeOut
+ import androidx.compose.animation.togetherWith
+ import androidx.compose.foundation.clickable
++import androidx.compose.foundation.combinedClickable
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.BoxScope
+ import androidx.compose.foundation.layout.RowScope
+@@ -87,7 +88,7 @@ internal class MarkdownImageViewerSession(
+ fun rememberMarkdownImageViewerState(): MarkdownImageViewerState =
+     remember { MarkdownImageViewerState() }
+ 
+-private val LocalMarkdownImageViewerState = staticCompositionLocalOf<MarkdownImageViewerState?> { null }
++internal val LocalMarkdownImageViewerState = staticCompositionLocalOf<MarkdownImageViewerState?> { null }
+ internal val LocalMarkdownImageGallery = staticCompositionLocalOf<List<MarkdownImageBlock>> { emptyList() }
+ 
+ /**
+@@ -200,16 +201,15 @@ internal fun Modifier.openMarkdownImageOnClick(
+     state: MarkdownImageViewerState?,
+     block: MarkdownImageBlock,
+     gallery: List<MarkdownImageBlock>,
+-): Modifier = if (state == null) {
+-    this
+-} else {
+-    markdownClickablePointer().clickable(role = Role.Image) { state.show(block, gallery) }
++    onLongClick: (() -> Unit)? = null,
++): Modifier = when {
++    onLongClick != null -> markdownClickablePointer().combinedClickable(
++        role = Role.Image,
++        onLongClick = onLongClick,
++        onClick = { state?.show(block, gallery) },
++    )
++    state != null -> markdownClickablePointer().clickable(role = Role.Image) {
++        state.show(block, gallery)
++    }
++    else -> this
+ }
+-
+-@Composable
+-internal fun currentMarkdownImageViewerState(): MarkdownImageViewerState? =
+-    LocalMarkdownImageViewerState.current
+-
+-@Composable
+-internal fun currentMarkdownImageGallery(): List<MarkdownImageBlock> =
+-    LocalMarkdownImageGallery.current
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
+index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4e212cd78 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
+@@ -4,14 +4,22 @@ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownTextMark
+ import org.tiqian.markdown.MarkdownTextRange
+ 
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.text.InlineTextContent
+ import androidx.compose.foundation.text.appendInlineContent
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.key
+ import androidx.compose.runtime.remember
++import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.painter.Painter
+ import androidx.compose.ui.semantics.CustomAccessibilityAction
++import androidx.compose.ui.semantics.clearAndSetSemantics
++import androidx.compose.ui.semantics.text
+ import androidx.compose.ui.semantics.customActions
+ import androidx.compose.ui.semantics.semantics
+ import androidx.compose.ui.text.AnnotatedString
+@@ -35,6 +43,7 @@ import org.tiqian.compose.CjkInlineBackgroundMetricPolicy
+ import org.tiqian.compose.CjkInlineDecoration
+ import org.tiqian.compose.CjkInlineDecorationStyle
+ import org.tiqian.compose.addCjkInteractionOnlyAnnotation
++import org.tiqian.compose.addCjkRenderOnlyInlineObject
+ import org.tiqian.compose.addCjkInlineAttachment
+ import org.tiqian.compose.addTechnicalInlineAnnotation
+ import org.tiqian.core.InlineAttachment
+@@ -109,6 +118,8 @@ data class MarkdownInlineContent(
+     val layoutFragments: List<MarkdownInlineFragment> = emptyList(),
+     val leadingBoundary: MarkdownInlineBoundaryAdjustment = MarkdownInlineBoundaryAdjustment.Fixed,
+     val trailingBoundary: MarkdownInlineBoundaryAdjustment = MarkdownInlineBoundaryAdjustment.Fixed,
++    /** Default click on an inline object. */
++    val onClick: (() -> Unit)? = null,
+     val content: @Composable (alternateText: String) -> Unit,
+ ) {
+     init {
+@@ -128,8 +139,26 @@ data class MarkdownCustomInlinePresentation(
+     val decoration: MarkdownInlineDecoration? = null,
+     val onClick: ((text: String) -> Unit)? = null,
+     val accessibilityLabel: ((text: String) -> String)? = null,
++    /** 在范围末端之后真实占据行内空间；内部排版占位不进入逻辑文本、复制或选择索引。 */
++    val endMarker: MarkdownInlineEndMarker? = null,
+ )
+ 
++/** 宿主提供的行内末端标记；由 CjkInlineObject 度量并参与断行。 */
++data class MarkdownInlineEndMarker(
++    val painter: Painter,
++    val color: Color,
++    val size: Dp = 8.dp,
++    val gap: Dp = 3.dp,
++    /** 标记相对行基线的上移距离。 */
++    val offset: Dp = 2.dp,
++) {
++    init {
++        require(size.value.isFinite() && size.value > 0f)
++        require(gap.value.isFinite() && gap.value >= 0f)
++        require(offset.value.isFinite() && (size + offset).value >= 0f)
++    }
++}
++
+ sealed interface MarkdownInlineDecoration {
+     data class DashedUnderline(
+         val color: Color,
+@@ -152,6 +181,20 @@ internal data class ResolvedMarkdownText(
+     val backgrounds: List<ResolvedInlineBackground>,
+     val decorations: List<ResolvedInlineDecoration>,
+     val interactions: List<ResolvedInlineInteraction>,
++    /** Source range edges into raw LayoutResult coordinates: starts skip inserted slots, ends stop before them. */
++    val sourceToRenderedOffset: (Int, Boolean) -> Int,
++    val endMarkers: List<ResolvedInlineEndMarker> = emptyList(),
++    val hiddenSpoilers: List<ResolvedMarkdownSpoiler> = emptyList(),
++    val semanticsText: AnnotatedString? = null,
++)
++
++internal data class ResolvedMarkdownSpoiler(
++    val spanIndex: Int,
++    val sourceRange: MarkdownTextRange,
++    val start: Int,
++    val endExclusive: Int,
++    val color: Color,
++    val onReveal: () -> Unit,
+ )
+ 
+ internal data class ResolvedTiqianInlineObject(
+@@ -166,6 +209,11 @@ internal data class ResolvedInlineDecoration(
+     val decoration: MarkdownInlineDecoration,
+ )
+ 
++internal data class ResolvedInlineEndMarker(
++    val endExclusive: Int,
++    val marker: MarkdownInlineEndMarker,
++)
++
+ internal data class ResolvedInlineBackground(
+     val start: Int,
+     val endExclusive: Int,
+@@ -224,7 +272,7 @@ internal data class ResolvedInlineInteraction(
+     val onClick: () -> Unit,
+ )
+ 
+-private data class InlineReplacement(
++internal data class InlineReplacement(
+     val spanIndex: Int,
+     val range: MarkdownTextRange,
+     val id: String,
+@@ -245,7 +293,29 @@ internal fun resolveMarkdownText(
+     onLinkClick: ((String) -> Unit)?,
+     onFootnoteClick: ((String) -> Unit)?,
+     preparedInlineMath: Map<Int, MarkdownInlineContent> = emptyMap(),
++    onCitationClick: ((String) -> Unit)? = null,
+ ): ResolvedMarkdownText {
++    val navigation = LocalMarkdownFootnoteNavigationState.current
++    val currentNavigation = rememberUpdatedState(navigation)
++    val currentCitationClick = rememberUpdatedState(onCitationClick)
++    val citationClick = remember(navigation != null || onCitationClick != null) {
++        if (navigation == null && onCitationClick == null) null else { citationKey: String ->
++            val callback = currentCitationClick.value
++            if (callback != null) callback(citationKey)
++            else currentNavigation.value?.bringDefinitionIntoView("bibliography:" + citationKey)
++            Unit
++        }
++    }
++    val spoilerReveals = text.spans.mapIndexedNotNull { index, span ->
++        if (span.mark != MarkdownTextMark.Spoiler) return@mapIndexedNotNull null
++        key("spoiler", span.metadata?.key ?: index) {
++            val revealed = remember(text, span.range) { mutableStateOf(false) }
++            val reveal = remember(revealed) { { revealed.value = true } }
++            if (revealed.value) null else index to reveal
++        }
++    }.toMap()
++    val spoilerColor = textStyle.color.takeIf { it != Color.Unspecified }
++        ?: style.body.color.takeIf { it != Color.Unspecified } ?: Color(0xFF202124)
+     val needsInlineSlotResolution = remember(text.spans, inlineSlots) {
+         text.spans.any { span ->
+             when (span.mark) {
+@@ -257,7 +327,7 @@ internal fun resolveMarkdownText(
+         }
+     }
+     if (!needsInlineSlotResolution) {
+-        return remember(text, style, onLinkClick, onFootnoteClick) {
++        return remember(text, style, onLinkClick, onFootnoteClick, citationClick, spoilerReveals, spoilerColor) {
+             buildResolvedMarkdownText(
+                 text = text,
+                 style = style,
+@@ -265,7 +335,10 @@ internal fun resolveMarkdownText(
+                 customPresentations = emptyMap(),
+                 onLinkClick = onLinkClick,
+                 onFootnoteClick = onFootnoteClick,
+-            )
++                onCitationClick = citationClick,
++                spoilerReveals = spoilerReveals,
++                spoilerColor = spoilerColor,
++            ).withHiddenSpoilers(text)
+         }
+     }
+ 
+@@ -303,7 +376,15 @@ internal fun resolveMarkdownText(
+ 
+             is MarkdownTextMark.Custom -> inlineSlots.custom?.let { slot ->
+                 key("custom", index) { slot(mark, style, textStyle) }?.let { presentation ->
+-                    customPresentations += CustomPresentation(index, presentation)
++                    val currentClick = rememberUpdatedState(presentation.onClick)
++                    val stableClick = remember(presentation.onClick != null) {
++                        if (presentation.onClick == null) null else { value: String -> currentClick.value?.invoke(value); Unit }
++                    }
++                    val currentLabel = rememberUpdatedState(presentation.accessibilityLabel)
++                    val stableLabel = remember(presentation.accessibilityLabel != null) {
++                        if (presentation.accessibilityLabel == null) null else { value: String -> currentLabel.value?.invoke(value) ?: value }
++                    }
++                    customPresentations += CustomPresentation(index, presentation.copy(onClick = stableClick, accessibilityLabel = stableLabel))
+                 }
+             }
+ 
+@@ -320,6 +401,9 @@ internal fun resolveMarkdownText(
+         presentationsByIndex,
+         onLinkClick,
+         onFootnoteClick,
++        citationClick,
++        spoilerReveals,
++        spoilerColor,
+     ) {
+         buildResolvedMarkdownText(
+             text = text,
+@@ -328,7 +412,10 @@ internal fun resolveMarkdownText(
+             customPresentations = presentationsByIndex,
+             onLinkClick = onLinkClick,
+             onFootnoteClick = onFootnoteClick,
+-        )
++            onCitationClick = citationClick,
++            spoilerReveals = spoilerReveals,
++            spoilerColor = spoilerColor,
++        ).withHiddenSpoilers(text)
+     }
+ }
+ 
+@@ -356,9 +443,6 @@ internal fun resolveMarkdownTextWithPreparedMath(
+     )
+ }
+ 
+-private fun MarkdownInlineContent.withSourceAlternateText(sourceText: String): MarkdownInlineContent =
+-    if (alternateText.isNotEmpty()) this else copy(alternateText = sourceText)
+-
+ private fun MarkdownInlineContent.toInlineReplacements(
+     spanIndex: Int,
+     sourceRange: MarkdownTextRange,
+@@ -369,7 +453,7 @@ private fun MarkdownInlineContent.toInlineReplacements(
+         spanIndex = spanIndex,
+         range = sourceRange,
+         id = idPrefix,
+-        content = withSourceAlternateText(sourceText),
++        content = if (alternateText.isNotEmpty()) this else copy(alternateText = sourceText),
+     )
+     if (layoutFragments.size < 2) return listOf(whole)
+ 
+@@ -402,6 +486,7 @@ internal fun MarkdownText.toAnnotatedString(
+     style: MarkdownStyle,
+     onLinkClick: ((String) -> Unit)? = null,
+     onFootnoteClick: ((String) -> Unit)? = null,
++    onCitationClick: ((String) -> Unit)? = null,
+ ): AnnotatedString = buildResolvedMarkdownText(
+     text = this,
+     style = style,
+@@ -409,6 +494,7 @@ internal fun MarkdownText.toAnnotatedString(
+     customPresentations = emptyMap(),
+     onLinkClick = onLinkClick,
+     onFootnoteClick = onFootnoteClick,
++    onCitationClick = onCitationClick,
+ ).annotated
+ 
+ private fun buildResolvedMarkdownText(
+@@ -418,6 +504,9 @@ private fun buildResolvedMarkdownText(
+     customPresentations: Map<Int, CustomPresentation>,
+     onLinkClick: ((String) -> Unit)?,
+     onFootnoteClick: ((String) -> Unit)?,
++    onCitationClick: ((String) -> Unit)? = null,
++    spoilerReveals: Map<Int, () -> Unit> = emptyMap(),
++    spoilerColor: Color = Color(0xFF202124),
+ ): ResolvedMarkdownText {
+     val nonOverlappingReplacements = replacements.fold(mutableListOf<InlineReplacement>()) { accepted, candidate ->
+         if (accepted.lastOrNull()?.range?.endExclusive?.let { it > candidate.range.start } != true) {
+@@ -429,7 +518,14 @@ private fun buildResolvedMarkdownText(
+     val base = text.buildInlineBase(nonOverlappingReplacements)
+     val backgrounds = mutableListOf<ResolvedInlineBackground>()
+     val decorations = mutableListOf<ResolvedInlineDecoration>()
++    val endMarkers = mutableListOf<ResolvedInlineEndMarker>()
+     val interactions = mutableListOf<ResolvedInlineInteraction>()
++    val hiddenSpoilers = spoilerReveals.mapNotNull { (index, reveal) ->
++        val range = text.spans[index].range
++        val start = mapOffset(range.start, nonOverlappingReplacements, end = false)
++        val end = mapOffset(range.endExclusive, nonOverlappingReplacements, end = true)
++        if (start == end) null else ResolvedMarkdownSpoiler(index, range, start, end, spoilerColor, reveal)
++    }
+     val annotated = AnnotatedString.Builder(base).apply {
+         fun addRendererOwnedInlineCode(start: Int, end: Int) {
+             addStyle(style.inlineCode.copy(background = Color.Unspecified), start, end)
+@@ -454,6 +550,7 @@ private fun buildResolvedMarkdownText(
+             val end = mapOffset(span.range.endExclusive, nonOverlappingReplacements, end = true).coerceIn(start, length)
+             if (start == end) return@forEachIndexed
+             when (val mark = span.mark) {
++                null -> Unit
+                 MarkdownTextMark.Strong -> addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, end)
+                 MarkdownTextMark.Emphasis -> addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, end)
+                 MarkdownTextMark.Strikethrough -> addStyle(
+@@ -559,6 +656,28 @@ private fun buildResolvedMarkdownText(
+                     )
+                 }
+ 
++                MarkdownTextMark.Spoiler -> Unit
++                is MarkdownTextMark.Citation -> {
++                    addCjkInteractionOnlyAnnotation(start, end)
++                    addLink(
++                        LinkAnnotation.Clickable(
++                            tag = "markdown-citation-$index",
++                            styles = TextLinkStyles(style = style.link),
++                            linkInteractionListener = { onCitationClick?.invoke(mark.key) },
++                        ),
++                        start,
++                        end,
++                    )
++                    onCitationClick?.let { callback ->
++                        interactions += ResolvedInlineInteraction(
++                            start = start,
++                            endExclusive = end,
++                            accessibilityLabel = text.value.substring(span.range.start, span.range.endExclusive),
++                            onClick = { callback(mark.key) },
++                        )
++                    }
++                }
++
+                 is MarkdownTextMark.Ruby -> Unit
+                 is MarkdownTextMark.InlineMath -> if (index !in replacementIndexes) {
+                     addRendererOwnedInlineCode(start, end)
+@@ -604,10 +723,24 @@ private fun buildResolvedMarkdownText(
+                     presentation.decoration?.let { decoration ->
+                         decorations += ResolvedInlineDecoration(start, end, decoration)
+                     }
++                    presentation.endMarker?.let { marker ->
++                        endMarkers += ResolvedInlineEndMarker(end, marker)
++                    }
+                 }
+             }
+         }
+     }.toAnnotatedString()
++    hiddenSpoilers.forEach { spoiler ->
++        backgrounds += ResolvedInlineBackground(
++            start = spoiler.start,
++            endExclusive = spoiler.endExclusive,
++            color = spoiler.color,
++            horizontalPadding = 0.dp,
++            verticalPadding = style.highlightVerticalPadding,
++            cornerRadius = style.highlightCornerRadius,
++            adjacentSameStyleClearance = style.adjacentSameStyleClearance,
++        )
++    }
+ 
+     return ResolvedMarkdownText(
+         annotated = annotated,
+@@ -628,14 +761,20 @@ private fun buildResolvedMarkdownText(
+                 ResolvedTiqianInlineObject(
+                     start = start,
+                     endExclusive = endExclusive,
+-                    content = replacement.content,
++                    content = if (hiddenSpoilers.any { it.start <= start && it.endExclusive >= endExclusive }) {
++                        val color = hiddenSpoilers.first { it.start <= start && it.endExclusive >= endExclusive }.color
++                        replacement.content.copy(content = { Box(Modifier.fillMaxSize().background(color)) })
++                    } else replacement.content,
+                 )
+             }
+         },
+         backgrounds = backgrounds,
+         decorations = decorations,
+         interactions = interactions,
+-    )
++        sourceToRenderedOffset = { offset, end -> mapOffset(offset, nonOverlappingReplacements, end) },
++        endMarkers = endMarkers,
++        hiddenSpoilers = hiddenSpoilers,
++    ).withInlineEndMarkerProjection()
+ }
+ 
+ private fun MarkdownText.buildInlineBase(replacements: List<InlineReplacement>): AnnotatedString {
+@@ -688,6 +827,7 @@ private fun mapOffset(
+     return originalOffset + delta
+ }
+ 
++
+ /**
+  * Compose does not expose its underline metric. On the capability fallback path, custom dashed
+  * underlines therefore become native solid underlines instead of maintaining a second guessed
+@@ -710,14 +850,116 @@ internal fun ResolvedMarkdownText.composeFallbackAnnotatedString(): AnnotatedStr
+ 
+ internal fun Modifier.markdownInlineInteractionSemantics(
+     interactions: List<ResolvedInlineInteraction>,
++    semanticsText: AnnotatedString? = null,
+ ): Modifier {
+-    if (interactions.isEmpty()) return this
+-    return semantics {
+-        customActions = interactions.map { interaction ->
+-            CustomAccessibilityAction(interaction.accessibilityLabel) {
+-                interaction.onClick()
+-                true
+-            }
++    if (interactions.isEmpty() && semanticsText == null) return this
++    val actions = interactions.map { interaction ->
++        CustomAccessibilityAction(interaction.accessibilityLabel) {
++            interaction.onClick()
++            true
++        }
++    }
++    return if (semanticsText == null) semantics { customActions = actions }
++    else clearAndSetSemantics {
++        text = semanticsText
++        customActions = actions
++    }
++}
++
++/** Insert slots only into the renderer projection; MarkdownText.value and source spans stay intact. */
++private fun ResolvedMarkdownText.withInlineEndMarkerProjection(): ResolvedMarkdownText {
++    if (endMarkers.isEmpty()) return this
++    val ordered = endMarkers.sortedBy { it.endExclusive }
++    // A range start follows slots at that boundary; a range end excludes those same slots.
++    fun map(offset: Int, after: Boolean) = offset + ordered.count { it.endExclusive < offset || after && it.endExclusive == offset }
++    val sourceToBaseOffset = sourceToRenderedOffset
++    val output = AnnotatedString.Builder()
++    var cursor = 0
++    val markers = ordered.map { marker ->
++        output.append(annotated.text.substring(cursor, marker.endExclusive))
++        val start = output.length
++        output.append('￼')
++        output.addCjkRenderOnlyInlineObject(start, start + 1)
++        cursor = marker.endExclusive
++        marker.copy(endExclusive = start + 1)
++    }
++    output.append(annotated.text.substring(cursor))
++    val annotations = mutableListOf<AnnotatedString.Range<AnnotatedString.Annotation>>()
++    // Map whole authored annotations once; slicing would split links and TTS at each marker.
++    annotated.flatMapAnnotations { annotation ->
++        val start = map(annotation.start, true)
++        val end = if (annotation.start == annotation.end) start else map(annotation.end, false)
++        annotations += AnnotatedString.Range(annotation.item, start, end, annotation.tag)
++        emptyList()
++    }
++    val projected = output.toAnnotatedString()
++    projected.flatMapAnnotations { annotation ->
++        annotations += AnnotatedString.Range(annotation.item, annotation.start, annotation.end, annotation.tag)
++        emptyList()
++    }
++    return copy(
++        annotated = AnnotatedString(projected.text, annotations),
++        tiqianInlineObjects = tiqianInlineObjects.map { it.copy(start = map(it.start, true), endExclusive = map(it.endExclusive, false)) },
++        backgrounds = backgrounds.map { it.copy(start = map(it.start, true), endExclusive = map(it.endExclusive, false)) },
++        decorations = decorations.map { it.copy(start = map(it.start, true), endExclusive = map(it.endExclusive, false)) },
++        interactions = interactions.map { it.copy(start = map(it.start, true), endExclusive = map(it.endExclusive, false)) },
++        hiddenSpoilers = hiddenSpoilers.map { it.copy(start = map(it.start, true), endExclusive = map(it.endExclusive, false)) },
++        sourceToRenderedOffset = { offset, end -> map(sourceToBaseOffset(offset, end), after = !end) },
++        endMarkers = markers,
++    )
++}
++
++/** Hidden prose keeps its authored links and ranges, but only the reveal action can run. */
++private fun ResolvedMarkdownText.withHiddenSpoilers(text: MarkdownText): ResolvedMarkdownText {
++    if (hiddenSpoilers.isEmpty()) return this
++    require(text.spans.all { it.range.endExclusive <= text.value.length }) { "Node range exceeds MarkdownText.value" }
++    val links = annotated.getLinkAnnotations(0, annotated.length)
++    val withoutLinks = annotated.flatMapAnnotations { range ->
++        if (range.item is LinkAnnotation) emptyList() else listOf(range)
++    }
++    val builder = AnnotatedString.Builder(withoutLinks)
++    val edges = hiddenSpoilers.flatMap { listOf(it.start, it.endExclusive) }.distinct().sorted()
++    edges.zipWithNext().forEach { (start, end) ->
++        val spoiler = hiddenSpoilers.filter { it.start <= start && it.endExclusive >= end }
++            .maxByOrNull { it.sourceRange.endExclusive - it.sourceRange.start } ?: return@forEach
++        builder.addLink(LinkAnnotation.Clickable("markdown-spoiler-$start", styles = TextLinkStyles(),
++            linkInteractionListener = { spoiler.onReveal() }), start, end)
++        builder.addCjkInteractionOnlyAnnotation(start, end)
++    }
++    // Preserve URL/footnote classification and styling at the original ranges.
++    links.forEach { link ->
++        when (val annotation = link.item) {
++            is LinkAnnotation.Url -> builder.addLink(annotation, link.start, link.end)
++            is LinkAnnotation.Clickable -> builder.addLink(annotation, link.start, link.end)
+         }
+     }
++    hiddenSpoilers.forEach { spoiler ->
++        val mask = SpanStyle(color = spoiler.color)
++        builder.addStyle(mask, spoiler.start, spoiler.endExclusive)
++        builder.addLink(LinkAnnotation.Clickable("markdown-spoiler-mask-${spoiler.spanIndex}",
++            styles = TextLinkStyles(style = mask), linkInteractionListener = { spoiler.onReveal() }), spoiler.start, spoiler.endExclusive)
++        builder.addCjkInteractionOnlyAnnotation(spoiler.start, spoiler.endExclusive)
++    }
++    val source = text.value.toCharArray()
++    hiddenSpoilers.forEach { spoiler ->
++        for (offset in spoiler.sourceRange.start until spoiler.sourceRange.endExclusive) source[offset] = ' '
++    }
++    val outerSpoilers = hiddenSpoilers.filter { spoiler ->
++        hiddenSpoilers.none { outer -> outer !== spoiler && outer.start <= spoiler.start && outer.endExclusive >= spoiler.endExclusive &&
++            (outer.start < spoiler.start || outer.endExclusive > spoiler.endExclusive || outer.spanIndex < spoiler.spanIndex) }
++    }
++    return copy(
++        annotated = builder.toAnnotatedString(),
++        semanticsText = AnnotatedString(source.concatToString()),
++        interactions = interactions.filter { action ->
++            hiddenSpoilers.none { action.start < it.endExclusive && action.endExclusive > it.start }
++        } + outerSpoilers.map { spoiler ->
++            ResolvedInlineInteraction(spoiler.start, spoiler.endExclusive, "显示隐藏内容", spoiler.onReveal)
++        },
++        tiqianInlineObjects = tiqianInlineObjects.map { inline ->
++            val spoiler = hiddenSpoilers.filter { it.start <= inline.start && it.endExclusive >= inline.endExclusive }
++                .maxByOrNull { it.sourceRange.endExclusive - it.sourceRange.start }
++            if (spoiler == null) inline else inline.copy(content = inline.content.copy(onClick = spoiler.onReveal))
++        },
++    )
+ }
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownPrelayout.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownPrelayout.kt
+index 87f625eee94fc56e19edfa1fce4915103d58d5b7..03e0ca86d63d7a03ab08dc203adc31eef98e9ba5 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownPrelayout.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownPrelayout.kt
+@@ -1,9 +1,13 @@
+ package org.tiqian.markdown.compose
+ 
++import org.tiqian.markdown.MarkdownBibliographyBlock
+ import org.tiqian.markdown.MarkdownBlock
+ import org.tiqian.markdown.MarkdownBlockQuote
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownDiagramBlock
+ import org.tiqian.markdown.MarkdownHeading
+ import org.tiqian.markdown.MarkdownImageBlock
++import org.tiqian.markdown.MarkdownPageBreakBlock
+ import org.tiqian.markdown.MarkdownParagraph
+ import org.tiqian.markdown.MarkdownTable
+ import org.tiqian.markdown.MarkdownTableAlignment
+@@ -11,6 +15,7 @@ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownTextMark
+ import org.tiqian.markdown.MarkdownTextRange
+ import org.tiqian.markdown.MarkdownTextSpan
++import org.tiqian.markdown.MarkdownTocBlock
+ 
+ import androidx.compose.runtime.staticCompositionLocalOf
+ import androidx.compose.ui.text.TextStyle
+@@ -22,7 +27,7 @@ import org.tiqian.compose.measureWithInlineContent
+ import org.tiqian.core.LayoutConstraints
+ import org.tiqian.core.LayoutResult
+ import org.tiqian.core.ParagraphStyle
+-import org.tiqian.core.ic
++import org.tiqian.core.Ic
+ 
+ internal data class MarkdownPrecomputedLayout(
+     val layout: LayoutResult,
+@@ -134,6 +139,13 @@ private fun MarkdownBlock.supportsBackgroundPrelayout(defaultMath: Boolean): Boo
+     // subtree — column negotiation and every cell layout — is precomputed as one unit.
+     is MarkdownTable -> rows.isNotEmpty() &&
+         rows.all { row -> row.cells.all { !it.text.hasPrelayoutBlockedSpans(defaultMath) } }
++    // These blocks own presentation widths or derived content not modelled by this worker.
++    is MarkdownContainerBlock,
++    is MarkdownBibliographyBlock,
++    is MarkdownDiagramBlock,
++    is MarkdownTocBlock,
++    is MarkdownPageBreakBlock,
++    -> false
+     else -> false
+ }
+ 
+@@ -346,7 +358,7 @@ private fun precomputeMarkdownBlock(
+     return precomputeMarkdownTextLayout(
+         text = text,
+         textStyle = textStyle,
+-        paragraphStyle = ParagraphStyle(firstLineIndent = 0.ic),
++        paragraphStyle = ParagraphStyle(firstLineIndent = Ic.Zero),
+         style = style,
+         inlineSlots = inlineSlots,
+         mathRuntime = mathRuntime,
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocument.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocument.kt
+index 15a6b08bbc226196ca4aa7d2c2df304c5a06a180..e756063de9ef863c5017de87fcf673dfdb3a517e 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocument.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocument.kt
+@@ -2,10 +2,13 @@ package org.tiqian.markdown.compose
+ 
+ import androidx.compose.ui.text.AnnotatedString
+ import org.tiqian.compose.CjkSelectionDocumentFragment
++import org.tiqian.markdown.MarkdownBibliographyBlock
+ import org.tiqian.markdown.MarkdownBlock
+ import org.tiqian.markdown.MarkdownBlockQuote
+ import org.tiqian.markdown.MarkdownCodeBlock
++import org.tiqian.markdown.MarkdownContainerBlock
+ import org.tiqian.markdown.MarkdownCustomBlock
++import org.tiqian.markdown.MarkdownDiagramBlock
+ import org.tiqian.markdown.MarkdownFootnoteDefinition
+ import org.tiqian.markdown.MarkdownHeading
+ import org.tiqian.markdown.MarkdownHtmlBlock
+@@ -19,7 +22,8 @@ import org.tiqian.markdown.MarkdownTaskState
+ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownUnsupportedBlock
+ 
+-internal data class MarkdownSelectionKey(
++/** 选区片段的原块身份及文字角色；宿主可用它将 selectedRanges 对应回 Markdown 文档。 */
++data class MarkdownSelectionKey(
+     val node: MarkdownNodeKey,
+     val role: String = "text",
+ )
+@@ -27,24 +31,39 @@ internal data class MarkdownSelectionKey(
+ internal fun markdownSelectionKey(node: MarkdownNodeKey, role: String = "text"): MarkdownSelectionKey =
+     MarkdownSelectionKey(node, role)
+ 
+-/** Exact reading-order projection of the prose surfaces rendered with CjkText. */
+-internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelectionDocumentFragment> = buildList {
+-    fun addText(node: MarkdownNodeKey, text: MarkdownText, role: String = "text", separator: String = "\n") {
+-        add(
+-            CjkSelectionDocumentFragment(
+-                key = markdownSelectionKey(node, role),
+-                text = AnnotatedString(text.value),
+-                separatorAfter = separator,
+-            ),
++/**
++ * Logical reading-order projection shared by selection and optional text search.
++ * [onSearchableText] receives only built-in MarkdownTextBlock surfaces, with their top-level
++ * deferred owner. Slots affect search eligibility, never the existing selection/copy projection.
++ */
++internal fun List<MarkdownBlock>.markdownSelectionFragments(
++    slots: MarkdownBlockSlots = DefaultMarkdownBlockSlots,
++    onSearchableText: ((CjkSelectionDocumentFragment, MarkdownText, MarkdownNodeKey) -> Unit)? = null,
++): List<CjkSelectionDocumentFragment> = buildList {
++    fun addText(
++        node: MarkdownNodeKey,
++        text: MarkdownText,
++        owner: MarkdownNodeKey,
++        searchable: Boolean,
++        role: String = "text",
++        separator: String = "\n",
++    ) {
++        val fragment = CjkSelectionDocumentFragment(
++            key = markdownSelectionKey(node, role),
++            text = AnnotatedString(text.value),
++            separatorAfter = separator,
+         )
++        add(fragment)
++        if (searchable) onSearchableText?.invoke(fragment, text, owner)
+     }
+ 
+-    fun addBlocks(blocks: List<MarkdownBlock>) {
++    fun addBlocks(blocks: List<MarkdownBlock>, owner: MarkdownNodeKey? = null, searchable: Boolean = true) {
+         blocks.forEach { block ->
++            val retentionOwner = owner ?: block.metadata.key
+             when (block) {
+-                is MarkdownParagraph -> addText(block.metadata.key, block.text)
+-                is MarkdownHeading -> addText(block.metadata.key, block.text)
+-                is MarkdownBlockQuote -> addBlocks(block.blocks)
++                is MarkdownParagraph -> addText(block.metadata.key, block.text, retentionOwner, searchable)
++                is MarkdownHeading -> addText(block.metadata.key, block.text, retentionOwner, searchable)
++                is MarkdownBlockQuote -> addBlocks(block.blocks, retentionOwner, searchable)
+                 is MarkdownList -> block.items.forEachIndexed { index, item ->
+                     val marker = when (item.task) {
+                         MarkdownTaskState.Checked -> "[x]"
+@@ -58,7 +77,17 @@ internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelection
+                             separatorAfter = " ",
+                         ),
+                     )
+-                    addBlocks(item.blocks)
++                    addBlocks(item.blocks, retentionOwner, searchable)
++                }
++                is MarkdownContainerBlock -> {
++                    val canSearch = searchable && slots.container == null
++                    block.title?.let { addText(block.metadata.key, it, retentionOwner, canSearch, role = "title") }
++                    addBlocks(block.blocks, retentionOwner, canSearch)
++                }
++                is MarkdownBibliographyBlock -> {
++                    val canSearch = searchable && slots.bibliography == null
++                    addText(block.metadata.key, MarkdownText(block.title), retentionOwner, canSearch, role = "title")
++                    block.entries.forEach { addText(it.metadata.key, it.text, retentionOwner, canSearch) }
+                 }
+                 is MarkdownCodeBlock -> add(
+                     CjkSelectionDocumentFragment(
+@@ -66,6 +95,12 @@ internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelection
+                         AnnotatedString(block.code),
+                     ),
+                 )
++                is MarkdownDiagramBlock -> add(
++                    CjkSelectionDocumentFragment(
++                        markdownSelectionKey(block.metadata.key, "code"),
++                        AnnotatedString(block.source),
++                    ),
++                )
+                 is MarkdownImageBlock -> {
+                     val description = block.description.ifBlank { block.destination }
+                     if (block.caption == null) {
+@@ -76,7 +111,12 @@ internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelection
+                             ),
+                         )
+                     }
+-                    block.caption?.let { caption -> addText(block.metadata.key, caption, role = "caption") }
++                    block.caption?.let { caption ->
++                        addText(
++                            block.metadata.key, caption, retentionOwner,
++                            searchable && slots.imageBlock == null, role = "caption",
++                        )
++                    }
+                 }
+                 is MarkdownMathBlock -> add(
+                     CjkSelectionDocumentFragment(
+@@ -91,12 +131,19 @@ internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelection
+                     ),
+                 )
+                 is MarkdownTable -> {
+-                    block.caption?.let { caption -> addText(block.metadata.key, caption, role = "caption") }
++                    block.caption?.let { caption ->
++                        addText(
++                            block.metadata.key, caption, retentionOwner,
++                            searchable && slots.table == null, role = "caption",
++                        )
++                    }
+                     block.rows.forEach { row ->
+                         row.cells.forEachIndexed { index, cell ->
+                             addText(
+                                 node = cell.metadata.key,
+                                 text = cell.text,
++                                owner = retentionOwner,
++                                searchable = searchable && slots.table == null,
+                                 role = "cell",
+                                 separator = if (index == row.cells.lastIndex) "\n" else "\t",
+                             )
+@@ -111,15 +158,13 @@ internal fun List<MarkdownBlock>.markdownSelectionFragments(): List<CjkSelection
+                             separatorAfter = " ",
+                         ),
+                     )
+-                    addBlocks(block.blocks)
++                    addBlocks(block.blocks, retentionOwner, searchable && slots.footnoteDefinition == null)
+                 }
+-                is MarkdownCustomBlock -> block.attributes["text"]?.takeIf(String::isNotEmpty)?.let { text ->
+-                    add(
+-                        CjkSelectionDocumentFragment(
+-                            markdownSelectionKey(block.metadata.key, "custom"),
+-                            AnnotatedString(text),
+-                        ),
+-                    )
++                is MarkdownCustomBlock -> {
++                    block.attributes["text"]?.takeIf(String::isNotEmpty)?.let { text ->
++                        add(CjkSelectionDocumentFragment(markdownSelectionKey(block.metadata.key, "custom"), AnnotatedString(text)))
++                    }
++                    addBlocks(block.blocks, retentionOwner, searchable)
+                 }
+                 is MarkdownUnsupportedBlock -> block.fallbackText.takeIf(String::isNotEmpty)?.let { text ->
+                     add(
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSemanticBlockRendering.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSemanticBlockRendering.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..20014f6be70d6763daec944411c85c7383eaa0ec
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownSemanticBlockRendering.kt
+@@ -0,0 +1,213 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.BoxWithConstraints
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.relocation.BringIntoViewRequester
++import androidx.compose.foundation.relocation.bringIntoViewRequester
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableIntStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.role
++import androidx.compose.ui.semantics.selected
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.platform.LocalDensity
++import org.tiqian.markdown.MarkdownBibliographyBlock
++import org.tiqian.markdown.MarkdownBlock
++import org.tiqian.markdown.MarkdownCodeBlock
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownContainerKind
++import org.tiqian.markdown.MarkdownDiagramBlock
++import org.tiqian.markdown.MarkdownHeading
++import org.tiqian.markdown.MarkdownNodeKey
++import org.tiqian.markdown.MarkdownNodeMetadata
++import org.tiqian.markdown.MarkdownSourceSpan
++import org.tiqian.markdown.MarkdownText
++import org.tiqian.markdown.MarkdownTextMark
++import org.tiqian.markdown.MarkdownTextSpan
++import org.tiqian.markdown.MarkdownTextRange
++import org.tiqian.markdown.MarkdownTocBlock
++import org.tiqian.markdown.childBlocks
++
++@Composable
++fun DefaultMarkdownContainerBlock(
++    block: MarkdownContainerBlock,
++    style: MarkdownStyle,
++    slots: MarkdownBlockSlots = DefaultMarkdownBlockSlots,
++    inlineSlots: MarkdownInlineSlots = DefaultMarkdownInlineSlots,
++    onLinkClick: ((String) -> Unit)? = null,
++    onFootnoteClick: ((String) -> Unit)? = null,
++    children: @Composable () -> Unit = {
++        MarkdownBlocks(block.blocks, modifier = Modifier.fillMaxWidth(), style = style, slots = slots, inlineSlots = inlineSlots,
++            onLinkClick = onLinkClick, onFootnoteClick = onFootnoteClick, compact = false)
++    },
++) {
++    when (block.kind) {
++        MarkdownContainerKind.Columns -> BoxWithConstraints(Modifier.fillMaxWidth()) {
++            val availableWidthPx = with(LocalDensity.current) { maxWidth.toPx() }.coerceAtLeast(1f)
++            val shares = block.blocks.map { child ->
++                val width = (child as? MarkdownContainerBlock)?.width.orEmpty()
++                when {
++                    width.endsWith("%") -> width.dropLast(1).toFloatOrNull()?.div(100f)
++                    width.endsWith("px") -> width.dropLast(2).toFloatOrNull()?.div(availableWidthPx)
++                    else -> null
++                }?.takeIf { it.isFinite() && it > 0f }
++            }
++            val defaultShare = ((1f - shares.filterNotNull().sum()).coerceAtLeast(0f) /
++                shares.count { it == null }.coerceAtLeast(1)).takeIf { it > 0f } ?: 1f
++            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(style.blockSpacing)) {
++                block.blocks.forEachIndexed { index, child ->
++                    Box(Modifier.weight(shares[index] ?: defaultShare)) {
++                        MarkdownBlock(child, style, slots, inlineSlots, onLinkClick, onFootnoteClick)
++                    }
++                }
++            }
++        }
++        MarkdownContainerKind.Tabs -> {
++            var localSelected by rememberSaveable(block.metadata.key) { mutableIntStateOf(0) }
++            val navigation = LocalMarkdownHeadingNavigation.current
++            val selected = (navigation?.selectedTabs?.get(block.metadata.key) ?: localSelected)
++                .coerceIn(0, block.blocks.lastIndex.coerceAtLeast(0))
++            Column(Modifier.fillMaxWidth()) {
++                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
++                    block.blocks.forEachIndexed { index, child ->
++                        TextButton(
++                            onClick = {
++                                localSelected = index
++                                navigation?.selectedTabs?.set(block.metadata.key, index)
++                            },
++                            modifier = Modifier.semantics { role = Role.Tab; this.selected = selected == index },
++                        ) {
++                            Text((child as? MarkdownContainerBlock)?.title?.let { markdownControlLabel(it, style) } ?: "${index + 1}",
++                                style = style.body.copy(fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal),
++                                color = if (selected == index) style.link.color else style.body.color)
++                        }
++                    }
++                }
++                block.blocks.getOrNull(selected)?.let { child ->
++                    // The title is the tab control, not a second heading in its body.
++                    val body = (child as? MarkdownContainerBlock)?.copy(title = null) ?: child
++                    MarkdownBlock(body, style, slots, inlineSlots, onLinkClick, onFootnoteClick)
++                }
++            }
++        }
++        else -> {
++            val inset = block.kind == MarkdownContainerKind.DefinitionDescription
++            val panel = block.kind == MarkdownContainerKind.Admonition
++            Column(Modifier.fillMaxWidth()
++                .then(if (panel) Modifier.background(style.quoteBarColor.copy(alpha = 0.08f)).padding(style.quoteContentPadding) else Modifier)
++                .then(if (inset) Modifier.padding(start = style.quoteContentPadding) else Modifier)) {
++                block.title?.let { title ->
++                    MarkdownSelectionScope(markdownSelectionKey(block.metadata.key, "title")) {
++                        MarkdownTextBlock(title,
++                            if (block.kind == MarkdownContainerKind.DefinitionTerm || panel) style.body.copy(fontWeight = FontWeight.Bold) else style.body,
++                            style, inlineSlots, onLinkClick, onFootnoteClick)
++                    }
++                }
++                children()
++            }
++        }
++    }
++}
++
++@Composable
++fun DefaultMarkdownBibliographyBlock(
++    block: MarkdownBibliographyBlock,
++    style: MarkdownStyle,
++    inlineSlots: MarkdownInlineSlots = DefaultMarkdownInlineSlots,
++    onLinkClick: ((String) -> Unit)? = null,
++    onFootnoteClick: ((String) -> Unit)? = null,
++) {
++    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(style.compactBlockSpacing)) {
++        MarkdownSelectionScope(markdownSelectionKey(block.metadata.key, "title")) {
++            val title = MarkdownText(block.title, listOf(MarkdownTextSpan(MarkdownTextRange(0, block.title.length),
++                metadata = MarkdownNodeMetadata(
++                    key = MarkdownNodeKey(block.metadata.key.parserStableKey, block.metadata.key.path + listOf(-1, -1)),
++                    sourceSpan = MarkdownSourceSpan(0, 0, 0, 0, 0, 0),
++                    hasSourceSpan = false,
++                    nodeType = "BibliographyTitle",
++                ))))
++            MarkdownTextBlock(title, style.body.copy(fontWeight = FontWeight.Bold), style, inlineSlots, onLinkClick, onFootnoteClick)
++        }
++        block.entries.forEach { entry ->
++            val navigation = LocalMarkdownFootnoteNavigationState.current
++            val requester = remember { BringIntoViewRequester() }
++            DisposableEffect(navigation, entry.key, requester) {
++                navigation?.registerDefinition("bibliography:" + entry.key, requester)
++                onDispose { navigation?.unregisterDefinition("bibliography:" + entry.key, requester) }
++            }
++            Row(Modifier.fillMaxWidth().bringIntoViewRequester(requester)) {
++                Text("[${entry.key}] ", style = style.body, color = style.body.color)
++                Box(Modifier.weight(1f)) {
++                    MarkdownSelectionScope(markdownSelectionKey(entry.metadata.key)) {
++                        MarkdownTextBlock(entry.text, style.body, style, inlineSlots, onLinkClick, onFootnoteClick)
++                    }
++                }
++            }
++        }
++    }
++}
++
++@Composable
++fun DefaultMarkdownTocBlock(
++    block: MarkdownTocBlock,
++    style: MarkdownStyle,
++    inlineSlots: MarkdownInlineSlots = DefaultMarkdownInlineSlots,
++    onLinkClick: ((String) -> Unit)? = null,
++    onFootnoteClick: ((String) -> Unit)? = null,
++) {
++    val documentBlocks = LocalMarkdownDocumentBlocks.current
++    val headings = remember(documentBlocks, block) {
++        buildList {
++            fun collect(blocks: List<MarkdownBlock>) {
++                blocks.forEach { candidate ->
++                    if (candidate is MarkdownHeading && candidate.level in block.minDepth..block.maxDepth && candidate.id !in block.excludedIds) add(candidate)
++                    collect(candidate.childBlocks())
++                }
++            }
++            collect(documentBlocks)
++        }.let { if (block.reversed) it.reversed() else it }
++    }
++    val navigation = LocalMarkdownHeadingNavigation.current
++    Column(Modifier.fillMaxWidth()) {
++        headings.forEach { heading ->
++            TextButton(onClick = { navigation?.navigate(heading.metadata.key) },
++                modifier = Modifier.padding(start = 12.dp * (heading.level - block.minDepth).coerceAtLeast(0))) {
++                Text(markdownControlLabel(heading.text, style), style = style.body, color = style.link.color)
++            }
++        }
++    }
++}
++
++@Composable
++private fun markdownControlLabel(text: MarkdownText, style: MarkdownStyle): String {
++    // Derived labels conceal spoilers without resolving host inline slots or adding child controls.
++    val labelText = remember(text) { text.copy(spans = text.spans.filter { it.mark == MarkdownTextMark.Spoiler }) }
++    if (labelText.spans.isEmpty()) return text.value
++    return resolveMarkdownText(labelText, style, style.body, DefaultMarkdownInlineSlots, null, null)
++        .semanticsText?.text ?: text.value
++}
++
++@Composable
++fun DefaultMarkdownDiagramBlock(block: MarkdownDiagramBlock, style: MarkdownStyle) {
++    MarkdownSelectionScope(markdownSelectionKey(block.metadata.key, "code")) {
++        DefaultMarkdownCodeBlock(MarkdownCodeBlock(block.source, block.language, block.language, block.metadata, showLineNumbers = false), style)
++    }
++}
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownStyle.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownStyle.kt
+index 2dcdc3ef25f028278f08b8d6ced1d930694c4f7a..46da839272dca23b4c76033165cac7d41763050c 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownStyle.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownStyle.kt
+@@ -18,9 +18,9 @@ import androidx.compose.ui.unit.TextUnit
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.em
+ import androidx.compose.ui.unit.sp
++import org.tiqian.clreq.ClreqProfile
+ import org.tiqian.clreq.KinsokuMode
+ import org.tiqian.core.Ic
+-import org.tiqian.core.ic
+ 
+ /** Colour-source choice; layout geometry is identical in both modes. */
+ enum class MarkdownPalette {
+@@ -121,11 +121,11 @@ data class MarkdownProseMeasure(
+     /** Disable when the host already owns and constrains the prose measure. */
+     val enabled: Boolean = true,
+     /** Below this available measure, prose uses the whole integral-cell width. */
+-    val fluidStart: Ic = 32.ic,
++    val fluidStart: Ic = Ic(32f),
+     /** Additional prose cells admitted whenever the available measure doubles. */
+-    val growthPerDoubling: Ic = 8.ic,
++    val growthPerDoubling: Ic = Ic(8f),
+     /** Absolute horizontal-writing limit. */
+-    val maximum: Ic = 48.ic,
++    val maximum: Ic = Ic(48f),
+ ) {
+     init {
+         require(fluidStart.count.isFinite() && fluidStart.count > 0f)
+@@ -234,11 +234,13 @@ data class MarkdownStyle(
+     /** Additional text style inherited by prose nested inside a block quote. */
+     val quoteText: TextStyle = TextStyle(),
+     /** Minimum list-body indent at ordinary measures. */
+-    val listContentIndent: Ic = 1.ic,
++    val listContentIndent: Ic = Ic(1f),
+     /** Minimum list-body indent only on a long measure. */
+-    val listLongContentIndent: Ic = 2.ic,
++    val listLongContentIndent: Ic = Ic(2f),
+     /** Long-measure boundary, shared with Tiqian's measure-adaptive strict CLREQ tier. */
+-    val listLongMeasureBreakpoint: Ic = KinsokuMode.MeasureAdaptive().strictAboveEm.ic,
++    val listLongMeasureBreakpoint: Ic = Ic(
++        (ClreqProfile.MainlandHorizontal.kinsokuMode as KinsokuMode.MeasureAdaptive).strictAboveEm,
++    ),
+     /** Tight items continue on the normal body-line rhythm without a synthetic gap. */
+     val tightListItemSpacing: Dp = 0.dp,
+     val tightListItemSpacingBodyLines: Float = 0f,
+@@ -268,7 +270,7 @@ data class MarkdownStyle(
+     val tableHeaderBackground: Color = Color(0xFFF6F8FA),
+     val tableCellPadding: Dp = 8.dp,
+     /** Readable content floor for a non-short table column; padding is added separately. */
+-    val tableReadableColumnWidth: Ic = 4.ic,
++    val tableReadableColumnWidth: Ic = Ic(4f),
+     /** Preferred-width cap for one column before its text is allowed to wrap. */
+     val tableColumnWidth: Dp = 160.dp,
+     val tableText: TextStyle = body.merge(
+@@ -291,9 +293,9 @@ data class MarkdownStyle(
+         ),
+     ),
+     /** Figure/table captions inset by half a body ideographic character on both sides. */
+-    val captionHorizontalIndent: Ic = 0.5f.ic,
++    val captionHorizontalIndent: Ic = Ic(0.5f),
+     /** A narrow image stays centred while its caption keeps a readable line measure. */
+-    val figureCaptionMinimumWidth: Ic = 12.ic,
++    val figureCaptionMinimumWidth: Ic = Ic(12f),
+     val thematicBreakColor: Color = Color(0xFFD8DEE4),
+     val headingScales: MarkdownHeadingScales = MarkdownHeadingScales(),
+     val headingSpacing: MarkdownHeadingSpacing = MarkdownHeadingSpacing(),
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
+index ada8faba186b5c1bb0f61f7b250253db555449ef..eb43e873e122723f23eda2008bc557bed2f73324 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
+@@ -99,7 +99,7 @@ import org.tiqian.core.LastLineAlignment
+ import org.tiqian.core.LineLengthGrid
+ import org.tiqian.core.ParagraphStyle
+ import org.tiqian.core.TextStyle as CoreTextStyle
+-import org.tiqian.core.ic
++import org.tiqian.core.Ic
+ import org.jetbrains.compose.resources.painterResource
+ import org.jetbrains.compose.resources.stringResource
+ import org.tiqian.markdown.compose.generated.resources.Res
+@@ -120,7 +120,7 @@ import kotlin.math.roundToInt
+ // recorded rationale. Width negotiation keeps columns on the em grid so the quantized
+ // measure never leaves per-line slack.
+ internal val markdownTableParagraphStyle = ParagraphStyle(
+-    firstLineIndent = 0.ic,
++    firstLineIndent = Ic.Zero,
+     lastLineAlignment = LastLineAlignment.Start,
+ )
+ 
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
+index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f9af23090 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
+@@ -2,11 +2,24 @@ package org.tiqian.markdown.compose
+ 
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberUpdatedState
+ import androidx.compose.runtime.staticCompositionLocalOf
+ import androidx.compose.ui.Modifier
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.ui.draw.clipToBounds
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.ColorFilter
++import androidx.compose.ui.graphics.drawscope.clipRect
++import androidx.compose.ui.graphics.drawscope.translate
+ import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.platform.LocalLayoutDirection
++import androidx.compose.ui.unit.LayoutDirection
++import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.text.TextRange
+ import androidx.compose.ui.text.TextStyle
+ import org.tiqian.compose.CjkInlineObject
+@@ -21,6 +34,7 @@ import org.tiqian.core.ParagraphStyle
+ import org.tiqian.markdown.MarkdownText
+ 
+ private val LocalMarkdownSelectionFragmentKey = staticCompositionLocalOf<Any?> { null }
++private val IgnoreMarkdownTextLayout: (org.tiqian.core.LayoutResult) -> Unit = {}
+ 
+ internal val LocalMarkdownSelectionRetentionKey = staticCompositionLocalOf<Any?> { null }
+ 
+@@ -53,6 +67,7 @@ internal fun MarkdownTextBlock(
+     val paragraphMeasurer = rememberMarkdownParagraphMeasurer()
+     val selectionFragmentKey = LocalMarkdownSelectionFragmentKey.current
+     val precomputed = selectionFragmentKey?.let(LocalMarkdownPrecomputedLayouts.current::get)
++    val searchTarget = rememberMarkdownTextSearchTarget(selectionFragmentKey)
+     val footnoteNavigationState = LocalMarkdownFootnoteNavigationState.current
+     val currentLinkClick = rememberUpdatedState(onLinkClick)
+     val currentFootnoteClick = rememberUpdatedState(onFootnoteClick)
+@@ -88,7 +103,7 @@ internal fun MarkdownTextBlock(
+         preparedInlineMath = precomputed?.preparedInlineMath.orEmpty(),
+     )
+     val density = LocalDensity.current
+-    val tiqianInlineObjects = remember(resolved.tiqianInlineObjects, density) {
++    val tiqianInlineObjects = remember(resolved.tiqianInlineObjects, resolved.endMarkers, density) {
+         resolved.toCjkInlineObjects(density)
+     }
+     val inlineDecorations = remember(resolved.decorations) {
+@@ -97,7 +112,16 @@ internal fun MarkdownTextBlock(
+     val inlineBackgrounds = remember(resolved.backgrounds) {
+         resolved.backgrounds.toCjkInlineBackgrounds()
+     }
+-    val textModifier = modifier.markdownInlineInteractionSemantics(resolved.interactions)
++    val textModifier = modifier
++        .then(searchTarget?.modifier ?: Modifier)
++        .markdownInlineInteractionSemantics(resolved.interactions, resolved.semanticsText)
++    val onTextLayout: (org.tiqian.core.LayoutResult) -> Unit = if (searchTarget == null) {
++        IgnoreMarkdownTextLayout
++    } else remember(searchTarget, resolved) {
++        { layout ->
++            searchTarget.updateLayout(layout, resolved)
++        }
++    }
+     val effectiveParagraph = if (markdownStyle.insetProse) insetProseParagraphStyle(paragraphStyle ?: ParagraphStyle(firstLineIndent = org.tiqian.core.Ic.Zero)) else paragraphStyle
+     if (effectiveParagraph == null) {
+         CjkText(
+@@ -108,7 +132,8 @@ internal fun MarkdownTextBlock(
+             inlineBackgrounds = inlineBackgrounds,
+             inlineDecorations = inlineDecorations,
+             measurer = paragraphMeasurer,
+-            precomputedLayout = precomputed?.layout,
++            precomputedLayout = precomputed?.layout?.takeIf { resolved.endMarkers.isEmpty() },
++            onTextLayout = onTextLayout,
+         )
+     } else {
+         CjkText(
+@@ -120,14 +145,15 @@ internal fun MarkdownTextBlock(
+             inlineBackgrounds = inlineBackgrounds,
+             inlineDecorations = inlineDecorations,
+             measurer = paragraphMeasurer,
+-            precomputedLayout = precomputed?.layout,
++            precomputedLayout = precomputed?.layout?.takeIf { resolved.endMarkers.isEmpty() },
++            onTextLayout = onTextLayout,
+         )
+     }
+ }
+ 
+ internal fun ResolvedMarkdownText.toCjkInlineObjects(
+     density: androidx.compose.ui.unit.Density,
+-): List<CjkInlineObject> = tiqianInlineObjects.map { resolvedObject ->
++): List<CjkInlineObject> = (tiqianInlineObjects.map { resolvedObject ->
+     val metrics = requireNotNull(resolvedObject.content.metrics)
+     CjkInlineObject(
+                 range = TextRange(resolvedObject.start, resolvedObject.endExclusive),
+@@ -185,7 +211,34 @@ internal fun ResolvedMarkdownText.toCjkInlineObjects(
+                     preventsLineBreak = resolvedObject.content.trailingBoundary.preventsLineBreak,
+                 ),
+                 content = {
+-                    resolvedObject.content.content(resolvedObject.content.alternateText)
++                    val defaultClick = resolvedObject.content.onClick
++                    val objectContent: @Composable () -> Unit = {
++                        resolvedObject.content.content(resolvedObject.content.alternateText)
++                    }
++                    if (defaultClick == null) objectContent() else {
++                        Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null) {
++                            defaultClick()
++                        }) {
++                            objectContent()
++                        }
++                    }
+                 },
+     )
+-}
++} + endMarkers.map { marker ->
++            CjkInlineObject(
++                range = TextRange(marker.endExclusive - 1, marker.endExclusive),
++                advance = marker.marker.gap + marker.marker.size,
++                ascent = marker.marker.size + marker.marker.offset,
++                descent = (-marker.marker.offset).coerceAtLeast(0.dp),
++            ) {
++                val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
++                Canvas(Modifier.fillMaxSize().clipToBounds()) {
++                    val side = marker.marker.size.toPx()
++                    translate(left = if (rtl) 0f else marker.marker.gap.toPx()) {
++                        clipRect(right = side, bottom = side) {
++                            with(marker.marker.painter) { draw(Size(side, side), colorFilter = ColorFilter.tint(marker.marker.color)) }
++                        }
++                    }
++                }
++            }
++        }).sortedBy { it.range.start }
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e19016035
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt
+@@ -0,0 +1,374 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.relocation.BringIntoViewRequester
++import androidx.compose.foundation.relocation.bringIntoViewRequester
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.Immutable
++import androidx.compose.runtime.Stable
++import androidx.compose.runtime.compositionLocalOf
++import androidx.compose.runtime.derivedStateOf
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateMapOf
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.runtime.snapshotFlow
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.drawBehind
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Rect
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.layout.LayoutCoordinates
++import androidx.compose.ui.layout.onGloballyPositioned
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.CoroutineStart
++import kotlinx.coroutines.Deferred
++import kotlinx.coroutines.async
++import kotlinx.coroutines.coroutineScope
++import kotlinx.coroutines.currentCoroutineContext
++import kotlinx.coroutines.ensureActive
++import kotlinx.coroutines.flow.filterNotNull
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.withTimeoutOrNull
++import kotlinx.coroutines.job
++import org.tiqian.compose.CjkSelectionState
++import org.tiqian.core.LayoutResult
++import org.tiqian.core.getBoundingBoxes
++import org.tiqian.core.getLineForOffset
++import org.tiqian.markdown.MarkdownBlock
++import org.tiqian.markdown.MarkdownTextMark
++import org.tiqian.markdown.MarkdownTextRange
++
++/** A match in a renderer fragment. Offsets are source UTF-16 indices; the end is exclusive. */
++@Immutable
++class MarkdownTextSearchMatch internal constructor(
++    val documentRevision: Long,
++    val fragmentKey: Any,
++    val startInFragment: Int,
++    val endInFragment: Int,
++    val excerpt: String,
++)
++
++/**
++ * Find-in-document for one [TiqianMarkdownSurface], independent of native text selection.
++ *
++ * Queries trim/collapse Unicode whitespace and use Kotlin's case-insensitive literal matching.
++ * Matches never cross fragments or inline image/math source ranges. Built-in prose, headings,
++ * nested prose, table cells and captions are searchable; replaced block-slot subtrees are not.
++ * Use this state on the UI thread. Closing the host's search UI should call [clear].
++ */
++@Stable
++class MarkdownTextSearchState internal constructor(
++    // BoundedSearchReveal: a missing/unplaced target or a non-completing parent relocation must
++    // not retain an offscreen owner forever. Internal override allows focused lifecycle tests.
++    private val revealTimeoutMillis: Long = 5_000L,
++) {
++    private var queryValue by mutableStateOf("")
++    val query: String get() = queryValue
++
++    var matches: List<MarkdownTextSearchMatch> by mutableStateOf(emptyList())
++        private set
++    var activeMatch: MarkdownTextSearchMatch? by mutableStateOf(null)
++        private set
++    var highlightActiveMatch: Boolean by mutableStateOf(true)
++    var highlightColor: Color by mutableStateOf(Color.Yellow.copy(alpha = 0.3f))
++
++    /** 是否绘制所有匹配的背景；当前匹配启用高亮时只使用 [highlightColor]，不叠色。 */
++    var highlightAllMatches: Boolean by mutableStateOf(false)
++    var allMatchHighlightColor: Color by mutableStateOf(Color.Yellow.copy(alpha = 0.15f))
++
++    // 只缓存结果的分组，不组合、测量或保留离屏 owner。
++    internal val matchesByFragment: Map<Any, List<MarkdownTextSearchMatch>> by derivedStateOf {
++        if (highlightAllMatches) matches.groupBy { it.fragmentKey } else emptyMap()
++    }
++
++    internal var requestedOwnerKey: Any? by mutableStateOf(null)
++        private set
++    internal var document: MarkdownTextSearchDocument? = null
++        private set
++    private var documentRevision = 0L
++    private var revealRequest: Deferred<Boolean>? = null
++    internal var relocation: MarkdownTextSearchRelocation? by mutableStateOf(null)
++        private set
++    internal val selectionInProgress: Boolean
++        get() = document?.selectionState?.activeGestureOwnerKeys?.isNotEmpty() == true
++
++    fun setQuery(query: String) {
++        if (queryValue == query) return
++        cancelReveal()
++        queryValue = query
++        updateMatches()
++    }
++
++    /** Clear results/highlight, cancel relocation and release the retained target owner. */
++    fun clear() {
++        cancelReveal()
++        queryValue = ""
++        matches = emptyList()
++    }
++
++    /**
++     * Materialize only the target owner and bring the match's first actual line into view.
++     * Returns false for stale matches, interrupted or timed-out relocation. Caller cancellation
++     * propagates normally. No scroll estimate, paragraph-top shortcut or selection mutation is used.
++     */
++    suspend fun reveal(match: MarkdownTextSearchMatch): Boolean {
++        val currentDocument = document ?: return false
++        if (match.documentRevision != documentRevision || matches.none { it === match } || selectionInProgress) return false
++        val fragment = currentDocument.fragments[match.fragmentKey] ?: return false
++        cancelReveal()
++        activeMatch = match
++        requestedOwnerKey = fragment.ownerKey
++        return coroutineScope {
++            val request = async(start = CoroutineStart.UNDISPATCHED) {
++                withTimeoutOrNull(revealTimeoutMillis) {
++                    val target = snapshotFlow {
++                        currentDocument.targets[match.fragmentKey]?.takeIf { it.isReady }
++                    }.filterNotNull().first()
++                    val rect = target.firstLineRect(match) ?: return@withTimeoutOrNull false
++                    if (selectionInProgress) return@withTimeoutOrNull false
++                    val relocating = MarkdownTextSearchRelocation(currentCoroutineContext().job)
++                    relocation = relocating
++                    try {
++                        target.requester.bringIntoView(rect)
++                    } finally {
++                        if (relocation === relocating) relocation = null
++                    }
++                    currentCoroutineContext().ensureActive()
++                    document === currentDocument && activeMatch === match && target.isReady &&
++                        currentDocument.targets[match.fragmentKey] === target
++                } ?: false
++            }
++            revealRequest = request
++            var revealed = false
++            try {
++                request.await().also { revealed = it }
++            } catch (cancelled: CancellationException) {
++                currentCoroutineContext().ensureActive()
++                false
++            } finally {
++                if (revealRequest === request) {
++                    revealRequest = null
++                    if (!revealed) {
++                        activeMatch = null
++                        requestedOwnerKey = null
++                    }
++                }
++            }
++        }
++    }
++
++    internal fun attach(document: MarkdownTextSearchDocument) {
++        check(this.document == null || this.document === document) {
++            "MarkdownTextSearchState must belong to only one Markdown surface"
++        }
++        if (this.document === document) return
++        cancelReveal()
++        this.document = document
++        documentRevision++
++        updateMatches()
++    }
++
++    internal fun detach(document: MarkdownTextSearchDocument) {
++        if (this.document !== document) return
++        cancelReveal()
++        this.document = null
++        matches = emptyList()
++    }
++
++    private fun cancelReveal() {
++        revealRequest?.cancel()
++        revealRequest = null
++        relocation = null
++        activeMatch = null
++        requestedOwnerKey = null
++    }
++
++    private fun updateMatches() {
++        val needle = NormalizedSearchText(query).value
++        matches = if (needle.isEmpty()) emptyList() else buildList {
++            document?.fragments?.values?.forEach { fragment ->
++                val text = fragment.text
++                var from = 0
++                while (from <= text.value.length - needle.length) {
++                    val found = text.value.indexOf(needle, startIndex = from, ignoreCase = true)
++                    if (found < 0) break
++                    val start = text.starts[found]
++                    val end = text.ends[found + needle.length - 1]
++                    val splitsSurrogate = (start > 0 && text.source[start].isLowSurrogate() && text.source[start - 1].isHighSurrogate()) ||
++                        (end < text.source.length && text.source[end].isLowSurrogate() && text.source[end - 1].isHighSurrogate())
++                    if (splitsSurrogate || fragment.atomicRanges.any { start < it.endExclusive && end > it.start }) {
++                        // Rejected candidates must not hide an overlapping match in adjacent prose.
++                        from = found + 1
++                        continue
++                    }
++                    from = found + needle.length
++                    var excerptStart = (start - 40).coerceAtLeast(0)
++                    var excerptEnd = (end + 40).coerceAtMost(text.source.length)
++                    if (excerptStart > 0 && text.source[excerptStart].isLowSurrogate()) excerptStart--
++                    if (excerptEnd < text.source.length && text.source[excerptEnd].isLowSurrogate()) excerptEnd++
++                    add(
++                        MarkdownTextSearchMatch(
++                            documentRevision = documentRevision,
++                            fragmentKey = fragment.key,
++                            startInFragment = start,
++                            endInFragment = end,
++                            excerpt = (if (excerptStart > 0) "…" else "") +
++                                text.source.substring(excerptStart, excerptEnd) +
++                                (if (excerptEnd < text.source.length) "…" else ""),
++                        ),
++                    )
++                }
++            }
++        }
++    }
++}
++
++@Composable
++fun rememberMarkdownTextSearchState(): MarkdownTextSearchState = remember { MarkdownTextSearchState() }
++
++/** Preserve the original range of each normalized UTF-16 unit, including collapsed whitespace. */
++internal class NormalizedSearchText(val source: String) {
++    val starts = ArrayList<Int>()
++    val ends = ArrayList<Int>()
++    val value = buildString {
++        var offset = 0
++        while (offset < source.length) {
++            val start = offset
++            if (source[offset].isWhitespace()) {
++                while (offset < source.length && source[offset].isWhitespace()) offset++
++                if (isEmpty() || offset == source.length) continue
++                append(' ')
++            } else {
++                append(source[offset++])
++            }
++            starts.add(start)
++            ends.add(offset)
++        }
++    }
++}
++
++internal class MarkdownSearchFragment(
++    val key: Any,
++    val ownerKey: Any,
++    val text: NormalizedSearchText,
++    val atomicRanges: List<MarkdownTextRange>,
++)
++
++/** One surface binding: search metadata is collected by the existing logical fragment traversal. */
++internal class MarkdownTextSearchDocument(
++    val state: MarkdownTextSearchState,
++    blocks: List<MarkdownBlock>,
++    slots: MarkdownBlockSlots,
++    val selectionState: CjkSelectionState? = null,
++) {
++    val fragments = linkedMapOf<Any, MarkdownSearchFragment>()
++    val targets = mutableStateMapOf<Any, MarkdownTextSearchTarget>()
++    val selectionFragments = blocks.markdownSelectionFragments(slots) { fragment, text, owner ->
++        fragments[fragment.key] = MarkdownSearchFragment(
++            key = fragment.key,
++            ownerKey = owner,
++            text = NormalizedSearchText(fragment.text.text),
++            atomicRanges = text.spans.filter {
++                it.mark is MarkdownTextMark.InlineMath || it.mark is MarkdownTextMark.InlineImage
++            }.map { it.range },
++        )
++    }
++}
++
++internal val LocalMarkdownTextSearchDocument = compositionLocalOf<MarkdownTextSearchDocument?> { null }
++
++@Composable
++internal fun rememberMarkdownTextSearchTarget(fragmentKey: Any?): MarkdownTextSearchTarget? {
++    val document = LocalMarkdownTextSearchDocument.current ?: return null
++    if (fragmentKey == null || fragmentKey !in document.fragments) return null
++    val target = remember(document, fragmentKey) { MarkdownTextSearchTarget(document, fragmentKey) }
++    DisposableEffect(document, fragmentKey, target) {
++        document.targets[fragmentKey] = target
++        onDispose {
++            target.detach()
++            if (document.targets[fragmentKey] === target) document.targets.remove(fragmentKey)
++        }
++    }
++    return target
++}
++
++/** Geometry and requester on the actual CjkText node; no second measurement or host coordinate guess. */
++internal class MarkdownTextSearchTarget(
++    private val document: MarkdownTextSearchDocument,
++    private val fragmentKey: Any,
++) {
++    val requester = BringIntoViewRequester()
++    var layout: LayoutResult? by mutableStateOf(null)
++        private set
++    private var resolvedText: ResolvedMarkdownText? by mutableStateOf(null)
++    private var placedLayout: LayoutResult? by mutableStateOf(null)
++    private var coordinates: LayoutCoordinates? = null
++    val isReady: Boolean get() = layout != null && placedLayout === layout && coordinates?.isAttached == true
++
++    fun updateLayout(layout: LayoutResult, text: ResolvedMarkdownText) {
++        resolvedText = text
++        this.layout = layout
++    }
++
++    fun detach() {
++        coordinates = null
++        placedLayout = null
++    }
++
++    val modifier = Modifier
++        .bringIntoViewRequester(requester)
++        .onGloballyPositioned {
++            coordinates = it
++            placedLayout = layout
++        }
++        .drawBehind {
++            val state = document.state
++            if (state.document !== document) return@drawBehind
++            val text = resolvedText ?: return@drawBehind
++            val layout = layout ?: return@drawBehind
++            val active = state.activeMatch.takeIf { state.highlightActiveMatch }
++            val matches = if (state.highlightAllMatches) {
++                state.matchesByFragment[fragmentKey].orEmpty()
++            } else {
++                listOfNotNull(active?.takeIf { it.fragmentKey == fragmentKey })
++            }
++            for (match in matches) {
++                val color = if (match === active) state.highlightColor else state.allMatchHighlightColor
++                for (box in layout.getBoundingBoxes(
++                    text.sourceToRenderedOffset(match.startInFragment, false),
++                    text.sourceToRenderedOffset(match.endInFragment, true),
++                )) {
++                    drawRect(
++                        color = color,
++                        topLeft = Offset(box.left, box.top),
++                        size = Size(box.right - box.left, box.bottom - box.top),
++                    )
++                }
++            }
++        }
++
++    fun firstLineRect(match: MarkdownTextSearchMatch): Rect? {
++        val layout = layout ?: return null
++        val text = resolvedText ?: return null
++        val start = text.sourceToRenderedOffset(match.startInFragment, false)
++        val line = layout.lines.getOrNull(layout.getLineForOffset(start)) ?: return null
++        val end = minOf(text.sourceToRenderedOffset(match.endInFragment, true), line.range.end)
++        // Request only the engine's first matched line, even for a paragraph/match taller than
++        // the viewport. Mixed inline styles can have different box heights on the same line.
++        return layout.getBoundingBoxes(start, end)
++            .filter { box ->
++                box.left.isFinite() && box.top.isFinite() && box.right.isFinite() && box.bottom.isFinite() &&
++                    box.right > box.left && box.bottom > box.top
++            }
++            .map { Rect(it.left, it.top, it.right, it.bottom) }
++            .reduceOrNull { left, right ->
++                Rect(
++                    minOf(left.left, right.left), minOf(left.top, right.top),
++                    maxOf(left.right, right.right), maxOf(left.bottom, right.bottom),
++                )
++            }
++    }
++}
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a6e26362125a683b8826ce3b912b8046192ed0d
+--- /dev/null
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt
+@@ -0,0 +1,61 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.gestures.BringIntoViewSpec
++import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.rememberUpdatedState
++import kotlinx.coroutines.Job
++import kotlin.math.abs
++
++/**
++ * Centers fully offscreen search lines, leaves visible lines still and uses the nearest edge
++ * for partially visible lines. Owned scrolling installs this automatically; an external host
++ * provides it before creating its scroll container, with its actual occlusion in pixels.
++ * Non-search relocation is delegated unchanged to [fallback].
++ */
++@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
++@Composable
++fun rememberMarkdownTextSearchBringIntoViewSpec(
++    state: MarkdownTextSearchState,
++    obscuredTopPx: Float = 0f,
++    obscuredBottomPx: Float = 0f,
++    fallback: BringIntoViewSpec = LocalBringIntoViewSpec.current,
++): BringIntoViewSpec {
++    val topInset by rememberUpdatedState(obscuredTopPx)
++    val bottomInset by rememberUpdatedState(obscuredBottomPx)
++    val fallbackSpec by rememberUpdatedState(fallback)
++    return remember(state) {
++        object : BringIntoViewSpec {
++            private var request: MarkdownTextSearchRelocation? = null
++            private var centerMatch = false
++
++            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
++                val current = state.relocation
++                if (current == null || !current.job.isActive || state.selectionInProgress) {
++                    if (state.selectionInProgress) current?.job?.cancel()
++                    request = null
++                    return fallbackSpec.calculateScrollDistance(offset, size, containerSize)
++                }
++                val bottom = (containerSize - bottomInset).coerceIn(0f, containerSize)
++                val top = topInset.coerceIn(0f, bottom)
++                val end = offset + size
++                if (request !== current) {
++                    request = current
++                    // Compose recalculates every frame; entering the viewport must not undo centering.
++                    centerMatch = end <= top || offset >= bottom
++                }
++                return when {
++                    centerMatch -> offset + size / 2f - (top + bottom) / 2f
++                    offset >= top && end <= bottom -> 0f
++                    offset < top && end > bottom -> 0f
++                    abs(offset - top) < abs(end - bottom) -> offset - top
++                    else -> end - bottom
++                }
++            }
++        }
++    }
++}
++
++internal class MarkdownTextSearchRelocation(val job: Job)
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdown.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdown.kt
+index d2b7cdaf1391bae2213852cbe3fcc176da80fd01..41b4f084d7fdb1395933d299c55f065b0e70f527 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdown.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdown.kt
+@@ -2,24 +2,27 @@ package org.tiqian.markdown.compose
+ 
+ import org.tiqian.markdown.DefaultMarkdownCodeHighlighter
+ import org.tiqian.markdown.MarkdownBlock
+-import org.tiqian.markdown.MarkdownBlockQuote
++import org.tiqian.markdown.MarkdownContainerBlock
++import org.tiqian.markdown.MarkdownBibliographyBlock
++import org.tiqian.markdown.MarkdownTocBlock
++import org.tiqian.markdown.MarkdownDiagramBlock
++import org.tiqian.markdown.MarkdownPageBreakBlock
+ import org.tiqian.markdown.MarkdownCodeBlock
+ import org.tiqian.markdown.MarkdownCodeHighlighter
+ import org.tiqian.markdown.MarkdownCustomBlock
+ import org.tiqian.markdown.MarkdownFootnoteDefinition
+ import org.tiqian.markdown.MarkdownFootnotePlacement
+-import org.tiqian.markdown.MarkdownHeading
+ import org.tiqian.markdown.MarkdownHtmlBlock
+ import org.tiqian.markdown.MarkdownImageBlock
+-import org.tiqian.markdown.MarkdownList
+ import org.tiqian.markdown.MarkdownMathBlock
+-import org.tiqian.markdown.MarkdownParagraph
+ import org.tiqian.markdown.MarkdownRenderDocument
+ import org.tiqian.markdown.MarkdownTable
+ import org.tiqian.markdown.MarkdownText
+ import org.tiqian.markdown.MarkdownTextMark
+ import org.tiqian.markdown.MarkdownThematicBreak
+ import org.tiqian.markdown.MarkdownUnsupportedBlock
++import org.tiqian.markdown.childBlocks
++import org.tiqian.markdown.directTexts
+ import org.tiqian.markdown.markdownImageGallery
+ import org.tiqian.markdown.placeFootnotes
+ 
+@@ -48,6 +51,12 @@ class MarkdownBlockSlots(
+     val customBlock: (@Composable (MarkdownCustomBlock, MarkdownStyle) -> Unit)? = null,
+     val thematicBreak: (@Composable (MarkdownThematicBreak, MarkdownStyle) -> Unit)? = null,
+     val unsupportedBlock: (@Composable (MarkdownUnsupportedBlock, MarkdownStyle) -> Unit)? = null,
++    /** Children/default content retain the current selection and navigation context. */
++    val container: (@Composable (MarkdownContainerBlock, MarkdownStyle, defaultContent: @Composable () -> Unit) -> Unit)? = null,
++    val bibliography: (@Composable (MarkdownBibliographyBlock, MarkdownStyle, defaultContent: @Composable () -> Unit) -> Unit)? = null,
++    val tableOfContents: (@Composable (MarkdownTocBlock, MarkdownStyle, defaultContent: @Composable () -> Unit) -> Unit)? = null,
++    val diagram: (@Composable (MarkdownDiagramBlock, MarkdownStyle) -> Unit)? = null,
++    val pageBreak: (@Composable (MarkdownPageBreakBlock, MarkdownStyle) -> Unit)? = null,
+ )
+ 
+ val DefaultMarkdownBlockSlots: MarkdownBlockSlots = MarkdownBlockSlots()
+@@ -78,13 +87,24 @@ fun TiqianMarkdown(
+             document.placeFootnotes(footnotePlacement)
+         }
+     }
+-    val footnoteOwnerKeys = remember(placedBlocks) {
+-        placedBlocks.filterIsInstance<MarkdownFootnoteDefinition>()
+-            .associate { it.label to it.metadata.key }
++    val headingNavigation = rememberMarkdownHeadingNavigation(placedBlocks, deferredLayout)
++    val footnoteTargetKeys = remember(placedBlocks) {
++        buildMap {
++            fun collect(block: MarkdownBlock) {
++                if (block is MarkdownFootnoteDefinition) put(block.label, block.metadata.key)
++                if (block is MarkdownBibliographyBlock) block.entries.forEach { put("bibliography:" + it.key, block.metadata.key) }
++                block.childBlocks().forEach(::collect)
++            }
++            placedBlocks.forEach(::collect)
++        }
+     }
+     val footnoteNavigationState = rememberMarkdownFootnoteNavigationState(
++        document = document,
+         materializeDefinition = { label ->
+-            footnoteOwnerKeys[label]?.let { key -> deferredLayout?.onMaterializeOwner?.invoke(key) } == true
++            footnoteTargetKeys[label]?.let(headingNavigation::activateAncestors)?.let { ownerKey ->
++                deferredLayout?.onMaterializeOwner?.invoke(ownerKey)
++                true
++            } == true
+         },
+     )
+     val imageGallery = remember(placedBlocks) {
+@@ -113,6 +133,8 @@ fun TiqianMarkdown(
+         LocalMarkdownCodeHighlighter provides codeHighlighter,
+         LocalMarkdownParagraphMeasurer provides paragraphMeasurer,
+         LocalMarkdownMathRuntime provides mathRuntime,
++        LocalMarkdownDocumentBlocks provides placedBlocks,
++        LocalMarkdownHeadingNavigation provides headingNavigation,
+     ) {
+         BoxWithConstraints(modifier) {
+             val bodyCoreTextStyle = remember(style.body, density) {
+@@ -184,24 +206,9 @@ fun TiqianMarkdown(
+ }
+ 
+ internal fun List<MarkdownBlock>.containsMarkdownMath(): Boolean = any { block ->
+-    when (block) {
+-        is MarkdownMathBlock -> true
+-        is MarkdownParagraph -> block.text.containsMarkdownMath()
+-        is MarkdownHeading -> block.text.containsMarkdownMath()
+-        is MarkdownBlockQuote -> block.blocks.containsMarkdownMath()
+-        is MarkdownList -> block.items.any { it.blocks.containsMarkdownMath() }
+-        is MarkdownImageBlock -> block.caption?.containsMarkdownMath() == true
+-        is MarkdownTable ->
+-            block.caption?.containsMarkdownMath() == true ||
+-                block.rows.any { row -> row.cells.any { it.text.containsMarkdownMath() } }
+-        is MarkdownFootnoteDefinition -> block.blocks.containsMarkdownMath()
+-        is MarkdownCodeBlock,
+-        is MarkdownCustomBlock,
+-        is MarkdownHtmlBlock,
+-        is MarkdownThematicBreak,
+-        is MarkdownUnsupportedBlock,
+-        -> false
+-    }
++    block is MarkdownMathBlock ||
++        block.directTexts().any { it.containsMarkdownMath() } ||
++        block.childBlocks().containsMarkdownMath()
+ }
+ 
+ private fun MarkdownText.containsMarkdownMath(): Boolean =
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdownSurface.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdownSurface.kt
+index 03f338873fd3c55a9a4b6edff0dd5d7980da1ec8..af7e4f0e3d87d37774f4cde234dedd0a8fed3fb9 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdownSurface.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/TiqianMarkdownSurface.kt
+@@ -1,6 +1,7 @@
+ package org.tiqian.markdown.compose
+ 
+ import androidx.compose.foundation.ScrollState
++import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.RowScope
+@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableFloatStateOf
+ import androidx.compose.runtime.mutableIntStateOf
+@@ -19,8 +21,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
+ import androidx.compose.ui.layout.onSizeChanged
+ import androidx.compose.ui.layout.positionInWindow
+ import androidx.compose.ui.platform.LocalWindowInfo
+-import org.tiqian.compose.CjkSelectionDocument
+ import org.tiqian.compose.CjkSelectionContainer
++import org.tiqian.compose.CjkSelectionDocument
+ import org.tiqian.compose.CjkSelectionState
+ import org.tiqian.compose.rememberCjkSelectionState
+ import org.tiqian.markdown.DefaultMarkdownCodeHighlighter
+@@ -37,6 +39,7 @@ import org.tiqian.markdown.placeFootnotes
+  * adapt their document model and supply platform services through slots and [imageProvider].
+  * Pass [selectionState] to read the current selection, for example from host context-menu items.
+  */
++@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+ @Composable
+ fun TiqianMarkdownSurface(
+     document: MarkdownRenderDocument,
+@@ -57,6 +60,8 @@ fun TiqianMarkdownSurface(
+     codeHighlighter: MarkdownCodeHighlighter = DefaultMarkdownCodeHighlighter,
+     header: (@Composable () -> Unit)? = null,
+     footer: (@Composable () -> Unit)? = null,
++    /** 正文精确搜索，与 selectionState 独立；定位由父级 BringIntoView 链处理。 */
++    searchState: MarkdownTextSearchState? = null,
+ ) {
+     val windowHeightPx = LocalWindowInfo.current.containerSize.height
+     var viewportHeightPx by remember { mutableIntStateOf(windowHeightPx) }
+@@ -67,9 +72,20 @@ fun TiqianMarkdownSurface(
+             document.placeFootnotes(footnotePlacement)
+         }
+     }
++    val searchDocument = if (searchState == null) null else remember(searchState, placedBlocks, slots, selectionState) {
++        MarkdownTextSearchDocument(searchState, placedBlocks, slots, selectionState)
++    }
++    // Selection clears on document identity changes. Search/slot toggles do not change its
++    // logical text projection, so keep this identity tied only to the placed document.
+     val selectionDocument = remember(placedBlocks) {
+         markdownTraceSection("TiqianMarkdown.selectionDocument") {
+-            CjkSelectionDocument(placedBlocks.markdownSelectionFragments())
++            CjkSelectionDocument(searchDocument?.selectionFragments ?: placedBlocks.markdownSelectionFragments())
++        }
++    }
++    if (searchDocument != null) {
++        DisposableEffect(searchDocument) {
++            searchDocument.state.attach(searchDocument)
++            onDispose { searchDocument.state.detach(searchDocument) }
+         }
+     }
+     val currentScrollOffsetPx = remember(scrollState) { { scrollState.value } }
+@@ -88,7 +104,9 @@ fun TiqianMarkdownSurface(
+         ),
+         scrollInProgress = scrollState.isScrollInProgress,
+         scrollOffsetPx = currentScrollOffsetPx,
+-        requestedOwnerKeys = requestedOwnerKeys.keys + selectionState.activeGestureOwnerKeys,
++        requestedOwnerKeys = (requestedOwnerKeys.keys + selectionState.activeGestureOwnerKeys).let { owners ->
++            searchState?.requestedOwnerKey?.let { owners + it } ?: owners
++        },
+         onMaterializeOwner = { ownerKey ->
+             if (requestedOwnerKeys.containsKey(ownerKey)) false else {
+                 requestedOwnerKeys[ownerKey] = Unit
+@@ -98,7 +116,15 @@ fun TiqianMarkdownSurface(
+         compensateScrollBy = { deltaPx -> scrollState.dispatchRawDelta(deltaPx.toFloat()) },
+     )
+     val article: @Composable () -> Unit = {
+-        CompositionLocalProvider(LocalMarkdownDeferredLayout provides deferredLayout) {
++        CompositionLocalProvider(
++            LocalBringIntoViewSpec provides if (enableScroll && searchState != null) {
++                rememberMarkdownTextSearchBringIntoViewSpec(searchState)
++            } else {
++                LocalBringIntoViewSpec.current
++            },
++            LocalMarkdownDeferredLayout provides deferredLayout,
++            LocalMarkdownTextSearchDocument provides searchDocument,
++        ) {
+             Column(
+                 modifier = Modifier
+                     .fillMaxWidth()
+diff --git a/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownHeadingStyleTest.kt b/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownHeadingStyleTest.kt
+index a329aff8de261cb61ad1918168274cf50bf63e10..8292675c2ae785785aaaaa9c998a9bc02a2c8782 100644
+--- a/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownHeadingStyleTest.kt
++++ b/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownHeadingStyleTest.kt
+@@ -9,7 +9,7 @@ import androidx.compose.ui.text.style.TextDecoration
+ import androidx.compose.ui.unit.TextUnit
+ import androidx.compose.ui.unit.em
+ import androidx.compose.ui.unit.sp
+-import org.tiqian.core.ic
++import org.tiqian.core.Ic
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertNull
+@@ -113,7 +113,7 @@ class MarkdownHeadingStyleTest {
+         assertEquals(FontWeight.SemiBold, style.codeLanguage.fontWeight)
+         assertSp(13f, style.caption.fontSize)
+         assertSp(21.125f, style.caption.lineHeight)
+-        assertEquals(0.5f.ic, style.captionHorizontalIndent)
++        assertEquals(Ic(0.5f), style.captionHorizontalIndent)
+     }
+ 
+     private fun assertSp(expected: Float, actual: TextUnit) {
+diff --git a/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocumentTest.kt b/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocumentTest.kt
+index a7b99b6266d3fe8fa3b5b70b6894883b6c6eec03..fa2a344ae49f591ad54356a7f94c89d26bd351f8 100644
+--- a/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocumentTest.kt
++++ b/src/commonTest/kotlin/org/tiqian/markdown/compose/MarkdownSelectionDocumentTest.kt
+@@ -7,11 +7,23 @@ import org.tiqian.markdown.MarkdownListItem
+ import org.tiqian.markdown.MarkdownNodeKey
+ import org.tiqian.markdown.MarkdownNodeMetadata
+ import org.tiqian.markdown.MarkdownParagraph
++import org.tiqian.markdown.MarkdownRenderDocument
+ import org.tiqian.markdown.MarkdownSourceSpan
++import org.tiqian.markdown.MarkdownTable
++import org.tiqian.markdown.MarkdownTableAlignment
++import org.tiqian.markdown.MarkdownTableCell
++import org.tiqian.markdown.MarkdownTableRow
+ import org.tiqian.markdown.MarkdownTaskState
+ import org.tiqian.markdown.MarkdownText
++import org.tiqian.markdown.MarkdownTextMark
++import org.tiqian.markdown.MarkdownTextRange
++import org.tiqian.markdown.MarkdownTextSpan
+ import kotlin.test.Test
++import kotlin.test.assertTrue
+ import kotlin.test.assertEquals
++import kotlin.test.assertIs
++import kotlin.test.assertNotEquals
++import kotlin.test.assertSame
+ 
+ class MarkdownSelectionDocumentTest {
+     @Test
+@@ -41,6 +53,83 @@ class MarkdownSelectionDocumentTest {
+         assertEquals(listOf("\n", " ", "\n", " ", "\n", "\n", " ", "\n"), fragments.map { it.separatorAfter })
+     }
+ 
++    @Test
++    fun selectionFragmentsExposeNodeAndRoleWithoutTextLookup() {
++        val first = MarkdownParagraph(
++            MarkdownText(
++                value = "same text",
++                spans = listOf(MarkdownTextSpan(MarkdownTextRange(0, 4), MarkdownTextMark.Strong)),
++            ),
++            metadata(10),
++        )
++        val second = paragraph(11, "same text")
++        val nestedParagraph = paragraph(13, "same text")
++        val item = MarkdownListItem(blocks = listOf(nestedParagraph), metadata = metadata(12))
++        val list = MarkdownList(false, 1, true, listOf(item), metadata(14))
++        val cell = MarkdownTableCell(MarkdownText("same text"), MarkdownTableAlignment.Start, false, metadata(15))
++        val table = MarkdownTable(
++            columnAlignments = listOf(MarkdownTableAlignment.Start),
++            rows = listOf(MarkdownTableRow(listOf(cell), false, metadata(16))),
++            metadata = metadata(17),
++        )
++        val footnote = MarkdownFootnoteDefinition("note", 1, emptyList(), metadata(18))
++        val document = MarkdownRenderDocument(listOf(first, second, list, table, footnote))
++
++        val fragments = document.blocks.markdownSelectionFragments()
++        assertEquals(
++            listOf("same text", "same text", "•", "same text", "same text", "[1]"),
++            fragments.map { it.text.text },
++        )
++        val keys = fragments.map { assertIs<MarkdownSelectionKey>(it.key) }
++        assertEquals(
++            listOf(
++                first.metadata.key, second.metadata.key, item.metadata.key, nestedParagraph.metadata.key,
++                cell.metadata.key, footnote.metadata.key,
++            ),
++            keys.map { it.node },
++        )
++        assertEquals(listOf("text", "text", "marker", "text", "cell", "marker"), keys.map { it.role })
++        assertSame(
++            second,
++            document.blocks.filterIsInstance<MarkdownParagraph>().single { it.metadata.key == keys[1].node },
++        )
++        assertNotEquals(keys[0], keys[1])
++        assertNotEquals(keys[1], keys[4])
++        assertNotEquals(keys[2], keys[3])
++        assertNotEquals(keys[0], keys[0].copy(role = "marker"))
++    }
++
++    @Test
++    fun unicodeWhitespaceCaseAndUtf16OffsetsComeFromRendererFragments() {
++        val source = "😀前 Alpha\u00a0\t\u3000BETA e\u0301 中文 后 alpha beta"
++        val blocks = listOf(paragraph(0, source))
++        val state = MarkdownTextSearchState()
++        state.attach(MarkdownTextSearchDocument(state, blocks, DefaultMarkdownBlockSlots))
++        state.setQuery(" \nALPHA beta\u3000")
++        assertEquals(2, state.matches.size)
++        val first = state.matches.first()
++        assertEquals(source.indexOf("Alpha"), first.startInFragment)
++        assertEquals(source.indexOf("BETA") + 4, first.endInFragment)
++        assertEquals("Alpha\u00a0\t\u3000BETA", source.substring(first.startInFragment, first.endInFragment))
++        assertTrue(first.excerpt.contains("😀"))
++        state.setQuery("e\u0301")
++        assertEquals(2, state.matches.single().let { it.endInFragment - it.startInFragment })
++        state.setQuery("\u0301")
++        assertEquals(source.indexOf('\u0301') to source.indexOf('\u0301') + 1,
++            state.matches.single().let { it.startInFragment to it.endInFragment })
++        for (query in listOf("\uD83D", "\uDE00")) {
++            state.setQuery(query)
++            assertTrue(state.matches.isEmpty(), "a match must not split the authored emoji")
++        }
++        state.setQuery("😀")
++        assertEquals(0, state.matches.single().startInFragment)
++        assertEquals(2, state.matches.single().endInFragment)
++        state.setQuery("前")
++        assertEquals(2 to 3, state.matches.single().let { it.startInFragment to it.endInFragment })
++        state.setQuery("\u00a0\t\u3000")
++        assertTrue(state.matches.isEmpty())
++    }
++
+     private fun paragraph(key: Int, text: String) = MarkdownParagraph(MarkdownText(text), metadata(key))
+ 
+     private fun metadata(key: Int) = MarkdownNodeMetadata(
+diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..07a3aaf1843e3d8d629524220e7d0191fc2f52f3
+--- /dev/null
++++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt
+@@ -0,0 +1,91 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.ExperimentalComposeUiApi
++import androidx.compose.ui.ImageComposeScene
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.layout.onSizeChanged
++import androidx.compose.ui.unit.Dp
++import androidx.compose.ui.unit.IntSize
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.use
++import kotlinx.coroutines.runBlocking
++import kotlinx.coroutines.yield
++import org.tiqian.markdown.MarkdownImageBlock
++import org.tiqian.markdown.MarkdownNodeKey
++import org.tiqian.markdown.MarkdownNodeMetadata
++import org.tiqian.markdown.MarkdownSourceSpan
++import kotlin.math.abs
++import kotlin.test.Test
++import kotlin.test.assertEquals
++import kotlin.test.assertSame
++import kotlin.test.assertTrue
++
++@OptIn(ExperimentalComposeUiApi::class)
++class MarkdownImageDisplayBoundsTest {
++    @Test
++    fun imageFitsBothBoundsWithoutChangingItsAspectRatio() = runBlocking {
++        for (intrinsic in listOf(IntSize(1200, 800), IntSize(800, 5000))) {
++            var displayed = IntSize.Zero
++            val block = MarkdownImageBlock("test:image", "Image", null, intrinsic.width, intrinsic.height,
++                MarkdownNodeMetadata(MarkdownNodeKey(1, listOf(0)), MarkdownSourceSpan(0, 0, 0, 0, 0, 0)))
++            ImageComposeScene(width = 720, height = 800, coroutineContext = coroutineContext) {
++                MaterialTheme {
++                    CompositionLocalProvider(LocalMarkdownImageProvider provides {
++                        MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success,
++                            maxDisplayWidth = 480.dp, maxDisplayHeight = 240.dp) { modifier ->
++                            Box(modifier.onSizeChanged { displayed = it }.background(Color.Blue))
++                        }
++                    }) {
++                        DefaultMarkdownImageBlock(block, MarkdownStyle())
++                    }
++                }
++            }.use { scene ->
++                repeat(8) { frame -> scene.render(frame * 16_000_000L); yield() }
++                assertTrue(displayed.width in 1..480 && displayed.height in 1..240, "$intrinsic -> $displayed")
++                assertTrue(abs(displayed.width - displayed.height * intrinsic.width.toDouble() / intrinsic.height) <= 1.0,
++                    "Image ratio changed: $intrinsic -> $displayed")
++            }
++        }
++    }
++
++    @Test
++    fun defaultBoundsPreserveNaturalSizing() = runBlocking {
++        var displayed = IntSize.Zero
++        val intrinsic = IntSize(400, 200)
++        val content: @Composable (Modifier) -> Unit = { modifier ->
++            Box(modifier.onSizeChanged { displayed = it }.background(Color.Blue))
++        }
++        val presentations = listOf(
++            MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success, null, content),
++            MarkdownImageContent(intrinsicSize = intrinsic, loadState = MarkdownImageLoadState.Success, content = content),
++            MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success) { content(it) },
++            MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success, null) { content(it) },
++        )
++        presentations.forEach { image ->
++            assertEquals(intrinsic, image.intrinsicSize)
++            assertEquals(Dp.Infinity, image.maxDisplayWidth)
++            assertEquals(Dp.Infinity, image.maxDisplayHeight)
++            assertEquals(null, image.onLongClick)
++        }
++        assertSame(content, presentations.first().content)
++        val block = MarkdownImageBlock("test:image", "Image", null, 400, 200,
++            MarkdownNodeMetadata(MarkdownNodeKey(1, listOf(0)), MarkdownSourceSpan(0, 0, 0, 0, 0, 0)))
++        ImageComposeScene(width = 720, height = 800, coroutineContext = coroutineContext) {
++            MaterialTheme {
++                CompositionLocalProvider(LocalMarkdownImageProvider provides { presentations.first() }) {
++                    DefaultMarkdownImageBlock(block, MarkdownStyle())
++                }
++            }
++        }.use { scene ->
++            repeat(8) { frame -> scene.render(frame * 16_000_000L); yield() }
++            assertEquals(IntSize(400, 200), displayed)
++        }
++    }
++}
+diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
+index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d958b46e5 100644
+--- a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
++++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
+@@ -5,18 +5,35 @@ import org.tiqian.markdown.*
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.text.BasicText
+ import androidx.compose.foundation.text.selection.SelectionContainer
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.CompositionLocalProvider
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.ui.ExperimentalComposeUiApi
+ import androidx.compose.ui.ImageComposeScene
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
+ import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.Path
++import androidx.compose.ui.graphics.PixelMap
++import androidx.compose.ui.graphics.drawscope.DrawScope
++import androidx.compose.ui.graphics.painter.Painter
+ import androidx.compose.ui.graphics.toComposeImageBitmap
+ import androidx.compose.ui.graphics.toPixelMap
+ import androidx.compose.ui.input.pointer.PointerEventType
++import androidx.compose.ui.layout.boundsInRoot
++import androidx.compose.ui.layout.onGloballyPositioned
++import androidx.compose.ui.platform.ClipboardManager
++import androidx.compose.ui.platform.LocalClipboardManager
++import androidx.compose.ui.semantics.SemanticsActions
++import androidx.compose.ui.semantics.SemanticsProperties
++import androidx.compose.ui.semantics.getOrNull
++import androidx.compose.ui.semantics.getAllSemanticsNodes
++import androidx.compose.ui.text.AnnotatedString
+ import androidx.compose.ui.text.LinkAnnotation
+ import androidx.compose.ui.text.Placeholder
+ import androidx.compose.ui.text.PlaceholderVerticalAlign
+@@ -27,6 +44,8 @@ import androidx.compose.ui.text.font.FontFamily
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.text.style.TextDecoration
+ import androidx.compose.ui.unit.Density
++import androidx.compose.ui.unit.Dp
++import androidx.compose.ui.unit.IntOffset
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.em
+ import androidx.compose.ui.unit.sp
+@@ -34,12 +53,28 @@ import androidx.compose.ui.use
+ import org.tiqian.compose.CjkText
+ import org.tiqian.compose.CjkInlineBackgroundDrawStyle
+ import org.tiqian.compose.CjkInlineBackgroundMetricPolicy
++import org.tiqian.compose.CjkSelectionState
++import org.tiqian.compose.ParagraphMeasurer
+ import org.tiqian.compose.createPlatformParagraphMeasurer
+ import org.tiqian.compose.measureWithInlineContent
++import org.tiqian.compose.rememberCjkSelectionState
++import org.tiqian.core.Ic
+ import org.tiqian.core.LayoutConstraints
++import org.tiqian.core.LayoutInput
+ import org.tiqian.core.LayoutResult
++import org.tiqian.core.LineLengthGrid
++import org.tiqian.core.ParagraphStyle
++import org.tiqian.core.Rect
+ import org.tiqian.core.TextRange
+ import org.tiqian.core.getBoundingBoxes
++import org.tiqian.core.positionedClusters
++import org.tiqian.layout.ExplainableStubParagraphLayoutEngine
++import org.tiqian.layout.LookaheadLineBreaker
++import org.tiqian.layout.ParagraphLayoutEngine
++import org.tiqian.shaping.skia.SkiaFontMetricsResolver
++import org.tiqian.shaping.skia.SkiaTextShaper
++import kotlin.math.ceil
++import kotlin.math.floor
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertNotNull
+@@ -587,6 +622,353 @@ class MarkdownInlineRenderingTest {
+         }
+     }
+ 
++    @Test
++    fun customEndMarkerPaintsPainterAtMappedEndpoint() {
++        val fixture = EndMarkerFixture()
++        val text = MarkdownText("a[image]b", listOf(
++            MarkdownTextSpan(MarkdownTextRange(1, 8), MarkdownTextMark.InlineImage("inline:test", "image")),
++            MarkdownTextSpan(MarkdownTextRange(8, 9), MarkdownTextMark.Custom("note")),
++            MarkdownTextSpan(MarkdownTextRange(0, 0), MarkdownTextMark.Custom("note")),
++        ))
++        val slots = MarkdownInlineSlots(
++            image = { _, _, _ ->
++                MarkdownInlineContent(
++                    alternateText = "@",
++                    placeholder = Placeholder(24.sp, 24.sp, PlaceholderVerticalAlign.TextCenter),
++                    metrics = MarkdownInlineMetrics(24f, 24f, 24f),
++                ) {}
++            },
++            custom = { _, _, _ -> MarkdownCustomInlinePresentation(endMarker = endMarker) },
++        )
++        ImageComposeScene(width = 240, height = 96, density = Density(1f)) {
++            fixture.Content(text, slots)
++        }.use { scene ->
++            val pixels = scene.render(0L).toComposeImageBitmap().toPixelMap()
++            val layout = fixture.layouts.last()
++            assertEquals("a@b￼", layout.input.content.text)
++            assertEquals("a[image]b", text.value, "the source text must remain unchanged")
++            val box = layout.inlineObjectBox(TextRange(3, 4))
++            assertSingleEndMarker(pixels.markerPixels(), box)
++            val x = ceil(box.left + 3f).toInt()
++            val y = ceil(box.top).toInt()
++            assertEquals(Color.Red, pixels[x + 1, y + 1], "the host Painter must receive the tint")
++            assertEquals(Color.White, pixels[x + 6, y + 6], "the Painter's L-shaped path must be retained")
++        }
++    }
++
++    @Test
++    fun customEndMarkerSourceMappingComposesWithInlineReplacementAndBoundaryBias() {
++        for (withImage in listOf(false, true)) {
++            val fixture = EndMarkerFixture()
++            val enabled = mutableStateOf(false)
++            val source = if (withImage) "a[image]b" else "ab"
++            val text = MarkdownText(source, buildList {
++                add(MarkdownTextSpan(MarkdownTextRange(0, 1), MarkdownTextMark.Custom("note")))
++                if (withImage) {
++                    add(MarkdownTextSpan(MarkdownTextRange(1, 8), MarkdownTextMark.InlineImage("inline:test", "image")))
++                    add(MarkdownTextSpan(MarkdownTextRange(1, 8), MarkdownTextMark.Custom("note")))
++                }
++            })
++            val slots = MarkdownInlineSlots(
++                image = { _, _, _ ->
++                    MarkdownInlineContent(
++                        alternateText = "@",
++                        placeholder = Placeholder(24.sp, 24.sp, PlaceholderVerticalAlign.TextCenter),
++                        metrics = MarkdownInlineMetrics(24f, 24f, 24f),
++                    ) {}
++                },
++                custom = { _, _, _ -> MarkdownCustomInlinePresentation(endMarker = endMarker.takeIf { enabled.value }) },
++            )
++            var resolved: ResolvedMarkdownText? = null
++            ImageComposeScene(width = 240, height = 96, density = Density(1f)) {
++                resolved = resolveMarkdownText(
++                    text, endMarkerStyle, endMarkerStyle.body, slots,
++                    onLinkClick = null, onFootnoteClick = null,
++                )
++                fixture.Content(text, slots)
++            }.use { scene ->
++                for ((frame, markerEnabled) in listOf(false, true, false).withIndex()) {
++                    enabled.value = markerEnabled
++                    scene.render(frame * 16_000_000L)
++                    val model = assertNotNull(resolved)
++                    val layout = fixture.layouts.last()
++                    val expected = if (withImage) {
++                        if (markerEnabled) "a\uFFFC@\uFFFCb" else "a@b"
++                    } else {
++                        if (markerEnabled) "a\uFFFCb" else "ab"
++                    }
++                    assertEquals(expected, layout.input.content.text, "LayoutResult uses internal projection offsets")
++                    val sourceStart = source.lastIndexOf('b')
++                    val mappedStart = model.sourceToRenderedOffset(sourceStart, false)
++                    val mappedEnd = model.sourceToRenderedOffset(sourceStart + 1, true)
++                    val expectedStart = expected.lastIndexOf('b')
++                    assertEquals(TextRange(expectedStart, expectedStart + 1), TextRange(mappedStart, mappedEnd))
++                    assertEquals("b", model.annotated.text.substring(mappedStart, mappedEnd))
++                    assertEquals(layout.getBoundingBoxes(expectedStart, expectedStart + 1), layout.getBoundingBoxes(mappedStart, mappedEnd))
++                    assertEquals(1, model.sourceToRenderedOffset(1, true), "a range ending at a marker must exclude the slot")
++                    assertEquals(if (markerEnabled) 2 else 1, model.sourceToRenderedOffset(1, false), "a range starting at a marker must skip the slot")
++                    if (withImage) {
++                        assertEquals("@", model.annotated.text.substring(
++                            model.sourceToRenderedOffset(1, false), model.sourceToRenderedOffset(8, true),
++                        ), "image replacement and both marker boundaries must share one source mapping")
++                    }
++                    assertEquals(source, text.value, "the searchable source must never contain internal slots")
++                }
++            }
++        }
++    }
++
++    @Test
++    fun customEndMarkerStyleToggleReflowsWithStableLogicalText() {
++        val fixture = EndMarkerFixture()
++        val style = mutableStateOf(endMarkerStyle)
++        val text = MarkdownText("toggle", listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, 6), MarkdownTextMark.Custom("note")),
++        ))
++        val slots = MarkdownInlineSlots(custom = { _, currentStyle, _ ->
++            MarkdownCustomInlinePresentation(
++                style = SpanStyle(color = currentStyle.body.color),
++                onClick = {},
++                endMarker = endMarker.takeIf { currentStyle.body.color == Color.Blue },
++            )
++        })
++        ImageComposeScene(width = 240, height = 96, density = Density(1f)) {
++            fixture.Content(text, slots, style = style.value)
++        }.use { scene ->
++            val before = scene.render(0L).toComposeImageBitmap().toPixelMap()
++            assertEquals(0, before.redPixelCount())
++            val layout = fixture.layouts.last()
++            val layoutCount = fixture.layouts.size
++            style.value = endMarkerStyle.copy(body = endMarkerStyle.body.copy(color = Color.Blue))
++            val enabled = scene.render(16_000_000L).toComposeImageBitmap().toPixelMap()
++            assertSingleEndMarker(enabled.markerPixels(), fixture.layouts.last().inlineObjectBox(TextRange(6, 7)))
++            assertTrue((0 until enabled.height).any { y -> (0 until enabled.width).any { x ->
++                val color = enabled[x, y]
++                color.blue > color.red + 0.1f && color.blue > color.green + 0.1f
++            } }, "the changed text style must also be painted")
++            assertTrue(fixture.layouts.size > layoutCount, "adding a measured marker must invalidate layout")
++            assertEquals("toggle￼", fixture.layouts.last().input.content.text)
++            style.value = endMarkerStyle
++            val disabled = scene.render(32_000_000L).toComposeImageBitmap().toPixelMap()
++            assertEquals(0, disabled.redPixelCount(), "the marker must disappear in the same style update")
++            assertEquals("toggle", fixture.layouts.last().input.content.text)
++            assertTrue((0 until before.height).all { y ->
++                (0 until before.width).all { x -> before[x, y] == disabled[x, y] }
++            }, "returning to the initial style must restore the initial pixels")
++        }
++    }
++
++    @Test
++    fun customEndMarkerAcrossLinesPaintsOnlyAtFinalEndpoint() {
++        val fixture = EndMarkerFixture()
++        val value = "one two three four five six seven"
++        val text = MarkdownText(value, listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, value.length), MarkdownTextMark.Custom("note")),
++        ))
++        val slots = MarkdownInlineSlots(custom = { _, _, _ ->
++            MarkdownCustomInlinePresentation(endMarker = endMarker)
++        })
++        ImageComposeScene(width = 240, height = 240, density = Density(1f)) {
++            fixture.Content(text, slots, width = 120.dp)
++        }.use { scene ->
++            val pixels = scene.render(0L).toComposeImageBitmap().toPixelMap()
++            val layout = fixture.layouts.last()
++            assertTrue(layout.lines.size > 1, "the fixture must really wrap")
++            val box = layout.inlineObjectBox(TextRange(value.length, value.length + 1))
++            assertSingleEndMarker(pixels.markerPixels(), box)
++        }
++    }
++
++    @Test
++    fun customEndMarkerKeepsAdjacentCustomRangesIndependent() {
++        val fixture = EndMarkerFixture()
++        val mark = MarkdownTextMark.Custom("note")
++        val text = MarkdownText("MMMM", listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, 2), mark),
++            MarkdownTextSpan(MarkdownTextRange(2, 4), mark),
++        ))
++        val slots = MarkdownInlineSlots(custom = { _, _, _ ->
++            MarkdownCustomInlinePresentation(endMarker = endMarker)
++        })
++        ImageComposeScene(width = 240, height = 96, density = Density(1f)) {
++            fixture.Content(text, slots)
++        }.use { scene ->
++            val pixels = scene.render(0L).toComposeImageBitmap().toPixelMap()
++            val layout = fixture.layouts.last()
++            val first = layout.inlineObjectBox(TextRange(2, 3))
++            val second = layout.inlineObjectBox(TextRange(5, 6))
++            val split = (first.right + second.right) / 2f
++            val points = pixels.markerPixels()
++            assertSingleEndMarker(points.filter { it.x < split }, first)
++            assertSingleEndMarker(points.filter { it.x >= split }, second)
++        }
++    }
++
++    @Test
++    @Suppress("DEPRECATION")
++    fun customEndMarkerDoesNotChangeSelectionOrClipboardText() {
++        var copied: AnnotatedString? = null
++        val clipboard = object : ClipboardManager {
++            override fun setText(annotatedString: AnnotatedString) { copied = annotatedString }
++            override fun getText(): AnnotatedString? = copied
++        }
++        var state: CjkSelectionState? = null
++        val text = MarkdownText("copy source", listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, 4), MarkdownTextMark.Custom("note")),
++        ))
++        val slots = MarkdownInlineSlots(custom = { _, _, _ ->
++            MarkdownCustomInlinePresentation(endMarker = endMarker)
++        })
++        ImageComposeScene(width = 240, height = 160, density = Density(1f)) {
++            val selectionState = rememberCjkSelectionState()
++            state = selectionState
++            CompositionLocalProvider(LocalClipboardManager provides clipboard) {
++                Box(Modifier.fillMaxSize().background(Color.White)) {
++                    TiqianMarkdownSurface(
++                        document = MarkdownRenderDocument(listOf(MarkdownParagraph(text, metadata))),
++                        style = endMarkerStyle,
++                        inlineSlots = slots,
++                        scrollState = rememberScrollState(),
++                        selectionState = selectionState,
++                        enableScroll = false,
++                    )
++                }
++            }
++        }.use { scene ->
++            val pixels = scene.render(0L).toComposeImageBitmap().toPixelMap()
++            assertTrue(pixels.redPixelCount() > 0, "copy must be tested with a painted marker")
++            val selectionState = assertNotNull(state)
++            assertTrue(selectionState.selectAll())
++            scene.render(16_000_000L)
++            assertEquals(text.value, selectionState.selectedText?.text)
++            assertTrue(selectionState.copySelection())
++            assertEquals(text.value, copied?.text)
++            val semantics = scene.semanticsOwners.flatMap {
++                it.getAllSemanticsNodes(mergingEnabled = false)
++            }.single {
++                it.config.getOrNull(SemanticsProperties.Text)?.singleOrNull()?.text == text.value &&
++                    SemanticsActions.SetSelection in it.config
++            }
++            val setSelection = assertNotNull(semantics.config[SemanticsActions.SetSelection].action)
++            assertTrue(setSelection(0, 4, true))
++            assertEquals("copy", selectionState.selectedText?.text)
++            assertTrue(selectionState.copySelection())
++            assertEquals("copy", copied?.text)
++        }
++    }
++
++    @Test
++    fun customEndMarkerStaysInsideColumnWhenTrailingSpaceIsTooNarrow() {
++        val fixture = EndMarkerFixture()
++        val columnWidth = mutableStateOf(240.dp)
++        val text = MarkdownText("edge", listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, 4), MarkdownTextMark.Custom("note")),
++        ))
++        val slots = MarkdownInlineSlots(custom = { _, _, _ ->
++            MarkdownCustomInlinePresentation(endMarker = endMarker)
++        })
++        ImageComposeScene(width = 300, height = 120, density = Density(1f)) {
++            fixture.Content(text, slots, width = columnWidth.value)
++        }.use { scene ->
++            scene.render(0L)
++            val naturalEnd = fixture.layouts.last().getBoundingBoxes(3, 4).single().right
++            // The real glyph width plus 10px leaves less than the required 3px gap + 8px marker.
++            columnWidth.value = ceil(naturalEnd + 10f).toInt().dp
++            val pixels = scene.render(16_000_000L).toComposeImageBitmap().toPixelMap()
++            val layout = fixture.layouts.last()
++            val bounds = assertNotNull(fixture.textBounds)
++            val box = layout.getBoundingBoxes(3, 4).single()
++            assertEquals(2, layout.lines.size, "the measured marker must wrap instead of overlapping the last word")
++            assertEquals(0f, bounds.left, 0.01f)
++            assertTrue(box.right + 3f + 8f > bounds.width, "the real trailing space must be insufficient")
++            val points = pixels.markerPixels()
++            assertTrue(points.size in 24..80, "the marker must remain visible at the edge")
++            val markerBox = layout.inlineObjectBox(TextRange(4, 5))
++            assertTrue(markerBox.top >= box.bottom, "the marker must own a box on the next line")
++            assertSingleEndMarker(points, markerBox)
++            assertTrue(points.all { it.x < ceil(bounds.right).toInt() }, "Painter pixels must remain inside the column")
++        }
++    }
++
++    @Suppress("DEPRECATION")
++    private class EndMarkerFixture {
++        val layouts = mutableListOf<LayoutResult>()
++        var textBounds: androidx.compose.ui.geometry.Rect? = null
++        private val engine = ExplainableStubParagraphLayoutEngine(
++            lineBreaker = LookaheadLineBreaker(),
++            textShaper = SkiaTextShaper(),
++            fontMetricsResolver = SkiaFontMetricsResolver(),
++        )
++        private val measurer = ParagraphMeasurer(object : ParagraphLayoutEngine {
++            override fun layout(input: LayoutInput): LayoutResult = engine.layout(input).also(layouts::add)
++        })
++
++        @Composable
++        fun Content(text: MarkdownText, slots: MarkdownInlineSlots, width: Dp = 240.dp, style: MarkdownStyle = endMarkerStyle) {
++            CompositionLocalProvider(LocalMarkdownParagraphMeasurer provides measurer) {
++                Box(Modifier.fillMaxSize().background(Color.White)) {
++                    MarkdownTextBlock(
++                        text = text,
++                        textStyle = style.body,
++                        markdownStyle = style,
++                        inlineSlots = slots,
++                        onLinkClick = null,
++                        onFootnoteClick = null,
++                        modifier = Modifier.width(width).onGloballyPositioned { textBounds = it.boundsInRoot() },
++                        paragraphStyle = ParagraphStyle(firstLineIndent = Ic.Zero, lineLengthGrid = LineLengthGrid(enabled = false)),
++                    )
++                }
++            }
++        }
++    }
++
++    private class EndMarkerPainter : Painter() {
++        override val intrinsicSize = Size(8f, 8f)
++        override fun DrawScope.onDraw() {
++            // Deliberate 2px overdraw proves the production marker box clips arbitrary Painter paths.
++            val path = Path().apply {
++                moveTo(0f, 0f)
++                lineTo(size.width + 2f, 0f)
++                lineTo(size.width + 2f, size.height / 2f)
++                lineTo(size.width / 2f, size.height / 2f)
++                lineTo(size.width / 2f, size.height)
++                lineTo(0f, size.height)
++                close()
++            }
++            drawPath(path, Color.Black)
++        }
++    }
++
++    private fun PixelMap.markerPixels(): List<IntOffset> = buildList {
++        for (y in 0 until height) for (x in 0 until width) {
++            val color = this@markerPixels[x, y]
++            if (color.red > color.green + 0.1f && color.red > color.blue + 0.1f) add(IntOffset(x, y))
++        }
++    }
++
++    /** The selection box spans the line; opaque children use the engine draw origin and their baseline metrics. */
++    private fun LayoutResult.inlineObjectBox(range: TextRange): Rect {
++        val positioned = positionedClusters().single { it.range == range }
++        val metrics = input.inlineObjects.single { it.range == range }
++        return Rect(
++            positioned.drawX,
++            positioned.baseline - metrics.ascent,
++            positioned.drawX + metrics.advance,
++            positioned.baseline + metrics.descent,
++        )
++    }
++
++    private fun assertSingleEndMarker(points: List<IntOffset>, box: Rect) {
++        val left = box.left + 3f
++        val top = box.top
++        assertTrue(points.size in 24..80, "the supplied Painter must produce one visible marker")
++        assertTrue(points.all {
++            it.x >= floor(left).toInt() && it.x < ceil(left + 8f).toInt() &&
++                it.y >= floor(top).toInt() && it.y < ceil(top + 8f).toInt()
++        }, "marker pixels must belong only to the measured inline object box: expected=($left,$top)-(${left + 8f},${top + 8f}), " +
++            "pixels=(${points.minOf { it.x }},${points.minOf { it.y }})-(${points.maxOf { it.x } + 1},${points.maxOf { it.y } + 1}), box=$box")
++    }
++
+     @Composable
+     private fun resolveSegmentHighlight(onClick: () -> Unit): ResolvedMarkdownText =
+         resolveMarkdownText(
+@@ -627,6 +1009,11 @@ class MarkdownInlineRenderingTest {
+     }
+ 
+     private companion object {
++        val endMarkerStyle = MarkdownStyle(
++            body = TextStyle(color = Color.Black, fontFamily = FontFamily.Serif, fontSize = 24.sp, lineHeight = 40.sp),
++            proseMeasure = MarkdownProseMeasure(enabled = false),
++        )
++        val endMarker = MarkdownInlineEndMarker(painter = EndMarkerPainter(), color = Color.Red)
+         val metadata = MarkdownNodeMetadata(
+             key = MarkdownNodeKey(0, listOf(0)),
+             sourceSpan = MarkdownSourceSpan(0, 0, 0, 0, 0, 0),
+diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d6b5b1844b577a5aa0d60fe222f3e2769a5441e
+--- /dev/null
++++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt
+@@ -0,0 +1,210 @@
++@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
++@file:Suppress("DEPRECATION")
++
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.relocation.BringIntoViewRequester
++import androidx.compose.foundation.relocation.bringIntoViewRequester
++import androidx.compose.foundation.ScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.snapshots.Snapshot
++import androidx.compose.ui.ImageComposeScene
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.SemanticsActions
++import androidx.compose.ui.semantics.SemanticsProperties
++import androidx.compose.ui.semantics.getAllSemanticsNodes
++import androidx.compose.ui.semantics.getOrNull
++import androidx.compose.ui.unit.Density
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.use
++import org.tiqian.markdown.*
++import kotlin.test.Test
++import kotlin.test.assertEquals
++import kotlin.test.assertNotNull
++import kotlin.test.assertNotSame
++import kotlin.test.assertSame
++import kotlin.test.assertTrue
++
++class MarkdownSemanticNavigationTest {
++    @Test
++    fun citationActivatesNestedBibliographyTabsInMarkdownAndSurface() {
++        for (surface in listOf(false, true)) {
++            val citationMetadata = metadata(listOf(0, 0), "CitationReference")
++            val citationRange = MarkdownTextRange(5, 11)
++            val prose = MarkdownParagraph(MarkdownText("Open [@ref] now.", listOf(
++                MarkdownTextSpan(citationRange, MarkdownTextMark.Citation("ref"), citationMetadata),
++            )), metadata(listOf(0), "Paragraph"))
++            val bibliography = MarkdownBibliographyBlock(listOf(
++                MarkdownBibliographyEntry("ref", MarkdownText("reference content for ref"), metadata(listOf(1, 1, 0, 1, 1, 0), "BibliographyEntry")),
++            ), metadata(listOf(1, 1, 0, 1, 1), "BibliographyDefinition"))
++            val innerTabs = MarkdownContainerBlock(MarkdownContainerKind.Tabs, listOf(
++                MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(paragraph(listOf(1, 1, 0, 0, 0), "inner first body")),
++                    metadata(listOf(1, 1, 0, 0), "TabItem"), MarkdownText("Inner first")),
++                MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(
++                    paragraph(listOf(1, 1, 0, 1, 0), "reference lead-in\n".repeat(40)), bibliography,
++                ), metadata(listOf(1, 1, 0, 1), "TabItem"), MarkdownText("Inner second")),
++            ), metadata(listOf(1, 1, 0), "TabBlock"))
++            val tabs = MarkdownContainerBlock(MarkdownContainerKind.Tabs, listOf(
++                MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(paragraph(listOf(1, 0, 0), "first body")),
++                    metadata(listOf(1, 0), "TabItem"), MarkdownText("First")),
++                MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(innerTabs),
++                    metadata(listOf(1, 1), "TabItem"), MarkdownText("Second")),
++            ), metadata(listOf(1), "TabBlock"))
++            val document = MarkdownRenderDocument(listOf(prose, tabs), metadata = metadata(emptyList(), "Document"), revision = 42)
++            val scrollState = ScrollState(0)
++            ImageComposeScene(width = 640, height = 540, density = Density(1f)) {
++                if (surface) TiqianMarkdownSurface(document, Modifier.fillMaxSize(), style = MarkdownStyle(),
++                    scrollState = scrollState, selectable = false)
++                else TiqianMarkdown(document, Modifier.fillMaxSize().verticalScroll(scrollState),
++                    style = MarkdownStyle())
++            }.use { scene ->
++                scene.settle(0L)
++                assertTrue(scene.control("First").config[SemanticsProperties.Selected])
++                assertTrue("reference content for ref" !in scene.semanticTexts())
++                val citationAction = scene.nodes(false).filter { it.hasText(prose.text.value) }
++                    .flatMap { it.config.getOrNull(SemanticsActions.CustomActions).orEmpty() }.single { it.label.contains("ref") }
++                assertTrue(citationAction.action())
++                scene.settle(100_000_000L)
++                assertTrue(scene.control("Second").config[SemanticsProperties.Selected], "surface=$surface")
++                assertTrue(scene.control("Inner second").config[SemanticsProperties.Selected], "all containing tabs must activate")
++                assertTrue("reference content for ref" in scene.semanticTexts(), "the real bibliography must compose, surface=$surface")
++                assertTrue(scrollState.value > 0, "pending citation must survive recomposition and scroll to the newly registered entry, surface=$surface")
++
++                assertTrue(assertNotNull(scene.control("First").config[SemanticsActions.OnClick].action).invoke())
++                scene.settle(500_000_000L)
++                assertTrue("reference content for ref" !in scene.semanticTexts())
++                assertTrue(citationAction.action(), "already materialized Surface owner must still accept another pending navigation")
++                scene.settle(600_000_000L)
++                assertTrue(scene.control("Second").config[SemanticsProperties.Selected])
++                assertTrue("reference content for ref" in scene.semanticTexts())
++                assertTrue(scrollState.value > 0, "a previously requested owner must retain its pending label on reactivation")
++            }
++        }
++    }
++
++    @Test
++    fun pendingDefinitionSurvivesCallbackUpdatesButNeverMovesAReplacementDocument() {
++        val first = MarkdownRenderDocument(emptyList(), revision = 1)
++        val document = mutableStateOf(first)
++        val showTarget = mutableStateOf(false)
++        val requested = mutableListOf<String>()
++        val stale = mutableListOf<String>()
++        val callback = mutableStateOf<(String) -> Boolean>({ stale += it; true })
++        var navigation: MarkdownFootnoteNavigationState? = null
++        val scroll = ScrollState(0)
++        ImageComposeScene(width = 320, height = 200, density = Density(1f)) {
++            val state = rememberMarkdownFootnoteNavigationState(document.value, callback.value)
++            navigation = state
++            Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
++                Box(Modifier.width(100.dp).height(400.dp))
++                if (showTarget.value) {
++                    val requester = remember { BringIntoViewRequester() }
++                    DisposableEffect(state, requester) {
++                        state.registerDefinition("bibliography:same", requester)
++                        onDispose { state.unregisterDefinition("bibliography:same", requester) }
++                    }
++                    Box(Modifier.width(100.dp).height(40.dp).bringIntoViewRequester(requester))
++                }
++            }
++        }.use { scene ->
++            scene.settle(0L)
++            val initial = assertNotNull(navigation)
++            initial.bringDefinitionIntoView("bibliography:same")
++            assertEquals(listOf("bibliography:same"), stale)
++            callback.value = { requested += it; true }
++            scene.settle(100_000_000L)
++            assertSame(initial, navigation, "same document must retain pending navigation when callbacks change")
++            document.value = first.copy(revision = 2)
++            showTarget.value = true
++            scene.settle(200_000_000L)
++            assertNotSame(initial, navigation, "replacement document must own a fresh definition registry and pending requests")
++            assertEquals(0, scroll.value, "same-named target in the new document must not execute the old pending request")
++
++            showTarget.value = false
++            scene.settle(300_000_000L)
++            assertNotNull(navigation).bringDefinitionIntoView("bibliography:same")
++            assertEquals(listOf("bibliography:same"), requested, "new requests must use the updated callback")
++            showTarget.value = true
++            scene.settle(400_000_000L)
++            assertTrue(scroll.value > 0, "a current-document pending request must reveal a newly registered target")
++        }
++    }
++
++    @Test
++    fun tocAndTabLabelsConcealSpoilersWithoutBlockingBodyReveal() {
++        val source = "public secret"
++        val concealed = MarkdownText(source, listOf(
++            MarkdownTextSpan(MarkdownTextRange(7, source.length), MarkdownTextMark.Spoiler, metadata(listOf(2, 0), "Spoiler")),
++        ))
++        val heading = MarkdownHeading(2, "spoiler-heading", concealed, metadata(listOf(2), "Heading"))
++        val tab = MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(paragraph(listOf(1, 1, 0), "second body")),
++            metadata(listOf(1, 1), "TabItem"), concealed)
++        val tabs = MarkdownContainerBlock(MarkdownContainerKind.Tabs, listOf(
++            MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(paragraph(listOf(1, 0, 0), "first body")),
++                metadata(listOf(1, 0), "TabItem"), MarkdownText("First")), tab,
++        ), metadata(listOf(1), "TabBlock"))
++        val toc = MarkdownTocBlock(metadata(listOf(0), "TocPlaceholder"))
++        val document = MarkdownRenderDocument(listOf(toc, tabs, heading), metadata = metadata(emptyList(), "Document"))
++        ImageComposeScene(width = 640, height = 540, density = Density(1f)) {
++            TiqianMarkdown(document, style = MarkdownStyle())
++        }.use { scene ->
++            scene.settle(0L)
++            assertTrue(scene.semanticTexts().none { it.contains("secret") }, "first frame cannot expose concealed label text")
++            val safeLabel = "public " + " ".repeat(6)
++            val controls = scene.nodes(true).filter { it.hasText(safeLabel) && SemanticsActions.OnClick in it.config &&
++                (SemanticsProperties.Selected in it.config || it.config.getOrNull(SemanticsProperties.Role) == Role.Button) }
++            val tocControl = controls.single { SemanticsProperties.Selected !in it.config }
++            val tabControl = controls.single { SemanticsProperties.Selected in it.config }
++            assertTrue(assertNotNull(tabControl.config[SemanticsActions.OnClick].action).invoke())
++            scene.settle(100_000_000L)
++            assertTrue("second body" in scene.semanticTexts())
++            assertTrue(scene.control(safeLabel, tab = true).config[SemanticsProperties.Selected])
++            assertTrue(assertNotNull(tocControl.config[SemanticsActions.OnClick].action).invoke())
++            scene.settle(400_000_000L)
++            assertTrue(scene.semanticTexts().none { it.contains("secret") }, "control navigation must not reveal spoilers")
++            val reveal = scene.nodes(false).flatMap { it.config.getOrNull(SemanticsActions.CustomActions).orEmpty() }
++                .single { it.label == "显示隐藏内容" }
++            assertTrue(reveal.action())
++            scene.settle(500_000_000L)
++            assertTrue(source in scene.semanticTexts(), "body must retain its existing reveal action")
++            assertEquals(2, scene.nodes(true).count { it.hasText(safeLabel) && SemanticsActions.OnClick in it.config },
++                "both labels remain concealed without acquiring separate reveal controls")
++        }
++    }
++
++    private fun ImageComposeScene.nodes(merged: Boolean) = semanticsOwners.flatMap { it.getAllSemanticsNodes(merged) }
++
++    private fun androidx.compose.ui.semantics.SemanticsNode.hasText(value: String) =
++        config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == value }
++
++    private fun ImageComposeScene.semanticTexts() = nodes(false)
++        .flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty() }.map { it.text }
++
++    private fun ImageComposeScene.control(label: String, tab: Boolean = true) = nodes(true)
++        .single { it.hasText(label) && SemanticsActions.OnClick in it.config && (!tab || SemanticsProperties.Selected in it.config) }
++
++    private fun ImageComposeScene.settle(startTimeNanos: Long) {
++        repeat(6) { frame ->
++            Snapshot.sendApplyNotifications()
++            render(startTimeNanos + frame * 16_000_000L).close()
++        }
++    }
++
++    private fun paragraph(path: List<Int>, text: String) = MarkdownParagraph(MarkdownText(text), metadata(path, "Paragraph"))
++
++    private fun metadata(path: List<Int>, type: String, children: List<MarkdownNodeMetadata> = emptyList()) = MarkdownNodeMetadata(
++        MarkdownNodeKey(1, path), MarkdownSourceSpan(0, 0, 0, 0, 0, 0), nodeType = type,
++        attributes = mapOf("custom" to "a|b\u001f😀"), properties = mapOf("nullable" to MarkdownNodeValue.Null,
++            "values" to MarkdownNodeValue.ListValue(listOf(MarkdownNodeValue.Integer(7), MarkdownNodeValue.Text("a|b")))),
++        children = children, hasSourceSpan = false,
++    )
++}

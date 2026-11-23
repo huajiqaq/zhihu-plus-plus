@@ -24,6 +24,10 @@ jobs:
         env:
           VERSION: ${{ inputs.version_name }}
         run: |
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Error: version bump must run on refs/heads/master"
+            exit 1
+          fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             echo "Error: version_name must be X.Y, X.Y.Z, or a pre-release such as 1.0-pre.1"
             exit 1

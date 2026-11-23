@@ -17,13 +17,17 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.navigation.Person
@@ -61,28 +65,24 @@ class BlocklistSettingsScreenInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/403
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/454
+     * 提问者屏蔽页须支持导航、持久化增删及确认对话框；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/403
      */
     @Test
     fun questionAuthorTabSupportsNavigationDeleteClearAndDialogPathsOffline() {
         /*
-         * Expected behavior:
-         * 1. Switching to the question-author tab should render the seeded list, preserve row
-         *    visibility under swipe cycles, and keep the add FAB visible for this tab.
-         * 2. Clicking a row must navigate to that asker's Person destination with the seeded id,
-         *    urlToken, and display name.
-         * 3. Individual delete, clear-all, and add actions must mutate the real persistent
-         *    blocklist used by the production screen.
-         * 4. The add dialog should support both cancel and confirm paths deterministically.
+         * 预期行为：
+         * 1. 切换到提问者标签后应显示预置列表，往返滑动后条目仍可见，添加悬浮按钮仍显示。
+         * 2. 点击条目应携带预置的 id、urlToken 和显示名称，导航到提问者的 Person 页面。
+         * 3. 单条删除、清空和添加操作应修改生产页面使用的真实持久化屏蔽列表。
+         * 4. 添加对话框的取消与确认路径都应确定可测。
          */
         val dao = getContentFilterDatabase(composeRule.activity).blockedQuestionAuthorDao()
         val navigator = setScreen()
 
-        composeRule.onNode(hasText("屏蔽提问者") and hasClickAction()).performClick()
+        composeRule.onNode(hasText("提问者", substring = true) and hasClickAction()).performClick()
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.FAB).assertIsDisplayed()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("blocklistSettings:questionAuthors:item:offline-asker-1").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).assertIsDisplayed()
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_LIST).performVerticalSwipeCycle()
@@ -100,9 +100,17 @@ class BlocklistSettingsScreenInstrumentedTest {
             navigator.destinations,
         )
 
-        composeRule.onNodeWithTag("blocklistSettings:questionAuthors:delete:offline-asker-1").performClick()
+        // 删除图标嵌在可点击行中，须定位图标自身的语义节点，避免 Compose 将点击合并为父行的导航操作。
+        composeRule
+            .onNodeWithTag("blocklistSettings:questionAuthors:delete:offline-asker-1", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
         composeRule.waitUntil(5_000) { runBlocking { dao.getUserCount() == 1 } }
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.QUESTION_AUTHOR_CLEAR_BUTTON).performClick()
+        composeRule.waitForIdle()
+        assertEquals("清空在确认前不应修改屏蔽列表", 1, runBlocking { dao.getUserCount() })
+        composeRule
+            .onNode(hasText("清空") and hasClickAction() and hasAnyAncestor(hasTestTag(BlocklistSettingsTestTags.CLEAR_DIALOG)))
+            .performClick()
         composeRule.waitUntil(5_000) { runBlocking { dao.getUserCount() == 0 } }
 
         composeRule.onNodeWithTag(BlocklistSettingsTestTags.FAB).performClick()

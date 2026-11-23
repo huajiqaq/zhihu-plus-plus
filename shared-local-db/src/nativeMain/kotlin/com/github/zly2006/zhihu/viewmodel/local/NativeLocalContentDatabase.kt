@@ -17,6 +17,6 @@
 
 package com.github.zly2006.zhihu.viewmodel.local
 
-fun getNativeLocalContentDatabase(): LocalContentDatabase? = nativeLocalContentDatabase()
+actual fun getLocalContentDatabase(): LocalContentDatabase? = nativeLocalContentDatabase()
 
 internal expect fun nativeLocalContentDatabase(): LocalContentDatabase?

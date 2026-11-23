@@ -1,38 +1,17 @@
 #!/usr/bin/env python3
-"""
-Zhihu++ LLM 自动化测试辅助脚本
-
-通过 UIAutomator dump + adb 精准交互 UI 元素，替代硬编码坐标。
-
-用法:
-    python3 .agents/skills/ui-test/llm_test_helper.py dump
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag nav_tab_home
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --text "推荐"
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card --index 1
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text "ChatGPT"
-    python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text "AI" --index 1
-
-多元素消歧规则（LLM 必读）:
-    同一 tag（如 feed_card_more_btn）在屏幕上可能出现多个。消歧步骤：
-    1. 先运行 dump，获取所有元素的序号和文字内容。
-    2. 若知道目标卡片标题/关键词：用 --within-text TEXT 缩小范围到该卡片内。
-    3. 若同一卡片内仍有多个同 tag 元素，再加 --index N 选第 N 个（0-based）。
-    4. 若只知道位置不知道内容：只用 --index N（序号来自 dump 输出）。
-    --within-text 和 --index 可以同时使用，--within-text 先过滤，--index 再选。
-"""
+"""通过 UIAutomator 和 ADB 定位并操作语义节点；用法见同目录 SKILL.md。"""
 
 import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 PACKAGE_LITE = "com.github.zly2006.zhplus.lite"
 PACKAGE_FULL = "com.github.zly2006.zhplus"
-UI_DUMP_DEVICE = "/sdcard/ui_dump.xml"
-UI_DUMP_LOCAL = "/tmp/zhihu_ui_dump.xml"
 
 
 def adb(*args: str) -> subprocess.CompletedProcess:
@@ -45,19 +24,24 @@ def get_package() -> str:
 
 
 def dump_ui() -> ET.Element:
-    dump_result = adb("shell", "uiautomator", "dump", UI_DUMP_DEVICE)
-    if dump_result.returncode != 0:
-        print(f"uiautomator dump 失败: {dump_result.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    pull_result = adb("pull", UI_DUMP_DEVICE, UI_DUMP_LOCAL)
-    if pull_result.returncode != 0:
-        print(f"adb pull dump 失败: {pull_result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    if not os.path.exists(UI_DUMP_LOCAL):
-        print(f"adb pull 后未找到 dump 文件: {UI_DUMP_LOCAL}", file=sys.stderr)
-        sys.exit(1)
-    return ET.parse(UI_DUMP_LOCAL).getroot()
+    remote = f"/sdcard/zhpp-ui-{time.time_ns()}.xml"
+    local = os.path.join(tempfile.gettempdir(), os.path.basename(remote))
+    try:
+        dump_result = adb("shell", "uiautomator", "dump", remote)
+        # 部分模拟器在成功写出 XML 后仍返回 1；使用本次唯一文件并实际解析，不复用旧语义树转储。
+        written = "UI hierchary dumped to:" in dump_result.stdout or "UI hierarchy dumped to:" in dump_result.stdout
+        if dump_result.returncode != 0 and not written:
+            print(f"uiautomator dump 失败: {dump_result.stdout}{dump_result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        pull_result = adb("pull", remote, local)
+        if pull_result.returncode != 0:
+            print(f"adb pull dump 失败: {pull_result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        return ET.parse(local).getroot()
+    finally:
+        adb("shell", "rm", "-f", remote)
+        if os.path.exists(local):
+            os.unlink(local)
 
 
 def get_bounds(node: ET.Element) -> Optional[tuple[int, int, int, int]]:
@@ -151,19 +135,9 @@ def find_all_by_content_desc(root: ET.Element, desc: str) -> list[ET.Element]:
 
 def find_all_by_tag(root: ET.Element, tag: str, package: str) -> list[ET.Element]:
     full_resource_id = f"{package}:id/{tag}"
-    # 不同 Android/Compose 版本下，UI dump 里 resource-id 可能是完整格式或裸 tag。
+    # 不同 Android/Compose 版本下，语义树转储中的 resource-id 可能是完整格式或裸标签。
     accepted = {full_resource_id, tag}
     return [n for n in root.iter("node") if n.get("resource-id", "") in accepted]
-
-
-def format_resource_id(resource_id: str, package: str) -> str:
-    if not resource_id:
-        return ""
-    if resource_id.startswith(package + ":id/"):
-        return "tag:" + resource_id[len(package) + 4:]
-    if ":" not in resource_id and "/" not in resource_id:
-        return "tag:" + resource_id
-    return resource_id
 
 
 def node_has_useful_info(node: ET.Element) -> bool:
@@ -179,12 +153,6 @@ def node_order_key(node: ET.Element) -> tuple[int, int]:
         return (10**9, 10**9)
     x1, y1, _, _ = bounds
     return (y1, x1)
-
-
-def shorten(text: str, max_len: int = 60) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1] + "…"
 
 
 def detect_dialog_scope(root: ET.Element) -> Optional[ET.Element]:
@@ -242,7 +210,7 @@ def detect_dialog_scope(root: ET.Element) -> Optional[ET.Element]:
 
 
 def resolve_node(args, root: ET.Element, package: str) -> ET.Element:
-    """根据参数解析出目标节点，歧义时输出结构化错误并退出（exit code 2）。"""
+    """根据参数解析出目标节点，歧义时输出结构化错误并退出（退出码 2）。"""
     parents = build_parent_map(root)
     index: Optional[int] = getattr(args, "index", None)  # None = 用户未指定
     within_text: Optional[str] = getattr(args, "within_text", None)
@@ -272,7 +240,7 @@ def resolve_node(args, root: ET.Element, package: str) -> ET.Element:
         if len(candidates) > 1 and index is None:
             ambiguity_error(args.tag, candidates, within_text, parents)
 
-        # 确定最终 index
+        # 确定最终索引
         i = index if index is not None else 0
         if i >= len(candidates) or i < 0:
             print(
@@ -343,7 +311,7 @@ def get_content_recursive(node: ET.Element) -> str:
 
 def cmd_dump(args):
     root = dump_ui()
-    print(f"已保存 UI dump → {UI_DUMP_LOCAL}")
+    print("已读取本次 UI dump（临时文件已清理）")
     scope = detect_dialog_scope(root)
     if scope is not None:
         print("\n检测到弹窗：仅显示弹窗内元素（已过滤无用节点）")
@@ -427,7 +395,7 @@ def cmd_tap(args):
     else:
         tag_info = f"desc={args.desc!r}"
     print(f"点击 {tag_info} → ({cx}, {cy})  bounds={node.get('bounds')}")
-    # uiautomator dump 会短暂冻结 UI，立刻 tap 会被系统丢弃，需等待 UI 恢复
+    # UIAutomator 的语义树转储会短暂冻结界面，立即点击会被系统丢弃，需等待界面恢复
     time.sleep(0.8)
     result = adb("shell", "input", "tap", str(cx), str(cy))
     if result.returncode != 0:
@@ -441,7 +409,7 @@ def cmd_screenshot(args):
     if capture.returncode != 0:
         print(f"screencap 失败: {capture.stderr}", file=sys.stderr)
         sys.exit(1)
-    local = args.output or "/tmp/zhihu_screenshot.png"
+    local = args.output or os.path.join(tempfile.gettempdir(), "zhihu_screenshot.png")
     pull = adb("pull", remote, local)
     if pull.returncode != 0:
         print(f"截图 pull 失败: {pull.stderr}", file=sys.stderr)
@@ -476,7 +444,7 @@ def main():
     tap_p.add_argument("--index", type=int, default=None, help="第 N 个同名 tag（未指定时若有歧义则报错）")
 
     ss_p = sub.add_parser("screenshot", help="截图并拉取到本地")
-    ss_p.add_argument("output", nargs="?", help="本地路径（默认 /tmp/zhihu_screenshot.png）")
+    ss_p.add_argument("output", nargs="?", help="本地路径（默认系统临时目录下的 zhihu_screenshot.png）")
 
     args = parser.parse_args()
     {"dump": cmd_dump, "find": cmd_find, "tap": cmd_tap, "screenshot": cmd_screenshot}[

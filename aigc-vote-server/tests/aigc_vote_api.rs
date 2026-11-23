@@ -10,7 +10,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn read_events_award_credit_per_20_valid_unique_contents_and_cap_at_five() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let first_response: ReadEventsResponse = request_json(
@@ -62,7 +62,7 @@ async fn read_events_award_credit_per_20_valid_unique_contents_and_cap_at_five()
 
 #[tokio::test]
 async fn short_or_unread_like_events_do_not_earn_credit() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let response: ReadEventsResponse = request_json(
@@ -84,7 +84,7 @@ async fn short_or_unread_like_events_do_not_earn_credit() {
 
 #[tokio::test]
 async fn read_events_without_content_html_do_not_earn_credit() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let response: ReadEventsResponse = request_json(
@@ -116,7 +116,7 @@ async fn read_events_without_content_html_do_not_earn_credit() {
 
 #[tokio::test]
 async fn aigc_flag_uploads_content_snapshot_consumes_credit_and_is_idempotent() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let _: ReadEventsResponse = request_json(
@@ -181,7 +181,7 @@ async fn aigc_flag_uploads_content_snapshot_consumes_credit_and_is_idempotent() 
 
 #[tokio::test]
 async fn different_named_voters_on_same_client_can_flag_the_same_content() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let _: ReadEventsResponse = request_json(
@@ -220,7 +220,7 @@ async fn different_named_voters_on_same_client_can_flag_the_same_content() {
 
 #[tokio::test]
 async fn aigc_flag_without_credit_is_rejected() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let _: AigcFlagResponse = request_json(
@@ -261,17 +261,17 @@ async fn aigc_flag_without_credit_is_rejected() {
                     })
                     .to_string(),
                 ))
-                .expect("request"),
+                .expect("构造测试请求失败"),
         )
         .await
-        .expect("response");
+        .expect("获取测试响应失败");
 
     assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
 }
 
 #[tokio::test]
 async fn aigc_flag_without_read_evidence_is_rejected_for_regular_voter() {
-    let state = AppState::new_in_memory().expect("state");
+    let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);
 
     let response = app
@@ -287,12 +287,12 @@ async fn aigc_flag_without_read_evidence_is_rejected_for_regular_voter() {
                         2_000,
                         0.05,
                     ))
-                    .expect("body"),
+                    .expect("序列化测试请求体失败"),
                 ))
-                .expect("request"),
+                .expect("构造测试请求失败"),
         )
         .await
-        .expect("response");
+        .expect("获取测试响应失败");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
@@ -302,7 +302,7 @@ async fn configured_named_voter_can_flag_without_credit() {
     let state = AppState::new_in_memory_with_credit_bypass_voters(
         ["owner-token".to_string()].into_iter().collect(),
     )
-    .expect("state");
+    .expect("初始化测试状态失败");
     let app = app(state);
 
     let _: AigcFlagResponse = request_json(
@@ -354,7 +354,7 @@ async fn status_query_reports_credit_bypass_for_named_voter_url_token() {
     let state = AppState::new_in_memory_with_credit_bypass_voters(
         ["owner-token".to_string()].into_iter().collect(),
     )
-    .expect("state");
+    .expect("初始化测试状态失败");
     let app = app(state);
 
     let status: AigcFlagStatusResponse = request_json(
@@ -381,17 +381,17 @@ where
                 .method(method)
                 .uri(uri)
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_string(body).expect("body")))
-                .expect("request"),
+                .body(Body::from(serde_json::to_string(body).expect("序列化测试请求体失败")))
+                .expect("构造测试请求失败"),
         )
         .await
-        .expect("response");
+        .expect("获取测试响应失败");
 
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
-        .expect("body bytes");
-    serde_json::from_slice(&bytes).expect("json response")
+        .expect("读取测试响应体失败");
+    serde_json::from_slice(&bytes).expect("解析测试 JSON 响应失败")
 }
 
 fn build_read_events(count: usize, duration_ms: i64, scroll_depth: f64) -> Vec<ReadEvent> {

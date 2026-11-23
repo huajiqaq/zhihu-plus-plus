@@ -1,24 +1,21 @@
-# Rust source code to expose HuggingFace Tokenizers
+# HuggingFace Tokenizers 的 Rust JNI 接口
 
-The [HuggingFace Tokenziers](https://github.com/huggingface/tokenizers) are authored in Rust, and can be installed as a Rust crate. We write a simple interface with JNI that helps us create a `Tokenzier` from the file `tokenizer.json` and tokenize the given text and return the `ids` and `attention_mask`.
+[HuggingFace Tokenizers](https://github.com/huggingface/tokenizers) 使用 Rust 编写，可以作为 Rust crate 引入。本模块源自 Shubham Panchal 的 [Sentence-Embeddings-Android](https://github.com/shubham0204/Sentence-Embeddings-Android)，本文已翻译并按 Zhihu++ 构建入口更新；署名和许可保留在 `LICENSE`。
 
-The `ids` and `attention_mask` are returned as in the JSON format as a `jstring` (Java `String`) which is then deserialized on the Android side. This crate compiles and generates dynamic libraries (`.so`) for four architectures required by Android apps (ARM 32-bit/64-bit and x86 32-bit/64-bit).
+JNI 接口从 `tokenizer.json` 的字节创建 tokenizer，对输入文本分词，并将 `ids`、`attention_mask` 和 `token_type_ids` 编码为 JSON，通过 `jstring`（Java `String`）返回 Android 端解码。原包名参与 JNI 导出符号编码，不能只修改 Kotlin 包名。用完后调用现有 `close()` 释放 tokenizer。
 
-## Setup
+## Android 构建
 
-> [!NOTE]
-> The setup was tested on Windows WSL (Debian)
+应用使用 [句向量模块的 Gradle 构建](../sentence_embeddings/README.md) 生成原生库，NDK 和实际打包 ABI 以 `sentence_embeddings/build.gradle.kts` 为准，不依赖仓库外的链接器配置。常见 Android Rust 目标如下：
 
-Make sure you've installed the latest version of [Android NDK](https://developer.android.com/ndk/downloads). Update the paths present in `.cargo/config.toml` accordingly, pointing to the required linkers and `clang`, `clang++` compilers. With `rustup`, make sure you have added the following toolchains,
-
-```
+```text
 armv7-linux-androideabi
 aarch64-linux-android
 i686-linux-android
 x86_64-linux-android
 ```
 
-Then, execute the following commands to build the `release` versions of the library,
+以下为 Rust 的独立交叉编译命令；执行前需在开发环境配置对应 NDK 链接器。命令只生成 Rust 产物，不负责复制到 Android AAR：
 
 ```bash
 $> cargo build --release --target armv7-linux-androideabi

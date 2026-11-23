@@ -19,18 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
-
-/*
-关于 本地推荐模式：
-
-本地推荐模式旨在全面尊重您的隐私并给予您更多的控制权。
-本地推荐基于协同过滤算法，使用您在应用内的行为数据（如点赞、浏览、评论等）来生成个性化推荐内容。
-为了您的隐私，本地推荐模式只使用本模式下的行为数据，使用常规的推荐模式（由知乎服务器提供）不会影响本地推荐的结果。
-为了您的隐私，本地推荐模式不会上传任何数据到服务器，所有推荐计算都在本地完成。相对的，常规的推荐模式会将您的浏览数据上传给知乎服务器，以便生成个性化推荐。
-本地推荐模式基于爬虫运行，在极端情况下，有可能被服务器限制或封禁。
-本地推荐模式预制了多种推荐原因和模式，您可以对不同的主题或原因的权重进行手动调整，以完全控制您的浏览体验。
-*/
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 @Entity(tableName = "crawling_tasks")
 data class CrawlingTask(
@@ -50,11 +39,7 @@ data class CrawlingResult(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val taskId: Long,
-    /**
-     * 内容ID，通常是知乎的唯一标识符
-     *
-     * "answer:12345678", "question:87654321", etc.
-     */
+    /** 内容类型与 ID 组成的键，如 `answer:12345678`。 */
     val contentId: String,
     val title: String,
     val summary: String,
@@ -98,30 +83,18 @@ enum class CrawlingReason(
     val defaultWeight: Double,
     val displayText: String,
 ) {
-    /**
-     * 已关注用户的内容
-     */
+    /** 已关注用户的内容。 */
     Following(1.2, "关注用户的最新动态"),
 
-    /**
-     * 官方推荐的内容
-     */
+    /** 官方推荐的内容。 */
     Trending(1.0, "热门推荐"),
 
-    /**
-     * 已关注用户的赞同
-     */
+    /** 已关注用户的赞同。 */
     FollowingUpvote(0.88, "关注用户点赞的内容"),
 
-    /**
-     * 用户赞同了某个回答，相同问题的优质回答
-     */
+    /** 用户赞同了某个回答，相同问题的优质回答。 */
     UpvotedQuestion(0.95, "相关问题的优质回答"),
 
-    /**
-     * 相似用户点赞的内容
-     */
+    /** 相似用户点赞的内容。 */
     CollaborativeFiltering(0.8, "相似用户喜欢的内容"),
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

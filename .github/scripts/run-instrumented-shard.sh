@@ -9,7 +9,12 @@ fi
 
 readonly shard_count=$1
 readonly shard_index=$2
-readonly device_serial=${ANDROID_SERIAL:-emulator-5554}
+device_serial=${ANDROID_SERIAL:-}
+if [[ -z "$device_serial" ]]; then
+    device_serial=$(adb get-serialno)
+fi
+[[ -n "$device_serial" && "$device_serial" != unknown ]]
+readonly device_serial
 readonly results_dir=app/build/outputs/androidTest-results
 readonly app_apk=${INSTRUMENT_APP_APK:?INSTRUMENT_APP_APK must point to the app APK}
 readonly test_apk=${INSTRUMENT_TEST_APK:?INSTRUMENT_TEST_APK must point to the test APK}
@@ -35,4 +40,5 @@ adb -s "$device_serial" shell am instrument -w \
     -e numShards "$shard_count" \
     -e shardIndex "$shard_index" \
     "$instrumentation_component" | tee "$instrumentation_result"
-grep -Eq '^OK \([0-9]+ tests?\)$' "$instrumentation_result"
+# OK (0 tests) 不能算通过。
+grep -Eq '^OK \([1-9][0-9]* tests?\)$' "$instrumentation_result"

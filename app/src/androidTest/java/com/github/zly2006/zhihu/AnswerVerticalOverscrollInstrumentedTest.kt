@@ -72,8 +72,7 @@ class AnswerVerticalOverscrollInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/213
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/316
+     * 底部继续上滑应切换到下一个回答；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/213
      */
     @Test
     fun bottomOverscrollSwipeUpTriggersNextAnswerNavigation() {
@@ -123,8 +122,7 @@ class AnswerVerticalOverscrollInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/550
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/552
+     * 播放器应随过度滚动偏移，未达到切换阈值时回到原位；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
      */
     @Test
     fun playerOverlayTracksOverscrollAndReturnsAfterSubthresholdPull() {

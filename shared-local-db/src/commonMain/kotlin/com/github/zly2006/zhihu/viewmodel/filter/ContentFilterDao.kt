@@ -21,7 +21,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 @Dao
 interface ContentFilterDao {
@@ -49,5 +49,3 @@ interface ContentFilterDao {
     @Query("SELECT COUNT(*) FROM ${ContentViewRecord.TABLE_NAME}")
     suspend fun getRecordCount(): Int
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

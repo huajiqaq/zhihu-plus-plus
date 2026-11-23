@@ -47,11 +47,9 @@
                 clickedElement = clickedElement.parentElement;
             }
             
-            // 对于其他元素，正常处理
-            var outerHtml = target.outerHTML;
-            // 调用 Android 接口
-            if (window.AndroidInterface) {
-                AndroidInterface.onElementClick(outerHtml);
+            // body.outerHTML 在原生端会被解析成正文的第一个子元素，只有点中图片才转发。
+            if (target.tagName === 'IMG' && window.AndroidInterface) {
+                AndroidInterface.onElementClick(target.outerHTML);
             }
         } catch (e) {
             console.error('Error in click listener:', e);
@@ -80,7 +78,7 @@
     var observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
             mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) { // Element node
+                if (node.nodeType === 1) { // 仅处理元素节点。
                     if (node.tagName === 'A' && node.classList.contains('video-box')) {
                         // 新添加的视频链接
                         node.addEventListener('click', function(event) {

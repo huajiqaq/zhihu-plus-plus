@@ -1,0 +1,17 @@
+// Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+// SPDX-License-Identifier: AGPL-3.0-only
+
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+ARCHS = arm64
+TARGETED_DEVICE_FAMILY = 1,2
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+SUPPORTS_MACCATALYST = NO
+PRODUCT_BUNDLE_IDENTIFIER = com.github.zly2006.zhihu.ios
+PRODUCT_NAME = $(TARGET_NAME)
+INFOPLIST_FILE = $(DERIVED_FILE_DIR)/ZhihuPlusPlus-Info.plist
+SWIFT_VERSION = 5.0
+CLANG_ENABLE_MODULES = YES
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+OTHER_LDFLAGS = $(inherited) -framework Shared -framework Security -framework UniformTypeIdentifiers -framework UserNotifications -lc++

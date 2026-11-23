@@ -5,7 +5,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.test.resetAppPreferences
@@ -15,6 +14,7 @@ import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
+import io.ktor.client.HttpClient
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -27,8 +27,7 @@ class ArticleSocialCreditInstrumentedTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/797
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/802
+     * 行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/797
      * 缓存正文已显示时加载赞同人数，再加载较长的赞同说明，正文起始位置都应保持不变。
      * 通过真实 ArticleScreen 的布局坐标检测异步信息插入造成的阅读位置跳动。
      */
@@ -56,7 +55,9 @@ class ArticleSocialCreditInstrumentedTest {
             .fetchSemanticsNode()
             .boundsInRoot.top
         val environment = object : ZhihuApiEnvironment {
-            override val accountClient: ZhihuAccountClient? = null
+            override fun httpClient(): HttpClient = error("此测试无需网络请求")
+
+            override fun authenticatedCookies(): Map<String, String> = emptyMap()
 
             override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
 

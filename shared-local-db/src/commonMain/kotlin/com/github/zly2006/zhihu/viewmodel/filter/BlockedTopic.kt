@@ -19,11 +19,8 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
-/**
- * 屏蔽主题实体
- */
 @Entity(tableName = "blocked_topics")
 data class BlockedTopic(
     @PrimaryKey
@@ -31,5 +28,3 @@ data class BlockedTopic(
     val topicName: String,
     val addedTime: Long = currentEpochMillis(),
 )
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

@@ -20,8 +20,7 @@ package com.github.zly2006.zhihu.data
 import androidx.room.RoomDatabase
 
 /**
- * Platform-specific Room database driver configuration.
- * Android: uses framework SQLite (no-op, Room default).
- * JVM/Desktop: uses BundledSQLiteDriver for bundled native SQLite.
+ * 平台专用的 Room 数据库驱动配置。
+ * Android 沿用 Room 默认的系统 SQLite；JVM/桌面使用 BundledSQLiteDriver 自带的原生 SQLite。
  */
 expect fun <T : RoomDatabase> RoomDatabase.Builder<T>.applyPlatformDriver(): RoomDatabase.Builder<T>

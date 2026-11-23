@@ -26,7 +26,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,21 +38,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,12 +53,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.core.content.ContextCompat
 import com.github.zly2006.zhihu.QRCodeScanActivity.Companion.LOGIN_PREFIX
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.ZhihuTheme
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog
+import com.github.zly2006.zhihu.ui.components.AppButton
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
+import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppOverlayHost
+import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.util.clipboardManager
 import com.github.zly2006.zhihu.util.enableEdgeToEdgeCompat
 import com.journeyapps.barcodescanner.ScanContract
@@ -77,19 +81,21 @@ class QRCodeScanActivity : ComponentActivity() {
 
         setContent {
             ZhihuTheme {
-                QRCodeScanScreen(
-                    onBack = { finish() },
-                    onScanResult = { result ->
-                        // 仅当是知乎登陆URL，返回扫描结果
-                        if (result.startsWith(LOGIN_PREFIX)) {
-                            val resultIntent = Intent().apply {
-                                putExtra(EXTRA_SCAN_RESULT, result)
+                /** Miuix 结果弹窗使用同树 OverlayDialog，独立 Activity 也必须提供宿主。 */
+                AppOverlayHost {
+                    QRCodeScanScreen(
+                        onBack = { finish() },
+                        onScanResult = { result ->
+                            if (result.startsWith(LOGIN_PREFIX)) {
+                                val resultIntent = Intent().apply {
+                                    putExtra(EXTRA_SCAN_RESULT, result)
+                                }
+                                setResult(RESULT_OK, resultIntent)
                             }
-                            setResult(RESULT_OK, resultIntent)
-                        }
-                        finish()
-                    },
-                )
+                            finish()
+                        },
+                    )
+                }
             }
         }
     }
@@ -100,7 +106,6 @@ class QRCodeScanActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QRCodeScanScreen(
     onBack: () -> Unit,
@@ -121,7 +126,6 @@ private fun QRCodeScanScreen(
         )
     }
 
-    // 权限请求
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { isGranted ->
@@ -131,7 +135,6 @@ private fun QRCodeScanScreen(
         }
     }
 
-    // 二维码扫描器
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract(),
     ) { result: ScanIntentResult ->
@@ -145,15 +148,11 @@ private fun QRCodeScanScreen(
         }
     }
 
-    Scaffold(
+    AppScaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("扫码登录") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            AppCompactTopBar(
+                title = "扫码登录",
+                onBack = onBack,
             )
         },
     ) { paddingValues ->
@@ -161,36 +160,46 @@ private fun QRCodeScanScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(horizontal = AppDimens.PageHeaderM3eHorizontalPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = Icons.Default.QrCodeScanner,
-                contentDescription = "扫码登录",
-                modifier = Modifier.size(120.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            Box(
+                modifier = Modifier
+                    .size(AppDimens.ScanHeroSize)
+                    .clip(RoundedCornerShape(AppDimens.ScanHeroCorner))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = "扫码登录",
+                    modifier = Modifier.size(AppDimens.ScanIconSize),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(AppDimens.Space28))
 
             Text(
                 text = "扫描电脑端登录二维码",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(AppDimens.Space10))
 
             Text(
                 text = "在电脑浏览器中打开知乎网站，使用此功能扫描登录二维码",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(AppDimens.Space32))
 
-            Button(
+            AppButton(
                 onClick = {
                     if (hasCameraPermission) {
                         val options = ScanOptions().apply {
@@ -206,25 +215,31 @@ private fun QRCodeScanScreen(
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .height(56.dp),
+                modifier = Modifier.fillMaxWidth(0.8f),
             ) {
                 Icon(
                     imageVector = Icons.Default.QrCodeScanner,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(AppDimens.Space20),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(AppDimens.Space8))
                 Text(
                     text = if (hasCameraPermission) "开始扫描" else "授权相机权限",
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
+
+            Spacer(modifier = Modifier.height(AppDimens.Space16))
+
+            Text(
+                text = "二维码只用于知乎登录，不会上传到第三方",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 
-    // 扫描结果对话框
     if (showResultDialog) {
         QRResultDialog(
             result = scanResult,
@@ -248,7 +263,7 @@ private fun QRResultDialog(
     onCopy: (String) -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text("扫描结果")
@@ -256,7 +271,7 @@ private fun QRResultDialog(
         text = {
             Column {
                 Text("扫描到的内容：")
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(AppDimens.Space8))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -265,30 +280,28 @@ private fun QRResultDialog(
                 ) {
                     Text(
                         text = result,
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(AppDimens.Space12),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
         },
         confirmButton = {
-            Row {
-                TextButton(
-                    onClick = { onCopy(result) },
-                ) {
-                    Text("复制")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                TextButton(
-                    onClick = { onConfirm(result) },
-                ) {
-                    Text("确定")
-                }
-            }
+            AppTextButton(
+                text = "确定",
+                onClick = { onConfirm(result) },
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
+            Row(horizontalArrangement = Arrangement.spacedBy(AppDimens.Space8)) {
+                AppTextButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                )
+                AppTextButton(
+                    text = "复制",
+                    onClick = { onCopy(result) },
+                )
             }
         },
     )

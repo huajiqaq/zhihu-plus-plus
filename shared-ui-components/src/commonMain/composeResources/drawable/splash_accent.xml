@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="288dp" android:height="288dp" android:viewportWidth="648" android:viewportHeight="648">
+    <group android:scaleX="0.85" android:scaleY="0.85" android:pivotX="324" android:pivotY="324">
+        <group android:name="splash_accent">
+            <path android:pathData="M223.79,324.3c-15.32,0 -27.74,-12.42 -27.74,-27.74v-44.32L151.73,252.24c-15.32,0 -27.74,-12.42 -27.74,-27.74s12.42,-27.74 27.74,-27.74L223.79,196.76c15.32,0 27.74,12.42 27.74,27.74v72.06c0,15.32 -12.42,27.74 -27.74,27.74Z" android:strokeAlpha="0.5" android:strokeWidth="0" android:fillColor="#3996d1" android:fillAlpha="0.5" />
+            <path android:pathData="M295.85,252.24L223.79,252.24c-15.32,0 -27.74,-12.42 -27.74,-27.74L196.05,152.44c0,-15.32 12.42,-27.74 27.74,-27.74s27.74,12.42 27.74,27.74v44.32h44.32c15.32,0 27.74,12.42 27.74,27.74s-12.42,27.74 -27.74,27.74Z" android:strokeAlpha="0.5" android:strokeWidth="0" android:fillColor="#3996d1" android:fillAlpha="0.5" />
+        </group>
+    </group>
+</vector>

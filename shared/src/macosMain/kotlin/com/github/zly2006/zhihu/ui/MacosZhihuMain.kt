@@ -17,266 +17,165 @@
 
 package com.github.zly2006.zhihu.ui
 
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
-import com.github.zly2006.zhihu.account.defaultNativeAccountStore
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Article
-import com.github.zly2006.zhihu.navigation.ArticleType
-import com.github.zly2006.zhihu.navigation.CollectionContent
 import com.github.zly2006.zhihu.navigation.Daily
 import com.github.zly2006.zhihu.navigation.Follow
-import com.github.zly2006.zhihu.navigation.History
 import com.github.zly2006.zhihu.navigation.Home
 import com.github.zly2006.zhihu.navigation.HotList
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.MyCollections
-import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.OnlineHistory
-import com.github.zly2006.zhihu.navigation.Pin
-import com.github.zly2006.zhihu.navigation.Question
+import com.github.zly2006.zhihu.navigation.OnlineHistoryRoute
 import com.github.zly2006.zhihu.navigation.Search
-import com.github.zly2006.zhihu.navigation.TopLevelDestination
 import com.github.zly2006.zhihu.navigation.Video
-import com.github.zly2006.zhihu.platform.platformBottomBarItemLimit
+import com.github.zly2006.zhihu.navigation.rememberAppNavHost
+import com.github.zly2006.zhihu.notification.AppleSystemNotificationHost
 import com.github.zly2006.zhihu.platform.rememberExternalUrlOpener
-import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.ThemeManager
-import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.bottomBarItemOrderFromPreference
-import com.github.zly2006.zhihu.ui.subscreens.defaultBottomBarSelectionKeys
 import com.github.zly2006.zhihu.ui.subscreens.navDestinationFromName
-import com.github.zly2006.zhihu.ui.subscreens.normalizeBottomBarSelection
-import com.github.zly2006.zhihu.ui.subscreens.resolveValidStartDestinationKey
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
-import com.github.zly2006.zhihu.viewmodel.prepareNativePendingContentOpen
-import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * macOS Kotlin/Native 主界面入口。
- *
- * 窗口宿主只调用这个入口；所有页面、布局和导航图仍由共享 [ZhihuMain] 提供。
- */
 @Composable
-fun MacosZhihuMain(windowChrome: MacosWindowChromeHost? = null) {
-    /** 主返回栈控制器，承载 MainTabs 主壳和单栏页面。 */
-    val navController = rememberNavController()
-    val accountStore = defaultNativeAccountStore
+fun MacosZhihuMain(
+    onNotificationOpen: () -> Unit = {},
+    windowChrome: MacosWindowChromeHost? = null,
+) {
+    val navHost = rememberAppNavHost(MainTabs)
+    val accountStore = rememberZhihuAccountStore()
     val accounts by accountStore.accountsState.collectAsState()
     val accountSession = accounts.session
     val httpClient = remember(accountStore, accountSession) { accountStore.client.httpClient() }
     val coroutineScope = rememberCoroutineScope()
     val openExternalUrl = rememberExternalUrlOpener()
     val userMessages = rememberUserMessageSink()
-    val preferenceState = rememberMacosZhihuMainPreferenceState()
-    var mainTabNavigationTarget by remember { mutableStateOf<TopLevelDestination?>(null) }
-    var currentMainTabOpenFrom by remember { mutableStateOf<String?>(null) }
+    val preferenceState = rememberZhihuMainPreferenceState()
     var currentMainTabDestination by remember { mutableStateOf(preferenceState.startDestination) }
+    var accountSheetVisible by remember { mutableStateOf(false) }
 
     fun navigateToMainTabs(clearRouteStack: Boolean = false) {
-        navController.navigate(MainTabs) {
-            launchSingleTop = true
-            restoreState = !clearRouteStack
-            popUpTo(MainTabs) {
-                saveState = !clearRouteStack
-            }
-        }
+        accountSheetVisible = false
+        if (clearRouteStack) navHost.popToRoot()
+        navHost.open(MainTabs)
     }
 
-    /**
-     * 从指定返回栈的当前页面读取内容打开来源，支持右侧详情栏。
-     *
-     * @param controller 提供来源页面的返回栈控制器
-     */
-    fun currentContentOpenSource(controller: NavHostController = navController): NavDestination? {
-        val currentEntry = controller.currentBackStackEntry
-        return runCatching {
-            currentEntry?.toRoute<Article>()
-        }.getOrNull() ?: runCatching {
-            currentEntry?.toRoute<Question>()
-        }.getOrNull() ?: runCatching {
-            currentEntry?.toRoute<Pin>()
-        }.getOrNull() ?: runCatching {
-            currentEntry?.toRoute<CollectionContent>()
-        }.getOrNull() ?: runCatching {
-            currentEntry?.toRoute<History>()
-        }.getOrNull() ?: runCatching {
-            currentEntry?.toRoute<Notification>()
-        }.getOrNull()
-    }
-
-    /**
-     * 通过 [targetController] 指定的主返回栈或详情返回栈打开 [route]。
-     *
-     * @param route 要打开的页面
-     * @param targetController 持有目标页面返回栈的控制器
-     */
-    fun navigate(route: NavDestination, targetController: NavHostController = navController) {
-        when (route) {
-            is Video -> {
-                val current = runCatching {
-                    targetController.currentBackStackEntry?.toRoute<Article>()
-                }.getOrNull() ?: runCatching {
-                    targetController.currentBackStackEntry?.toRoute<Question>()
-                }.getOrNull()
-                if (current == null) {
-                    userMessages.showMessage("无法打开视频：未知的内容类型")
-                    return
+    val currentOpenVideo by rememberUpdatedState<(Video, String, String) -> Unit>(
+        { route, contentId, contentType ->
+            coroutineScope.launch {
+                val cookies = accountStore.session.cookies
+                val videoUrl = withContext(Dispatchers.Default) {
+                    runCatching {
+                        fetchHighestQualityZhihuVideoUrl(
+                            httpClient = httpClient,
+                            videoId = route.id.toString(),
+                            contentId = contentId,
+                            contentType = contentType,
+                            xsrfToken = cookies["_xsrf"],
+                        ) {
+                            signZhihuFetchRequest(cookies)
+                        }
+                    }.getOrNull()
                 }
-                val (contentId, contentType) = when (current) {
-                    is Article -> current.id.toString() to when (current.type) {
-                        ArticleType.Answer -> "answer"
-                        ArticleType.Article -> "article"
-                    }
-                    is Question -> current.questionId.toString() to "question"
-                    else -> return
-                }
-                coroutineScope.launch {
-                    val cookies = accountStore.session.cookies
-                    val videoUrl = withContext(Dispatchers.Default) {
-                        runCatching {
-                            fetchHighestQualityZhihuVideoUrl(
-                                httpClient = httpClient,
-                                videoId = route.id.toString(),
-                                contentId = contentId,
-                                contentType = contentType,
-                                xsrfToken = cookies["_xsrf"],
-                            ) {
-                                signZhihuFetchRequest(cookies)
-                            }
-                        }.getOrNull()
-                    }
-                    if (videoUrl == null) {
-                        userMessages.showMessage("获取视频链接失败")
-                    } else {
-                        openExternalUrl(videoUrl)
-                    }
+                if (videoUrl == null) {
+                    userMessages.showMessage("获取视频链接失败")
+                } else {
+                    openExternalUrl(videoUrl)
                 }
             }
-            MainTabs -> {
-                mainTabNavigationTarget = Home
-                navigateToMainTabs()
-            }
-            else -> {
-                prepareNativePendingContentOpen(
-                    target = route,
-                    currentMainTabOpenFrom = if (
-                        runCatching { navController.currentBackStackEntry?.toRoute<MainTabs>() }.getOrNull() != null
-                    ) {
-                        currentMainTabOpenFrom
-                    } else {
-                        null
-                    },
-                    source = currentContentOpenSource(targetController),
-                )
-                targetController.navigate(route)
-            }
-        }
+        },
+    )
+    val currentShowMessage by rememberUpdatedState<(String) -> Unit>({ userMessages.showMessage(it) })
+    val navigationCoordinator = remember(navHost) {
+        ZhihuMainNavigationCoordinator(
+            mainHost = { navHost },
+            showMessage = { currentShowMessage(it) },
+            openVideo = { video, contentId, contentType -> currentOpenVideo(video, contentId, contentType) },
+            onRouteAccepted = { accountSheetVisible = false },
+            openMainTabs = { navigateToMainTabs() },
+        )
     }
 
     val content: @Composable (Modifier) -> Unit = { modifier ->
-        ZhihuMain(
-            modifier = modifier,
-            navController = navController,
-            mainTabNavigationTarget = mainTabNavigationTarget,
-            navigate = ::navigate,
-            navigateContent = { destination, targetController -> navigate(destination, targetController) },
-            enableLandscapeListDetail = true,
-            setCurrentMainTabOpenFrom = { currentMainTabOpenFrom = it },
-            consumeMainTabNavigationTarget = { destination ->
-                if (mainTabNavigationTarget == destination) {
-                    mainTabNavigationTarget = null
-                }
+        AppleSystemNotificationHost(
+            accountStore = accountStore,
+            onOpen = {
+                onNotificationOpen()
+                navigationCoordinator.navigate(it)
             },
-            preferenceState = preferenceState,
-            isDarkTheme = ThemeManager.isDarkTheme(),
-            showMainNavigationBar = windowChrome == null,
-            showHomeTopActions = windowChrome == null,
-            onCurrentMainTabDestinationChange = { currentMainTabDestination = it },
-            articleEnterTransition = {
-                when (sharedArticleAnswerSwitchState.answerTransitionDirection) {
-                    ArticleAnswerTransitionDirection.VERTICAL_NEXT ->
-                        slideInVertically(tween(300)) { it } + fadeIn(tween(300))
-                    ArticleAnswerTransitionDirection.VERTICAL_PREVIOUS ->
-                        slideInVertically(tween(300)) { -it } + fadeIn(tween(300))
-                    ArticleAnswerTransitionDirection.HORIZONTAL_NEXT ->
-                        slideInHorizontally(tween(300)) { it } + fadeIn(tween(300))
-                    ArticleAnswerTransitionDirection.HORIZONTAL_PREVIOUS ->
-                        slideInHorizontally(tween(300)) { -it } + fadeIn(tween(300))
-                    else -> slideInHorizontally(tween(300)) { it }
-                }
-            },
-            articleExitTransition = {
-                when (sharedArticleAnswerSwitchState.answerTransitionDirection) {
-                    ArticleAnswerTransitionDirection.VERTICAL_NEXT ->
-                        slideOutVertically(tween(300)) { -it } + fadeOut(tween(300))
-                    ArticleAnswerTransitionDirection.VERTICAL_PREVIOUS ->
-                        slideOutVertically(tween(300)) { it } + fadeOut(tween(300))
-                    ArticleAnswerTransitionDirection.HORIZONTAL_NEXT ->
-                        slideOutHorizontally(tween(300)) { -it } + fadeOut(tween(300))
-                    ArticleAnswerTransitionDirection.HORIZONTAL_PREVIOUS ->
-                        slideOutHorizontally(tween(300)) { it } + fadeOut(tween(300))
-                    else -> ExitTransition.None
-                }
-            },
-            articleContent = { article: Article, navEntry ->
-                val articleViewModel: ArticleViewModel = viewModel(navEntry) {
-                    ArticleViewModel(article, httpClient, userMessages)
-                }
-                ArticleScreen(article, articleViewModel)
-            },
-        )
+        ) {
+            ZhihuMain(
+                modifier = modifier,
+                navHost = navHost,
+                mainTabNavigationTarget = navigationCoordinator.mainTabNavigationTarget,
+                navigate = { navigationCoordinator.navigate(it) },
+                navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
+                enableLandscapeListDetail = true,
+                setCurrentMainTabOpenFrom = navigationCoordinator::setCurrentMainTabOpenFrom,
+                consumeMainTabNavigationTarget = navigationCoordinator::consumeMainTabNavigationTarget,
+                preferenceState = preferenceState,
+                isDarkTheme = ThemeManager.isDarkTheme(),
+                showMainNavigationBar = windowChrome == null,
+                showHomeTopActions = windowChrome == null,
+                onCurrentMainTabDestinationChange = { currentMainTabDestination = it },
+                accountSheetVisible = accountSheetVisible,
+                onDismissAccountSheet = { accountSheetVisible = false },
+                articleContent = { article: Article ->
+                    val articleViewModel: ArticleViewModel = viewModel {
+                        ArticleViewModel(article, httpClient, userMessages)
+                    }
+                    ArticleScreen(article, articleViewModel)
+                },
+            )
+        }
     }
 
     if (windowChrome == null) {
         content(Modifier)
     } else {
+        val selectedMainTabDestination = currentMainTabDestination.takeUnless { navHost.top == OnlineHistoryRoute }
         val navigationItems = preferenceState.selectedBottomBarItemKeys.mapNotNull { destinationName ->
             val destination = navDestinationFromName(destinationName)
             val action = {
-                mainTabNavigationTarget = destination
-                navigateToMainTabs(clearRouteStack = true)
+                accountSheetVisible = false
+                if (destination == OnlineHistory) {
+                    if (navHost.top != OnlineHistoryRoute) {
+                        navigationCoordinator.requestMainTab(null)
+                        navigationCoordinator.navigate(OnlineHistoryRoute)
+                    }
+                } else {
+                    navigationCoordinator.requestMainTab(destination)
+                    navigateToMainTabs(clearRouteStack = true)
+                }
             }
             when (destination) {
-                Home -> MacosWindowNavigationItem(Home.name, "首页", "house", "内容", Home == currentMainTabDestination, action)
-                Follow -> MacosWindowNavigationItem(Follow.name, "关注", "person.2", "内容", Follow == currentMainTabDestination, action)
-                HotList -> MacosWindowNavigationItem(HotList.name, "热榜", "flame", "内容", HotList == currentMainTabDestination, action)
-                Daily -> MacosWindowNavigationItem(Daily.name, "日报", "newspaper", "内容", Daily == currentMainTabDestination, action)
+                Home -> MacosWindowNavigationItem(Home.name, "首页", "house", "内容", Home == selectedMainTabDestination, action)
+                Follow -> MacosWindowNavigationItem(Follow.name, "关注", "person.2", "内容", Follow == selectedMainTabDestination, action)
+                HotList -> MacosWindowNavigationItem(HotList.name, "热榜", "flame", "内容", HotList == selectedMainTabDestination, action)
+                Daily -> MacosWindowNavigationItem(Daily.name, "日报", "newspaper", "内容", Daily == selectedMainTabDestination, action)
                 OnlineHistory -> MacosWindowNavigationItem(
                     OnlineHistory.name,
                     "历史",
                     "clock.arrow.circlepath",
                     "资料",
-                    OnlineHistory == currentMainTabDestination,
+                    navHost.top == OnlineHistoryRoute,
                     action,
                 )
                 MyCollections -> MacosWindowNavigationItem(
@@ -284,7 +183,7 @@ fun MacosZhihuMain(windowChrome: MacosWindowChromeHost? = null) {
                     "收藏",
                     "bookmark",
                     "资料",
-                    MyCollections == currentMainTabDestination,
+                    MyCollections == selectedMainTabDestination,
                     action,
                 )
                 Account -> MacosWindowNavigationItem(
@@ -292,7 +191,7 @@ fun MacosZhihuMain(windowChrome: MacosWindowChromeHost? = null) {
                     "账号",
                     "person.crop.circle",
                     "账号",
-                    Account == currentMainTabDestination,
+                    Account == selectedMainTabDestination,
                     action,
                 )
                 else -> null
@@ -303,58 +202,26 @@ fun MacosZhihuMain(windowChrome: MacosWindowChromeHost? = null) {
                 navigationItems = navigationItems,
                 trailingToolbarItems = listOf(
                     MacosWindowToolbarItem(
+                        identifier = "account",
+                        label = "账号与设置",
+                        systemSymbolName = "person.crop.circle",
+                        action = { accountSheetVisible = true },
+                    ),
+                    MacosWindowToolbarItem(
                         identifier = "search",
                         label = "搜索",
                         systemSymbolName = "magnifyingglass",
-                        action = { navigate(Search()) },
+                        action = { navigationCoordinator.navigate(Search()) },
                     ),
                     MacosWindowToolbarItem(
                         identifier = "notifications",
                         label = "通知",
                         systemSymbolName = "bell",
-                        action = { navigate(Notification) },
+                        action = { navigationCoordinator.navigate(Notification) },
                     ),
                 ),
             ),
             content,
-        )
-    }
-}
-
-@Composable
-private fun rememberMacosZhihuMainPreferenceState(): ZhihuMainPreferenceState {
-    val settings = rememberSettingsStore()
-    val allBottomBarItemKeys = remember {
-        listOf(Home.name, Follow.name, HotList.name, Daily.name, OnlineHistory.name, MyCollections.name, Account.name)
-    }
-    return rememberZhihuMainPreferenceState {
-        val duo3HomeAccount = settings.getBoolean("duo3_home_account", false)
-        val selectedKeys = normalizeBottomBarSelection(
-            settings.getStringSet(
-                BOTTOM_BAR_ITEMS_PREFERENCE_KEY,
-                defaultBottomBarSelectionKeys(duo3HomeAccount, platformBottomBarItemLimit),
-            ),
-            duo3HomeAccount,
-            enforceMinimumSelection = true,
-            maximumSelection = platformBottomBarItemLimit,
-        )
-        val orderedSelectedKeys = bottomBarItemOrderFromPreference(
-            settings.getStringOrNull(BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY),
-            selectedKeys,
-        )
-        ZhihuMainPreferenceSnapshot(
-            duo3HomeAccount = duo3HomeAccount,
-            tapToScrollToTopEnabled = settings.getBoolean("bottomBarTapScrollToTop", true),
-            autoHideBottomBar = settings.getBoolean("autoHideBottomBar", false),
-            collectionDirectBrowseEnabled = settings.getBoolean(COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false),
-            landscapeListDetailEnabled = settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true),
-            selectedBottomBarItemKeys = orderedSelectedKeys,
-            startDestination = navDestinationFromName(
-                resolveValidStartDestinationKey(
-                    settings.getString(START_DESTINATION_PREFERENCE_KEY, Home.name),
-                    orderedSelectedKeys.ifEmpty { allBottomBarItemKeys.filter { it in selectedKeys } },
-                ),
-            ),
         )
     }
 }

@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 /**
  * 被屏蔽内容记录实体。
@@ -52,5 +52,3 @@ data class MatchedKeywordInfo(
     val keyword: String,
     val similarity: Double,
 )
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

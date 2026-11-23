@@ -1,32 +1,11 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
-
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
 -keepattributes SourceFile,LineNumberTable
 
-##
-## Kotlin Serialization
-##
-# Keep `Companion` object fields of serializable classes.
-# This avoids serializer lookup through `getDeclaredClasses` as done for named companion objects.
+# 保留可序列化类的 `Companion` 字段，避免按具名伴生对象的方式通过 `getDeclaredClasses` 查找序列化器。
 -if @kotlinx.serialization.Serializable class **
 -keepclassmembers class <1> {
     static <1>$Companion Companion;
 }
 
-# Keep `serializer()` on companion objects (both default and named) of serializable classes.
 -if @kotlinx.serialization.Serializable class ** {
     static **$* *;
 }
@@ -34,7 +13,6 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Keep `INSTANCE.serializer()` of serializable objects.
 -if @kotlinx.serialization.Serializable class ** {
     public static ** INSTANCE;
 }
@@ -43,35 +21,28 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# @Serializable and @Polymorphic are used at runtime for polymorphic serialization.
+# 多态序列化在运行时需要 @Serializable 和 @Polymorphic 注解。
 -keepattributes RuntimeVisibleAnnotations,AnnotationDefault
 
-# Don't print notes about potential mistakes or omissions in the configuration for kotlinx-serialization classes
-# See also https://github.com/Kotlin/kotlinx.serialization/issues/1900
+# 屏蔽 kotlinx-serialization 类配置的提示，参见 https://github.com/Kotlin/kotlinx.serialization/issues/1900。
 -dontnote kotlinx.serialization.**
 
-# Serialization core uses `java.lang.ClassValue` for caching inside these specified classes.
-# If there is no `java.lang.ClassValue` (for example, in Android), then R8/ProGuard will print a warning.
-# However, since in this case they will not be used, we can disable these warnings
+# 序列化核心用 `java.lang.ClassValue` 缓存；缺少该类的平台不会使用此路径，因此可屏蔽 R8/ProGuard 警告。
 -dontwarn kotlinx.serialization.internal.ClassValueReferences
 
-# disable optimisation for descriptor field because in some versions of ProGuard, optimization generates incorrect bytecode that causes a verification error
-# see https://github.com/Kotlin/kotlinx.serialization/issues/2719
+# 部分 ProGuard 版本优化 descriptor 字段会生成无法通过验证的字节码，参见 https://github.com/Kotlin/kotlinx.serialization/issues/2719。
 -keepclassmembers public class **$$serializer {
     private ** descriptor;
 }
 
 -keepnames class ** implements com.github.zly2006.zhihu.data.Feed$Target
-# Keep app enum names used by persisted preferences and database values.
+# 保留持久化偏好和数据库值使用的应用枚举名称。
 -keep enum com.github.zly2006.zhihu.** {
     <fields>;
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-##
-## Generated
-##
 -dontwarn javax.annotation.Nullable
 -dontwarn javax.annotation.ParametersAreNonnullByDefault
 -dontwarn org.conscrypt.Conscrypt

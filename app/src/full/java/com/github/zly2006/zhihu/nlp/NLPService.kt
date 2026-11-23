@@ -18,21 +18,14 @@
 package com.github.zly2006.zhihu.nlp
 
 import android.util.Log
-import com.github.zly2006.zhihu.nlp.KeywordSelectionDebug
-import com.github.zly2006.zhihu.nlp.KeywordWithWeight
-import com.github.zly2006.zhihu.nlp.NlpDebugTrace
-import com.github.zly2006.zhihu.nlp.PhraseMatchResult
-import com.github.zly2006.zhihu.nlp.SegmentMatchDebug
 import com.hankcs.hanlp.HanLP
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/**
- * NLP服务，用于中文文本的关键词提取和语义相似度计算
- */
 object NLPService {
     private const val TAG = "NLPService"
     private const val MAX_KEYWORD_CANDIDATES = 60
@@ -46,22 +39,10 @@ object NLPService {
     private const val MIN_SEGMENT_CHAR_LENGTH = 4
     private val SENTENCE_SPLIT_REGEX = "[。！？!?\\n]+".toRegex()
 
-    private data class SegmentedTextContext(
-        val originalText: String,
-        val segments: List<String>,
-        val segmentEmbeddings: List<FloatArray?>,
-    )
-
-    /**
-     * 从文本中提取关键词
-     */
     suspend fun extractKeywords(text: String, topN: Int = 5): List<String> = withContext(Dispatchers.Default) {
         extractKeywordsInternal(text, topN).map { it.keyword }
     }
 
-    /**
-     * 从文本中提取关键词及其权重
-     */
     suspend fun extractKeywordsWithWeight(text: String, topN: Int = 5): List<KeywordWithWeight> = withContext(Dispatchers.Default) {
         extractKeywordsInternal(text, topN)
     }
@@ -69,134 +50,47 @@ object NLPService {
     private suspend fun extractKeywordsInternal(text: String, topN: Int): List<KeywordWithWeight> {
         if (text.isBlank() || topN <= 0) return emptyList()
         val candidates = generateKeywordCandidates(text, topN)
-        val debugTrace = NlpDebugTrace(normalizedText = text.trim(), candidateKeywords = candidates)
-        logDebug("extractKeywordsInternal textLen=${text.length} topN=$topN candidates=${candidates.size}")
         if (candidates.isEmpty()) return emptyList()
 
-        val mmrResult = selectKeywordsWithMMR(text, candidates, topN, debugTrace)
-        if (mmrResult.isNotEmpty()) {
-            logDebug("MMR selected=${mmrResult.map { it.keyword }} trace=$debugTrace")
-            return mmrResult
-        }
+        val mmrResult = selectKeywordsWithMMR(text, candidates, topN)
+        if (mmrResult.isNotEmpty()) return mmrResult
 
-        // Fallback：使用HanLP结果
         val fallback = candidates.take(topN)
         val denominator = max(1, fallback.size - 1)
-        val fallbackResult = fallback.mapIndexed { index, keyword ->
+        return fallback.mapIndexed { index, keyword ->
             KeywordWithWeight(keyword, 1.0 - index.toDouble() / max(1, denominator))
         }
-        logDebug("Fallback keywords=${fallbackResult.map { it.keyword }} trace=$debugTrace")
-        return fallbackResult
     }
 
-    private suspend fun calculatePhraseMatchScoreForContext(
+    private suspend fun calculatePhraseMatchScore(
         phraseKeywords: String,
-        segmentedContext: SegmentedTextContext,
-    ): PhraseMatchResult {
+        segmentEmbeddings: List<FloatArray?>,
+    ): Double {
         val normalizedPhrase = phraseKeywords.trim()
-        if (normalizedPhrase.isEmpty()) {
-            return PhraseMatchResult(
-                phrase = phraseKeywords,
-                normalizedPhrase = normalizedPhrase,
-                keywords = emptyList(),
-                phraseEmbeddingDim = null,
-                bestScore = 0.0,
-                segmentDebug = emptyList(),
-            )
-        }
-        val keywords = normalizedPhrase
-            .split("\\s+".toRegex())
-            .filter { it.isNotBlank() }
-
-        logDebug("calculatePhraseMatchScore phrase='$normalizedPhrase' keywords=${keywords.joinToString()}")
-        val phraseEmbedding = encodeTextOrNull(normalizedPhrase)
+        if (normalizedPhrase.isEmpty()) return 0.0
+        val phraseEmbedding = encodeTextOrNull(normalizedPhrase) ?: return 0.0
         var bestScore = 0.0
-        val segmentDebug = mutableListOf<SegmentMatchDebug>()
-        if (phraseEmbedding != null) {
-            var hasSegmentEmbedding = false
-            segmentedContext.segmentEmbeddings.forEachIndexed { idx, embedding ->
-                if (embedding != null) {
-                    hasSegmentEmbedding = true
-                    val score = cosineToScore(cosineSimilarity(phraseEmbedding, embedding))
-                    segmentDebug.add(
-                        SegmentMatchDebug(
-                            index = idx,
-                            segmentTextPreview = segmentedContext.segments.getOrNull(idx)?.take(80) ?: "",
-                            segmentLength = segmentedContext.segments.getOrNull(idx)?.length ?: 0,
-                            embeddingDim = embedding.size,
-                            score = score,
-                        ),
-                    )
-                    logDebug(
-                        "phrase ($normalizedPhrase) vs segment#$idx score=$score segmentLen=${segmentedContext.segments.getOrNull(idx)?.length ?: 0}" +
-                            " (${segmentedContext.segments.getOrNull(idx)})",
-                    )
-                    if (score > bestScore) {
-                        bestScore = score
-                    }
-                } else {
-                    segmentDebug.add(
-                        SegmentMatchDebug(
-                            index = idx,
-                            segmentTextPreview = segmentedContext.segments.getOrNull(idx)?.take(80) ?: "",
-                            segmentLength = segmentedContext.segments.getOrNull(idx)?.length ?: 0,
-                            embeddingDim = null,
-                            score = null,
-                        ),
-                    )
-                    logDebug("phrase vs segment#$idx missing embedding")
-                }
+        for (embedding in segmentEmbeddings) {
+            if (embedding != null) {
+                val score = cosineToScore(cosineSimilarity(phraseEmbedding, embedding))
+                if (score > bestScore) bestScore = score
             }
-            if (!hasSegmentEmbedding) {
-                logDebug("phrase bestScore=0.0 (no segment embeddings)")
-            } else {
-                logDebug("phrase bestScore=$bestScore")
-            }
-        } else {
-            logDebug("phrase embedding null for '$normalizedPhrase'")
         }
-
-        return PhraseMatchResult(
-            phrase = phraseKeywords,
-            normalizedPhrase = normalizedPhrase,
-            keywords = keywords,
-            phraseEmbeddingDim = phraseEmbedding?.size,
-            bestScore = bestScore,
-            segmentDebug = segmentDebug,
-        )
+        return bestScore
     }
 
-    private suspend fun buildSegmentedContext(text: String): SegmentedTextContext {
+    private suspend fun buildSegmentEmbeddings(text: String): List<FloatArray?> {
         val normalized = text.trim()
         val segments = splitTextIntoSegments(normalized)
             .ifEmpty {
                 val fallback = normalized.take(MAX_SEGMENT_CHAR_LENGTH)
                 if (fallback.isNotEmpty()) listOf(fallback) else emptyList()
             }.take(MAX_SEGMENT_COUNT)
-
-        val embeddings = segments.mapIndexed { idx, segment ->
-            val emb = encodeTextOrNull(segment)
-            val preview = if (emb == null) {
-                "null"
-            } else {
-                val head = emb.take(4).joinToString(prefix = "[", postfix = if (emb.size > 4) ", ...]" else "]")
-                "dim=${emb.size} sample=$head"
-            }
-            logDebug("segment#$idx len=${segment.length} embedding=${emb?.size ?: 0} preview=$preview")
-            emb
-        }
-
-        logDebug("buildSegmentedContext normalizedLen=${normalized.length} segments=${segments.size}")
-        return SegmentedTextContext(
-            originalText = normalized,
-            segments = segments,
-            segmentEmbeddings = embeddings,
-        )
+        return segments.map { encodeTextOrNull(it) }
     }
 
     private fun splitTextIntoSegments(text: String): List<String> {
         if (text.isBlank()) return emptyList()
-        logDebug("splitTextIntoSegments len=${text.length}")
         val rawSentences = SENTENCE_SPLIT_REGEX
             .split(text)
             .map { it.trim() }
@@ -206,16 +100,13 @@ object NLPService {
         for (sentence in rawSentences) {
             if (sentence.isEmpty()) continue
             if (sentence.length <= MAX_SEGMENT_CHAR_LENGTH) {
-                logDebug("sentence kept len=${sentence.length} text='${sentence.take(80)}'")
                 segments.add(sentence)
             } else {
                 var start = 0
-                logDebug("sentence sliding len=${sentence.length} text='${sentence.take(80)}'")
                 while (start < sentence.length) {
                     val end = min(sentence.length, start + MAX_SEGMENT_CHAR_LENGTH)
                     val chunk = sentence.substring(start, end)
                     segments.add(chunk)
-                    logDebug("chunk start=$start end=$end len=${chunk.length} text='${chunk.take(80)}'")
                     if (segments.size >= MAX_SEGMENT_COUNT) return segments
                     start += SEGMENT_WINDOW_STEP
                 }
@@ -225,13 +116,8 @@ object NLPService {
 
         if (segments.isEmpty()) {
             val fallback = text.take(MAX_SEGMENT_CHAR_LENGTH)
-            if (fallback.isNotEmpty()) {
-                logDebug("segments empty, fallback len=${fallback.length}")
-                segments.add(fallback)
-            }
+            if (fallback.isNotEmpty()) segments.add(fallback)
         }
-
-        logDebug("splitTextIntoSegments result count=${segments.size} lengths=${segments.map { it.length }}")
         return segments
     }
 
@@ -239,20 +125,17 @@ object NLPService {
         if (text.isBlank()) return emptyList()
         val poolSize = max(topN * KEYWORD_CANDIDATE_MULTIPLIER, topN + 3)
         val maxPoolSize = min(MAX_KEYWORD_CANDIDATES * 2, poolSize)
-        val result = HanLP
+        return HanLP
             .extractKeyword(text, maxPoolSize)
             .mapNotNull { it?.trim() }
             .filter { it.length >= MIN_KEYWORD_LENGTH }
             .distinct()
-        logDebug("generateKeywordCandidates topN=$topN pool=$maxPoolSize result=${result.size} list=$result")
-        return result
     }
 
     private suspend fun selectKeywordsWithMMR(
         text: String,
         candidates: List<String>,
         topN: Int,
-        debugTrace: NlpDebugTrace?,
     ): List<KeywordWithWeight> {
         val documentEmbedding = encodeTextOrNull(text) ?: return emptyList()
         val limitedCandidates = candidates.take(min(candidates.size, MAX_KEYWORD_CANDIDATES))
@@ -261,19 +144,13 @@ object NLPService {
         val candidateEmbeddings = buildMap {
             for (candidate in limitedCandidates) {
                 val embedding = encodeTextOrNull(candidate)
-                if (embedding != null) {
-                    put(candidate, embedding)
-                } else {
-                    logDebug("candidate embedding null for '$candidate'")
-                }
+                if (embedding != null) put(candidate, embedding)
             }
         }
-        logDebug("selectKeywordsWithMMR limited=${limitedCandidates.size} withEmbeddings=${candidateEmbeddings.size}")
         if (candidateEmbeddings.isEmpty()) return emptyList()
 
         val remaining = candidateEmbeddings.toMutableMap()
         val selected = mutableListOf<KeywordWithWeight>()
-
         while (selected.size < topN && remaining.isNotEmpty()) {
             var bestKey: String? = null
             var bestRelevance = 0.0
@@ -285,16 +162,6 @@ object NLPService {
                     if (otherEmbedding != null) cosineSimilarity(embedding, otherEmbedding) else 0.0
                 } ?: 0.0
                 val score = MMR_LAMBDA * relevance - (1 - MMR_LAMBDA) * redundancy
-                debugTrace?.mmrIterations?.add(
-                    KeywordSelectionDebug(
-                        iteration = selected.size,
-                        candidate = word,
-                        relevance = relevance,
-                        redundancy = redundancy,
-                        score = score,
-                    ),
-                )
-                logDebug("MMR iter=${selected.size} word='$word' rel=$relevance red=$redundancy score=$score")
                 if (score > bestScore) {
                     bestScore = score
                     bestKey = word
@@ -303,13 +170,9 @@ object NLPService {
             }
 
             val keyword = bestKey ?: break
-            val kw = KeywordWithWeight(keyword, cosineToScore(bestRelevance))
-            selected.add(kw)
-            debugTrace?.selectedKeywords?.add(kw)
+            selected.add(KeywordWithWeight(keyword, cosineToScore(bestRelevance)))
             remaining.remove(keyword)
-            logDebug("MMR pick='$keyword' score=$bestScore rel=$bestRelevance remaining=${remaining.size}")
         }
-
         return selected
     }
 
@@ -317,11 +180,11 @@ object NLPService {
         val normalized = text.trim().take(MAX_EMBEDDING_TEXT_LENGTH)
         if (normalized.isBlank()) return null
         return try {
-            val embedding = SentenceEmbeddingManager.encode(normalized)
-            logDebug("encodeText len=${normalized.length} dim=${embedding?.size} text='${normalized.take(80)}'")
-            embedding
+            SentenceEmbeddingManager.encode(normalized)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "encodeText failed len=${normalized.length} text='${normalized.take(80)}'", e)
+            Log.e(TAG, "NLP 编码失败", e)
             null
         }
     }
@@ -348,39 +211,23 @@ object NLPService {
 
     private fun cosineToScore(value: Double): Double = ((value + 1.0) / 2.0).coerceIn(0.0, 1.0)
 
-    private fun logDebug(message: String) {
-        Log.d(TAG, message)
-    }
-
-    /**
-     * 检查文本是否与屏蔽短语匹配，并返回匹配详情
-     * @param text 要检查的文本
-     * @param blockedPhrases 屏蔽短语列表（空格分隔的关键词）
-     * @param threshold 相似度阈值，默认0.3
-     * @return 匹配的短语及其相似度列表，按相似度降序排列
-     */
+    /** [blockedPhrases] 每项为用空格分隔的关键词；返回达到阈值的短语，按相似度降序。 */
     suspend fun checkBlockedPhrases(
         text: String,
         blockedPhrases: List<String>,
         threshold: Double = 0.8,
     ): List<Pair<String, Double>> = withContext(Dispatchers.Default) {
         if (text.isBlank() || blockedPhrases.isEmpty()) return@withContext emptyList()
-
         try {
             val matches = mutableListOf<Pair<String, Double>>()
-            val segmentedContext = buildSegmentedContext(text)
-            logDebug("checkBlockedPhrases phrases=${blockedPhrases.size} segments=${segmentedContext.segments.size}")
-
+            val segmentEmbeddings = buildSegmentEmbeddings(text)
             for (phrase in blockedPhrases) {
-                val result = calculatePhraseMatchScoreForContext(phrase, segmentedContext)
-                logDebug("blockedPhrase='$phrase' similarity=${result.bestScore} threshold=$threshold shouldBlock=${result.bestScore >= threshold} detail=$result")
-                if (result.bestScore >= threshold) {
-                    matches.add(Pair(phrase, result.bestScore))
-                }
+                val score = calculatePhraseMatchScore(phrase, segmentEmbeddings)
+                if (score >= threshold) matches.add(phrase to score)
             }
-
-            // 按相似度降序排列
             matches.sortedByDescending { it.second }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "checkBlockedPhrases failed", e)
             emptyList()

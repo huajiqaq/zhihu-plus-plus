@@ -57,7 +57,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 `click` 直接调用节点自身的 Compose `OnClick` 语义动作，不通过节点中心坐标合成鼠标事件；这也让被其他内容覆盖中心点的遮罩保持可测。`dismiss` 同理调用 Compose `Dismiss`，适合关闭弹层或对话框。`key` 只向离屏 Compose 场景发送按键，支持 `escape`、`enter`、`tab`、`space`、`backspace`、`delete`和四个方向；它不使用全局键盘注入。页面存在弹层等多个语义根时必须提供 `selector`，把按键发给明确的页面焦点容器，不能依赖根节点顺序。
 
-`back` 直接驱动当前离屏 Compose 场景自带的 navigation event dispatcher，用于验证与真实窗口 Escape 相同的最内层已启用 `BackHandler`。它不依赖焦点，也不会注入全局按键；测试页面返回、弹层关闭和输入框抢焦点后的返回行为时必须使用 `back`，不能用 `key escape` 冒充系统返回。`scroll.direction` 可为 `up`、`down`、`left`、`right`，表示离屏画布内的手指滑动方向。`screenshot.file` 必须是 `/tmp` 下的显式绝对路径；调试器不会读取桌面，也不会自动选择用户目录。
+`back` 直接驱动当前离屏 Compose 场景自带的导航事件分派器，用于验证与真实窗口 Escape 相同的最内层已启用 `BackHandler`。它不依赖焦点，也不会注入全局按键；测试页面返回、弹层关闭和输入框抢焦点后的返回行为时必须使用 `back`，不能用 `key escape` 冒充系统返回。`scroll.direction` 可为 `up`、`down`、`left`、`right`，表示离屏画布内的手指滑动方向。`screenshot.file` 必须是 `/tmp` 下的显式绝对路径；调试器不会读取桌面，也不会自动选择用户目录。
 
 `show_message` 只向离屏应用内消息队列发送测试消息，`duration` 可为 `short` 或 `long`。它用于验证 Native `UserMessageSink` 最终能在 Material Snackbar 中显示，不调用系统通知或前台窗口；发送后必须用 `wait` 验证消息文本实际出现在语义树中。
 

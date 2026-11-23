@@ -1,14 +1,16 @@
 # Android Full/Lite 的 KMP 构建
 
-`app` 保留 `full` 和 `lite` product flavor。`shared` 使用的 Android KMP 插件只提供一份 Android 主编译。构建脚本会从 APK 任务名推断本次要编译的 `actual`：
+`app` 保留 `full` 和 `lite` flavor，最低 Android API 为 27，以 `app/build.gradle.kts` 和共享构建约定为准。Android KMP 模块每次只编译一套版本专属 actual，构建脚本从 APK、bundle、install、compile 或单元测试任务名推断版本。
+
+Compose Multiplatform RC 与 Material3 使用版本目录中的配套构件；Android BOM 的实际选中版本通过 `dependencyInsight` 核对，不能把 JetBrains 与 AndroidX 的版本号直接互换。Miuix Android 构件要求编译 SDK 至少 37.2（`sdkmanager "platforms;android-37.2"`），共享模块从 `zhihu.kmp-conventions` 继承；这不改变应用的 targetSdk 或最低系统版本。
 
 ```bash
 ./gradlew :app:assembleLiteDebug
 ./gradlew :app:assembleFullDebug
 ```
 
-产物分别位于 `app/build/outputs/apk/lite/debug/` 和 `app/build/outputs/apk/full/debug/`。Release 包使用 `assembleLiteRelease` 或 `assembleFullRelease`。
+两种 flavor 分两次调用，不能在同一 Gradle 命令混用。独立 KMP 任务可用 `-PzhihuAndroidVariant=lite` 或 `full` 显式选择；未指定且任务名不含 flavor 时默认 Lite。非法值、混合任务和属性冲突会报错。
 
-构建两个 flavor 时必须执行两次 Gradle 命令。`shared/src/androidMain` 放两版共用的 Android 代码；`shared/src/androidFull` 和 `shared/src/androidLite` 分别提供版本专属的 `actual`。构建脚本也识别同一 flavor 的 bundle、install、compile 和单元测试任务。无法从任务名判断版本的 Android 任务不会自动选择 `actual`，应改用对应 flavor 的任务。
+共享 Android 代码放在 `androidMain`，版本专属实现放在 `androidFull`/`androidLite`。Debug APK 位于 `app/build/outputs/apk/<flavor>/debug/`；Release 使用相应 `assemble*Release` 任务。
 
-Android 单元测试同样要按 flavor 分开运行，例如 `:app:testFullDebugUnitTest` 和 `:app:testLiteDebugUnitTest`。全局 `test` 任务会同时调度两套 Android 单元测试，不能在单次调用中使用。
+Android 单元测试也分开运行：`:app:testLiteDebugUnitTest`、`:app:testFullDebugUnitTest`。全局 `test` 会同时调度两版，不能用于一次只选择一套 actual 的构建。

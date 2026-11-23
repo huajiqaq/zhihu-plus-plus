@@ -17,28 +17,43 @@
 
 package com.github.zly2006.zhihu
 
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.FollowedQuestion
 import com.github.zly2006.zhihu.data.FollowedTopic
 import com.github.zly2006.zhihu.data.OfficialBadge
 import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
-import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.CollectionContent
 import com.github.zly2006.zhihu.navigation.Person
-import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.Search
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
@@ -48,11 +63,15 @@ import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.seedViewModel
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.FollowingUsersRow
+import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_ACTIVITIES_LIST_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_ANSWERS_LIST_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_AVATAR_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_FOLLOW_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_HEADER_TAG
+import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_MORE_BUTTON_TAG
+import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_PROFILE_DETAILS_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.PEOPLE_SCREEN_SEARCH_BUTTON_TAG
@@ -77,20 +96,15 @@ class PeopleScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
     }
 
     @After
     fun tearDown() {
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
-    /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/377
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/382
-     */
+    /** 回答标识重复时列表仍须显示各条目；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/377。 */
     @Test
     fun duplicatedAuthorAnswerKeysDoNotCrashAnswerListOffline() {
         val duplicatedAnswerId = 2_544_209_984L
@@ -112,7 +126,7 @@ class PeopleScreenInstrumentedTest {
             ),
             mockAnswers = emptyList(),
         )
-        setPeopleScreen()
+        setPeopleScreen(person = ROOT_PERSON.copy(jumpTo = "回答"))
 
         composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG).assertIsDisplayed()
         composeRule.onNodeWithText("重复 key 问题 A").assertIsDisplayed()
@@ -120,14 +134,12 @@ class PeopleScreenInstrumentedTest {
         composeRule.onAllNodesWithTag("people_screen_answer_item_$duplicatedAnswerId").assertCountEquals(2)
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/374
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/408
-     */
+    /** 搜索入口须携带当前用户范围；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/374。 */
     @Test
     fun headerSearchActionNavigatesToMemberScopedSearchOffline() {
         seededViewModel()
         val navigator = setPeopleScreen()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_ACTIVITIES_LIST_TAG).assertIsDisplayed()
 
         val headerBounds = composeRule
             .onAllNodesWithTag(PEOPLE_SCREEN_HEADER_TAG)
@@ -168,29 +180,41 @@ class PeopleScreenInstrumentedTest {
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/718
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/722
-     * Target: four badges leave the expanded action buttons visible and keep them clear of the tab row after collapse.
-     * The tab row must move upward to prove the header collapsed; changes to unrelated list pixels cannot pass.
+     * 密集认证布局行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/718。
+     * 四项认证保留摘要与完整资料，操作区在展开、完全收起及反向恢复后仍可达。
+     * 标签栏上移和裁剪后页头高度共同证明完全收起，不能只看列表滚动。
      */
     @Test
     fun denseProfileBadgesKeepHeaderActionsVisibleOffline() {
-        val viewModel = seededViewModel(itemCount = 1)
-        setPeopleScreen()
-        composeRule.activity.runOnUiThread {
-            viewModel.officialBadgeDetails = listOf(
-                OfficialBadge("社区成就", "社区成就说明"),
-                OfficialBadge("身份认证", "身份认证说明"),
-                OfficialBadge("优秀答主", "优秀答主说明"),
-                OfficialBadge("新知答主", "新知答主说明"),
-            )
+        val viewModel = seededViewModel(itemCount = 12)
+        setPeopleScreen(person = ROOT_PERSON.copy(jumpTo = "回答"))
+        composeRule.waitUntil("用户资料必须加载完成后再设置四项认证", timeoutMillis = 5_000) {
+            viewModel.hasLoadedProfile && !viewModel.isProfileLoading
         }
+        val badges = listOf(
+            OfficialBadge("社区成就", "社区成就说明"),
+            OfficialBadge("身份认证", "身份认证说明"),
+            OfficialBadge("优秀答主", "优秀答主说明"),
+            OfficialBadge("新知答主", "新知答主说明"),
+        )
+        composeRule.activity.runOnUiThread { viewModel.officialBadgeDetails = badges }
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithText("社区成就: 社区成就说明", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("+3", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_PROFILE_DETAILS_TAG).assertIsDisplayed().performTouchInput { click() }
+        val fullProfile = "离线个人简介\n\n" + badges.joinToString("\n\n") { "${it.title}: ${it.description}" }
+        composeRule.onNode(hasAnyAncestor(isDialog()) and hasText(fullProfile)).assertIsDisplayed()
+        composeRule.onNode(hasAnyAncestor(isDialog()) and hasText("关闭")).assertIsDisplayed().performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNode(isDialog()).assertDoesNotExist()
+        val expandedHeaderBounds = composeRule
+            .onNodeWithTag(PEOPLE_SCREEN_HEADER_TAG)
+            .assertIsDisplayed()
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertTrue("展开态资料头必须具有可见高度", expandedHeaderBounds.height > 1f)
         composeRule.onNodeWithTag(PEOPLE_SCREEN_FOLLOW_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG).assertIsDisplayed()
         val expandedTabTop = composeRule
             .onNodeWithTag(PEOPLE_SCREEN_TAB_ROW_TAG)
             .fetchSemanticsNode()
@@ -198,41 +222,170 @@ class PeopleScreenInstrumentedTest {
             .top
         listOf(
             PEOPLE_SCREEN_FOLLOW_BUTTON_TAG,
-            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_MORE_BUTTON_TAG,
         ).forEach { tag ->
             assertTrue(
                 "展开态操作按钮必须完整位于标签栏之前: $tag",
                 composeRule
                     .onNodeWithTag(tag)
+                    .assertIsDisplayed()
+                    .assertIsEnabled()
+                    .assertHasClickAction()
                     .fetchSemanticsNode()
                     .boundsInRoot.bottom <= expandedTabTop,
             )
         }
 
-        val listNode = composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG)
-        listNode.performTouchInput {
-            swipe(
-                start = Offset(centerX, height * 0.85f),
-                end = Offset(centerX, height * 0.35f),
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).performTouchInput { click() }
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG).assertIsDisplayed()
+        val blockActionTags = listOf(
+            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+        )
+        val menuViewport = composeRule.onNode(isPopup()).fetchSemanticsNode().boundsInRoot
+        blockActionTags.forEach { tag ->
+            val buttonBounds = composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .assertHasClickAction()
+                .fetchSemanticsNode()
+                .boundsInRoot
+            assertTrue(
+                "展开态菜单操作必须完整位于真实菜单视口内: $tag",
+                buttonBounds.width > 0f &&
+                    buttonBounds.height > 0f &&
+                    buttonBounds.left >= menuViewport.left &&
+                    buttonBounds.top >= menuViewport.top &&
+                    buttonBounds.right <= menuViewport.right &&
+                    buttonBounds.bottom <= menuViewport.bottom,
             )
         }
+        val blockRequestCount = ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block")
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG).performTouchInput { click() }
         composeRule.waitForIdle()
+        composeRule.onNode(isPopup()).assertDoesNotExist()
+        composeRule.onNode(hasAnyAncestor(isDialog()) and hasText("拉黑 离线用户？")).assertIsDisplayed()
+        composeRule
+            .onNode(hasAnyAncestor(isDialog()) and hasText("会同步到你的知乎账号。之后可以在这个页面点“取消拉黑”恢复。"))
+            .assertIsDisplayed()
+        assertEquals("拉黑必须先确认，打开弹窗不能提交", blockRequestCount, ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block"))
+        composeRule
+            .onNode(hasAnyAncestor(isDialog()) and hasText("取消"))
+            .assertIsDisplayed()
+            .performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onNode(isDialog()).assertDoesNotExist()
+        assertEquals("取消拉黑不能提交", blockRequestCount, ZhihuMockApi.requestCount(HttpMethod.Post, "/actions/block"))
+        composeRule.runOnIdle {
+            assertTrue("取消确认后仍未拉黑", !viewModel.isBlocking)
+        }
+        listOf(
+            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+        ).forEach { tag ->
+            composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+            composeRule.onNodeWithTag(tag).assertIsDisplayed().performTouchInput { click() }
+            composeRule.waitUntil("菜单点击必须完成屏蔽: $tag", timeoutMillis = 5_000) {
+                if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) {
+                    viewModel.isBlockedInRecommendations
+                } else {
+                    viewModel.isBlockedAsQuestionAuthor
+                }
+            }
+            composeRule.onNode(isPopup()).assertDoesNotExist()
+            composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+            composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertTextEquals(if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) "取消屏蔽推荐" else "取消屏蔽其提问")
+                .performTouchInput { click() }
+            composeRule.waitUntil("取消屏蔽必须恢复原状态: $tag", timeoutMillis = 5_000) {
+                if (tag == PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG) {
+                    !viewModel.isBlockedInRecommendations
+                } else {
+                    !viewModel.isBlockedAsQuestionAuthor
+                }
+            }
+            composeRule.onNode(isPopup()).assertDoesNotExist()
+        }
+
+        val listNode = composeRule.onNodeWithTag(PEOPLE_SCREEN_ANSWERS_LIST_TAG).assertIsDisplayed()
+        val listBefore = listNode.fetchSemanticsNode()
+        val listBounds = listBefore.boundsInRoot
+        val listUnclippedBounds = listNode.getUnclippedBoundsInRoot()
+        val root = composeRule.onRoot()
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val systemBars = composeRule.runOnIdle {
+            checkNotNull(ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView))
+                .getInsets(WindowInsetsCompat.Type.systemBars())
+        }
+        val safeRootBounds = Rect(
+            rootBounds.left + systemBars.left,
+            rootBounds.top + systemBars.top,
+            rootBounds.right - systemBars.right,
+            rootBounds.bottom - systemBars.bottom,
+        )
+        val gestureBounds = listBounds.intersect(safeRootBounds)
+        val startInRoot = Offset(gestureBounds.center.x, gestureBounds.top + gestureBounds.height * 0.8f)
+        // 短列表视口限制不了已捕获的拖动；继续拖过页头，避免松手前只有很小的折叠进度。
+        val endInRoot = Offset(gestureBounds.center.x, safeRootBounds.top + safeRootBounds.height * 0.1f)
+        val gestureMetrics = "listBounds=$listBounds listSize=${listBefore.size} unclippedBounds=$listUnclippedBounds " +
+            "rootBounds=$rootBounds systemBars=$systemBars safeRootBounds=$safeRootBounds gestureBounds=$gestureBounds " +
+            "start=$startInRoot end=$endInRoot"
+        assertTrue(
+            "回答列表必须有真实可见手势视口：$gestureMetrics",
+            listBounds.width > 0f &&
+                listBounds.height > 0f &&
+                safeRootBounds.width > 0f &&
+                safeRootBounds.height > 0f &&
+                gestureBounds.width > 0f &&
+                gestureBounds.height > 0f,
+        )
+        assertTrue(
+            "手势须从列表开始，并在非系统栏的根视口内持续拖动：$gestureMetrics",
+            listBounds.contains(startInRoot) &&
+                rootBounds.contains(startInRoot) &&
+                rootBounds.contains(endInRoot) &&
+                safeRootBounds.contains(startInRoot) &&
+                safeRootBounds.contains(endInRoot),
+        )
+        assertTrue("折叠手势必须向上：$gestureMetrics", startInRoot.x == endInRoot.x && startInRoot.y > endInRoot.y)
+        val scrollBefore = checkNotNull(listBefore.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange))
+        val scrollValueBefore = scrollBefore.value()
+        val scrollMaxBefore = scrollBefore.maxValue()
+        assertTrue(
+            "回答列表必须可向前滚动：$gestureMetrics scroll=$scrollValueBefore/$scrollMaxBefore",
+            !scrollBefore.reverseScrolling && scrollMaxBefore > scrollValueBefore,
+        )
+        root.performTouchInput {
+            swipe(start = startInRoot - rootBounds.topLeft, end = endInRoot - rootBounds.topLeft)
+        }
+        composeRule.waitForIdle()
+        val scrollAfter = checkNotNull(listNode.fetchSemanticsNode().config.getOrNull(SemanticsProperties.VerticalScrollAxisRange))
+        val scrollValueAfter = scrollAfter.value()
+        val scrollMaxAfter = scrollAfter.maxValue()
         val collapsedTabBounds = composeRule
             .onNodeWithTag(PEOPLE_SCREEN_TAB_ROW_TAG)
             .fetchSemanticsNode()
             .boundsInRoot
         assertTrue("收起态标签栏必须保持可见", collapsedTabBounds.height > 0f)
+        val collapsedHeaderBounds = composeRule.onNodeWithTag(PEOPLE_SCREEN_HEADER_TAG).fetchSemanticsNode().boundsInRoot
         assertTrue(
-            "滚动后标签栏必须上移，证明资料头已收起：展开=$expandedTabTop，收起=${collapsedTabBounds.top}",
+            "资料头必须完全裁剪收起，允许 1px 舍入：headerBounds=$collapsedHeaderBounds $gestureMetrics",
+            collapsedHeaderBounds.height <= 1f,
+        )
+        assertTrue(
+            "滚动后标签栏必须上移，证明资料头已收起：展开=$expandedTabTop，收起=${collapsedTabBounds.top} " +
+                "$gestureMetrics scrollBefore=$scrollValueBefore/$scrollMaxBefore scrollAfter=$scrollValueAfter/$scrollMaxAfter",
             expandedTabTop > collapsedTabBounds.top,
         )
         listOf(
             PEOPLE_SCREEN_FOLLOW_BUTTON_TAG,
-            PEOPLE_SCREEN_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG,
-            PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG,
+            PEOPLE_SCREEN_MORE_BUTTON_TAG,
         ).forEach { tag ->
             val buttonBounds = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
             assertTrue(
@@ -240,22 +393,98 @@ class PeopleScreenInstrumentedTest {
                 buttonBounds.bottom <= collapsedTabBounds.top || buttonBounds.top >= collapsedTabBounds.bottom,
             )
         }
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_MORE_BUTTON_TAG).assertIsDisplayed().performTouchInput { click() }
+        val collapsedMenuViewport = composeRule.onNode(isPopup()).fetchSemanticsNode().boundsInRoot
+        blockActionTags.forEach { tag ->
+            val buttonBounds = composeRule
+                .onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .assertHasClickAction()
+                .fetchSemanticsNode()
+                .boundsInRoot
+            assertTrue(
+                "收起态菜单操作必须完整位于真实菜单视口内: $tag",
+                buttonBounds.width > 0f &&
+                    buttonBounds.height > 0f &&
+                    buttonBounds.left >= collapsedMenuViewport.left &&
+                    buttonBounds.top >= collapsedMenuViewport.top &&
+                    buttonBounds.right <= collapsedMenuViewport.right &&
+                    buttonBounds.bottom <= collapsedMenuViewport.bottom,
+            )
+        }
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        var activePackage: String? = null
+        composeRule.waitUntil("更多菜单必须存在活跃应用窗口", timeoutMillis = 5_000) {
+            activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            activePackage != null
+        }
+        assertEquals(composeRule.activity.packageName, activePackage)
+        val downTime = SystemClock.uptimeMillis()
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),
+        )
+        assertTrue(
+            automation.injectInputEvent(KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0), true),
+        )
+        composeRule.waitUntil("Android 返回后更多菜单必须关闭", timeoutMillis = 5_000) {
+            composeRule.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNode(isPopup()).assertDoesNotExist()
+
+        val header = composeRule.onNodeWithTag(PEOPLE_SCREEN_HEADER_TAG)
+        var scroll = listNode.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        var headerHeight = header.fetchSemanticsNode().boundsInRoot.height
+        // exitUntilCollapsed 先让列表消费下拉，只有到顶后的剩余距离能展开页头。
+        while (scroll > 0f || headerHeight < expandedHeaderBounds.height - 1f) {
+            val restoreViewport = listNode.fetchSemanticsNode().boundsInRoot.intersect(safeRootBounds)
+            val restoreStartInRoot = Offset(restoreViewport.center.x, restoreViewport.top + restoreViewport.height * 0.05f)
+            val restoreEndInRoot = Offset(restoreViewport.center.x, restoreViewport.bottom - restoreViewport.height * 0.05f)
+            assertTrue(
+                "恢复手势必须在回答列表的真实安全视口内向下拖动：$restoreViewport",
+                restoreViewport.width > 0f &&
+                    restoreViewport.height > 0f &&
+                    safeRootBounds.contains(restoreStartInRoot) &&
+                    safeRootBounds.contains(restoreEndInRoot) &&
+                    restoreStartInRoot.y < restoreEndInRoot.y,
+            )
+            root.performTouchInput {
+                swipe(start = restoreStartInRoot - rootBounds.topLeft, end = restoreEndInRoot - rootBounds.topLeft)
+            }
+            composeRule.waitForIdle()
+            val nextScroll = listNode.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+            val nextHeight = header.fetchSemanticsNode().boundsInRoot.height
+            assertTrue(
+                "下拉必须向列表顶部或完整页头推进：scroll=$scroll→$nextScroll header=$headerHeight→$nextHeight viewport=$restoreViewport",
+                nextScroll < scroll || (nextScroll == 0f && nextHeight > headerHeight),
+            )
+            scroll = nextScroll
+            headerHeight = nextHeight
+        }
+        assertEquals("下拉必须回到回答列表顶部", 0f, scroll, 0f)
+        val restoredHeaderBounds = header.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val restoredTabBounds = composeRule
+            .onNodeWithTag(PEOPLE_SCREEN_TAB_ROW_TAG)
+            .assertIsDisplayed()
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertEquals("向下回拖必须恢复完整资料头", expandedHeaderBounds.height, restoredHeaderBounds.height, 1f)
+        assertEquals("向下回拖必须恢复标签栏位置", expandedTabTop, restoredTabBounds.top, 1f)
+        composeRule.onNodeWithText("+3", useUnmergedTree = true).assertIsDisplayed()
+        val follow = composeRule
+            .onNodeWithTag(PEOPLE_SCREEN_FOLLOW_BUTTON_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .assertHasClickAction()
+        assertTrue("恢复后的关注入口不能覆盖标签栏", follow.fetchSemanticsNode().boundsInRoot.bottom <= restoredTabBounds.top)
+        follow.performTouchInput { click() }
+        composeRule.waitUntil("恢复后真实触摸必须完成关注", timeoutMillis = 5_000) { viewModel.isFollowing }
+        composeRule.onNodeWithTag(PEOPLE_SCREEN_FOLLOW_BUTTON_TAG).assertTextEquals("已关注")
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/302
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/324
-     */
+    /** 关注订阅的四个入口使用原生导航；需求：https://github.com/zly2006/zhihu-plus-plus/issues/302。 */
     @Test
     fun followingSubscriptionsTabMatchesOfficialEntryPointsOffline() {
-        /*
-         * Expected behavior:
-         * 1. The profile tab row exposes a Zhihu-Web-style "关注订阅" entry.
-         * 2. Inside that page, non-duplicated official entry names are available as chips:
-         *    我订阅的专栏、关注的话题、关注的问题、关注的收藏夹.
-         * 3. Followed questions and followed collections use native navigation destinations,
-         *    matching the app's existing question and collection-detail screens.
-         */
         seededViewModel(itemCount = 8)
         val navigator = setPeopleScreen(person = ROOT_PERSON.copy(jumpTo = "关注订阅"))
 
@@ -283,6 +512,39 @@ class PeopleScreenInstrumentedTest {
         )
     }
 
+    @Test
+    fun recentAvatarOpensSelectedUsersActivitiesBeforeFullProfile() {
+        val users = """{"data":[
+          {"actor":{"id":"first","url_token":"first-user","name":"甲","avatar_url":""},"unread_count":0},
+          {"actor":{"id":"second","url_token":"second-user","name":"乙","avatar_url":""},"unread_count":1,"brief":"second-brief"}
+        ]}"""
+        ZhihuMockApi.mockJsonPrefix(HttpMethod.Get, "https://api.zhihu.com/moments/recent?", users)
+        ZhihuMockApi.mockJsonPrefix(HttpMethod.Post, "https://api.zhihu.com/moments/recent/read?", """{"success":true}""")
+        for (token in listOf("first-user", "second-user")) {
+            ZhihuMockApi.mockJsonPrefix(
+                HttpMethod.Get,
+                "https://www.zhihu.com/api/v3/moments/$token/activities",
+                """{"data":[],"paging":{"is_end":true,"next":""}}""",
+            )
+        }
+        val navigator = composeRule.setScreenContent { FollowingUsersRow() }
+        composeRule.onNodeWithTag("following_users_item_second").performClick()
+        composeRule.onNodeWithTag("following_user_activities_second").assertIsDisplayed()
+        composeRule.waitUntilRequestCount(HttpMethod.Get, "/moments/second-user/activities", 1)
+        assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Get, "/moments/first-user/activities"))
+        assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Get, "/people/second-user"))
+        assertTrue(navigator.destinations.isEmpty())
+
+        composeRule.onNode(hasText("甲") and hasAnyAncestor(hasTestTag("following_user_activity_sheet"))).performClick()
+        composeRule.onNodeWithTag("following_user_activities_first").assertIsDisplayed()
+        composeRule.waitUntilRequestCount(HttpMethod.Get, "/moments/first-user/activities", 1)
+        composeRule.onNodeWithTag("following_user_open_profile").performClick()
+        val profile = navigator.destinations.single() as Person
+        assertEquals("first", profile.id)
+        assertEquals("动态", profile.jumpTo)
+        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Post, "/moments/recent/read"))
+    }
+
     private fun setPeopleScreen(
         person: Person = ROOT_PERSON,
     ): RecordingNavigator = composeRule.setScreenContent {
@@ -296,7 +558,7 @@ class PeopleScreenInstrumentedTest {
         urlSubstring: String,
         count: Int,
     ) {
-        waitUntil("Expected $count $method requests containing $urlSubstring", timeoutMillis = 5_000) {
+        waitUntil("等待 $count 次包含 $urlSubstring 的 $method 请求", timeoutMillis = 5_000) {
             ZhihuMockApi.requestCount(method, urlSubstring) >= count
         }
     }
@@ -316,15 +578,6 @@ class PeopleScreenInstrumentedTest {
             answers = mockAnswers ?: answerData,
             articles = articleData,
         )
-        val seededActivities = List(itemCount) { index ->
-            FeedDisplayItem(
-                title = "离线动态 ${index + 1}",
-                summary = "动态摘要 ${index + 1}",
-                details = "动态详情 ${index + 1}",
-                feed = null,
-                navDestinationJson = Search(query = "离线动态 ${index + 1}").toFeedDisplayItemNavDestinationJson(),
-            )
-        }
 
         composeRule.activity.runOnUiThread {
             seededViewModel.avatar = "https://example.invalid/avatar/root.png"
@@ -352,8 +605,6 @@ class PeopleScreenInstrumentedTest {
             seededViewModel.answersFeedModel.allData.addAll(answerData)
             seededViewModel.articlesFeedModel.allData.clear()
             seededViewModel.articlesFeedModel.allData.addAll(articleData)
-            seededViewModel.activitiesFeedModel.displayItems.clear()
-            seededViewModel.activitiesFeedModel.displayItems.addAll(seededActivities)
             seededViewModel.collectionsFeedModel.allData.clear()
             seededViewModel.collectionsFeedModel.allData.addAll(List(itemCount) { index -> seededCollection(index + 1) })
             seededViewModel.questionsFeedModel.allData.clear()

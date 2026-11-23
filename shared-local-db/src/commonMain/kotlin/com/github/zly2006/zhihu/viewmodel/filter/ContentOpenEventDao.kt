@@ -56,6 +56,6 @@ private suspend fun queryContentKeys(
     keys: List<String>,
     query: suspend (String, List<String>) -> List<String>,
 ): List<String> = keys.distinct().groupBy { it.substringBefore(':') }.flatMap { (type, typedKeys) ->
-    // Leave room for the type parameter on SQLite versions with a 999-variable limit.
+    // 部分 SQLite 版本最多接受 999 个变量，分批时需为类型参数预留位置。
     typedKeys.map { it.substringAfter(':') }.chunked(500).flatMap { ids -> query(type, ids) }
 }

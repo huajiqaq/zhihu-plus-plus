@@ -17,6 +17,16 @@
 
 package com.github.zly2006.zhihu.data
 
+import android.content.Context
 import androidx.room.RoomDatabase
+
+@Volatile
+private var applicationContext: Context? = null
+
+fun initializeAndroidApplicationContext(context: Context) {
+    applicationContext = context.applicationContext
+}
+
+fun currentAndroidApplicationContext(): Context = checkNotNull(applicationContext) { "Application context is not initialized" }
 
 actual fun <T : RoomDatabase> RoomDatabase.Builder<T>.applyPlatformDriver(): RoomDatabase.Builder<T> = this

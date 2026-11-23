@@ -19,16 +19,22 @@ package com.github.zly2006.zhihu
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -38,6 +44,7 @@ import com.github.zly2006.zhihu.navigation.Daily
 import com.github.zly2006.zhihu.navigation.Follow
 import com.github.zly2006.zhihu.navigation.Home
 import com.github.zly2006.zhihu.navigation.HotList
+import com.github.zly2006.zhihu.navigation.MyCollections
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.test.performVerticalSwipeCycle
 import com.github.zly2006.zhihu.test.resetAppPreferences
@@ -45,13 +52,14 @@ import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY
 import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG
-import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_SCROLL_TAG
-import com.github.zly2006.zhihu.ui.subscreens.AppearanceSettingsScreen
+import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.subscreens.NavigationSettingsScreen
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_CONTENT_END_MARKER
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_FAB
 import com.github.zly2006.zhihu.ui.subscreens.PREF_VOLUME_KEY_PAGE_TURN
+import com.github.zly2006.zhihu.ui.subscreens.PageTurnSettingsScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,45 +76,79 @@ class AppearanceSettingsScreenInstrumentedTest {
         get() = composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/354
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/409
+     * 导航栏编辑项应保持统一触摸高度，调整顺序后应持久保存；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/354
      */
     @Test
     fun bottomBarRowsKeepUniformHeightAndMoveOrderPersists() {
-        // The bottom-bar editor mixes selected rows, unselected rows, and the non-removable account
-        // row. They should keep the same touch target height while reorder actions still persist.
-        setUpScreen(setting = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY)
+        // 已选、未选及不可移除的账号行应有相同的触摸高度，同时保持排序操作可持久保存。
+        composeRule.resetAppPreferences(forceMock = true)
+        val selectedItems = listOf(Follow.name, Daily.name, OnlineHistory.name, MyCollections.name, HotList.name, Account.name)
+        preferences
+            .edit()
+            .putStringSet(BOTTOM_BAR_ITEMS_PREFERENCE_KEY, selectedItems.toSet())
+            .putString(BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY, selectedItems.joinToString(","))
+            .commit()
+        composeRule.setScreenContent {
+            NavigationSettingsScreen(setting = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY, onExit = {})
+        }
+        clickSettingRow("底部导航栏项目")
 
-        scrollUntilTagDisplayed("appearanceSettings:bottomBar:item:${HotList.name}")
-        val selectedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${Daily.name}")
-        val unselectedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${HotList.name}")
-        val lockedHeight = boundsHeightForTag("appearanceSettings:bottomBar:item:${Account.name}")
-
-        assertEquals(selectedHeight.toDouble(), unselectedHeight.toDouble(), 0.5)
-        assertEquals(selectedHeight.toDouble(), lockedHeight.toDouble(), 0.5)
+        composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${OnlineHistory.name}").assertDoesNotExist()
+        scrollUntilTagDisplayed("appearanceSettings:bottomBar:item:${Home.name}")
+        val rows = listOf(Daily.name to "日报", Home.name to "主页", Account.name to "账号设置").map { (key, title) ->
+            val tag = "appearanceSettings:bottomBar:item:$key"
+            val rowMatcher = hasAnyDescendant(hasText(title)) and (hasTestTag(tag) or hasAnyDescendant(hasTestTag(tag)))
+            composeRule
+                .onAllNodes(rowMatcher and !hasAnyDescendant(rowMatcher), useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .single()
+        }
+        val metrics = composeRule.activity.resources.displayMetrics
+        val rowGeometry = rows.joinToString("; ") { row ->
+            val parent = row.parent
+            val textNodes = composeRule
+                .onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.Text) and
+                        hasAnyAncestor(SemanticsMatcher("完整行 ${row.id}") { it.id == row.id }),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes()
+            "row=${row.id} size=${row.size} bounds=${row.boundsInRoot} " +
+                "parent=${parent?.id} parentSize=${parent?.size} parentBounds=${parent?.boundsInRoot} " +
+                "text=${textNodes.map { "${it.config[SemanticsProperties.Text]} size=${it.size} bounds=${it.boundsInRoot}" }}"
+        } + " density=${metrics.density} fontScale=${composeRule.activity.resources.configuration.fontScale}"
+        assertTrue("完整行必须有列表父节点: $rowGeometry", rows.all { it.parent != null })
+        assertEquals("必须测量同一列表层的完整行: $rowGeometry", 1, rows.map { it.parent?.id }.distinct().size)
+        val selectedWidth = rows[0].size.width.toDouble()
+        val selectedHeight = rows[0].size.height.toDouble()
+        assertEquals("同层完整行必须同宽: $rowGeometry", selectedWidth, rows[1].size.width.toDouble(), 0.5)
+        assertEquals("同层完整行必须同宽: $rowGeometry", selectedWidth, rows[2].size.width.toDouble(), 0.5)
+        assertEquals("日报与主页必须同高: $rowGeometry", selectedHeight, rows[1].size.height.toDouble(), 0.5)
+        assertEquals("日报与账号设置必须同高: $rowGeometry", selectedHeight, rows[2].size.height.toDouble(), 0.5)
+        assertTrue("完整行至少48dp: $rowGeometry", selectedHeight >= 48 * metrics.density)
+        composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${Home.name}").assertIsNotEnabled()
+        composeRule.onNodeWithTag("appearanceSettings:bottomBar:item:${Account.name}").assertIsNotEnabled().assertIsOn()
 
         composeRule.onNodeWithTag("appearanceSettings:bottomBar:moveDown:${Daily.name}").performClick()
         waitUntilStringPreference(
             BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY,
-            expected = listOf(Home.name, Follow.name, OnlineHistory.name, Daily.name, Account.name).joinToString(","),
+            expected = listOf(Follow.name, MyCollections.name, Daily.name, HotList.name, Account.name).joinToString(","),
         )
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/609
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/611
+     * 收藏直达浏览应默认关闭；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/609
      */
     @Test
-    fun collectionDirectBrowseIsOptInAndClearlyMarkedAsExperimental() {
-        setUpScreen(setting = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY)
+    fun collectionDirectBrowseRemainsOptInAndDescribesBrowsingModes() {
+        setUpNavigationScreen(setting = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY)
 
         scrollUntilTagDisplayed(APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG)
         assertFalse(preferences.getBoolean(COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false))
         composeRule
             .onNodeWithTag(APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG)
-            .assertTextContains("收藏直达浏览（测试）")
+            .assertTextContains("收藏直达浏览")
         composeRule
-            .onNode(hasText("请谨慎开启", substring = true), useUnmergedTree = true)
+            .onNode(hasText("顺序浏览与随机浏览", substring = true), useUnmergedTree = true)
             .assertIsDisplayed()
         composeRule.onNodeWithTag(APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG).performClick()
 
@@ -114,21 +156,20 @@ class AppearanceSettingsScreenInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/630
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/728
+     * Android 应提供翻页设置并保留已保存的开关；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/630
      */
     @Test
     fun pageTurnSettingsAreAvailableOnAndroid() {
-        composeRule.resetAppPreferences()
+        composeRule.resetAppPreferences(forceMock = true)
         preferences
             .edit()
             .putBoolean(PREF_VOLUME_KEY_PAGE_TURN, true)
             .putBoolean(PREF_SHOW_PAGE_TURN_FAB, true)
             .commit()
-        setUpScreen(setting = PREF_SHOW_PAGE_TURN_FAB, resetPreferences = false)
+        composeRule.setScreenContent { PageTurnSettingsScreen(PREF_SHOW_PAGE_TURN_FAB) }
 
         waitUntilDisplayed(hasText("显示翻页悬浮按钮"))
-        composeRule.onNodeWithText("电纸书翻页").assertExists()
+        assertTrue(composeRule.onAllNodesWithText("电纸书翻页").fetchSemanticsNodes().isNotEmpty())
         composeRule.onNodeWithText("音量键翻页").assertExists()
         composeRule.onNodeWithText("翻页切换回答").assertExists()
         composeRule.onNodeWithText("翻页距离").assertExists()
@@ -139,26 +180,19 @@ class AppearanceSettingsScreenInstrumentedTest {
         assertTrue(preferences.getBoolean(PREF_SHOW_PAGE_TURN_FAB, false))
     }
 
-    private fun setUpScreen(setting: String = "", resetPreferences: Boolean = true) {
-        if (resetPreferences) {
-            composeRule.resetAppPreferences()
-        }
+    private fun setUpNavigationScreen(setting: String) {
+        composeRule.resetAppPreferences(forceMock = true)
         composeRule.setScreenContent {
-            AppearanceSettingsScreen(
-                onExit = {},
-                setting = setting,
-            )
+            NavigationSettingsScreen(setting = setting, onExit = {})
         }
     }
-
-    private fun scrollContainer() = composeRule.onNodeWithTag(APPEARANCE_SETTINGS_SCROLL_TAG)
 
     private fun scrollUntilDisplayed(matcher: SemanticsMatcher, maxSwipes: Int = 12) {
         repeat(maxSwipes) {
             if (isDisplayed(matcher)) {
                 return
             }
-            scrollContainer().performTouchInput { swipeUp() }
+            composeRule.onRoot().performTouchInput { swipeUp() }
             composeRule.waitForIdle()
         }
         composeRule.onNode(matcher, useUnmergedTree = true).assertIsDisplayed()
@@ -175,14 +209,14 @@ class AppearanceSettingsScreenInstrumentedTest {
             if (isTagDisplayed(tag)) {
                 return
             }
-            scrollContainer().performTouchInput { swipeUp() }
+            composeRule.onRoot().performTouchInput { swipeUp() }
             composeRule.waitForIdle()
         }
         repeat(maxSwipes) {
             if (isTagDisplayed(tag)) {
                 return
             }
-            scrollContainer().performVerticalSwipeCycle()
+            composeRule.onRoot().performVerticalSwipeCycle()
             composeRule.waitForIdle()
         }
         composeRule.onNodeWithTag(tag).assertIsDisplayed()
@@ -193,87 +227,12 @@ class AppearanceSettingsScreenInstrumentedTest {
         composeRule.onNode(matcher, useUnmergedTree = true).assertIsDisplayed()
     }
 
-    private fun waitUntilTagDisplayed(tag: String, timeoutMillis: Long = 5_000) {
-        composeRule.waitUntil(timeoutMillis) { isTagDisplayed(tag) }
-        composeRule.onNodeWithTag(tag).assertIsDisplayed()
-    }
-
-    private fun waitUntilTagExists(tag: String, timeoutMillis: Long = 5_000) {
-        composeRule.waitUntil(timeoutMillis) {
-            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() ||
-                composeRule
-                    .onAllNodesWithTag(tag, useUnmergedTree = true)
-                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                    .isNotEmpty()
-        }
-    }
-
-    private fun boundsHeightForTag(tag: String): Float = composeRule
-        .onNodeWithTag(tag)
-        .fetchSemanticsNode()
-        .boundsInRoot
-        .height
-
-    private fun waitUntilNodeDoesNotExist(matcher: SemanticsMatcher, timeoutMillis: Long = 5_000) {
-        composeRule.waitUntil(timeoutMillis) {
-            composeRule
-                .onAllNodes(matcher, useUnmergedTree = true)
-                .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                .isEmpty()
-        }
-    }
-
-    private fun assertNodeDoesNotExist(matcher: SemanticsMatcher) {
-        assertTrue(
-            composeRule
-                .onAllNodes(matcher, useUnmergedTree = true)
-                .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                .isEmpty(),
-        )
-    }
-
-    private fun assertTagDoesNotExist(tag: String) {
-        assertTrue(
-            composeRule
-                .onAllNodesWithTag(tag)
-                .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                .isEmpty() &&
-                composeRule
-                    .onAllNodesWithTag(tag, useUnmergedTree = true)
-                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                    .isEmpty(),
-        )
-    }
-
-    private fun waitUntilTagDoesNotExist(tag: String, timeoutMillis: Long = 5_000) {
-        composeRule.waitUntil(timeoutMillis) {
-            composeRule
-                .onAllNodesWithTag(tag)
-                .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                .isEmpty() &&
-                composeRule
-                    .onAllNodesWithTag(tag, useUnmergedTree = true)
-                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
-                    .isEmpty()
-        }
-    }
-
     private fun waitUntilBooleanPreference(key: String, expected: Boolean, timeoutMillis: Long = 5_000) {
         composeRule.waitUntil(timeoutMillis) { preferences.getBoolean(key, !expected) == expected }
     }
 
     private fun waitUntilStringPreference(key: String, expected: String, timeoutMillis: Long = 5_000) {
         composeRule.waitUntil(timeoutMillis) { preferences.getString(key, null) == expected }
-    }
-
-    private fun waitUntilStringSetPreference(
-        key: String,
-        expected: Set<String>,
-        timeoutMillis: Long = 5_000,
-    ) {
-        composeRule.waitUntil(timeoutMillis) {
-            preferences.getStringSet(key, emptySet())?.toSet() == expected
-        }
     }
 
     private fun isDisplayed(matcher: SemanticsMatcher): Boolean = runCatching {

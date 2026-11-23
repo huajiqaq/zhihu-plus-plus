@@ -1,0 +1,103 @@
+// !$*UTF8*$!
+// Copyright (C) 2024-2026, zly2006. SPDX-License-Identifier: AGPL-3.0-only
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		370000000000000000000001 /* Project */ = {
+			isa = PBXProject;
+			attributes = { BuildIndependentTargetsInParallel = YES; };
+			buildConfigurationList = 370000000000000000000031;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			knownRegions = ("zh-Hans", Base);
+			mainGroup = 370000000000000000000003;
+			productRefGroup = 370000000000000000000004;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (370000000000000000000002 /* ZhihuPlusPlus */);
+		};
+		370000000000000000000002 /* ZhihuPlusPlus */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 370000000000000000000032;
+			buildPhases = (
+				370000000000000000000021 /* Build Shared */,
+				370000000000000000000022 /* Sources */,
+				370000000000000000000023 /* Frameworks */,
+				370000000000000000000024 /* Resources */,
+				370000000000000000000025 /* Emoji resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = ZhihuPlusPlus;
+			productName = ZhihuPlusPlus;
+			productReference = 370000000000000000000005;
+			productType = "com.apple.product-type.application";
+		};
+		370000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				370000000000000000000006 /* ZhihuPlusPlusApp.swift */,
+				370000000000000000000007 /* Info.plist */,
+				370000000000000000000008 /* Config.xcconfig */,
+				370000000000000000000009 /* build-shared.sh */,
+				37000000000000000000000A /* LICENSE */,
+				37000000000000000000000B /* aboutlibraries.json */,
+				37000000000000000000000C /* emoji_mapping.json */,
+				37000000000000000000000D /* emojis */,
+				370000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		370000000000000000000004 /* Products */ = {isa = PBXGroup; children = (370000000000000000000005); name = Products; sourceTree = "<group>"; };
+		370000000000000000000005 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZhihuPlusPlus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		370000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhihuPlusPlusApp.swift; sourceTree = "<group>"; };
+		370000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		370000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		370000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-shared.sh"; sourceTree = "<group>"; };
+		37000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text; path = ../LICENSE; sourceTree = "<group>"; };
+		37000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../app/build/generated/aboutLibraries/liteDebug/res/raw/aboutlibraries.json; sourceTree = "<group>"; };
+		37000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../misc/emoji_mapping.json; sourceTree = "<group>"; };
+		37000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = folder; path = ../misc/emojis; sourceTree = "<group>"; };
+		370000000000000000000010 /* Swift source */ = {isa = PBXBuildFile; fileRef = 370000000000000000000006; };
+		370000000000000000000011 /* Application license */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000A; };
+		370000000000000000000012 /* Library licenses */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000B; };
+		370000000000000000000013 /* Emoji names */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000C; };
+		370000000000000000000014 /* Emoji images */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000D; };
+		370000000000000000000021 /* Build Shared */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			name = "Build Shared";
+			inputPaths = ("$(SRCROOT)/build-shared.sh", "$(SRCROOT)/Info.plist", "$(SRCROOT)/../gradle.properties");
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/ZhihuPlusPlus-Info.plist",
+				"$(SRCROOT)/../app/build/generated/aboutLibraries/liteDebug/res/raw/aboutlibraries.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "exec /bin/sh \"$SRCROOT/build-shared.sh\"\n";
+		};
+		370000000000000000000022 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (370000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
+		370000000000000000000023 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		370000000000000000000024 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (370000000000000000000011, 370000000000000000000012); runOnlyForDeploymentPostprocessing = 0; };
+		370000000000000000000025 /* Emoji resources */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = misc;
+			dstSubfolderSpec = 7;
+			files = (370000000000000000000013, 370000000000000000000014);
+			name = "Emoji resources";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		370000000000000000000031 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000033, 370000000000000000000034); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		370000000000000000000032 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000035, 370000000000000000000036); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		370000000000000000000033 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = Debug; };
+		370000000000000000000034 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = Release; };
+		370000000000000000000035 = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
+		370000000000000000000036 = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {}; name = Release; };
+	};
+	rootObject = 370000000000000000000001;
+}

@@ -1,0 +1,224 @@
+{
+  "data": [
+    {
+      "actor": {
+        "id": "follow-user-1",
+        "type": "people",
+        "url": "https://api.zhihu.com/people/follow-user-1",
+        "url_token": "follow-user-1",
+        "avatar_url": "",
+        "gender": -1,
+        "name": "用户1",
+        "user_type": "people",
+        "is_following": true,
+        "is_followed": true,
+        "headline": "",
+        "is_org": false,
+        "badge": [],
+        "badge_v2": null,
+        "vip_info": {
+          "is_vip": false,
+          "vip_icon": {
+            "url": "",
+            "night_mode_url": ""
+          },
+          "widget": {
+            "url": "",
+            "night_mode_url": "",
+            "id": 0
+          }
+        },
+        "description": "",
+        "user_status": null
+      },
+      "unread_count": 1,
+      "type": "normal",
+      "attached_info": "CgwQARoIMjk3NjU1NTY=",
+      "style_type": "dot",
+      "target": {
+        "id": "",
+        "type": "recent",
+        "url": "",
+        "brief": ""
+      },
+      "brief": "CAkSBnBlb3BsZRoIMjk3NjU1NTY="
+    },
+    {
+      "actor": {
+        "id": "follow-user-2",
+        "type": "people",
+        "url": "https://api.zhihu.com/people/follow-user-2",
+        "url_token": "follow-user-2",
+        "avatar_url": "",
+        "gender": 1,
+        "name": "用户2",
+        "user_type": "people",
+        "is_following": true,
+        "is_followed": true,
+        "headline": "",
+        "is_org": false,
+        "badge": [],
+        "badge_v2": null,
+        "vip_info": {
+          "is_vip": false,
+          "vip_icon": {
+            "url": "",
+            "night_mode_url": ""
+          },
+          "widget": {
+            "url": "",
+            "night_mode_url": "",
+            "id": 0
+          }
+        },
+        "description": "",
+        "user_status": null
+      },
+      "unread_count": 1,
+      "type": "normal",
+      "attached_info": "Cg0QARoJOTc5OTYyNDY4",
+      "style_type": "dot",
+      "target": {
+        "id": "",
+        "type": "recent",
+        "url": "",
+        "brief": ""
+      },
+      "brief": "CAkSBnBlb3BsZRoJOTc5OTYyNDY4"
+    },
+    {
+      "actor": {
+        "id": "follow-user-3",
+        "type": "people",
+        "url": "https://api.zhihu.com/people/follow-user-3",
+        "url_token": "follow-user-3",
+        "avatar_url": "",
+        "gender": 0,
+        "name": "用户3",
+        "user_type": "people",
+        "is_following": true,
+        "is_followed": true,
+        "headline": "",
+        "is_org": false,
+        "badge": [],
+        "badge_v2": null,
+        "vip_info": {
+          "is_vip": false,
+          "vip_icon": {
+            "url": "",
+            "night_mode_url": ""
+          },
+          "widget": {
+            "url": "",
+            "night_mode_url": "",
+            "id": 0
+          }
+        },
+        "description": "",
+        "user_status": null
+      },
+      "unread_count": 0,
+      "type": "normal",
+      "attached_info": "CgwQARoIMzM0MTExMjM=",
+      "style_type": "none",
+      "target": {
+        "id": "",
+        "type": "recent",
+        "url": "",
+        "brief": ""
+      },
+      "brief": "CAkSBnBlb3BsZRoIMzM0MTExMjM="
+    },
+    {
+      "actor": {
+        "id": "follow-user-4",
+        "type": "people",
+        "url": "https://api.zhihu.com/people/follow-user-4",
+        "url_token": "follow-user-4",
+        "avatar_url": "",
+        "gender": -1,
+        "name": "用户4",
+        "user_type": "people",
+        "is_following": true,
+        "is_followed": true,
+        "headline": "",
+        "is_org": false,
+        "badge": [],
+        "badge_v2": null,
+        "vip_info": {
+          "is_vip": false,
+          "vip_icon": {
+            "url": "",
+            "night_mode_url": ""
+          },
+          "widget": {
+            "url": "",
+            "night_mode_url": "",
+            "id": 0
+          }
+        },
+        "description": "",
+        "user_status": null
+      },
+      "unread_count": 0,
+      "type": "normal",
+      "attached_info": "Cg4QARoKMTIzMDU5NDc1Nw==",
+      "style_type": "none",
+      "target": {
+        "id": "",
+        "type": "recent",
+        "url": "",
+        "brief": ""
+      },
+      "brief": "CAkSBnBlb3BsZRoKMTIzMDU5NDc1Nw=="
+    },
+    {
+      "actor": {
+        "id": "follow-user-5",
+        "type": "people",
+        "url": "https://api.zhihu.com/people/follow-user-5",
+        "url_token": "follow-user-5",
+        "avatar_url": "",
+        "gender": 1,
+        "name": "用户5",
+        "user_type": "people",
+        "is_following": true,
+        "is_followed": true,
+        "headline": "",
+        "is_org": false,
+        "badge": [],
+        "badge_v2": null,
+        "vip_info": {
+          "is_vip": false,
+          "vip_icon": {
+            "url": "",
+            "night_mode_url": ""
+          },
+          "widget": {
+            "url": "",
+            "night_mode_url": "",
+            "id": 0
+          }
+        },
+        "description": "",
+        "user_status": null
+      },
+      "unread_count": 0,
+      "type": "normal",
+      "attached_info": "CgsQARoHNjMxMzI1Mw==",
+      "style_type": "none",
+      "target": {
+        "id": "",
+        "type": "recent",
+        "url": "",
+        "brief": ""
+      },
+      "brief": "CAkSBnBlb3BsZRoHNjMxMzI1Mw=="
+    }
+  ],
+  "guide_text": "快速找到最常访问的人,左右滑动查看更多🎉",
+  "is_show": true,
+  "style_type": "none",
+  "top_unread_count": 0,
+  "total_unread_count": 0
+}

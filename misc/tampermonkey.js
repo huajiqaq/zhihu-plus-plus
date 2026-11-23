@@ -27,5 +27,4 @@
         enumerable: true,
         configurable: true
     });
-    // Your code here...
 })();

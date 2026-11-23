@@ -17,8 +17,6 @@
 
 package com.github.zly2006.zhihu.test
 
-import com.github.zly2006.zhihu.account.accountHttpClientEngineForTesting
-import com.github.zly2006.zhihu.account.replaceAndroidZhihuAccountStoreForTesting
 import com.github.zly2006.zhihu.notification.ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -48,28 +46,13 @@ object ZhihuMockApi {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     private var enabled = true
 
-    fun install(enabled: Boolean = true) {
-        this.enabled = enabled
-        if (!enabled) {
-            replaceAndroidZhihuAccountStoreForTesting(null)
-            accountHttpClientEngineForTesting = null
-            routes.clear()
-            requests.clear()
-            return
-        }
-        if (accountHttpClientEngineForTesting == null) {
-            replaceAndroidZhihuAccountStoreForTesting(null)
-            accountHttpClientEngineForTesting = mockEngine()
-        }
-    }
-
     fun isEnabled(): Boolean = enabled
 
-    fun reset() {
-        if (!enabled) return
+    fun reset(enabled: Boolean = this.enabled) {
+        this.enabled = enabled
         routes.clear()
         requests.clear()
-        installDefaultRoutes()
+        if (enabled) installDefaultRoutes()
     }
 
     fun recordedRequests(): List<RecordedRequest> = requests.toList()
@@ -141,6 +124,22 @@ object ZhihuMockApi {
                       "browser_download_url": "https://example.invalid/zhihu-lite.apk"
                     }
                   ]
+                }
+                """.trimIndent(),
+        )
+        mockJson(
+            method = HttpMethod.Get,
+            url = "https://www.zhihu.com/api/v4/sticker-groups/1114161698310770688",
+            body =
+                """
+                {
+                  "data": {
+                    "stickers": [{
+                      "id": "android-test-surprise",
+                      "placeholder": "[惊喜]",
+                      "static_image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+                    }]
+                  }
                 }
                 """.trimIndent(),
         )
@@ -218,6 +217,11 @@ object ZhihuMockApi {
         )
         mockJson(
             method = HttpMethod.Get,
+            url = "https://api.zhihu.com/moments_v3?feed_type=pin&include=data%5B%2A%5D.content%2Cexcerpt%2Cheadline%2Ctarget.author.badge_v2",
+            body = emptyFeedResponse,
+        )
+        mockJson(
+            method = HttpMethod.Get,
             url = "https://www.zhihu.com/api/v3/moments?limit=10&desktop=true&include=data%5B%2A%5D.content%2Cexcerpt%2Cheadline",
             body = emptyFeedResponse,
         )
@@ -278,7 +282,7 @@ object ZhihuMockApi {
         headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
     )
 
-    private fun mockEngine() = MockEngine { request ->
+    fun mockEngine() = MockEngine { request ->
         requests += RecordedRequest(request.method, request.url.toString())
         val route = routes.firstOrNull { it.predicate(request) }
         if (route != null) {

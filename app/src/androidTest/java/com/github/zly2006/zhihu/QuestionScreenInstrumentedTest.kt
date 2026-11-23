@@ -17,14 +17,23 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.data.CommonFeed
@@ -53,10 +62,10 @@ import com.github.zly2006.zhihu.ui.QUESTION_SORT_UPDATED_TAG
 import com.github.zly2006.zhihu.ui.QUESTION_WRITE_ANSWER_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.QuestionScreen
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.SharedAndroidPaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.feed.QuestionFeedViewModel
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import com.github.zly2006.zhihu.viewmodel.paginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 import io.ktor.http.HttpMethod
 import kotlinx.coroutines.runBlocking
@@ -78,9 +87,7 @@ class QuestionScreenInstrumentedTest {
 
     @Before
     fun setUp() = runBlocking {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
         val database = getContentFilterDatabase(composeRule.activity)
         database.blockedUserDao().clearAllUsers()
     }
@@ -89,12 +96,11 @@ class QuestionScreenInstrumentedTest {
     fun tearDown() = runBlocking {
         val database = getContentFilterDatabase(composeRule.activity)
         database.blockedUserDao().clearAllUsers()
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/643
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/651
+     * 问题详情为空时仍须显示主要操作和回答排序；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/643
      */
     @Test
     fun emptyQuestionDetailKeepsPrimaryActionsAndAnswerSortVisible() {
@@ -116,8 +122,7 @@ class QuestionScreenInstrumentedTest {
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/431
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/461
+     * 回答列表须支持滚动、分页和条目导航；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/431
      */
     @Test
     fun seededAnswerListSupportsScrollSwipesPaginationAndRowNavigationOffline() {
@@ -146,7 +151,7 @@ class QuestionScreenInstrumentedTest {
             .performScrollToNode(hasTestTag(clickedItemTag))
         composeRule.onNodeWithTag(clickedItemTag).performClick()
 
-        assertTrue("Scrolling near the end should trigger the seeded load-more path", viewModel.loadMoreCount > 0)
+        assertTrue("滚动接近末尾时应触发预置的加载更多路径", viewModel.loadMoreCount > 0)
         assertEquals(
             listOf(Article(type = ArticleType.Answer, id = 7003L)),
             navigator.destinations,
@@ -157,8 +162,7 @@ class QuestionScreenInstrumentedTest {
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/615
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/618
+     * 从回答列表滚回后，长问题详情仍须完整布局并可见；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/615
      */
     @Test
     fun longQuestionDetailRemainsVisibleAfterReturnFromAnswerList() {
@@ -183,25 +187,42 @@ class QuestionScreenInstrumentedTest {
             .performScrollToNode(hasTestTag(farAnswerTag))
         composeRule.onNodeWithTag(farAnswerTag).assertIsDisplayed()
 
-        composeRule
-            .onNodeWithTag(QUESTION_SCREEN_LIST_TAG)
-            .performScrollToNode(hasText(lastDetailParagraph))
+        val paragraph = hasText(lastDetailParagraph) and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
+        composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).performScrollToIndex(0)
+        try {
+            composeRule.waitUntil("等待展开的问题头部完成第 36 段布局", timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag(QUESTION_DETAIL_CONTENT_TAG).fetchSemanticsNodes().size == 1 &&
+                    composeRule.onAllNodes(paragraph, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+            }
+        } catch (error: ComposeTimeoutException) {
+            val list = composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).fetchSemanticsNode()
+            val scrollRange = list.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+            val detailBounds = composeRule
+                .onAllNodesWithTag(QUESTION_DETAIL_CONTENT_TAG)
+                .fetchSemanticsNodes()
+                .map { it.boundsInRoot }
+            throw AssertionError(
+                "返回后缺少第 36 段布局：listBounds=${list.boundsInRoot} " +
+                    "scroll=${scrollRange?.value?.invoke()}/${scrollRange?.maxValue?.invoke()} detailBounds=$detailBounds",
+                error,
+            )
+        }
+        composeRule.onNode(paragraph, useUnmergedTree = true).performScrollTo()
+        composeRule.onAllNodes(paragraph, useUnmergedTree = true).assertCountEquals(1)
+        composeRule.onNode(paragraph, useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithTag(QUESTION_DETAIL_CONTENT_TAG).assertIsDisplayed()
-        composeRule.onNodeWithText(lastDetailParagraph).assertIsDisplayed()
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/357
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/363
+     * 问题信息流不得显示被屏蔽用户的回答；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/357
      */
     @Test
     fun blockedUserAnswersAreRemovedFromQuestionFeedProcessing() {
         /*
-         * Expected behavior:
-         * 1. Question answer feeds should honor the same blocked-user switch used by the rest of the
-         *    content filter stack.
-         * 2. A blocked answer author should be removed before display items are created, while
-         *    unblocked answers continue through the existing display mapping.
+         * 预期行为：
+         * 1. 问题回答信息流应遵守内容过滤链路共用的用户屏蔽开关。
+         * 2. 创建显示条目前，应移除被屏蔽作者的回答；未屏蔽回答仍通过现有映射显示。
          */
         val viewModel = TestableQuestionFeedViewModel(123456789L)
         runBlocking {
@@ -258,12 +279,6 @@ class QuestionScreenInstrumentedTest {
         )
     }
 
-    private fun mockQuestionFollowActions(questionId: Long = 123456789L) {
-        val url = "https://www.zhihu.com/api/v4/questions/$questionId/followers"
-        ZhihuMockApi.mockJson(method = HttpMethod.Post, url = url, body = "{}")
-        ZhihuMockApi.mockJson(method = HttpMethod.Delete, url = url, body = "{}")
-    }
-
     private class SeededQuestionFeedViewModel(
         questionId: Long,
         private val seededIsEnd: Boolean,
@@ -286,13 +301,13 @@ class QuestionScreenInstrumentedTest {
     }
 
     private fun MainActivityComposeRule.waitUntilTextExists(text: String) {
-        waitUntil("Expected text $text", timeoutMillis = 5_000) {
+        waitUntil("等待文字 $text", timeoutMillis = 5_000) {
             onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
     private fun MainActivityComposeRule.waitUntilTagIsDisplayed(tag: String) {
-        waitUntil("Expected tag $tag to be displayed", timeoutMillis = 5_000) {
+        waitUntil("等待标签为 $tag 的节点显示", timeoutMillis = 5_000) {
             runCatching {
                 onNodeWithTag(tag).assertIsDisplayed()
                 true
@@ -353,9 +368,7 @@ class QuestionScreenInstrumentedTest {
         questionId: Long,
     ) : QuestionFeedViewModel(questionId) {
         suspend fun processForTest(context: android.content.Context, data: List<Feed>) {
-            SharedAndroidPaginationEnvironment(context, allowGuestAccess).use { environment ->
-                processResponse(environment, data, JsonArray(emptyList()))
-            }
+            processResponse(paginationEnvironment(context), data, JsonArray(emptyList()))
         }
     }
 
