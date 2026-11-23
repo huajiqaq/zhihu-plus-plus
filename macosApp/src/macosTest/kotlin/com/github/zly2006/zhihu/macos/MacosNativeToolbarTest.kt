@@ -1,5 +1,3 @@
-@file:OptIn(kotlinx.cinterop.BetaInteropApi::class)
-
 /*
  * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
  * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
@@ -16,6 +14,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+@file:OptIn(kotlinx.cinterop.BetaInteropApi::class)
 
 package com.github.zly2006.zhihu.macos
 

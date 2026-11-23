@@ -13,7 +13,9 @@
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
+ */
+
+/*
  * 转场的组合方式（navDirectionalTransition 分派 push / pop / predictivePop，各自用
  * navGraphicsTransition 描述图层）改编自 Miuix 示例 CrossActivityTransition.kt：
  * https://github.com/compose-miuix-ui/miuix/blob/main/example/shared/src/commonMain/kotlin/navigation/CrossActivityTransition.kt
