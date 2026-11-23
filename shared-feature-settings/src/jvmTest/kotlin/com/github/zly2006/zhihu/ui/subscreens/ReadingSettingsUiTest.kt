@@ -27,12 +27,15 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -40,6 +43,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
+import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
@@ -47,6 +51,7 @@ import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
+import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.components.appGroupedCardColor
 import java.nio.file.Files
 import kotlin.math.abs
@@ -163,6 +168,52 @@ class ReadingSettingsUiTest {
             ThemeManager.load(originalTheme)
             testDirectory.deleteRecursively()
         }
+    }
+
+    @Test
+    fun resetTypographyRestoresOnlyGroupDefaultsAndPersists() = withIsolatedDesktopHome {
+        val settings = desktopSettingsStore().apply {
+            putInt(PREF_FONT_SIZE, 130)
+            putInt(PREF_LINE_HEIGHT, 200)
+            putInt(PREF_BLOCK_SPACING, 150)
+            putBoolean(TIQIAN_MARKDOWN_PREFERENCE_KEY, true)
+            putString(TIQIAN_MATH_FONT_PREFERENCE_KEY, "stix")
+            putBoolean("duo3_tiqian_markdown", true)
+            putString("duo3_tiqian_math_font", "stix")
+            putBoolean(ARTICLE_USE_WEBVIEW_PREFERENCE_KEY, true)
+            putBoolean("webviewHardwareAcceleration", false)
+            putString("webviewCustomFontName", "fixture.otf")
+            putString("answerSwitchMode", "horizontal")
+        }
+        val expected = settings.allEntries() + mapOf(
+            PREF_FONT_SIZE to "100",
+            PREF_LINE_HEIGHT to "160",
+            PREF_BLOCK_SPACING to "100",
+            TIQIAN_MARKDOWN_PREFERENCE_KEY to "false",
+            TIQIAN_MATH_FONT_PREFERENCE_KEY to "lete",
+        )
+        runDesktopComposeUiTest(width = 540, height = 1000) {
+            setContent {
+                ZhihuTheme {
+                    CompositionLocalProvider(LocalNavigator provides Navigator({}, {})) { ReadingSettingsScreen() }
+                }
+            }
+            val tiqian = onNodeWithTag(APPEARANCE_SETTINGS_TIQIAN_MARKDOWN_TAG)
+            tiqian.assertIsOn()
+            onNodeWithText("200%", useUnmergedTree = true).assertExists()
+            onNodeWithText("恢复默认").performScrollTo().performClick()
+            waitForIdle()
+            onAllNodesWithText("100%", useUnmergedTree = true).assertCountEquals(2)
+            onNodeWithText("160%", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            tiqian.assertIsOff()
+            onNodeWithText("正文：使用非衬线数学字体").assertDoesNotExist()
+        }
+
+        // 桌面设置实例按路径缓存；新目录只带上次写入的文件。
+        val saved = desktopZhihuDataFile("settings.properties")
+        System.setProperty("user.home", saved.resolveSibling("reopened").absolutePath)
+        saved.copyTo(desktopZhihuDataFile("settings.properties"))
+        assertEquals(expected, desktopSettingsStore().allEntries())
     }
 
     private fun blend(top: Color, bottom: Color, alpha: Float): Color = Color(

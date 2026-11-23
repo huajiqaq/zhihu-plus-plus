@@ -277,7 +277,7 @@ private val settingsSearchEntries = buildList {
     add(SettingsSearchEntry("navigation.pageTransition", "页面转场", "导航与交互", "选择侧滑或 AOSP 风格；关闭预测性返回即可关闭动画。", Account.NavigationSettings(setting = PAGE_TRANSITION_PREFERENCE_KEY), listOf("动画", "转场", "侧滑", "AOSP"), requiresPredictiveBack))
     add(SettingsSearchEntry("appearance.appBlur", "悬浮玻璃", "外观", "弹层、弹窗打开时模糊底层内容。", Account.AppearanceSettings(setting = APP_BLUR_PREFERENCE_KEY), listOf("模糊", "玻璃", "背景")))
     add(SettingsSearchEntry("appearance.floatingBottomBar", "悬浮底栏", "外观", "底栏以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。底栏内拖动仅切换标签，不移动底栏。", Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY), listOf("底栏", "浮动", "悬浮", "导航栏")))
-    add(SettingsSearchEntry("reading.contentAndHome", "排版", "阅读与排版", "字号、行高、段落间距与正文排版引擎。", Account.ReadingSettings(setting = "contentAndHome"), listOf("正文排版", "提椠", "Markdown")))
+    add(SettingsSearchEntry("reading.contentAndHome", "排版", "阅读与排版", "调整字号、行高、段落间距与正文排版引擎，或恢复默认排版。", Account.ReadingSettings(setting = "contentAndHome"), listOf("正文排版", "提椠", "Markdown", "排版恢复默认", "重置排版")))
     if (isTiqianMarkdownRendererAvailable) {
         add(SettingsSearchEntry("reading.tiqianMarkdown", "正文：使用提椠 Markdown 渲染器", "阅读与排版", "改进正文两端对齐、中西混排及代码、表格、公式与脚注排版。", Account.ReadingSettings(setting = TIQIAN_MARKDOWN_PREFERENCE_KEY), listOf("提椠", "Markdown", "正文渲染", "排版引擎")))
         add(SettingsSearchEntry("reading.tiqianMathFont", "正文：使用非衬线数学字体", "阅读与排版", "默认使用 Lete Sans Math；关闭后使用 STIX Two Math。", Account.ReadingSettings(setting = TIQIAN_MATH_FONT_PREFERENCE_KEY), listOf("公式", "数学字体", "Lete", "STIX"), requiresTiqianMarkdown))

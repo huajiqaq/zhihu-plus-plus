@@ -1,0 +1,21 @@
+diff --git a/platforms/compose/compose/src/androidMain/kotlin/org/tiqian/compose/FoundationSelectionContextMenu.android.kt b/platforms/compose/compose/src/androidMain/kotlin/org/tiqian/compose/FoundationSelectionContextMenu.android.kt
+index d481bc29..6bd86e02 100644
+--- a/platforms/compose/compose/src/androidMain/kotlin/org/tiqian/compose/FoundationSelectionContextMenu.android.kt
++++ b/platforms/compose/compose/src/androidMain/kotlin/org/tiqian/compose/FoundationSelectionContextMenu.android.kt
+@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.remember
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalLocaleList
+ 
+ /**
+  * Uses Foundation's current Android text-context-menu provider, which owns the platform ActionMode,
+@@ -34,7 +35,7 @@ internal actual fun FoundationSelectionContextMenuArea(
+     var platformSelectionBehaviors: PlatformSelectionBehaviors? = null
+     if (ComposeFoundationFlags.isSmartSelectionEnabled) {
+         platformSelectionBehaviors =
+-            rememberPlatformSelectionBehaviors(SelectedTextType.StaticText, localeList = null)
++            rememberPlatformSelectionBehaviors(SelectedTextType.StaticText, LocalLocaleList.current)
+     }
+     val toolbarRequester = remember(state) { ToolbarRequesterImpl() }
+     val systemMenu = remember(state, toolbarRequester) {

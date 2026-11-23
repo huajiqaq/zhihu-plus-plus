@@ -78,6 +78,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
@@ -981,6 +982,21 @@ class ArticleScreenInstrumentedTest {
             .map { it.groupValues[1].toInt() }
             .toList()
         assertEquals(fillerParagraphs.indices.toList(), copiedFillerIndexes)
+    }
+
+    @Test
+    fun tiqianLongPressOpensMenuAndSelectsAll() {
+        val paragraph = "Select this paragraph"
+        composeRule.setScreenContent {
+            RenderMarkdown(html = "<p>$paragraph</p>", enableScroll = false, useTiqianRenderer = true)
+        }
+
+        val body = composeRule.onNodeWithText(paragraph, useUnmergedTree = true)
+        body.performTouchInput { longClick(Offset(8.dp.toPx(), center.y)) }
+        composeRule.onNodeWithText("复制").assertIsDisplayed()
+        composeRule.onNodeWithText("全选").assertIsDisplayed().performClick()
+        val selection = body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+        assertEquals(TextRange(0, paragraph.length), selection)
     }
 
     /**

@@ -92,6 +92,12 @@
             </intent-filter>
         </activity>
         <activity
+                android:name=".FatalErrorActivity"
+                android:exported="false"
+                android:process=":error"
+                android:taskAffinity=""
+                android:persistableMode="persistNever"/>
+        <activity
                 android:name=".WebviewActivity"
                 android:exported="false"/>
         <activity

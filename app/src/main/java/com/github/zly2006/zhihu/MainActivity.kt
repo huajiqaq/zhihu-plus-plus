@@ -18,12 +18,13 @@
 package com.github.zly2006.zhihu
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Application
-import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -113,6 +114,15 @@ class ZhihuApplication :
 
     override fun onCreate() {
         super.onCreate()
+        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            getSystemService(ActivityManager::class.java)?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName
+        }
+        if (processName != applicationInfo.processName) return
+        val fatalErrors = FatalErrorHandler(this)
+        registerActivityLifecycleCallbacks(fatalErrors)
+        Thread.setDefaultUncaughtExceptionHandler(fatalErrors)
         androidSystemNotifications(this)
     }
 
@@ -156,21 +166,10 @@ class ZhihuApplication :
     }
 }
 
-private const val APP_ERROR_DIALOG_STATE_KEY = "app_error_dialog"
-private const val APP_ERROR_INTENT_CONSUMED_STATE_KEY = "app_error_intent_consumed"
-
-/** 仅保存脱敏后的窗口正文，消费标记不代替正在展示的状态。 */
-private data class AppErrorDialogContent(
-    val title: String,
-    val message: String,
-    val copyable: Boolean,
-)
+private const val UNSUPPORTED_LINK_MESSAGE_KEY = "unsupported_link_message"
 
 class MainActivity : ComponentActivity() {
-    private val appErrorDialog = mutableStateOf<AppErrorDialogContent?>(null)
-
-    /** 启动错误的消费状态跨重建保留，窗口关闭不清除此标记。 */
-    private var internalErrorIntentConsumed = false
+    private val unsupportedLinkMessage = mutableStateOf<String?>(null)
 
     lateinit var history: LocalHistoryStorage
     val httpClient
@@ -208,49 +207,9 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        Thread.setDefaultUncaughtExceptionHandler { _, e ->
-            Log.e(TAG, "Uncaught exception", e)
-            val intent = Intent(
-                Intent.ACTION_VIEW,
-                Uri
-                    .Builder()
-                    .apply {
-                        scheme("https")
-                        authority("zhihu-plus.internal")
-                        appendPath("error")
-                        appendQueryParameter("title", "Uncaught exception: ${e.message}")
-                        appendQueryParameter(
-                            "message",
-                            e.message,
-                        )
-                        appendQueryParameter("stack", e.stackTraceToString())
-                    }.build(),
-                this,
-                MainActivity::class.java,
-            )
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            finish()
-        }
         enableEdgeToEdgeCompat()
         super.onCreate(savedInstanceState)
-        internalErrorIntentConsumed =
-            savedInstanceState?.getBoolean(APP_ERROR_INTENT_CONSUMED_STATE_KEY, false) == true ||
-            intent.getBooleanExtra("internal_error_shown", false)
-        /** 系统可重放原启动 Intent，先清除已消费的错误，不能覆盖恢复的正文。 */
-        if (internalErrorIntentConsumed && intent.data?.authority == "zhihu-plus.internal" && intent.data?.path == "/error") {
-            intent.putExtra("internal_error_shown", true)
-            intent.data = null
-        }
-        savedInstanceState?.getBundle(APP_ERROR_DIALOG_STATE_KEY)?.let { saved ->
-            saved.getString("message")?.let { message ->
-                appErrorDialog.value = AppErrorDialogContent(
-                    title = redactDiagnosticText(saved.getString("title") ?: "错误详情"),
-                    message = redactDiagnosticText(message),
-                    copyable = saved.getBoolean("copyable", false),
-                )
-            }
-        }
+        unsupportedLinkMessage.value = savedInstanceState?.getString(UNSUPPORTED_LINK_MESSAGE_KEY)
         clearShareImageCache(this)
         continuousUsageReminderManager = ContinuousUsageReminderManager(this)
         AccountData.loadData(this)
@@ -312,22 +271,13 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.semantics { testTagsAsResourceId = true }) {
                         AndroidZhihuMain(navHost = navHost)
                         PageTurnFab(dispatcher = pageTurnDispatcher)
-                        appErrorDialog.value?.let { dialog ->
+                        unsupportedLinkMessage.value?.let { message ->
                             AppHostlessAlertDialog(
-                                onDismissRequest = { appErrorDialog.value = null },
-                                title = { Text(dialog.title) },
-                                text = { Text(dialog.message) },
+                                onDismissRequest = { unsupportedLinkMessage.value = null },
+                                title = { Text("不支持的链接") },
+                                text = { Text(message) },
                                 confirmButton = {
-                                    AppTextButton(onClick = { appErrorDialog.value = null }) { Text("关闭") }
-                                },
-                                dismissButton = if (dialog.copyable) {
-                                    {
-                                        AppTextButton(onClick = {
-                                            clipboardManager.setPrimaryClip(ClipData.newPlainText("error", dialog.message))
-                                        }) { Text("复制脱敏信息") }
-                                    }
-                                } else {
-                                    null
+                                    AppTextButton(onClick = { unsupportedLinkMessage.value = null }) { Text("关闭") }
                                 },
                             )
                         }
@@ -337,9 +287,6 @@ class MainActivity : ComponentActivity() {
         }
         if (savedInstanceState == null) {
             telemetry(this, "start")
-        }
-        if (intent.data?.authority == "zhihu-plus.internal" && intent.data?.path == "/error") {
-            showErrorDialog(intent)
         }
 
         if (savedInstanceState == null) {
@@ -447,51 +394,14 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean(APP_ERROR_INTENT_CONSUMED_STATE_KEY, internalErrorIntentConsumed)
-        outState.remove(APP_ERROR_DIALOG_STATE_KEY)
-        appErrorDialog.value?.let { dialog ->
-            outState.putBundle(
-                APP_ERROR_DIALOG_STATE_KEY,
-                Bundle().apply {
-                    putString("title", dialog.title)
-                    putString("message", dialog.message)
-                    putBoolean("copyable", dialog.copyable)
-                },
-            )
-        }
+        outState.putString(UNSUPPORTED_LINK_MESSAGE_KEY, unsupportedLinkMessage.value)
         super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.data?.authority == "zhihu-plus.internal" && intent.data?.path == "/error") {
-            showErrorDialog(intent)
-        } else if (::navHost.isInitialized) {
-            handleIntentData(intent)
-        }
-    }
-
-    private fun showErrorDialog(incomingIntent: Intent) {
-        if (incomingIntent.getBooleanExtra("internal_error_shown", false)) {
-            internalErrorIntentConsumed = true
-            incomingIntent.data = null
-            return
-        }
-        val data = incomingIntent.data ?: return
-        val details = redactDiagnosticText(
-            listOfNotNull(data.getQueryParameter("title"), data.getQueryParameter("stack"))
-                .filter(String::isNotBlank)
-                .joinToString("\n\n"),
-        )
-        internalErrorIntentConsumed = true
-        incomingIntent.putExtra("internal_error_shown", true)
-        incomingIntent.data = null
-        appErrorDialog.value = AppErrorDialogContent(
-            title = "错误详情",
-            message = details.ifBlank { "未知错误" },
-            copyable = true,
-        )
+        if (::navHost.isInitialized) handleIntentData(intent)
     }
 
     private fun handleIntentData(incomingIntent: Intent): Boolean {
@@ -507,16 +417,8 @@ class MainActivity : ComponentActivity() {
             }
             return true
         }
-        if (incomingIntent.getBooleanExtra("internal_error_shown", false)) {
-            internalErrorIntentConsumed = true
-            incomingIntent.data = null
-            return true
-        }
         val data = incomingIntent.data ?: return incomingIntent.action == Intent.ACTION_VIEW
-        if (data.authority == "zhihu-plus.internal") {
-            if (data.path == "/error") showErrorDialog(incomingIntent)
-            return true
-        }
+        if (data.authority == "zhihu-plus.internal") return true
         if (!::navHost.isInitialized) return true
         val forceNavigation = incomingIntent.getBooleanExtra(ContentReadingService.READING_NOTIFICATION_INTENT_EXTRA, false)
         incomingIntent.removeExtra(ContentReadingService.READING_NOTIFICATION_INTENT_EXTRA)
@@ -531,11 +433,8 @@ class MainActivity : ComponentActivity() {
                 navigate(destination, popup = true)
             }
         } else {
-            appErrorDialog.value = AppErrorDialogContent(
-                title = "不支持的链接",
-                message = redactDiagnosticText("无法识别链接：$data"),
-                copyable = false,
-            )
+            unsupportedLinkMessage.value = redactDiagnosticText("无法识别链接：$data")
+            incomingIntent.data = null
         }
         return true
     }

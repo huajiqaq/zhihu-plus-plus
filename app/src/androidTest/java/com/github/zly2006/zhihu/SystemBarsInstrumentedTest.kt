@@ -17,37 +17,32 @@
 
 package com.github.zly2006.zhihu
 
+import android.app.ActivityManager
+import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
-import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.graphics.RectF
+import android.os.Bundle
+import android.os.Parcel
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasAnyDescendant
-import androidx.compose.ui.test.hasScrollAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.github.zly2006.zhihu.data.redactDiagnosticText
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.theme.AndroidThemeSettings
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ZhihuTheme
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,101 +54,100 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 @RunWith(AndroidJUnit4::class)
 class SystemBarsInstrumentedTest {
     @Test
-    fun errorIntentKeepsLongDetailsScrollableAndActionsVisible() {
-        val title = "合成长错误标题，完整内容必须进入正文。".repeat(24)
-        val stack = "Authorization: Bearer fixture-native-secret\n" +
-            (1..60).joinToString("\n") { "at fixture.Frame$it.run(Test.kt:$it)" } + "\nSTACK_END_MARKER"
-        val uri = Uri
-            .Builder()
-            .scheme("https")
-            .authority("zhihu-plus.internal")
-            .appendPath("error")
-            .appendQueryParameter("title", title)
-            .appendQueryParameter("stack", stack)
-            .build()
+    fun fatalErrorReplacesOldTaskAndKeepsLongRedactedDetailsCopyable() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val originalActivity = composeRule.activity
-        launchIntent = originalActivity.intent
-        composeRule.runOnIdle {
-            originalActivity.startActivity(
-                Intent(Intent.ACTION_VIEW, uri)
-                    .setClass(originalActivity, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            )
+        val main = composeRule.activity
+        val app = main.application
+        val manager = checkNotNull(app.getSystemService(ActivityManager::class.java))
+        val page = ComponentName(app, FatalErrorActivity::class.java)
+        val title = "合成长错误标题，完整内容必须进入正文。".repeat(24)
+        val failure = IllegalStateException("Authorization: Bearer fixture-native-secret\n$title").apply {
+            stackTrace = Array(60) { index -> StackTraceElement("fixture.Frame$index", "run", "Test.kt", index + 1) }
         }
-        // 活动展示错误后清空 Intent 的 data，避免系统重放已消费的错误。
-        composeRule.waitUntil("错误 Intent 未投递到原活动", timeoutMillis = 5_000) {
-            originalActivity.intent.action == Intent.ACTION_VIEW &&
-                originalActivity.intent.data == null &&
-                originalActivity.intent.getBooleanExtra("internal_error_shown", false)
+        val delivered = FatalErrorActivity.createIntent(app, failure)
+        val extras = checkNotNull(delivered.extras)
+        val expected = checkNotNull(extras.getString(extras.keySet().single()))
+        assertEquals(page, delivered.component)
+        assertTrue(delivered.data == null && "fixture-native-secret" !in expected)
+        assertTrue(title in expected && expected.endsWith("fixture.Frame59.run(Test.kt:60)"))
+        val oversized = FatalErrorActivity.createIntent(app, IllegalStateException("x".repeat(80_000)))
+        val parcel = Parcel.obtain()
+        try {
+            oversized.writeToParcel(parcel, 0)
+            assertTrue("错误 Intent 须给 Binder 留足余量", parcel.dataSize() < 40 * 1024)
+        } finally {
+            parcel.recycle()
         }
-        org.junit.Assert.assertSame(originalActivity, composeRule.activity)
-        instrumentation.waitForIdleSync()
-        waitForErrorDialog()
-        composeRule.onNodeWithText("关闭").assertIsDisplayed()
-        composeRule.onNodeWithText("复制脱敏信息").assertIsDisplayed()
-        val isMessage = hasText("STACK_END_MARKER", substring = true)
-        val message = composeRule.onNode(isMessage)
-        val messageText = message
-            .fetchSemanticsNode()
-            .config[SemanticsProperties.Text]
-            .single()
-            .text
-        assertTrue("完整标题不能被省略", messageText.contains(title))
-        assertTrue("完整堆栈不能被裁掉", messageText.endsWith("STACK_END_MARKER"))
-        val scroll = composeRule.onNode(hasScrollAction() and hasAnyDescendant(isMessage))
-        val scrollRange = scroll.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
-        assertTrue("长错误正文必须能滚动", scrollRange.maxValue() > 0f)
-        scroll.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, scrollRange.maxValue() - scrollRange.value()) }
-        composeRule.waitForIdle()
-        val messageNode = message.fetchSemanticsNode()
-        val layouts = mutableListOf<TextLayoutResult>()
-        composeRule.runOnIdle {
-            assertTrue(messageNode.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts) == true)
-        }
-        val layout = layouts.single()
-        val lastLine = layout.getLineForOffset(messageText.length - 1)
-        val lineTop = messageNode.positionInRoot.y + layout.getLineTop(lastLine)
-        val lineBottom = messageNode.positionInRoot.y + layout.getLineBottom(lastLine)
-        val visible = scroll.fetchSemanticsNode().boundsInRoot
-        assertTrue(
-            "错误正文最后一行必须实际可见：line=$lineTop..$lineBottom, visible=$visible",
-            lineTop >= visible.top && lineBottom <= visible.bottom + 1f,
-        )
-        composeRule.onNodeWithText("复制脱敏信息").assertIsDisplayed()
-        composeRule.onNodeWithText("关闭").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("错误详情").assertDoesNotExist()
-        composeRule.runOnIdle {
-            composeRule.activity.onWindowFocusChanged(true)
-        }
-        composeRule.onNodeWithText("错误详情").assertDoesNotExist()
-        composeRule.runOnIdle {
-            originalActivity.startActivity(
-                Intent(Intent.ACTION_VIEW, uri)
-                    .setClass(originalActivity, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            )
-        }
-        instrumentation.waitForIdleSync()
-        org.junit.Assert.assertSame(originalActivity, composeRule.activity)
-        waitForErrorDialog()
-        composeRule.onNodeWithText("复制脱敏信息").assertIsDisplayed().performClick()
-        val copied = composeRule.runOnIdle {
-            val clipboard = composeRule.activity.getSystemService(android.content.ClipboardManager::class.java)
-            clipboard.primaryClip
-                ?.getItemAt(0)
-                ?.text
-                ?.toString()
-        }
-        assertEquals(redactDiagnosticText("$title\n\n$stack"), copied)
-        assertTrue("复制结果不能保留凭据", "fixture-native-secret" !in copied.orEmpty())
-    }
 
-    private fun waitForErrorDialog() {
-        composeRule.waitUntil("错误弹窗未显示", timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("错误详情").fetchSemanticsNodes().isNotEmpty()
+        fun ownTasks() = manager.appTasks
+            .mapNotNull { runCatching { it.taskInfo }.getOrNull() }
+            .filter { it.baseIntent.component?.packageName == app.packageName }
+
+        fun node(text: String) = instrumentation.uiAutomation.rootInActiveWindow
+            ?.takeIf { it.packageName == app.packageName }
+            ?.findAccessibilityNodeInfosByText(text)
+            ?.firstOrNull { it.isVisibleToUser && it.text?.toString() == text }
+
+        val forward = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD
+        val backward = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD
+        val oldTask = Intent(app, WebviewActivity::class.java)
+            .setAction("fixture.old.task")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        try {
+            val thumbnail = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            try {
+                assertTrue(manager.addAppTask(main, oldTask, null, thumbnail) >= 0)
+            } finally {
+                thumbnail.recycle()
+            }
+            assertTrue(ownTasks().any { it.baseIntent.action == oldTask.action })
+            instrumentation.runOnMainSync { replaceActivitiesWithFatalError(app, failure, listOf(main)) }
+            composeRule.waitUntil("旧 Activity 应已销毁，错误页应是自有任务中唯一 Activity", 10_000) {
+                val task = ownTasks().singleOrNull()
+                main.isDestroyed && task?.baseActivity == page && task.topActivity == page && task.numActivities == 1 && node("错误详情") != null
+            }
+            val info = app.packageManager.getActivityInfo(page, 0)
+            assertTrue(!info.exported && info.processName == "${app.packageName}:error")
+            assertTrue(node("复制脱敏信息") != null && node("关闭") != null)
+            assertTrue(forward in checkNotNull(node(expected)?.parent).actionList)
+            composeRule.waitUntil("长错误正文须能滚动到末尾", 10_000) {
+                val scroll = node(expected)?.parent ?: return@waitUntil false
+                if (forward in scroll.actionList) {
+                    scroll.performAction(forward.id)
+                    false
+                } else {
+                    backward in scroll.actionList
+                }
+            }
+            val body = checkNotNull(node(expected))
+            val key = AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY
+            val range = Bundle().apply {
+                putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_START_INDEX, expected.lastIndex)
+                putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_LENGTH, 1)
+            }
+            assertTrue(body.refreshWithExtraData(key, range))
+            @Suppress("DEPRECATION")
+            val lastCharacter = body.extras.getParcelableArray(key)?.firstOrNull() as? RectF
+            val viewport = Rect().also { checkNotNull(body.parent).getBoundsInScreen(it) }
+            assertTrue("正文末字须实际位于滚动区内", lastCharacter != null && RectF(viewport).contains(lastCharacter))
+            assertTrue(checkNotNull(node("复制脱敏信息")).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            val clipboard = checkNotNull(app.getSystemService(ClipboardManager::class.java))
+            composeRule.waitUntil("复制结果须与脱敏正文相同", 5_000) {
+                clipboard.primaryClip
+                    ?.getItemAt(0)
+                    ?.text
+                    ?.toString() == expected
+            }
+            assertTrue(checkNotNull(node("关闭")).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            composeRule.waitUntil("关闭后不得留下旧任务或重启主页", 5_000) { ownTasks().isEmpty() }
+        } finally {
+            manager.appTasks.forEach { task ->
+                runCatching {
+                    val info = task.taskInfo ?: return@runCatching
+                    if (info.baseActivity == page || info.baseIntent.action == oldTask.action) task.finishAndRemoveTask()
+                }
+            }
         }
-        composeRule.onNodeWithText("错误详情").assertIsDisplayed()
     }
 
     @get:Rule
@@ -163,14 +157,6 @@ class SystemBarsInstrumentedTest {
     fun setUp() {
         composeRule.resetAppPreferences()
         AndroidThemeSettings.setThemeMode(composeRule.activity, ThemeMode.DARK)
-    }
-
-    private var launchIntent: Intent? = null
-
-    /** ActivityScenario 按启动 Intent 匹配生命周期；用例失败时也要恢复测试身份，否则收尾超时会盖住真正的报错。 */
-    @After
-    fun restoreLaunchIntent() {
-        launchIntent?.let { intent -> composeRule.runOnIdle { composeRule.activity.intent = intent } }
     }
 
     /**

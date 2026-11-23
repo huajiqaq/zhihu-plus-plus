@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
@@ -81,6 +84,12 @@ private const val ANSWER_SWITCH_MODE_PREFERENCE_KEY = "answerSwitchMode"
 private const val WEBVIEW_CUSTOM_FONT_NAME_PREFERENCE_KEY = "webviewCustomFontName"
 private const val WEBVIEW_HARDWARE_ACCELERATION_PREFERENCE_KEY = "webviewHardwareAcceleration"
 
+private const val DEFAULT_FONT_SIZE_PERCENT = 100
+private const val DEFAULT_LINE_HEIGHT_PERCENT = 160
+private const val DEFAULT_BLOCK_SPACING_PERCENT = 100
+private const val DEFAULT_TIQIAN_MARKDOWN = false
+private const val TIQIAN_SANS_MATH_FONT = "lete"
+
 val READING_LAYOUT_SETTINGS_KEYS: Set<String> = setOf(
     "fontScale",
     PREF_FONT_SIZE,
@@ -115,15 +124,15 @@ fun ReadingSettingsScreen(
     val userMessages = rememberUserMessageSink()
     val navigator = LocalNavigator.current
 
-    var storedFontSize by rememberSetting(settings, PREF_FONT_SIZE, 100)
+    var storedFontSize by rememberSetting(settings, PREF_FONT_SIZE, DEFAULT_FONT_SIZE_PERCENT)
     val fontSize = snappedContentFontSize(storedFontSize)
     LaunchedEffect(storedFontSize) {
         if (storedFontSize != fontSize) storedFontSize = fontSize
     }
-    var lineHeight by rememberSetting(settings, PREF_LINE_HEIGHT, 160)
-    var blockSpacing by rememberSetting(settings, PREF_BLOCK_SPACING, 100)
-    var tiqianMarkdown by rememberSetting(settings, TIQIAN_MARKDOWN_PREFERENCE_KEY, false)
-    var tiqianMathFont by rememberSetting(settings, TIQIAN_MATH_FONT_PREFERENCE_KEY, "lete")
+    var lineHeight by rememberSetting(settings, PREF_LINE_HEIGHT, DEFAULT_LINE_HEIGHT_PERCENT)
+    var blockSpacing by rememberSetting(settings, PREF_BLOCK_SPACING, DEFAULT_BLOCK_SPACING_PERCENT)
+    var tiqianMarkdown by rememberSetting(settings, TIQIAN_MARKDOWN_PREFERENCE_KEY, DEFAULT_TIQIAN_MARKDOWN)
+    var tiqianMathFont by rememberSetting(settings, TIQIAN_MATH_FONT_PREFERENCE_KEY, TIQIAN_SANS_MATH_FONT)
     var answerSwitchMode by rememberSetting(settings, ANSWER_SWITCH_MODE_PREFERENCE_KEY, "vertical")
     var articleUseWebview by rememberSetting(settings, ARTICLE_USE_WEBVIEW_PREFERENCE_KEY, false)
     val useWebView = isLegacyWebViewSupported && articleUseWebview
@@ -278,13 +287,36 @@ fun ReadingSettingsScreen(
                                 },
                             )
                         },
-                        checked = tiqianMathFont == "lete",
+                        checked = tiqianMathFont == TIQIAN_SANS_MATH_FONT,
                         enabled = !useWebView,
-                        onCheckedChange = { tiqianMathFont = if (it) "lete" else "stix" },
+                        onCheckedChange = { tiqianMathFont = if (it) TIQIAN_SANS_MATH_FONT else "stix" },
                         settingKey = TIQIAN_MATH_FONT_PREFERENCE_KEY,
                     )
                 }
             }
+            SettingItem(
+                title = { Text("恢复默认") },
+                description = {
+                    Text(
+                        if (isTiqianMarkdownRendererAvailable) {
+                            "仅恢复字号、行高、段间距、提椠排版和数学字体。"
+                        } else {
+                            "仅恢复字号、行高和段间距。"
+                        },
+                    )
+                },
+                endAction = { Icon(Icons.Default.RestartAlt, contentDescription = null) },
+                onClick = {
+                    storedFontSize = DEFAULT_FONT_SIZE_PERCENT
+                    lineHeight = DEFAULT_LINE_HEIGHT_PERCENT
+                    blockSpacing = DEFAULT_BLOCK_SPACING_PERCENT
+                    if (isTiqianMarkdownRendererAvailable) {
+                        tiqianMarkdown = DEFAULT_TIQIAN_MARKDOWN
+                        tiqianMathFont = TIQIAN_SANS_MATH_FONT
+                    }
+                    userMessages.showShortMessage("已恢复默认排版")
+                },
+            )
         }
 
         SettingItemGroup(title = "回答页") {

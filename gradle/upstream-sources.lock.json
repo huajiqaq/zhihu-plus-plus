@@ -54,6 +54,11 @@
           "sha256": "78d7649bfb12dd30c8ef9d236842916f244aeb0ca8673eb8a9a85dc3bc379a53",
           "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的选区/行内占位几何及 /pull/38 的点线半径避墨；当所选源码具备相同实现且相关原测试通过时移除"
         },
+        "upstream-patches/tiqian-core-android-selection-locale.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "2dd3198d777e6548504f2b1491fb2229cdcca6d28504d9ab0551d33b142f1e8e",
+          "reason": "Android 智能选区使用 Foundation 的 LocalLocaleList.current；传 null 会在长按分类时崩溃。所选上游改用当前语言列表后移除"
+        },
         "upstream-patches/tiqian-core-performance.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
           "sha256": "9566a4d243183ef581bb9ff297b90b7797f714aa562a55f17c4ce9be312b2f5a",
