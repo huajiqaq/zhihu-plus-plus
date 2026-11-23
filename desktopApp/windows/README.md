@@ -12,7 +12,7 @@
   -OutputDirectory <仓外新的空目录路径> `
   -IdentityName <正式包Identity.Name> `
   -Publisher 'CN=<正式签名证书主体>' `
-  -Version 1.0.0.0
+  -Version <四段MSIX包版本号>
 ```
 
 要求 JDK 21、Visual Studio C++ 桌面工具/CMake、Windows SDK。脚本通过 `JAVA_HOME`/`javac`、`vswhere`、Windows SDK 的已安装根和版本发现工具；也可显式指定 `JavaHome`、`WindowsSdkRoot`、`WindowsSdkVersion`。没有 .NET SDK、NuGet、Windows App SDK runtime 或网络下载依赖。

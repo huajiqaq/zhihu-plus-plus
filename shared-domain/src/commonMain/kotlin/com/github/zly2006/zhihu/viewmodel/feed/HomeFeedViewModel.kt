@@ -244,7 +244,6 @@ class HomeFeedViewModel(
                     reverseBlock = reverseBlock,
                 )
 
-                // 移除被过滤的条目，并更新已保留条目的 raw 内容
                 withContext(Dispatchers.Main) {
                     if (generation == pagingGeneration && environment.httpClient() === client) {
                         displayItems.replaceHomeFeedItemsWithFilteredResult(filterResult)

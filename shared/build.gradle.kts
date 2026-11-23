@@ -16,8 +16,6 @@
  */
 
 import buildlogic.configureAppleTargets
-import org.jlleitschuh.gradle.ktlint.tasks.GenerateReportsTask
-import org.jlleitschuh.gradle.ktlint.tasks.KtLintFormatTask
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -43,43 +41,7 @@ ktlint {
     }
 }
 
-tasks.withType<KtLintFormatTask>().configureEach {
-    exclude("**/generated/**")
-    exclude("build/generated/**")
-    exclude("**/build/generated/ksp/**")
-    exclude("**/ksp/**")
-    exclude { it.file.absolutePath.contains("/build/generated/") }
-}
-
-tasks
-    .withType<GenerateReportsTask>()
-    .matching { it.name in setOf("ktlintAndroidMainSourceSetFormat", "ktlintJvmMainSourceSetFormat") }
-    .configureEach {
-        enabled = false
-    }
-
-mapOf(
-    "runKtlintFormatOverAndroidMainSourceSet" to
-        listOf("src/androidMain/kotlin"),
-    "runKtlintFormatOverAndroidFullSourceSet" to
-        listOf("src/androidFull/kotlin", "src/tiqianMarkdownMain/kotlin"),
-    "runKtlintFormatOverJvmMainSourceSet" to listOf("src/jvmMain/kotlin"),
-    "runKtlintFormatOverCommonMainSourceSet" to listOf("src/commonMain/kotlin"),
-    "runKtlintFormatOverJvmTestSourceSet" to listOf("src/jvmTest/kotlin"),
-).forEach { (taskName, sourcePaths) ->
-    tasks.withType<KtLintFormatTask>().matching { it.name == taskName }.configureEach {
-        setSource(
-            sourcePaths.map { sourcePath ->
-                fileTree(sourcePath) {
-                    include("**/*.kt")
-                }
-            },
-        )
-    }
-}
-
-// RealZhihuApiCorpusTest 与 HistoryRouteNavigationTest 各自独占进程级的内容过滤数据库单例并在结束时关闭它，
-// 同一个 worker 里后执行的那个只能拿到已关闭的库；每个测试类使用独立 JVM。
+/** 内容过滤数据库在测试类结束时关闭，测试类不复用同一 JVM。 */
 tasks.withType<Test>().matching { it.name == "jvmTest" }.configureEach {
     forkEvery = 1
 }

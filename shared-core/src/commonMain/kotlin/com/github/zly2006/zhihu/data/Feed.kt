@@ -158,6 +158,7 @@ sealed interface Feed {
             get() = -1
     }
 
+    /** 旧版信息流接口不返回 [content]、[created] 和 [updated]。 */
     @Serializable
     @SerialName("article")
     data class ArticleTarget(
@@ -168,17 +169,8 @@ sealed interface Feed {
         val commentCount: Int = 0,
         override val title: String,
         override val excerpt: String = "",
-        /**
-         * 老API不支持
-         */
         val content: String = "",
-        /**
-         * 老API不支持
-         */
         val created: Long = 0,
-        /**
-         * 老API不支持
-         */
         val updated: Long = 0,
         val isLabeled: Boolean = false,
         val visitedCount: Int = 0,
@@ -206,9 +198,6 @@ sealed interface Feed {
 
     @Serializable
     @SerialName("pin")
-    /**
-     * 知乎想法
-     */
     data class PinTarget(
         val id: Long,
         override val url: String,
@@ -237,6 +226,7 @@ sealed interface Feed {
             get() = created
     }
 
+    /** 旧版信息流接口不返回 [questionType]、[created] 和 [detail]。 */
     @Suppress("PropertyName")
     @Serializable
     @SerialName("question")
@@ -248,20 +238,11 @@ sealed interface Feed {
         val _title: String? = null,
         override val url: String,
         val type: String,
-        /**
-         * 不存在于老API
-         */
         val questionType: String = "",
-        /**
-         * 不存在于老API
-         */
         val created: Long = 0,
         val answerCount: Int = 0,
         val commentCount: Int = 0,
         val followerCount: Int = 0,
-        /**
-         * 不存在于老API
-         */
         val detail: String = "",
         override val excerpt: String = "",
         val boundTopicIds: List<Long> = emptyList(),

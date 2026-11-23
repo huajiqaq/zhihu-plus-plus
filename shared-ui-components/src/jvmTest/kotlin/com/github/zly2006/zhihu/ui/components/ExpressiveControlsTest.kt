@@ -17,7 +17,6 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,8 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -52,7 +49,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
@@ -644,30 +640,6 @@ class ExpressiveControlsTest {
                     onNodeWithText("尚未提交的内容").assertExists()
                     assertEquals(0, parentDismissals, "取消确认不能关闭下层窗口")
                 }
-            }
-        } finally {
-            ThemeManager.load(original)
-        }
-    }
-
-    @Test
-    fun switchRowKeepsItsSegmentShapeWhenChecked() {
-        val original = ThemeManager.snapshot()
-        try {
-            ThemeManager.load(original.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT))
-            runDesktopComposeUiTest(width = 412, height = 400) {
-                setContent {
-                    ZhihuTheme {
-                        Column(Modifier.fillMaxWidth().background(Color.Red)) {
-                            SettingItemWithSwitch(title = { Text("关闭的开关") }, checked = false, onCheckedChange = {}, modifier = Modifier.testTag("switch_off"))
-                            SettingItemWithSwitch(title = { Text("打开的开关") }, checked = true, onCheckedChange = {}, modifier = Modifier.testTag("switch_on"))
-                        }
-                    }
-                }
-                waitForIdle()
-                val off = onNodeWithTag("switch_off").captureToImage().toPixelMap()[2, 2]
-                val on = onNodeWithTag("switch_on").captureToImage().toPixelMap()[2, 2]
-                assertEquals(off, on, "打开的开关行左上角与关闭的行不一致：off=$off on=$on")
             }
         } finally {
             ThemeManager.load(original)

@@ -105,7 +105,6 @@ class AndroidHomeFeedViewModel(
                         }
                     }
 
-                // 前台先做本地已读过滤，再立即展示
                 val displaySettings = FeedDisplaySettings(platformSettingsStore())
                 val filterSettings = platformSettingsStore().toFeedFilterSettings()
                 val reverseBlock = displaySettings.reverseBlock

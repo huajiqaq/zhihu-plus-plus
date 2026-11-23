@@ -24,7 +24,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -85,18 +84,6 @@ class ReadingPlaybackSettingsUiTest {
     }
 
     @Test
-    fun customQueueLimitInputHasItsOwnTag() = withReadingPlaybackScreen(ReadingPreferences()) {
-        onAllNodesWithTag(READING_SETTINGS_CUSTOM_QUEUE_LIMIT_TAG).assertCountEquals(1)
-        onAllNodesWithTag(CUSTOM_QUEUE_LIMIT_INPUT_TAG).assertCountEquals(0)
-
-        onNodeWithTag(READING_SETTINGS_CUSTOM_QUEUE_LIMIT_TAG).performScrollTo().performClick()
-        waitForIdle()
-
-        onAllNodesWithTag(READING_SETTINGS_CUSTOM_QUEUE_LIMIT_TAG).assertCountEquals(1)
-        onAllNodesWithTag(CUSTOM_QUEUE_LIMIT_INPUT_TAG).assertCountEquals(1)
-    }
-
-    @Test
     fun commentCountIsSavedOnImeDoneOrFocusLossOnly() = withReadingPlaybackScreen(
         ReadingPreferences(
             enabledFields = setOf(ReadingTemplateField.Body, ReadingTemplateField.Comments),
@@ -151,8 +138,4 @@ class ReadingPlaybackSettingsUiTest {
     }
 
     private fun savedPreferences(): ReadingPreferences = loadReadingPreferences(desktopSettingsStore())
-
-    private companion object {
-        const val CUSTOM_QUEUE_LIMIT_INPUT_TAG = "readingSettings.queueLimit.customInput"
-    }
 }

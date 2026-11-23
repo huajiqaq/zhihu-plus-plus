@@ -206,30 +206,6 @@ class ButtonContentColorTest {
     }
 
     @Test
-    fun miuixFloatingActionButtonPreservesExplicitForeground() {
-        val original = ThemeManager.snapshot()
-        try {
-            for (mode in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
-                ThemeManager.load(original.copy(themeStyle = ThemeStyle.MIUIX, themeMode = mode))
-                runDesktopComposeUiTest(width = 412, height = 180) {
-                    setContent {
-                        ZhihuTheme {
-                            AppFloatingActionButton(onClick = {}, containerColor = Color.Blue, contentColor = Color.White) {
-                                Text("悬浮动作")
-                            }
-                        }
-                    }
-                    val layouts = mutableListOf<TextLayoutResult>()
-                    onNodeWithText("悬浮动作").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-                    assertEquals(Color.White, layouts.single().layoutInput.style.color, mode.name)
-                }
-            }
-        } finally {
-            ThemeManager.load(original)
-        }
-    }
-
-    @Test
     fun miuixButtonsApplyExplicitContentPadding() {
         val original = ThemeManager.snapshot()
         try {

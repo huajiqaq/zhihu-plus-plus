@@ -35,7 +35,7 @@ Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推�
 
 [下载最新开发版本](https://github.com/zly2006/zhihu-plus-plus/releases/tag/nightly)
 
-[在电脑打开：浏览器扩展使用说明](docs/open-on-pc.md)
+[在电脑打开：浏览器扩展使用说明](misc/chrome-open-on-pc/README.md)
 
 桌面版提供 Windows MSI 安装包与 Linux AppImage（均内置 Java 运行时，下载安装即可使用，无需另外安装 Java），macOS 提供 arm64 原生应用。
 
@@ -57,7 +57,7 @@ Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推�
   - 浏览问题详情页（排序、关注、日志、分享、评论）
   - 浏览想法（Pin）详情页（点赞、评论、分享、话题、投票）
   - 浏览收藏夹及收藏夹内容
-  - 支持「在电脑打开」：发送到私密收藏夹，用浏览器扩展直接打开最新一条（[说明](docs/open-on-pc.md)）
+  - 支持「在电脑打开」：发送到私密收藏夹，用浏览器扩展直接打开最新一条（[说明](misc/chrome-open-on-pc/README.md)）
   - 在用户主页内搜索 TA 的创作
   - 历史记录（在线历史 + 本地历史，支持删除）
   - 展示知乎官方认证徽章
@@ -85,7 +85,7 @@ Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推�
   - 通知（支持分类、红点设置、全部标记已读、自动标记已读与通知筛选）
   - 可记名标记疑似 AIGC 内容，并查看有效标记和投票人
   - 表情包
-    - 经典表情`[惊喜]` <img src="misc/emojis/emoji_1114211280118018048.png" height="18" style="diSplay:inline"> 强势回归！
+    - 经典表情`[惊喜]` <img src="misc/emojis/emoji_1114211280118018048.png" height="18" style="diSplay:inline">
 - 屏蔽系统
   - 屏蔽词（支持正则表达式）
   - NLP 屏蔽词（基于 LLM embedding 和向量相似度匹配，仅 full 版本可用）
@@ -121,7 +121,7 @@ Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推�
 如果对其他知乎客户端感兴趣，这些客户端都不需要你root即可使用，也欢迎尝试：
 
 - [Hydrogen](https://github.com/zhihulite/Hydrogen)
-- [Zhihu--](https://github.com/huamurui/zhihu-minus-minus) （极早期开发阶段，功能尚有欠缺）
+- [Zhihu--](https://github.com/huamurui/zhihu-minus-minus)
 - [Zhihu++ swift版（iOS）](https://github.com/kangyun1994/zhihu-plus-plus-swift)
 - [Zhihu++ HMOS （鸿蒙版）](https://github.com/zhuoyi233/zhihu-plus-plus-HMOS)
 
@@ -136,18 +136,11 @@ Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推�
 ./gradlew :desktopApp:packageReleaseUberJarForCurrentOS
 ```
 
-使用补丁 API 的独立编译或测试需显式启用同一配置：
-
-```bash
-./gradlew :shared-ui-base:compileKotlinJvm -PzhihuUpstreamPatches=true
-./gradlew :shared-domain:jvmTest -PzhihuUpstreamPatches=true
-```
-
-普通依赖模式不保证提供未发布 API。离线只能复用上一次成功记录且校验完整的同版本输入；缺失、损坏或补丁冲突都会失败。缓存与生成产物不提交，维护方法见 [上游补丁](docs/upstream-dependency-patches.md)。
+独立编译的补丁模式与维护方法见 [上游补丁](docs/upstream-dependency-patches.md)。离线只能复用已成功准备且校验完整的同版本输入；缺失、损坏或补丁冲突都会失败。缓存与生成产物不提交。
 
 ## 参与开发
 
-协作规则见 [CLAUDE.md](CLAUDE.md)，测试与临时取证的处理见 [测试维护方法](docs/testing-maintenance.md)。提交 PR 时使用 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)。
+协作规则见 [CLAUDE.md](CLAUDE.md)，提交 PR 时使用 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)。
 
 ## 贡献者
 

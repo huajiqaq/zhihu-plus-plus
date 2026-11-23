@@ -40,7 +40,7 @@ class PeopleColumnsResponseTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val client = HttpClient(MockEngine { error("fetchJson 必须使用已采集响应") })
         val failures = mutableListOf<Exception>()
-        // 2026-10-27 真实响应，包含外层 contributions_count 和内层 column。
+        // 真实响应包含外层 contributions_count 和内层 column。
         val response = Json.parseToJsonElement(checkNotNull(javaClass.getResource("/columns/contributions-2026-10-27.json")).readText()).jsonObject
         val environment = object : PaginationEnvironment {
             override fun httpClient(): HttpClient = client

@@ -48,10 +48,8 @@ open class ArticleAnswerSwitchData :
     // 由 DisposableEffect.onDispose 消费，不受 LaunchedEffect 时序影响
     override var answerSwitchDisposeInProgress = false
 
-    // 导航动画方向
     override var answerTransitionDirection = ArticleAnswerTransitionDirection.DEFAULT
 
-    // 沉浸式阅读模式
     override var isImmersiveMode by mutableStateOf(false)
 
     override fun reset() {

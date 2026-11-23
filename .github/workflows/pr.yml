@@ -78,7 +78,6 @@ jobs:
 
       - name: Build Lite APKs
         env:
-          CI_BUILD_MINIFY: false
           RUN_INSTRUMENTED_TESTS: ${{ steps.instrumented_changes.outputs.required }}
         run: |
           tasks=(assembleLiteDebug)

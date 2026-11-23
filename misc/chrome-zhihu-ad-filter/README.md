@@ -24,8 +24,7 @@
 
 - `manifest.json`：MV3 扩展元数据；
 - `content.js`：在 `document_start` 向页面执行环境注入脚本；
-- `injected.js`：fetch 拦截与响应过滤逻辑；
-- `test/filter.test.mjs`：核心逻辑的轻量 Node 测试。
+- `injected.js`：fetch 拦截与响应过滤逻辑。
 
 ## 在 Chrome 中加载
 
@@ -33,11 +32,3 @@
 2. 开启“开发者模式”。
 3. 点击“加载已解压的扩展程序”。
 4. 选择 `misc/chrome-zhihu-ad-filter` 文件夹。
-
-## 本地测试
-
-在项目根目录执行：
-
-```bash
-node misc/chrome-zhihu-ad-filter/test/filter.test.mjs
-```

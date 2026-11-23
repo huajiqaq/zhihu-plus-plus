@@ -1,17 +1,7 @@
 # 问题回答列表缩略图
 
-列表请求 `GET /api/v4/questions/{id}/feeds` 的回答位于 `data[*].target`，图片来自其中的 `thumbnail_info`，不是顶层 `thumbnail` 或 `thumbnails`。
+`GET /api/v4/questions/{id}/feeds` 的回答位于 `data[*].target`，缩略图取其 `thumbnail_info`，不是顶层 `thumbnail` 或 `thumbnails`。其中 `count` 为数量，`thumbnails` 中 image 含 `url`、`token`、`width`、`height`；无图为 `count: 0` 和空数组。
 
-```json
-{"thumbnail_info":{"count":1,"type":"thumbnail_info","thumbnails":[{"height":375,"token":"v2-d4e49469d89079f500cd67ab8ae0c954","type":"image","url":"https://picx.zhimg.com/80/v2-d4e49469d89079f500cd67ab8ae0c954_720w.jpg?source=1def8aca","width":800}]}}
-```
+复用 `DataHolder.ThumbnailInfo`、`ThumbnailRich`，取第一张 image 交给 `FeedCard`，沿用尺寸、裁切、`showFeedThumbnail` 和导航。无图不占位，不额外请求回答详情。图片请求使用 `Mozilla/5.0` UA，不发送账号 Cookie。
 
-无图回答使用 `count: 0` 和空数组。真实响应夹具在 `shared/src/jvmTest/resources/real-api/question-answer-thumbnails.json`，包含无图、单图和多图，作者身份已脱敏；解码断言放在现有 `RealZhihuApiCorpusTest`。
-
-## 展示
-
-复用 `DataHolder.ThumbnailInfo` 和 `ThumbnailRich`，问题列表取第一张 image 交给 `FeedCard`。尺寸、裁切、`showFeedThumbnail` 和点击导航沿用卡片实现；无图不占位，也不额外请求回答详情。
-
-样本图片对默认 UA 返回 403，浏览器 UA 可正常加载。缩略图通过带 `Mozilla/5.0` 的 `ImageRequest` 读取，不发送账号 Cookie。
-
-该字段仅在现有问题回答列表链路中确认，不据此推断其他知乎接口也会返回。
+该字段只在现有问题回答列表链路确认，不推断其他接口也会返回。

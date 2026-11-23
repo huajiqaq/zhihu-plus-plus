@@ -23,15 +23,12 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -53,8 +50,6 @@ class SearchSuggestRealResponseCorpusTest {
         val requestedUrls = mutableListOf<String>()
         val env = environment(respondFixture = "search-suggest-1-sanitized.json") { requestedUrls += it }
         fetchSearchSuggest(env, "知乎")
-        // 生产 fetchJson 会把 include 也放进去，这里只断言 q 参数恰好出现一次且编码正确
-        assertTrue(requestedUrls.isNotEmpty())
         val query = URLBuilder(requestedUrls.last()).parameters
         assertEquals(listOf("知乎"), query.getAll("q"))
     }
@@ -69,25 +64,12 @@ class SearchSuggestRealResponseCorpusTest {
     }
 
     @Test
-    fun fixtureWithDuplicateQueriesIsHandledByIndexKey() {
-        // search-suggest-5（"你好"语料）含两条同名 "你好迷人"（一条 km_general 小说渠道带徽标，一条普通），
-        // UI 的 LazyColumn key 必须容忍重复 query。
-        val raw = fixture("search-suggest-5-sanitized.json")
-        val json = ZhihuJson.json.decodeFromString(JsonObject.serializer(), raw)
-        val queries = json["suggest"]!!
-            .jsonArray
-            .mapNotNull { element ->
-                runCatching { ZhihuJson.decodeJson<SearchSuggestItem>(element) }.getOrNull()
-            }.map(SearchSuggestItem::query)
-        assertTrue(queries.size != queries.toSet().size, "夹具应包含重复建议词")
-        assertEquals(2, queries.count { it == "你好迷人" })
-        // 渠道徽标项（小说标签）必须保留 iconUrl 供 UI 展示
-        val novel = json["suggest"]!!
-            .jsonArray
-            .map {
-                ZhihuJson.decodeJson<SearchSuggestItem>(it)
-            }.first { it.query == "你好迷人" && it.iconUrl.isNotEmpty() }
-        assertEquals("koc", novel.label)
+    fun suggestionsKeepDuplicateQueriesAndTheirBadges() = runTest {
+        val items = fetchSearchSuggest(environment(respondFixture = "search-suggest-5-sanitized.json"), "你好")
+        val duplicates = items.filter { it.query == "你好迷人" }
+
+        assertEquals(2, duplicates.size)
+        assertEquals("koc", duplicates.single { it.iconUrl.isNotEmpty() }.label)
     }
 
     private fun fixture(name: String) = checkNotNull(javaClass.getResource("/search/$name")).readText()

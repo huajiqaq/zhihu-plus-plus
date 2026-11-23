@@ -2,7 +2,7 @@
 
 `app` 保留 `full` 和 `lite` flavor，最低 Android API 为 27，以 `app/build.gradle.kts` 和共享构建约定为准。Android KMP 模块每次只编译一套版本专属 actual，构建脚本从 APK、bundle、install、compile 或单元测试任务名推断版本。
 
-Compose Multiplatform RC 与 Material3 使用版本目录中的配套构件；Android BOM 的实际选中版本通过 `dependencyInsight` 核对，不能把 JetBrains 与 AndroidX 的版本号直接互换。Miuix Android 构件要求编译 SDK 至少 37.2（`sdkmanager "platforms;android-37.2"`），共享模块从 `zhihu.kmp-conventions` 继承；这不改变应用的 targetSdk 或最低系统版本。
+Compose Multiplatform、Material3 和 Android BOM 以 [版本目录](../gradle/libs.versions.toml) 为准，最终解析用 `dependencyInsight` 核对，不互换 JetBrains 与 AndroidX 版本号。编译 SDK 从共享构建约定继承，当前需要 `platforms;android-37.2`；它不改变应用的 targetSdk 或最低系统版本。
 
 ```bash
 ./gradlew :app:assembleLiteDebug

@@ -87,7 +87,6 @@ fun ExportDialogComponent(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // 导出 PDF 按钮
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -174,7 +173,6 @@ fun ExportDialogComponent(
                         }
                     }
 
-                    // 导出图片按钮
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -217,7 +215,6 @@ fun ExportDialogComponent(
                         }
                     }
 
-                    // 复制 Markdown 按钮
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -251,7 +248,6 @@ fun ExportDialogComponent(
                         }
                     }
 
-                    // 带评论导出图片部分
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
@@ -261,7 +257,6 @@ fun ExportDialogComponent(
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
 
-                    // 评论数量滑块
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -280,7 +275,6 @@ fun ExportDialogComponent(
                         )
                     }
 
-                    // 带评论导出图片按钮
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -348,7 +342,6 @@ fun ExportDialogComponent(
                         )
                     }
 
-                    // 加载状态指示器
                     if (isExporting) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

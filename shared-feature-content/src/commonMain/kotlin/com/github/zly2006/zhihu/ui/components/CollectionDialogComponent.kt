@@ -61,7 +61,6 @@ fun CollectionDialogComponent(
     onToggleFavorite: (Collection) -> Unit,
     onCreateCollection: (title: String, description: String, isPublic: Boolean) -> Unit,
 ) {
-    // 新建收藏夹对话框状态
     var showCreateDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(showDialog) {
@@ -70,7 +69,6 @@ fun CollectionDialogComponent(
         }
     }
 
-    // 对话框内容
     if (showDialog) {
         AppBottomSheet(
             onDismissRequest = onDismiss,
@@ -80,7 +78,6 @@ fun CollectionDialogComponent(
                     .fillMaxSize()
                     .padding(16.dp),
             ) {
-                // 标题
                 Text(
                     text = "选择收藏夹",
                     style = MaterialTheme.typography.headlineSmall,
@@ -88,12 +85,10 @@ fun CollectionDialogComponent(
                     modifier = Modifier.padding(bottom = 16.dp),
                 )
 
-                // 收藏夹列表
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // 新建收藏夹按钮
                     item {
                         Surface(
                             modifier = Modifier
@@ -141,7 +136,6 @@ fun CollectionDialogComponent(
         }
     }
 
-    // 新建收藏夹对话框
     CreateCollectionDialog(
         showDialog = showCreateDialog,
         onDismiss = { showCreateDialog = false },

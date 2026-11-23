@@ -62,12 +62,8 @@ jobs:
       - name: Build Full App
         # 构建 APK。
         run: bash ./gradlew :app:assembleFullDebug -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
-        env:
-          CI_BUILD_MINIFY: false
       - name: Build Lite App
         run: bash ./gradlew :app:assembleLiteDebug -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
-        env:
-          CI_BUILD_MINIFY: false
       - name: Move files
         run: |
           mkdir -p app/build/upload

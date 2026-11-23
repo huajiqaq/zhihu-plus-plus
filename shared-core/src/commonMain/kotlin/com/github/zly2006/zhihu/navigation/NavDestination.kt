@@ -25,7 +25,7 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
 @Serializable
 sealed interface NavDestination : NavKey
 
-/** 底栏和侧栏的可配置目标；多数选择 [MainTabs] 内的标签，[OnlineHistory] 打开普通历史页面。 */
+/** 底栏和侧栏的可配置目标。主分页标签在 [MainTabs] 内切换而不压栈；[OnlineHistory] 打开 [OnlineHistoryRoute]。 */
 interface TopLevelDestination {
     val name: String
 }
@@ -54,7 +54,6 @@ fun isWebPageUrl(url: String): Boolean {
     return runCatching { Url(url).host.isNotBlank() }.getOrDefault(false)
 }
 
-/** 首页标签目标，用于深链和设置；通过 [MainTabs] 选择，不注册为独立页面。 */
 @Serializable
 data object Home : TopLevelDestination {
     override val name: String
@@ -68,7 +67,6 @@ data object Follow : TopLevelDestination {
         get() = "Follow"
 }
 
-/** 主分页器的顶层标签目标，不作为独立页面压栈。 */
 @Serializable
 data object HotList : TopLevelDestination {
     override val name: String
@@ -93,14 +91,12 @@ data object OnlineHistory : TopLevelDestination {
 @Serializable
 data object OnlineHistoryRoute : NavDestination
 
-/** 主分页器的顶层标签目标，不作为独立页面压栈。 */
 @Serializable
 data object MyCollections : TopLevelDestination {
     override val name: String
         get() = "MyCollections"
 }
 
-/** 账号页的主分页标签目标，不作为独立页面压栈。 */
 @Serializable
 data object Account : TopLevelDestination {
     override val name: String
@@ -169,7 +165,6 @@ data object Account : TopLevelDestination {
     data object DeveloperSettings : NavDestination
 }
 
-/** 主分页器的顶层标签目标，不作为独立页面压栈。 */
 @Serializable
 data object Daily : TopLevelDestination {
     override val name: String

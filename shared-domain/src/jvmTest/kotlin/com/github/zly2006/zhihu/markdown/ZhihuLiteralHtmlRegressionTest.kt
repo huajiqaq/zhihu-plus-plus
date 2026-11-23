@@ -29,7 +29,7 @@ import kotlin.test.assertFalse
 class ZhihuLiteralHtmlRegressionTest {
     @Test
     fun real_answer_code_blank_line_should_preserve_code_and_following_paragraphs() {
-        // 小玄回答 1936828177608583018，2026-10-29 真实详情响应的 content 原样投影。
+        // 来源：小玄回答 1936828177608583018 的 content 原样投影。
         val html = requireNotNull(
             javaClass.classLoader.getResourceAsStream("zhihu_answer_1936828177608583018_content.html"),
         ).bufferedReader(Charsets.UTF_8).use { it.readText() }

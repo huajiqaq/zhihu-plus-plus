@@ -4,15 +4,10 @@
 
 ## 代码入口
 
-- [NavDestination.kt](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestination.kt)：路由类型和参数。
-- [ZhihuMain.kt](../shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/ZhihuMain.kt)：主界面与分栏装配、`MainTabs` 路由注册；`ZhihuMainStackPages.kt` 和 `ZhihuMainPanes.kt` 分别装配主栈与详情栈，后者保留 `EmptyDetail` 注册。
-- 业务路由由各功能模块的 `navigation` 包注册：[搜索](../shared-feature-feed/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/FeedNavEntries.kt)、[内容与创作](../shared-feature-content/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/ContentNavEntries.kt)、[账号设置、登录、历史与通知](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/SettingsNavEntries.kt)。主栈与详情栈分别装配各自的注册子集；文章渲染、NLP 和偏好刷新回调由宿主注入。
-- [目的地分类](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestinationClassification.kt) 分别定义阅读、列表、普通详情和附属详情；问题既是阅读内容也是列表，但不是普通详情。`ZhihuMainRouter.kt` 选择导航栈，`ZhihuMainPaneLayout.kt` 结合宽度与条目身份决定可见栏，`ZhihuMainNavigation.kt` 查找来源列表条目。
-- 主 pager 在同目录 `ZhihuMainTabs.kt`，底栏与 pager 的界面装配在 `ZhihuMainListPane.kt`，分页及导航状态接线在 `ZhihuMainTabsState.kt`。
-- Android 的 `MainActivity`、JVM 的 `DesktopZhihuMain` 和 Apple 的 `MacosZhihuMain` / `IosZhihuMain` 复用 `ZhihuMainNavigationCoordinator`；窗口、系统通知激活及平台生命周期由各宿主接入。
-- [共享组件](../shared-ui-components/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/components/)：`AppChrome`、`AppPrimitives`、`SettingItem`、`FeedCard`。
-- [设置页面](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/subscreens/)：设置归属、搜索和直达高亮。
-- [正文渲染](../shared-ui-base/src/commonMain/kotlin/com/github/zly2006/zhihu/markdown/)：Markdown、段评、选择和搜索接线。
+- [路由与参数](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestination.kt)、[目的地分类](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestinationClassification.kt)。
+- [主壳](../shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/ZhihuMain.kt)：主栈、详情栈、主 pager 和分栏；各平台复用 `ZhihuMainNavigationCoordinator`，宿主接入窗口、通知和生命周期。
+- 功能模块注册业务路由：[搜索](../shared-feature-feed/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/FeedNavEntries.kt)、[内容与创作](../shared-feature-content/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/ContentNavEntries.kt)、[账号、设置与通知](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/SettingsNavEntries.kt)。
+- [共享组件](../shared-ui-components/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/components/)、[设置页面](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/subscreens/)、[正文渲染](../shared-ui-base/src/commonMain/kotlin/com/github/zly2006/zhihu/markdown/)。
 
 查调用方时覆盖所有共享模块，不只搜 `shared`：
 
@@ -58,7 +53,7 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 
 - Lite 只编译 Material 3 Expressive 主题，但保留 miuix-nav 和共享玻璃。Full、JVM 和 Apple 目标保留双皮肤；Lite 读取旧 `MIUIX` 偏好时降级显示，不删除用户偏好。
 - Miuix 实现放在 `miuixThemeMain`，Lite 提供对应 actual。共享页面通过 `App*` 和 `LocalAppSkinTokens` 取控件、颜色与字阶，不直接依赖 miuix theme/basic/popup。
-- API 与平台能力以版本目录、上游 lock 及对应源码为准。固定提交的参考镜像保留出处与许可，但不当作当前版本运行实现；只将项目需要且仍成立的约束集中到现有规范，不整体恢复教程或旧实施计划。
+- API 与平台能力以版本目录、上游 lock 及源码为准；参考镜像保留出处与许可，不当作运行实现。
 - 主题根的组合位置保持不变，换肤只更新值，避免重建导航和浮层状态。两套皮肤共用业务状态，不复制页面或 ViewModel。
 - Miuix 的「HyperOS 风格」通过独立 `miuixStyle` 偏好选择 HyperOS 3 / 4，默认 HyperOS 3。明暗、配色、玻璃和悬浮底栏仍独立；关闭玻璃或设备不支持渲染时保留可用控件，不改写已保存的风格。HyperOS 4 在共享呈现入口采用已发布玻璃组件；复杂标题、复合菜单及导航标签不能为更换材质而丢失。
 - Miuix 容器中的 Material `Text`/`Icon` 需要在容器内容作用域桥接内容色；只改页面颜色不能修复按钮或卡片中的前景色。Markdown 等 Material 路径也要使用投影后的配色。
@@ -78,7 +73,7 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 ## 评论发送
 
 - 发件账号入口使用真实头像和昵称；选择账号不修改全局登录状态或草稿，只在发送时使用所选身份。
-- 「默认同步到想法」是设备设置，取消勾选同时关闭默认；段评不发送同步选项。账号绑定的附件不能静默改投其他身份。
+- 「默认同步」是设备设置，取消勾选同时关闭默认；段评不发送同步选项。账号绑定的附件不能静默改投其他身份。
 - 关联身份切回失败时保留恢复信息，后续恢复不得重发已经成功的评论；错误必须与发送结果区分。
 
 ## 玻璃与弹层
@@ -104,12 +99,8 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 - 段评末端图标不占原文字符，复制、搜索和选区不能泄漏布局占位符。
 - 正文格式优先于段评注入。保留加粗、斜体；脚注、链接、图片或公式无法可靠保留时跳过该段高亮，不展平原文来匹配段评。
 
-## 验证
+## 验证与参考
 
-按改动挑选最小检查，不默认展开全页面、全状态矩阵。
+按 [测试维护方法](testing-maintenance.md) 选择最小检查，覆盖受影响的共享消费者、平台 actual、皮肤和变体。布局核对真实截图与语义中的展开/收起、大字号及末项可达性；交互确认目标状态。
 
-- 查共享组件的消费者和平台 actual；涉及两皮肤时分别核对，涉及 Lite 边界时检查对应变体。
-- 布局改动看真实截图和语义：展开/收起、短视口或大字号、必要的明暗状态，以及最后一项是否可操作。
-- 交互后证明目标状态变化，不能只看命令成功、进程存活或截图非空。没有登录态时不拿登录页冒充目标页。
-- 文档和纯注释改动只需检查链接、源码入口和 `git diff --check`。设备流程见 [UI 测试](../.agents/skills/ui-test/SKILL.md)，macOS 使用 [后台调试](../.agents/skills/background-ui-debug/SKILL.md)。
-- 原生规范查看 [Miuix](https://github.com/compose-miuix-ui/miuix) 和 [Material Components](https://github.com/material-components/material-components-android) 的对应版本；构建变体见 [KMP Android 变体](kmp-android-variants.md)。
+设备流程见 [UI 测试](../.agents/skills/ui-test/SKILL.md)，macOS 使用 [后台调试](../.agents/skills/background-ui-debug/SKILL.md)。原生规范查看 [Miuix](https://github.com/compose-miuix-ui/miuix) 和 [Material Components](https://github.com/material-components/material-components-android) 的对应版本；变体见 [KMP Android 构建](kmp-android-variants.md)。

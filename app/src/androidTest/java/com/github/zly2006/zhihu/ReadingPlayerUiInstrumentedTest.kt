@@ -92,6 +92,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.abs
 
+/** 浮动朗读播放器的交互与状态契约：[issue #550](https://github.com/zly2006/zhihu-plus-plus/issues/550)。 */
 @RunWith(AndroidJUnit4::class)
 class ReadingPlayerUiInstrumentedTest {
     @get:Rule
@@ -117,9 +118,6 @@ class ReadingPlayerUiInstrumentedTest {
         AndroidReadingPlayerBridge.publish(ReadingPlayerState())
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun outsideDetailPlayerCompactsForBackgroundGestureWithoutSwallowingNavigation() {
         composeRule.setScreenContent {}
@@ -138,7 +136,6 @@ class ReadingPlayerUiInstrumentedTest {
                 ).jsonArray
                 .last(),
         )
-        assertTrue("合成主页夹具必须是回答", sample.target is Feed.AnswerTarget)
         val target = sample.target as Feed.AnswerTarget
         // 曝光记录跨进程保留；每次夹具使用新内容身份，不能靠清数据库绕过真实过滤。
         val contentIdBase = java.util.UUID
@@ -284,9 +281,6 @@ class ReadingPlayerUiInstrumentedTest {
         }
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun leavingDetailCompactsTheExpandedPlayer() {
         lateinit var navHost: AppNavHost
@@ -304,9 +298,6 @@ class ReadingPlayerUiInstrumentedTest {
         composeRule.onNodeWithTag(READING_PLAYER_BAR_TAG).assertDoesNotExist()
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun changingThePlayingItemReplacesTheVisibleReadingDetail() {
         lateinit var navHost: AppNavHost
@@ -329,9 +320,6 @@ class ReadingPlayerUiInstrumentedTest {
         )
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun expandedPlayerStopButtonEndsTheReadingSession() {
         composeRule.setZhihuMainContent()
@@ -348,9 +336,6 @@ class ReadingPlayerUiInstrumentedTest {
         composeRule.onNodeWithTag(READING_PLAYER_COMPACT_TAG).assertDoesNotExist()
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun compactPlayerCanBeDraggedAndRestoresItsSavedEdge() {
         val originalOrientation = composeRule.activity.requestedOrientation
@@ -469,9 +454,6 @@ class ReadingPlayerUiInstrumentedTest {
         }
     }
 
-    /**
-     * 浮动朗读播放器的交互与状态契约依据：https://github.com/zly2006/zhihu-plus-plus/issues/550
-     */
     @Test
     fun queueSheetHostsReadingSettingsInsteadOfStop() {
         composeRule.setZhihuMainContent()

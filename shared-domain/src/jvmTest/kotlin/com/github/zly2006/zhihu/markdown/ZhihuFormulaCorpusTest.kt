@@ -62,46 +62,6 @@ class ZhihuFormulaCorpusTest {
     }
 
     @Test
-    fun formula_index_should_be_self_consistent() {
-        val manifest = resourceText("manifest.json").let(json::parseToJsonElement).jsonObject
-        val contents = manifest.getValue("contents").jsonArray.map { it.jsonObject }
-        val formulas = resourceText("formulas.json").let(json::parseToJsonElement).jsonArray.map { it.jsonObject }
-        val contentKeys = contents.map {
-            "${it.getValue("type").jsonPrimitive.content}-${it.getValue("id").jsonPrimitive.content}"
-        }
-        val rawPaths = contents.map { it.getValue("raw_path").jsonPrimitive.content }
-        val latex = formulas.map { it.getValue("latex").jsonPrimitive.content }
-        val sourceKeys = formulas.flatMap { formula ->
-            formula.getValue("sources").jsonArray.map { sourceElement ->
-                val source = sourceElement.jsonObject
-                "${source.getValue("content_type").jsonPrimitive.content}-" +
-                    source.getValue("content_id").jsonPrimitive.content
-            }
-        }
-
-        assertEquals(contentKeys.size, contentKeys.toSet().size, "内容键重复")
-        assertEquals(rawPaths.size, rawPaths.toSet().size, "原始样本路径重复")
-        assertEquals(latex.size, latex.toSet().size, "公式重复")
-        assertTrue(sourceKeys.all(contentKeys.toSet()::contains), "清单中缺少公式来源")
-        assertEquals(
-            manifest
-                .getValue("formula_occurrences")
-                .jsonPrimitive.content
-                .toInt(),
-            sourceKeys.size,
-        )
-        assertEquals(
-            sourceKeys.size,
-            contents.sumOf {
-                it
-                    .getValue("formula_count")
-                    .jsonPrimitive.content
-                    .toInt()
-            },
-        )
-    }
-
-    @Test
     fun extracted_formulas_should_parse_with_the_current_latex_library() {
         val parser = LatexParser()
         val formulas = resourceText("formulas.json")

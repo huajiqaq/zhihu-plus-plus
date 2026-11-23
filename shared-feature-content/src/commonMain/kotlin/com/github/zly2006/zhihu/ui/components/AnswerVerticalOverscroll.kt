@@ -319,9 +319,6 @@ fun AnswerVerticalOverscroll(
                 },
             ),
     ) {
-        // 预览卡片在底层，被主内容覆盖，主内容滑动时露出
-
-        // 上方预览卡片（上一个回答）—— 固定在顶部
         if (overscrollOffset.value > 0 && previousAnswer != null) {
             val progress = (overscrollOffset.value / triggerThresholdPx).coerceIn(0f, 1.5f)
             AnswerPreviewCard(
@@ -339,7 +336,6 @@ fun AnswerVerticalOverscroll(
             )
         }
 
-        // 下方预览卡片（下一个回答）—— 固定在底部，内容顺序反转
         if (overscrollOffset.value < 0 && nextAnswer != null) {
             val progress = (abs(overscrollOffset.value) / triggerThresholdPx).coerceIn(0f, 1.5f)
             AnswerPreviewCard(
@@ -358,7 +354,6 @@ fun AnswerVerticalOverscroll(
             )
         }
 
-        // 主内容在最上层，跟随 overscroll 偏移，滑动露出预览卡片
         Box(
             modifier = Modifier
                 .fillMaxSize()

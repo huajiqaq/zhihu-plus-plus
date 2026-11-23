@@ -321,10 +321,8 @@ internal fun createCrawlingResult(
 }
 
 internal fun isVoteupFeed(feed: Feed): Boolean {
-    // 简化的判断逻辑，根据Feed类型判断是否为点赞相关
     return when (feed) {
         is CommonFeed -> {
-            // 检查attachedInfo或brief中是否包含点赞相关信息
             feed.brief.contains("赞同") ||
                 feed.brief.contains("点赞") ||
                 feed.attachedInfo.contains("VOTEUP")

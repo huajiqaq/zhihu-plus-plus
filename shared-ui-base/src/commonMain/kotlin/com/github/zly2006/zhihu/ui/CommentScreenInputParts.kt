@@ -336,7 +336,7 @@ internal fun CommentScreenOptionsRow(
                         )
                         Text("同时发布到想法", style = LocalAppSkinTokens.current.footnote2, color = LocalAppSkinTokens.current.onSurfaceVariantSummary)
                     }
-                    val choices = listOf("只同步一次", "默认同步到想法")
+                    val choices = listOf("只同步一次", "默认同步")
 
                     fun choose(index: Int) {
                         showRange = false
