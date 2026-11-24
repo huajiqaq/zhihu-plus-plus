@@ -1,14 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older that API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- 网络诊断目录不随备份外传。 -->
+    <exclude domain="file" path="network-diagnostics/"/>
+    <!-- 系统订阅只在 noBackupFilesDir 保存；应用内通知偏好仍可备份，调度记录不跨设备恢复。 -->
+    <exclude domain="database" path="androidx.work.workdb"/>
+    <exclude domain="database" path="androidx.work.workdb-wal"/>
+    <exclude domain="database" path="androidx.work.workdb-shm"/>
 </full-backup-content>

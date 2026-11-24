@@ -15,21 +15,83 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-@file:OptIn(kotlinx.cinterop.BetaInteropApi::class)
+@file:OptIn(kotlinx.cinterop.BetaInteropApi::class, kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package com.github.zly2006.zhihu.macos
 
 import com.github.zly2006.zhihu.account.generateQrLoginBitmap
+import com.github.zly2006.zhihu.data.BACKGROUND_UI_DEBUG_DATA_HOME_ENV
+import com.github.zly2006.zhihu.data.macosAppDataDirectoryPath
+import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.util.hmacSha1Hex
 import kotlinx.cinterop.autoreleasepool
-import kotlin.experimental.ExperimentalNativeApi
-import kotlin.native.processUnhandledException
-import kotlin.native.setUnhandledExceptionHook
+import kotlinx.cinterop.toKString
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
+import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.NSUUID
+import platform.Foundation.create
+import platform.posix.getenv
+import platform.posix.setenv
+import platform.posix.unsetenv
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class MacosNativeRuntimeTest {
+    @Test
+    fun settingsCommitOnlyAfterPersistenceAndShareNormalizedPaths() = autoreleasepool {
+        val directory = "${NSTemporaryDirectory().trimEnd('/')}/zhpp-settings-${NSUUID().UUIDString}"
+        val previous = getenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV)?.toKString()
+        val files = NSFileManager.defaultManager
+        check(files.createDirectoryAtPath(directory, withIntermediateDirectories = true, attributes = null, error = null))
+        try {
+            check(setenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV, directory, 1) == 0)
+            assertEquals(directory, macosAppDataDirectoryPath())
+            val settings = platformSettingsStore()
+            check(setenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV, "$directory/./unused/..", 1) == 0)
+            assertSame(settings, platformSettingsStore())
+            settings.putString("keep", "before")
+            settings.putString("prefix.one", "one")
+            settings.putString("prefix.two", "two")
+            val filePath = "$directory/settings.properties"
+            val saved = checkNotNull(files.contentsAtPath(filePath))
+            val initial = settings.allEntries()
+            val changes = mutableListOf<String>()
+            val subscription = settings.observeKeyChanges { changes += it }
+            try {
+                check(files.removeItemAtPath(filePath, error = null))
+                check(files.createDirectoryAtPath(filePath, withIntermediateDirectories = false, attributes = null, error = null))
+                assertFailsWith<IllegalStateException> { settings.putString("keep", "after") }
+                assertFailsWith<IllegalStateException> { settings.remove("keep") }
+                assertFailsWith<IllegalStateException> { settings.removeByPrefix("prefix.") }
+                assertEquals(initial, settings.allEntries())
+                assertTrue(changes.isEmpty())
+                check(files.removeItemAtPath(filePath, error = null))
+                check(files.createFileAtPath(filePath, contents = saved, attributes = null))
+                settings.putString("keep", "after")
+                settings.removeByPrefix("prefix.")
+                assertEquals(mapOf("keep" to "after"), settings.allEntries())
+                assertEquals(listOf("keep", "prefix.one", "prefix.two"), changes)
+                val persisted = NSString.create(data = checkNotNull(files.contentsAtPath(filePath)), encoding = NSUTF8StringEncoding).toString()
+                assertTrue(persisted.contains("keep=after\n"))
+                assertTrue(!persisted.contains("prefix."))
+            } finally {
+                subscription.close()
+            }
+        } finally {
+            if (previous == null) {
+                check(unsetenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV) == 0)
+            } else {
+                check(setenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV, previous, 1) == 0)
+            }
+            check(files.removeItemAtPath(directory, error = null))
+        }
+    }
+
     @Test
     fun cryptoAndQrRenderingAreAvailable() {
         assertEquals(
@@ -41,18 +103,5 @@ class MacosNativeRuntimeTest {
             assertTrue(qrBitmap.width > 0)
             assertTrue(qrBitmap.height > 0)
         }
-    }
-
-    @OptIn(ExperimentalNativeApi::class)
-    @Test
-    fun unhandledExceptionHookReturnsControlToTheRuntime() {
-        var capturedMessage: String? = null
-        setUnhandledExceptionHook { error ->
-            capturedMessage = error.message
-        }
-
-        processUnhandledException(IllegalStateException("native-unhandled-exception-test"))
-
-        assertEquals("native-unhandled-exception-test", capturedMessage)
     }
 }

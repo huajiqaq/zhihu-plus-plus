@@ -1,0 +1,62 @@
+[
+  {
+    "type": "feed",
+    "id": "synthetic-low-answer-feed",
+    "verb": "ANSWER_CREATE",
+    "target": {
+      "type": "answer",
+      "id": 101,
+      "url": "https://www.zhihu.com/answer/101",
+      "voteup_count": 1,
+      "excerpt": "合成低赞回答正文",
+      "author": {
+        "id": "synthetic-author",
+        "url": "https://www.zhihu.com/people/synthetic-author",
+        "user_type": "people",
+        "url_token": "synthetic-author",
+        "name": "合成作者",
+        "headline": "合成回归样本",
+        "avatar_url": "",
+        "is_following": false
+      },
+      "question": {
+        "type": "question",
+        "id": 201,
+        "title": "合成低赞回答",
+        "url": "https://www.zhihu.com/question/201",
+        "answer_count": 1,
+        "follower_count": 1
+      }
+    }
+  },
+  {
+    "type": "feed",
+    "id": "synthetic-high-answer-feed",
+    "verb": "ANSWER_CREATE",
+    "target": {
+      "type": "answer",
+      "id": 102,
+      "url": "https://www.zhihu.com/answer/102",
+      "voteup_count": 20,
+      "excerpt": "合成高赞回答正文",
+      "author": {
+        "id": "synthetic-author",
+        "url": "https://www.zhihu.com/people/synthetic-author",
+        "user_type": "people",
+        "url_token": "synthetic-author",
+        "name": "合成作者",
+        "headline": "合成回归样本",
+        "avatar_url": "",
+        "is_following": false
+      },
+      "question": {
+        "type": "question",
+        "id": 202,
+        "title": "合成高赞回答",
+        "url": "https://www.zhihu.com/question/202",
+        "answer_count": 1,
+        "follower_count": 1
+      }
+    }
+  }
+]

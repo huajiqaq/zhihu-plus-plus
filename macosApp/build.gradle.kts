@@ -21,10 +21,10 @@ import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Sync
 
 plugins {
-    kotlin("multiplatform")
-    kotlin("plugin.compose")
-    id("org.jetbrains.compose")
-    id("org.jlleitschuh.gradle.ktlint")
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.plugin.compose)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.ktlint)
 }
 
 ktlint {
@@ -52,11 +52,17 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared"))
-            implementation(compose.runtime)
-            implementation(compose.material3)
-            implementation(compose.ui)
+            implementation(project(":shared-domain"))
+            implementation(project(":shared-ui-foundation"))
+            implementation(project(":shared-ui-components"))
+            implementation(libs.jb.compose.runtime)
+            implementation(libs.material3)
+            implementation(libs.jb.compose.ui)
         }
         commonTest.dependencies {
+            implementation(project(":shared-core"))
+            implementation(project(":shared-local-db"))
+            implementation(project(":shared-feature-settings"))
             implementation(kotlin("test"))
         }
     }

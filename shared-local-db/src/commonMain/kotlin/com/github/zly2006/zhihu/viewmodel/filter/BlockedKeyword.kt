@@ -17,9 +17,10 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 /**
  * 关键词类型枚举
@@ -27,6 +28,13 @@ import kotlin.time.Clock
 enum class KeywordType {
     EXACT_MATCH, // 精确匹配（传统关键词）
     NLP_SEMANTIC, // NLP语义匹配（主题/短语）
+}
+
+/** 按字段来源区分作用范围，回答卡片的问题标题不属于回答正文。 */
+enum class KeywordScope {
+    ALL,
+    QUESTION,
+    ANSWER,
 }
 
 /**
@@ -41,6 +49,7 @@ data class BlockedKeyword(
     val caseSensitive: Boolean = false, // 是否区分大小写（仅精确匹配模式）
     val isRegex: Boolean = false, // 是否为正则表达式（仅精确匹配模式）
     val createdTime: Long = currentEpochMillis(), // 创建时间
+    @ColumnInfo(defaultValue = "'ALL'") val scope: String = KeywordScope.ALL.name,
 ) {
     companion object {
         const val TABLE_NAME = "blocked_keywords"
@@ -53,6 +62,8 @@ data class BlockedKeyword(
         KeywordType.EXACT_MATCH
     }
 
+    fun getKeywordScopeEnum(): KeywordScope = KeywordScope.valueOf(scope)
+
     // 辅助方法：获取NLP短语的各个关键词
     fun getNLPKeywords(): List<String> = if (getKeywordTypeEnum() == KeywordType.NLP_SEMANTIC) {
         keyword.split("\\s+".toRegex()).filter { it.isNotBlank() }
@@ -60,5 +71,3 @@ data class BlockedKeyword(
         emptyList()
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

@@ -1,0 +1,14 @@
+diff --git a/packages/compiler/reflaxe/kotlin/kotlincompiler/Compiler.hx b/packages/compiler/reflaxe/kotlin/kotlincompiler/Compiler.hx
+--- a/packages/compiler/reflaxe/kotlin/kotlincompiler/Compiler.hx
++++ b/packages/compiler/reflaxe/kotlin/kotlincompiler/Compiler.hx
+@@ -825,8 +825,8 @@ class Compiler extends BaseCompiler {
+     }
+ 
+     public static function computeRelativePath(fromDir:String, toFile:String):String {
+-        final fromParts = fromDir.split("/").filter(p -> p.length > 0 && p != ".");
+-        final toParts = toFile.split("/").filter(p -> p.length > 0 && p != ".");
++        final fromParts = StringTools.replace(fromDir, "\\", "/").split("/").filter(p -> p.length > 0 && p != ".");
++        final toParts = StringTools.replace(toFile, "\\", "/").split("/").filter(p -> p.length > 0 && p != ".");
+         var shared = 0;
+         while (shared < fromParts.length && shared < toParts.length && fromParts[shared] == toParts[shared]) {
+             shared += 1;

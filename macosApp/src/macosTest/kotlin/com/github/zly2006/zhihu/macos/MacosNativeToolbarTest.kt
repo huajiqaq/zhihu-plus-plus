@@ -1,5 +1,3 @@
-@file:OptIn(kotlinx.cinterop.BetaInteropApi::class)
-
 /*
  * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
  * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
@@ -17,13 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(kotlinx.cinterop.BetaInteropApi::class)
+
 package com.github.zly2006.zhihu.macos
 
 import kotlinx.cinterop.autoreleasepool
-import platform.AppKit.NSToolbarItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class MacosNativeToolbarTest {
     @Test
@@ -47,16 +45,6 @@ class MacosNativeToolbarTest {
 
         val identifiers = controller.toolbarDefaultItemIdentifiers(controller.toolbar)
         assertEquals(4, identifiers.size)
-        assertTrue(
-            controller.toolbar(controller.toolbar, identifiers[0] as String, false) is NSToolbarItem,
-        )
-        assertTrue(
-            controller.toolbar(controller.toolbar, identifiers[2] as String, false) is NSToolbarItem,
-        )
-        assertTrue(
-            controller.toolbar(controller.toolbar, identifiers[3] as String, false) is NSToolbarItem,
-        )
-
         val sidebarItem = controller.toolbar(controller.toolbar, identifiers[0] as String, false)
         val searchItem = controller.toolbar(controller.toolbar, identifiers[2] as String, false)
         val notificationsItem = controller.toolbar(controller.toolbar, identifiers[3] as String, false)

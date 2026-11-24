@@ -38,7 +38,7 @@ inline fun <reified VM : ViewModel> MainActivityComposeRule.seedViewModel(
             if (modelClass.isAssignableFrom(VM::class.java)) {
                 return create() as T
             }
-            error("Unexpected ViewModel class $modelClass")
+            error("非预期的 ViewModel 类型 $modelClass")
         }
     }
     val provider = ViewModelProvider(activity, factory)

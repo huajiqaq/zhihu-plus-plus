@@ -1,0 +1,25 @@
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -13,7 +13,9 @@ dependencyResolutionManagement {
+     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+     repositories {
+         google()
+-        mavenCentral()
++        mavenCentral {
++            content { excludeGroup("org.tiqian") }
++        }
+         // Kotlin/JS downloads a Node toolchain for webpack; under
+         // FAIL_ON_PROJECT_REPOS the download source must be declared here. These
+         // exclusive-content ivy repos serve ONLY org.nodejs:node / com.yarnpkg:yarn.
+diff --git a/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt b/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
+--- a/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
++++ b/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
+@@ -75,6 +75,6 @@
+             listOf("MiSansVF.ttf", "MiSansL3.otf"),
+             catalog.faceSpecs
+                 .filter { it.familyKey in catalog.fallbackChains.getValue(FontRole.CjkText) }
+-                .map { it.source.label.substringAfterLast('/') },
++                .map { it.source.label.replace('\\', '/').substringAfterLast('/') },
+         )
+     }

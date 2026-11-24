@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<verification-metadata xmlns="https://schema.gradle.org/dependency-verification">
+   <configuration>
+      <verify-metadata>true</verify-metadata>
+      <verify-signatures>false</verify-signatures>
+      <trusted-artifacts>
+         <!-- Only the three MIUIX icon components below have reviewed checksums. -->
+         <trust group="^(?!top\.yukonga\.miuix\.kmp$).*$" regex="true"/>
+         <trust group="^top\.yukonga\.miuix\.kmp$" name="^(?!miuix-icons(-android|-desktop)?$).*$" regex="true"/>
+      </trusted-artifacts>
+   </configuration>
+   <components>
+      <component group="top.yukonga.miuix.kmp" name="miuix-icons" version="0.9.5-beta03">
+         <artifact name="miuix-icons-0.9.5-beta03.jar">
+            <sha256 value="3c27c09d1993f1806a37f6a7a42694dc6ddece5651dccecb1055c19d59d0242e"/>
+         </artifact>
+         <artifact name="miuix-icons-metadata-0.9.5-beta03.jar">
+            <sha256 value="3c27c09d1993f1806a37f6a7a42694dc6ddece5651dccecb1055c19d59d0242e"/>
+         </artifact>
+         <artifact name="miuix-icons-0.9.5-beta03-sources.jar">
+            <sha256 value="8387a980fb1791191f25f7c0aafe829846cc431343cbd88615161c73e5539b53"/>
+         </artifact>
+         <artifact name="miuix-icons-kotlin-0.9.5-beta03-sources.jar">
+            <sha256 value="8387a980fb1791191f25f7c0aafe829846cc431343cbd88615161c73e5539b53"/>
+         </artifact>
+         <artifact name="miuix-icons-0.9.5-beta03.module">
+            <sha256 value="9b556744edf0beb42cdc512080fa7cf264645caa148091b49a42e44f40a070ce"/>
+         </artifact>
+         <artifact name="miuix-icons-0.9.5-beta03.pom">
+            <sha256 value="33aeb9783cabcb9922282d6b42f8d377d277120a67606887ab89f67d2ef730a6"/>
+         </artifact>
+      </component>
+      <component group="top.yukonga.miuix.kmp" name="miuix-icons-android" version="0.9.5-beta03">
+         <artifact name="miuix-icons.aar">
+            <sha256 value="d3e87114681a5c4d2e83b47b011a905df9f52ecd0514473457ad90f511db3bca"/>
+         </artifact>
+         <artifact name="miuix-icons-android-0.9.5-beta03-sources.jar">
+            <sha256 value="8387a980fb1791191f25f7c0aafe829846cc431343cbd88615161c73e5539b53"/>
+         </artifact>
+         <artifact name="miuix-icons-android-0.9.5-beta03.aar">
+            <sha256 value="d3e87114681a5c4d2e83b47b011a905df9f52ecd0514473457ad90f511db3bca"/>
+         </artifact>
+         <artifact name="miuix-icons-android-0.9.5-beta03.module">
+            <sha256 value="f5211e2d337e0159d288df6dc1e9180a436f7b028011c59f6b124f25c64898a4"/>
+         </artifact>
+         <artifact name="miuix-icons-android-0.9.5-beta03.pom">
+            <sha256 value="ae883c1c5705ba167944a086bb0596ce535d92250d1a241d62648e777e647614"/>
+         </artifact>
+      </component>
+      <component group="top.yukonga.miuix.kmp" name="miuix-icons-desktop" version="0.9.5-beta03">
+         <artifact name="miuix-icons-desktop-0.9.5-beta03-sources.jar">
+            <sha256 value="8387a980fb1791191f25f7c0aafe829846cc431343cbd88615161c73e5539b53"/>
+         </artifact>
+         <artifact name="miuix-icons-desktop-0.9.5-beta03.jar">
+            <sha256 value="743484d3093aa5b9e41b0fa357490fb0e38c82047df5e185e9515627937cb205"/>
+         </artifact>
+         <artifact name="miuix-icons-desktop-0.9.5-beta03.module">
+            <sha256 value="a89836c7ddbf2d9bfc3dccf1186cf1e154bd9cacd2b2ce688be46241e8d7fe76"/>
+         </artifact>
+         <artifact name="miuix-icons-desktop-0.9.5-beta03.pom">
+            <sha256 value="bcb61c341dcabd7098b2c59dd631ab62a34a5cdad0c8f0da6a54d005b148acab"/>
+         </artifact>
+      </component>
+   </components>
+</verification-metadata>

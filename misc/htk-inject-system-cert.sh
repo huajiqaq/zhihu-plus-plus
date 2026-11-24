@@ -1,20 +1,33 @@
-set -e # Fail on error
-# Create a separate temp directory, to hold the current certificates
-# Without this, when we add the mount we can't read the current certs anymore.
+# Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+# Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation (version 3 only).
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+set -e # 失败立即退出，避免继续修改证书目录。
+# 挂载后会遮住原系统证书；先在独立临时目录备份，避免丢失原有信任。
 mkdir -m 700 /data/local/tmp/htk-ca-copy
-# Copy out the existing certificates
+# 备份系统已有证书。
 cp /system/etc/security/cacerts/* /data/local/tmp/htk-ca-copy/
-# Create the in-memory mount on top of the system certs folder
+# 用内存文件系统覆盖系统证书目录。
 mount -t tmpfs tmpfs /system/etc/security/cacerts
-# Copy the existing certs back into the tmpfs mount, so we keep trusting them
+# 将原证书放回内存挂载，保留已有信任。
 mv /data/local/tmp/htk-ca-copy/* /system/etc/security/cacerts/
-# Copy our new cert in, so we trust that too
+# 加入待信任的新证书。
 cp /data/local/tmp/c88f7ed0.0 /system/etc/security/cacerts/
-# Update the perms & selinux context labels, so everything is as readable as before
+# 恢复权限和 SELinux 上下文，确保系统仍可读取证书。
 chown root:root /system/etc/security/cacerts/*
 chmod 644 /system/etc/security/cacerts/*
 chcon u:object_r:system_file:s0 /system/etc/security/cacerts/*
-# Delete the temp cert directory & this script itself
+# 删除临时证书目录。
 rm -r /data/local/tmp/htk-ca-copy
-# rm ${injectionScriptPath}
 echo "System cert successfully injected"

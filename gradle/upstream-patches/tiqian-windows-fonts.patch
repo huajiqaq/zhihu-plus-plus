@@ -1,0 +1,24 @@
+diff --git a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
+index bf99f7d0f8009ed935e78cebae7106a72f927fd3..82b04b6a61bec03e818960b5459e391ca63ec8b6 100644
+--- a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
++++ b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
+@@ -399,6 +399,10 @@ object SkiaSystemTypefaces {
+         "Sarasa UI SC",
+         "Heiti SC",
+         "STHeiti",
++        // Windows 默认字体；候选全部缺失时 Skia 空字体会产生零字宽。
++        "Noto Sans SC",
++        "Microsoft YaHei",
++        "Microsoft YaHei UI",
+     )
+ 
+     val LATIN_CANDIDATES: List<String> = listOf(
+@@ -409,6 +413,8 @@ object SkiaSystemTypefaces {
+         "Roboto",
+         "Noto Sans",
+         "Helvetica Neue",
++        "Segoe UI",
++        "Arial",
+     )
+ 
+     val cjk: Typeface? by lazy {

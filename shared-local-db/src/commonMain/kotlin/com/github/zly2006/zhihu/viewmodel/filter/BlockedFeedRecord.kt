@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 /**
  * Feed 屏蔽记录实体。
@@ -44,5 +44,3 @@ data class BlockedFeedRecord(
         const val MAX_RECORDS = 500
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

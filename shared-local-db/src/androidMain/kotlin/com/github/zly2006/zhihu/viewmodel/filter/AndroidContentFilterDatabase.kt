@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import android.content.Context
 import androidx.room.Room
+import com.github.zly2006.zhihu.data.currentAndroidApplicationContext
 
 private const val CONTENT_FILTER_DATABASE_NAME = "content_filter_database"
 
@@ -38,5 +39,4 @@ fun getContentFilterDatabase(context: Context): ContentFilterDatabase =
     }
 
 actual fun getContentFilterDatabase(): ContentFilterDatabase =
-    contentFilterDatabase
-        ?: error("Content filter database is not initialized")
+    contentFilterDatabase ?: getContentFilterDatabase(currentAndroidApplicationContext())

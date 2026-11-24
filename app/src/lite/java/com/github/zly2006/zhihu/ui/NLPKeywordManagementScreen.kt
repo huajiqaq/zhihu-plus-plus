@@ -17,20 +17,12 @@
 
 package com.github.zly2006.zhihu.ui
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 
+/** Lite 不提供 NLP 屏蔽，屏蔽列表也不显示这个标签（`isBlocklistNlpSupported = false`）；误调用时直接失败。 */
 @Composable
 fun NLPKeywordManagementScreen(
-    innerPadding: PaddingValues,
-    onNavigateBack: () -> Unit,
-) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("AI features are not available in this version.")
-    }
-}
+    @Suppress("UNUSED_PARAMETER") innerPadding: PaddingValues,
+    @Suppress("UNUSED_PARAMETER") onNavigateBack: () -> Unit,
+): Unit = error("Lite 版不支持 NLP 智能屏蔽设置")

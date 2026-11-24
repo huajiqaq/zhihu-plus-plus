@@ -1,0 +1,98 @@
+diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
+index 5f1496c..8170869 100644
+--- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
++++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownDeferredLayout.kt
+@@ -761,7 +761,7 @@ internal fun DeferredMarkdownBlocks(
+             .coerceIn(constraints.minHeight, constraints.maxHeight)
+         layout(width.coerceIn(constraints.minWidth, constraints.maxWidth), resolvedHeight) {
+             placeables.forEach { (index, placeable) ->
+-                placeable.placeRelative(0, blockTops[index])
++                placeable.placeRelativeWithLayer(0, blockTops[index])
+             }
+         }
+     }
+diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt
+new file mode 100644
+index 0000000..eadcc88
+--- /dev/null
++++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt
+@@ -0,0 +1,79 @@
++package org.tiqian.markdown.compose
++
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.ui.ExperimentalComposeUiApi
++import androidx.compose.ui.ImageComposeScene
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.toComposeImageBitmap
++import androidx.compose.ui.graphics.toPixelMap
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.use
++import org.tiqian.markdown.MarkdownCustomBlock
++import org.tiqian.markdown.MarkdownNodeKey
++import org.tiqian.markdown.MarkdownNodeMetadata
++import org.tiqian.markdown.MarkdownRenderDocument
++import org.tiqian.markdown.MarkdownSourceSpan
++import kotlin.test.Test
++import kotlin.test.assertEquals
++import kotlin.test.assertTrue
++
++@OptIn(ExperimentalComposeUiApi::class)
++class MarkdownDeferredDrawingTest {
++    @Test
++    fun updatingVisibleContentPreservesOverhangAndDoesNotRepaintItsNeighbour() {
++        val document = MarkdownRenderDocument(listOf("changing", "stable").mapIndexed { i, kind ->
++            MarkdownCustomBlock(kind, metadata = MarkdownNodeMetadata(
++                MarkdownNodeKey(i, listOf(i)), MarkdownSourceSpan(0, 0, 0, 0, 0, 0),
++            ))
++        })
++        val color = mutableStateOf(Color.Red)
++        var stableDraws = 0
++        val slots = MarkdownBlockSlots(customBlock = { block, _ ->
++            Canvas(Modifier.fillMaxWidth().height(24.dp)) {
++                if (block.kind == "changing") {
++                    drawRect(Color.Magenta, Offset(0f, -3f), Size(size.width, 3f))
++                    drawRect(color.value)
++                } else {
++                    stableDraws++
++                    drawRect(Color.Blue)
++                }
++            }
++        })
++        ImageComposeScene(width = 240, height = 160) {
++            TiqianMarkdownSurface(document, slots = slots, scrollState = rememberScrollState(),
++                header = { Spacer(Modifier.height(8.dp)) })
++        }.use { scene ->
++            // Initial block measurements can invalidate the next frame without any input.
++            scene.render().close()
++            var image = scene.render()
++            var drained = 0
++            while (scene.hasInvalidations()) {
++                check(++drained <= 50) { "initial scene never became idle" }
++                image.close()
++                image = scene.render()
++            }
++            val before = image.toComposeImageBitmap().toPixelMap()
++            image.close()
++            val x = before.width / 2
++            val first = (1 until before.height).first { before[x, it] == Color.Red }
++            val second = (first until before.height).first { before[x, it] == Color.Blue }
++            val draws = stableDraws
++            assertTrue(draws > 0)
++            assertEquals(Color.Magenta, before[x, first - 1])
++            color.value = Color.Green
++            val after = scene.render().use { it.toComposeImageBitmap().toPixelMap() }
++            assertEquals(Color.Green, after[x, first])
++            assertEquals(Color.Magenta, after[x, first - 1])
++            assertEquals(Color.Blue, after[x, second])
++            assertEquals(draws, stableDraws)
++        }
++    }
++}

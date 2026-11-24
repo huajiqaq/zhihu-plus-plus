@@ -21,11 +21,15 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BlockedQuestionAuthorDao {
     @Query("SELECT * FROM ${BlockedQuestionAuthor.TABLE_NAME} ORDER BY createdTime DESC")
     suspend fun getAllUsers(): List<BlockedQuestionAuthor>
+
+    @Query("SELECT * FROM ${BlockedQuestionAuthor.TABLE_NAME} ORDER BY createdTime DESC")
+    fun observeAllUsers(): Flow<List<BlockedQuestionAuthor>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: BlockedQuestionAuthor)

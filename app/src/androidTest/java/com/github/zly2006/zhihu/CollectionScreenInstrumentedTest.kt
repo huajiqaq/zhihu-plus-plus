@@ -48,8 +48,7 @@ class CollectionScreenInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/525
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/607
+     * 创建入口应打开收藏夹创建对话框；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/525
      */
     @Test
     fun createActionOpensExistingCollectionDialog() {
@@ -63,8 +62,7 @@ class CollectionScreenInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/525
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/607
+     * 仅非默认收藏夹应提供删除确认，并指明当前选中的收藏夹；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/525
      */
     @Test
     fun onlySelectedNonDefaultCollectionOffersDeleteConfirmation() {
@@ -98,8 +96,7 @@ class CollectionScreenInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/609
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/611
+     * 直达浏览应支持刷新、模式切换和非默认收藏夹的删除确认；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/609
      */
     @Test
     fun directBrowseSupportsPullRefreshAndDeleteConfirmation() {
@@ -177,8 +174,6 @@ class CollectionScreenInstrumentedTest {
         const val COLLECTION_BROWSE_FOLDER_SWITCH_BUTTON_TAG = "collection_browse_folder_switch_button"
         const val COLLECTION_BROWSE_MODE_BUTTON_TAG = "collection_browse_mode_button"
         const val COLLECTION_BROWSE_RANDOM_REFRESH_BUTTON_TAG = "collection_browse_random_refresh_button"
-
-        fun collectionItemTag(collectionId: String) = "collection_screen_item_$collectionId"
 
         fun collectionDeleteButtonTag(collectionId: String) = "collection_screen_delete_button_$collectionId"
 

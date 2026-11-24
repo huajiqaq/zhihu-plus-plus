@@ -1,0 +1,484 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.github.zly2006.zhihu.ui
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.zly2006.zhihu.data.Collection
+import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.navigation.LocalNavigator
+import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
+import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
+import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIconButton
+import com.github.zly2006.zhihu.ui.components.AppIconToggleButton
+import com.github.zly2006.zhihu.ui.components.AppLoadStateContent
+import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
+import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.AppSpinner
+import com.github.zly2006.zhihu.ui.components.AppTextButton
+import com.github.zly2006.zhihu.ui.components.DraggableRefreshButton
+import com.github.zly2006.zhihu.viewmodel.CollectionContentEnvironment
+import com.github.zly2006.zhihu.viewmodel.CollectionContentViewModel
+import com.github.zly2006.zhihu.viewmodel.CollectionsViewModel
+import com.github.zly2006.zhihu.viewmodel.LoadState
+import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
+import kotlinx.coroutines.launch
+import kotlin.random.Random
+import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+
+@Composable
+fun CollectionBrowseScreen(
+    urlToken: String?,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    showBackButton: Boolean = true,
+    scrollToTopTrigger: Int = 0,
+    isActive: Boolean = true,
+) {
+    val navigator = LocalNavigator.current
+    val environment = rememberPaginationEnvironment(allowGuestAccess = false)
+    val contentEnvironment = environment as CollectionContentEnvironment
+    val useLocalCollections = urlToken == null
+    val collectionsViewModel: CollectionsViewModel = viewModel(key = urlToken) {
+        CollectionsViewModel(urlToken.orEmpty())
+    }
+    val collections = collectionsViewModel.allData
+    val userMessages = rememberUserMessageSink()
+    val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    var cachedScrollToTopTrigger by remember { mutableIntStateOf(scrollToTopTrigger) }
+    var randomSeed by rememberSaveable { mutableIntStateOf(Random.nextInt()) }
+    var selectedCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderMenuExpanded by remember { mutableStateOf(false) }
+    var randomMode by rememberSaveable { mutableStateOf(false) }
+    var collectionPendingDeletion by remember { mutableStateOf<Collection?>(null) }
+
+    LaunchedEffect(collectionsViewModel, isActive) {
+        if (isActive &&
+            !useLocalCollections &&
+            collections.isEmpty() &&
+            !collectionsViewModel.isEnd &&
+            collectionsViewModel.errorMessage == null
+        ) {
+            collectionsViewModel.loadMore(environment)
+        }
+    }
+    LaunchedEffect(collections.map { it.id }, collectionsViewModel.isLoading) {
+        if (collections.isNotEmpty() && collections.none { it.id == selectedCollectionId }) {
+            selectedCollectionId = pickDefaultCollectionId(collections)
+        } else if (collections.isEmpty() && (useLocalCollections || collectionsViewModel.isEnd)) {
+            selectedCollectionId = null
+        }
+    }
+
+    val selectedCollection = collections.firstOrNull { it.id == selectedCollectionId }
+    val contentViewModel: CollectionContentViewModel? = selectedCollectionId?.let { collectionId ->
+        viewModel(key = collectionId) { CollectionContentViewModel(collectionId) }
+    }
+    val selectedCollectionItemCount = selectedCollection
+        ?.itemCount
+        ?.takeIf { it > 0 }
+        ?: contentViewModel?.collection?.itemCount
+        ?: 0
+    val sourceDisplayItems = contentViewModel?.displayItems?.toList().orEmpty()
+    val orderedDisplayItems = remember(
+        sourceDisplayItems,
+        randomMode,
+        randomSeed,
+        contentViewModel,
+    ) {
+        val items = orderCollectionItems(
+            items = sourceDisplayItems,
+            randomMode = randomMode,
+            randomSeed = randomSeed,
+            previousRandomOrderKeys = contentViewModel?.retainedRandomOrderKeys.orEmpty(),
+        )
+        if (randomMode) {
+            contentViewModel?.retainRandomDisplayOrder(items.map { it.stableKey })
+        }
+        items
+    }
+    LaunchedEffect(contentViewModel, isActive, randomMode, randomSeed, selectedCollectionItemCount) {
+        if (isActive && !useLocalCollections && contentViewModel != null) {
+            if (randomMode) {
+                contentViewModel.refreshRandom(
+                    environment = contentEnvironment,
+                    itemCount = selectedCollectionItemCount,
+                    randomSeed = randomSeed,
+                )
+            } else if (contentViewModel.isRandomMode) {
+                contentViewModel.refresh(contentEnvironment)
+            } else if (contentViewModel.allData.isEmpty() && !contentViewModel.isEnd && contentViewModel.errorMessage == null) {
+                contentViewModel.loadMore(contentEnvironment)
+            }
+        }
+    }
+    LaunchedEffect(scrollToTopTrigger) {
+        when (
+            topLevelReselectAction(
+                triggerDelta = scrollToTopTrigger - cachedScrollToTopTrigger,
+                isAtTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0,
+            )
+        ) {
+            TopLevelReselectAction.Refresh -> {
+                if (!useLocalCollections) {
+                    collectionsViewModel.refresh(environment)
+                    if (randomMode) {
+                        randomSeed = Random.nextInt()
+                    } else {
+                        contentViewModel?.refresh(contentEnvironment)
+                    }
+                }
+            }
+            TopLevelReselectAction.ScrollToTop -> listState.animateScrollToItem(0)
+            null -> Unit
+        }
+        cachedScrollToTopTrigger = scrollToTopTrigger
+    }
+
+    AppScaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        topBar = {
+            AppCompactTopBar(
+                title = "收藏夹",
+                titleTag = COLLECTION_BROWSE_TITLE_TAG,
+                onBack = navigator.onNavigateBack.takeIf { showBackButton },
+                backTag = COLLECTION_BROWSE_BACK_BUTTON_TAG,
+                actions = {
+                    Box {
+                        AppIconButton(
+                            onClick = { folderMenuExpanded = true },
+                            enabled = collections.isNotEmpty(),
+                            modifier = Modifier.testTag(COLLECTION_BROWSE_FOLDER_SWITCH_BUTTON_TAG),
+                        ) {
+                            Icon(Icons.Filled.Folder, contentDescription = "切换收藏夹")
+                        }
+                        AppDropdownMenu(
+                            expanded = folderMenuExpanded,
+                            onDismissRequest = { folderMenuExpanded = false },
+                            modifier = Modifier.testTag(COLLECTION_BROWSE_FOLDER_MENU_TAG),
+                        ) {
+                            collections.forEach { collection ->
+                                AppDropdownMenuItem(
+                                    text = { Text(collection.title) },
+                                    trailingIcon = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (collection.id == selectedCollectionId) {
+                                                Icon(Icons.Filled.Check, contentDescription = null)
+                                            }
+                                            if (!collection.isDefault) {
+                                                AppIconButton(
+                                                    onClick = {
+                                                        collectionsViewModel.clearMutationErrors()
+                                                        collectionPendingDeletion = collection
+                                                        folderMenuExpanded = false
+                                                    },
+                                                    enabled = collectionsViewModel.deletingCollectionId == null,
+                                                    modifier = Modifier.testTag(
+                                                        "collection_browse_delete_button_${collection.id}",
+                                                    ),
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Delete,
+                                                        contentDescription = "删除${collection.title}",
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCollectionId = collection.id
+                                        folderMenuExpanded = false
+                                    },
+                                    modifier = Modifier
+                                        .testTag("collection_browse_folder_menu_item_${collection.id}")
+                                        .semantics {
+                                            selected = collection.id == selectedCollectionId
+                                            role = Role.RadioButton
+                                        },
+                                )
+                            }
+                        }
+                    }
+                    AppIconToggleButton(
+                        checked = randomMode,
+                        onCheckedChange = { enabled ->
+                            randomMode = enabled
+                            if (enabled) randomSeed = Random.nextInt()
+                            userMessages.showShortMessage(if (enabled) "已切换为随机模式" else "已切换为顺序模式")
+                        },
+                        modifier = Modifier.testTag(COLLECTION_BROWSE_MODE_BUTTON_TAG),
+                        colors = IconButtonDefaults.iconToggleButtonColors(
+                            checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = if (randomMode) {
+                                Icons.Filled.Shuffle
+                            } else {
+                                Icons.AutoMirrored.Filled.FormatListBulleted
+                            },
+                            contentDescription = if (randomMode) {
+                                "当前为随机模式，点击切换为顺序模式"
+                            } else {
+                                "当前为顺序模式，点击切换为随机模式"
+                            },
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        when {
+            collections.isEmpty() && collectionsViewModel.errorMessage != null -> {
+                AppLoadStateContent<Unit>(
+                    state = LoadState.Failed(collectionsViewModel.errorMessage!!),
+                    onRetry = { collectionsViewModel.retry(environment) },
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    content = {},
+                )
+            }
+            collections.isEmpty() && (useLocalCollections || collectionsViewModel.isEnd) -> {
+                AppEmptyState(
+                    title = "还没有收藏夹",
+                    description = "在内容页点收藏，就能在这里找到它",
+                    icon = Icons.Filled.Folder,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .testTag(COLLECTION_BROWSE_EMPTY_COLLECTIONS_TAG),
+                )
+            }
+            contentViewModel == null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppSpinner(modifier = Modifier.testTag(COLLECTION_BROWSE_LOADING_COLLECTIONS_TAG))
+                }
+            }
+            else -> {
+                AppPullToRefreshBox(
+                    isRefreshing = collectionsViewModel.isLoading || contentViewModel.isLoading,
+                    onRefresh = {
+                        if (!useLocalCollections) {
+                            collectionsViewModel.refresh(environment)
+                            if (randomMode) {
+                                randomSeed = Random.nextInt()
+                            } else {
+                                contentViewModel.refresh(contentEnvironment)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .testTag(COLLECTION_BROWSE_PULL_TO_REFRESH_TAG),
+                ) {
+                    if (contentViewModel.allData.isEmpty() && contentViewModel.isEnd) {
+                        AppEmptyState(
+                            title = selectedCollection?.title ?: contentViewModel.title,
+                            description = "这个收藏夹是空的。收藏喜欢的回答、文章或想法后会出现在这里",
+                            icon = Icons.Filled.Folder,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag(COLLECTION_BROWSE_EMPTY_CONTENT_TAG),
+                        )
+                    } else {
+                        CollectionContentBody(
+                            viewModel = contentViewModel,
+                            environment = contentEnvironment,
+                            collectionId = selectedCollectionId.orEmpty(),
+                            modifier = Modifier.fillMaxSize(),
+                            listState = listState,
+                            tagPrefix = "collection_browse",
+                            displayItems = orderedDisplayItems,
+                            header = {
+                                Text(
+                                    text = selectedCollection?.title ?: contentViewModel.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = collections.isNotEmpty(), role = Role.Button) { folderMenuExpanded = true }
+                                        .padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8)
+                                        .testTag(COLLECTION_BROWSE_TITLE_TAG + "_name"),
+                                )
+                            },
+                        )
+                    }
+                    if (randomMode) {
+                        DraggableRefreshButton(
+                            modifier = Modifier.testTag(COLLECTION_BROWSE_RANDOM_REFRESH_BUTTON_TAG),
+                            preferenceName = "collectionRandomRefresh",
+                            onClick = {
+                                randomSeed = Random.nextInt()
+                            },
+                        ) {
+                            if (contentViewModel.isLoading) {
+                                AppSpinner(size = 30.dp)
+                            } else {
+                                Icon(Icons.Filled.Refresh, contentDescription = "重新随机加载")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    collectionPendingDeletion?.let { collection ->
+        val isDeleting = collectionsViewModel.deletingCollectionId != null
+        AppAlertDialog(
+            modifier = Modifier.testTag("collection_browse_delete_dialog_${collection.id}"),
+            onDismissRequest = {
+                if (!isDeleting) {
+                    collectionPendingDeletion = null
+                }
+            },
+            title = { Text("删除收藏夹") },
+            text = {
+                Column {
+                    Text("删除后无法恢复，确认删除收藏夹“${collection.title}”吗？")
+                    collectionsViewModel.deleteCollectionError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                AppTextButton(
+                    text = if (isDeleting) "删除中…" else "删除",
+                    onClick = {
+                        coroutineScope.launch {
+                            if (collectionsViewModel.deleteCollection(environment, collection)) {
+                                if (selectedCollectionId == collection.id) {
+                                    selectedCollectionId = pickDefaultCollectionId(
+                                        collections.filterNot { it.id == collection.id },
+                                    )
+                                }
+                                collectionsViewModel.refresh(environment)
+                                collectionPendingDeletion = null
+                                userMessages.showShortMessage("收藏夹已删除")
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("collection_browse_delete_confirm_${collection.id}"),
+                    enabled = !isDeleting,
+                )
+            },
+            dismissButton = {
+                AppTextButton(
+                    text = "取消",
+                    onClick = { collectionPendingDeletion = null },
+                    enabled = !isDeleting,
+                )
+            },
+        )
+    }
+}
+
+internal fun pickDefaultCollectionId(collections: List<Collection>): String? =
+    collections.firstOrNull { it.isDefault }?.id ?: collections.firstOrNull()?.id
+
+internal fun orderCollectionItems(
+    items: List<FeedDisplayItem>,
+    randomMode: Boolean,
+    randomSeed: Int,
+    previousRandomOrderKeys: List<String> = emptyList(),
+): List<FeedDisplayItem> = if (randomMode) {
+    val itemsByKey = items.associateBy { it.stableKey }
+    val retainedKeys = previousRandomOrderKeys.distinct().filter(itemsByKey::containsKey)
+    val retainedKeySet = retainedKeys.toSet()
+    val newItems = items
+        .distinctBy { it.stableKey }
+        .filterNot { it.stableKey in retainedKeySet }
+        .map { item ->
+            val rank = item.stableKey.fold(COLLECTION_RANDOM_ORDER_OFFSET_BASIS xor randomSeed.toLong()) { hash, char ->
+                (hash xor char.code.toLong()) * COLLECTION_RANDOM_ORDER_PRIME
+            }
+            item to rank
+        }.sortedWith(
+            compareBy<Pair<FeedDisplayItem, Long>>(
+                { it.second },
+                { it.first.stableKey },
+            ),
+        ).map { it.first }
+    retainedKeys.mapNotNull(itemsByKey::get) + newItems
+} else {
+    items
+}
+
+private const val COLLECTION_BROWSE_TITLE_TAG = "collection_browse_title"
+private const val COLLECTION_BROWSE_BACK_BUTTON_TAG = "collection_browse_back_button"
+private const val COLLECTION_BROWSE_FOLDER_SWITCH_BUTTON_TAG = "collection_browse_folder_switch_button"
+private const val COLLECTION_BROWSE_FOLDER_MENU_TAG = "collection_browse_folder_menu"
+private const val COLLECTION_BROWSE_EMPTY_COLLECTIONS_TAG = "collection_browse_empty_collections"
+private const val COLLECTION_BROWSE_LOADING_COLLECTIONS_TAG = "collection_browse_loading_collections"
+private const val COLLECTION_BROWSE_EMPTY_CONTENT_TAG = "collection_browse_empty_content"
+private const val COLLECTION_BROWSE_PULL_TO_REFRESH_TAG = "collection_browse_pull_to_refresh"
+private const val COLLECTION_BROWSE_MODE_BUTTON_TAG = "collection_browse_mode_button"
+private const val COLLECTION_BROWSE_RANDOM_REFRESH_BUTTON_TAG = "collection_browse_random_refresh_button"
+private const val COLLECTION_RANDOM_ORDER_OFFSET_BASIS = -3750763034362895579L
+private const val COLLECTION_RANDOM_ORDER_PRIME = 1099511628211L

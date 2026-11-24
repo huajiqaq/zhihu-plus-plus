@@ -1,171 +1,106 @@
-# Zhihu++ AI UI Design Guide
+# UI 开发指南
 
-这份文档给 AI agent 快速建立 UI、导航、按钮和设置项的共同语义。改代码前仍然要读对应源码；这里负责告诉你先读哪里、状态从哪里来、一个开关会影响哪些界面。
+改 UI 前先确认页面入口、状态所有者和复用组件；文档不代替源码。
 
-## 先读顺序
+## 代码入口
 
-1. `shared/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestination.kt`
-2. `shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/ZhihuMain.kt`
-3. Android: `app/src/main/java/com/github/zly2006/zhihu/MainActivity.kt` 和 `app/src/main/java/com/github/zly2006/zhihu/ui/ZhihuMainAndroidState.kt`
-4. Desktop: `shared/src/jvmMain/kotlin/com/github/zly2006/zhihu/ui/DesktopZhihuMain.kt`
-5. 设置页: `shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/subscreens/*SettingsScreen.kt`
-6. 复用组件: `shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/components/SettingItem.kt`、`FeedCard.kt`、`DraggableRefreshButton.kt`
+- [路由与参数](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestination.kt)、[目的地分类](../shared-core/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/NavDestinationClassification.kt)。
+- [主壳](../shared/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/ZhihuMain.kt)：主栈、详情栈、主 pager 和分栏；各平台复用 `ZhihuMainNavigationCoordinator`，宿主接入窗口、通知和生命周期。
+- 功能模块注册业务路由：[搜索](../shared-feature-feed/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/FeedNavEntries.kt)、[内容与创作](../shared-feature-content/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/ContentNavEntries.kt)、[账号、设置与通知](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/navigation/SettingsNavEntries.kt)。
+- [共享组件](../shared-ui-components/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/components/)、[设置页面](../shared-feature-settings/src/commonMain/kotlin/com/github/zly2006/zhihu/ui/subscreens/)、[正文渲染](../shared-ui-base/src/commonMain/kotlin/com/github/zly2006/zhihu/markdown/)。
 
-UI 改动不要只看目标页面。至少用 `rg "<preferenceKey>" shared app` 查设置项的读取点，用 `rg "<NavDestinationName>" shared app` 查导航入口和测试。
-
-## 导航模型
-
-`NavDestination` 是所有可导航目标的源头，使用 Kotlin Serialization 作为 typed route。新增页面或参数先改 `NavDestination.kt`，再注册 `NavHost` route。
-
-主壳是 `MainTabs`。`Home`、`Follow`、`HotList`、`Daily`、`OnlineHistory`、`Account` 是 `TopLevelDestination`，用于底栏和主 pager 选页；不要把旧 top-level tab 当作新的独立页面 push，除非源码已经明确注册了独立 route。`Follow` 对应两个相邻 pager page: 推荐和动态，并记住上一次选择。
-
-底栏显示只在 `MainTabs` route 上出现，判断点是 `isTopLevelDest(navEntry)`。内容页、设置页、搜索页、通知页等已注册独立目的地会离开主壳，依赖返回栈回退。
-
-Android 导航由 `MainActivity.navigate()` 承接，负责历史记录、剪贴板/外链跳转、视频特殊处理、内容打开来源埋点。Desktop 在 `DesktopZhihuMain.navigate()` 中实现同一语义。跨平台 UI 内部应优先用 `LocalNavigator.current.onNavigate(...)`，不要直接持有 Activity 或平台 NavController。
-
-URL 解析集中在 `resolveContent()`。支持知乎问题、回答、文章、用户、视频、想法、搜索、`link.zhihu.com?target=` 和 `zhihu://` scheme。新增 deep link 必须同时考虑 Android intent、剪贴板解析和桌面打开路径。
-
-## 主界面结构
-
-`ZhihuMain` 是共同 UI 外壳。它读取 `ZhihuMainPreferenceState`，生成底栏项、主 pager 页、自动隐藏状态和 `NavHost` route。Android 与 Desktop 分别用平台 adapter 注入文章页、NLP 管理页、视频打开和转场。
-
-底栏项顺序固定为: 主页、关注、热榜、日报、历史、账号。实际显示由 `bottom_bar_items` 决定，并经过 `normalizeBottomBarSelection()` 兜底。`duo3_home_account` 开启后，账号入口迁到主页头像，底栏选择规则会改变；这类改动必须一起检查主页账号入口、账号页历史快捷方式和底栏启动页。
-
-`startDestination` 不是 NavHost 的 start route，而是主 pager 初始页。NavHost start route 始终是 `MainTabs`。如果用户选的启动页不在底栏里，`resolveValidStartDestinationKey()` 会回落到当前可用项。
-
-## 按钮和交互约定
-
-设置列表使用 `SettingItemGroup` 包组，单项用 `SettingItem`，开关用 `SettingItemWithSwitch`，总开关用 `SettingItemOverall`。需要从账号页跳入并高亮某个设置时，给目标项传 `settingKey`，导航参数使用 `Account.AppearanceSettings(setting = "...")` 或 `Account.RecommendSettings(setting = "...")`。
-
-返回入口通常放在当前页面顶栏的 `navigationIcon`：设置页多用 `LargeTopAppBar`，普通列表页多用 `TopAppBar`。返回图标优先用自动镜像箭头，`contentDescription = "返回"`。列表页容器通常是 `Scaffold` 加可滚动内容，具体背景色和滚动容器以现有页面体系为准。
-
-底栏按钮测试 tag 是 `nav_tab_${destination.name.lowercase()}`。设置页和账号页已有显式 test tag，新增可测试入口优先加稳定 tag，而不是让 UI 测试用坐标点。
-
-分享按钮的行为由 `shareActionMode` 决定。`ask` 打开分享弹窗，`copy` 直接复制链接，`share` 直接调系统分享；弹窗的设置入口会跳到 `Account.AppearanceSettings(setting = "shareAction")`。
-
-可拖动刷新 FAB 使用 `DraggableRefreshButton`，位置保存在 `"<preferenceName>-x"` 和 `"<preferenceName>-y"`。不要另写一套拖动定位逻辑；需要多个 FAB 时改 `preferenceName` 防止位置互相覆盖。
-
-## 视觉体系
-
-当前主线 UI 以 Material 3 为默认实现。改共同行为时优先放在 common runtime、状态或 shared component；改视觉时先确认影响的是共享组件、单个页面还是平台 adapter，避免只改入口而漏掉复用路径。
-
-主题状态集中在 `ThemeManager` 和平台 `ThemeSettingsRuntime`。`themeMode` 控制明暗，`useDynamicColor` 控制 Material You 动态取色，`customThemeColor` 在动态取色关闭后生效，`backgroundColorLight` / `backgroundColorDark` 控制背景色，`luotianyi_color` 控制应用内浏览器工具栏色。
-
-信息流卡片由 `FeedCard` 读取 `showFeedThumbnail`、`feedCardStyle`、`duo3_card_appearance`、`duo3_card_layout`、`duo3_card_large_title`。改这些 key 的语义时要同时查主页、关注、热榜、历史和搜索结果等复用卡片的页面。
-
-文章、问题详情和想法正文会根据 `ARTICLE_USE_WEBVIEW_PREFERENCE_KEY` 在 WebView 与 Compose Markdown 之间切换；该常量当前值是 `webviewRender`。WebView 正文渲染只作为废弃路径保留，不再接受新功能；阅读体验新能力只接入 Compose Markdown 路径。Compose Markdown 路径依赖 `RenderMarkdown` 和 `SegmentedText` 的字号、行高和段间距设置。
-
-## 设置项影响图
-
-### 外观与阅读体验
-
-| preference key | 入口 | 主要影响 | 注意 |
-| --- | --- | --- | --- |
-| `themeMode` | 主题模式 | 应用明暗主题 | 通过 `ThemeManager` 立即影响顶层主题 |
-| `useDynamicColor` | Material You 动态取色 | Android 12+ 取系统壁纸色 | 关闭后自定义主题色才明显生效 |
-| `customThemeColor` | 自定义主题色 | Material 3 主色 | 不要和动态取色同时假设生效 |
-| `backgroundColorLight`, `backgroundColorDark` | 自定义背景颜色 | 明暗模式背景 | 按当前明暗模式写入不同 key |
-| `disableBottomSheetRoundedCorners` | 禁用 popup 圆角 | `MyModalBottomSheet` 顶部改为直角 | 默认关闭，统一影响评论等复用 popup |
-| `contentFontSize`, `contentLineHeight`, `contentBlockSpacing` | 字号、行高、段间距 | 正文字号/行高、分段文本样式和 Markdown 正文块间距 | 查 `SegmentedText` 和 Markdown 渲染路径 |
-| `showFeedThumbnail` | Feed 卡片缩略图 | 信息流卡片是否显示图 | 由复用 `FeedCard` 的页面读取 |
-| `showRefreshFab` | 刷新 FAB | 首页/列表可拖动刷新按钮显示 | 123Duo3 总开关会关闭它 |
-| `feedCardStyle` | 信息流样式 | `card` 或 `divider` | 影响 FeedCard 外层布局 |
-| `webviewRender` | 使用 WebView 显示文章 | 文章、问题详情、想法正文渲染路径 | 常量名是 `ARTICLE_USE_WEBVIEW_PREFERENCE_KEY` |
-| `webviewCustomFontName` | WebView 自定义字体 | WebView 注入字体 | 仅 WebView 路径 |
-| `webviewHardwareAcceleration` | WebView 硬件加速 | Android WebView layer type | 兼容性/性能相关 |
-| `titleAutoHide` | 自动隐藏回答标题 | 文章页顶部标题栏 | 查 `rememberArticleScreenSettingsState()` |
-| `autoHideArticleBottomBar` | 自动隐藏回答底部按钮 | 文章页底部操作栏 | 与滚动方向有关 |
-| `buttonSkipAnswer` | 显示跳转下一个回答按钮 | 文章页快速跳转按钮 | 123Duo3 总开关会关闭它 |
-| `autoHideSkipAnswerButton` | 自动隐藏跳转按钮 | 跳转按钮滚动隐藏 | 仅 `buttonSkipAnswer` 开启时可见 |
-| `pinAnswerDate` | 置顶回答日期 | 回答日期位置 | 影响文章正文布局 |
-| `answerSwitchMode` | 回答切换手势 | `off` / `vertical` / `horizontal` | 会影响转场方向和手势冲突 |
-| `answerSwitchSensitivity` | 回答切换灵敏度 | 上下/左右回答切换触发阈值 | 默认 1.0，数值越高触发距离越短；关闭手势时设置项隐藏 |
-| `answerDoubleTapAction` | 双击回答动作 | 双击正文后的动作 | 可在文章页内动态保存 |
-| `bottom_bar_items` | 底栏页面选择 | 主 pager 页集合和底栏按钮 | 始终经 `normalizeBottomBarSelection()` |
-| `collectionDirectBrowse` | 收藏直达浏览（测试） | 底栏收藏夹进入内容瀑布流，支持切换、删除、刷新及随机排序 | 默认关闭，关闭时保留原收藏夹列表入口 |
-
-### 收藏直达浏览测试功能边界
-
-- 页面从非活动状态重新进入活动状态时，会同时刷新收藏夹列表和当前收藏夹内容；用户也可以在内容区下拉刷新。
-- 每次进入随机模式都会生成新种子并重新洗牌，同一轮内 Compose 重组不会让卡片反复跳位；随机模式下显示可拖动的重新加载 FAB，点击时重新拉取内容并生成新顺序；切回顺序模式会恢复接口返回顺序并隐藏该 FAB。
-- 非默认收藏夹可从文件夹菜单删除并需要二次确认，默认收藏夹不提供删除入口；删除当前收藏夹后回退到默认收藏夹或列表中的第一个。
-| `startDestination` | 应用启动默认页面 | 主 pager 初始页 | 只允许选择已显示的底栏项 |
-| `bottomBarTapScrollToTop` | 点击底栏回到顶部/刷新 | 选中 tab 再点时触发 scroll/refresh | 双击由 UI 测试用 `&&` 连续 adb 才可靠 |
-| `autoHideTopBar` | 滚动时自动隐藏顶栏 | 主 tab 页顶栏可见性 | 复用底栏滚动信号 |
-| `autoHideBottomBar` | 滚动时自动隐藏底栏 | 主 tab 页底栏可见性 | 只在 `MainTabs` 显示 |
-| `shareActionMode` | 分享操作 | 分享按钮默认行为 | `ask` / `copy` / `share` |
-| `showSearchHotSearch` | 搜索界面显示热搜 | 空搜索页内容 | 搜索页空查询状态读取 |
-| `showSearchHistory` | 搜索历史 | 是否记录和展示新搜索 | 关闭后不再记录新的搜索 |
-| `use_custom_nav_host` | 自定义导航 | 持久化的技术性导航开关 | 当前主要在设置页读写；实现效果前先 `rg` 运行时读取点 |
-| `enable_predictive_back` | 预测性返回 | 持久化的 Android 14+ 返回动画开关 | 当前主要在设置页读写；实现效果前先 `rg` 运行时读取点 |
-
-### 推荐系统与内容过滤
-
-| preference key | 入口 | 主要影响 | 注意 |
-| --- | --- | --- | --- |
-| `recommendationMode` | 推荐算法 | Web、Android、本地、混合推荐 | 枚举在 `RecommendationMode.kt` |
-| `loginForRecommendation` | 推荐内容时登录 | 获取推荐时是否带登录凭证 | 影响服务端推荐结果 |
-| `qualityFilterMode` | 质量屏蔽 | 不屏蔽、显示屏蔽规则或隐藏低质量内容 | 默认 `RULES`，旧布尔设置不迁移 |
-| `enableContentFilter` | 智能内容过滤 | 过滤重复出现但未点击内容 | 关闭时相关子统计/开关应弱化 |
-| `filterFollowedUserContent` | 过滤已关注用户内容 | 是否过滤关注用户内容 | 仅智能过滤开启时可操作 |
-| `enableKeywordBlocking` | 关键词屏蔽 | 命中关键词时过滤 | 管理入口在 Blocklist |
-| `enableUserBlocking` | 用户屏蔽 | 命中用户时过滤 | Feed 卡片更多菜单可新增屏蔽 |
-| `enableTopicBlocking` | 主题屏蔽 | 命中主题时过滤 | 阈值项只在开启时显示 |
-| `topicBlockingThreshold` | 主题屏蔽阈值 | 命中主题数量下限 | 必须为大于 0 的整数 |
-| `blockZhihuAdPlatform` | 屏蔽知乎广告平台内容 | 匹配 `xg.zhihu.com` | 推广过滤 |
-| `blockZhihuSchool` | 屏蔽知乎学堂内容 | 匹配 `d.zhihu.com` 或教育卡片 | 推广/课程过滤 |
-| `blockWeChatOfficialAccount` | 屏蔽微信公众号文章 | 匹配微信外链 | 外链过滤 |
-| `blockPaidContent` | 屏蔽知乎盐选付费内容 | 过滤会员付费内容 | mixed 推荐默认语义也提到盐选 |
-| `reverseBlock` | 反向屏蔽 | 只保留广告和付费内容 | 调试/整活性质，别当普通过滤开关 |
-
-### 系统、通知和开发者
-
-| key/store | 入口 | 主要影响 | 注意 |
-| --- | --- | --- | --- |
-| `githubToken` | GitHub Token | 更新检查 API 限速 | 不要打印或提交真实 token |
-| `checkNightlyUpdates` | Nightly 更新 | 是否检查每日构建 | Android updater 和 Desktop runtime 都读 |
-| `allowTelemetry` | 遥测统计 | 匿名使用统计 | 不影响核心功能 |
-| `continuousUsageReminderIntervalMinutes` | 防沉迷提醒 | 连续使用提醒间隔 | 0 表示关闭 |
-| `developer` | 开发者模式 | 账号页显示开发者选项 | 账号页点击版本 5 次开启 |
-| `enableScrollEndHaptic` | 开发者选项: 滚动到底震动 | 滚动边界反馈行为开关 | 改前查具体 overScroll 使用点 |
-| `showDebugOverlay` | 开发者选项: 调试悬浮窗 | 调试 Feed 详情显示 | 如果 `rg` 只命中设置页，先补运行时读取点 |
-| `zse96_key` | 开发者签名请求 | 调试签名相关请求 | 只在开发者页处理 |
-| NotificationSettingsStore | 通知设置 | 系统通知、应用内显示、自动已读、未读红点 | 不走普通 `SettingsStore` key 命名 |
-
-## 123Duo3 UI/UX 开关
-
-`duo3_all` 是批量开关。开启时会写入 `duo3_home_account`、`duo3_card_appearance`、`duo3_card_layout`、`duo3_article_bar`、`duo3_article_actions`，并关闭 `showRefreshFab` 和 `buttonSkipAnswer`。底部导航栏统一使用 Material 样式，不再提供单独开关。
-
-各子开关影响:
-
-| key | 影响 |
-| --- | --- |
-| `duo3_home_account` | 主页头像承接账号入口，底栏账号项规则变化，账号页可能显示历史快捷方式 |
-| `duo3_card_appearance` | Feed 卡片圆角、背景和阴影变化 |
-| `duo3_card_layout` | Feed 卡片作者、图片、摘要行数和字体排版变化 |
-| `duo3_card_large_title` | `duo3_card_layout` 开启后控制标题字号 |
-| `duo3_article_bar` | 文章页顶/底栏框架开关；若 `rg` 只命中设置页，不要声称已有运行时效果 |
-| `duo3_article_actions` | 文章页底部操作按钮样式变化 |
-
-改任意 Duo3 开关时，至少检查 `AppearanceSettingsScreen`、`ZhihuMain`、`HomeScreen`、`AccountSettingScreen`、`FeedCard` 和 `ArticleScreen`。
-
-## 新增 UI 的检查清单
-
-1. 新 route: 先在 `NavDestination.kt` 定义 typed destination，再在 `ZhihuMain` 注册 route；涉及平台能力时同步补 Android/Desktop adapter。
-2. 新主 tab: 同时改 `TopLevelDestination`、`MainTabPage`、底栏 `allBottomBarItems`、设置页的 `topLevelDestinationsInOrder`、默认选择和测试。
-3. 新设置项: 记录 preference key、默认值、读取点、是否实时生效、是否需要重启、对应 test tag 和从账号页跳转高亮的 `settingKey`。
-4. 新按钮: 优先复用 Material 3 组件和现有图标库，补稳定 test tag，描述点击后影响的状态或导航目标。
-5. 新正文/卡片渲染逻辑: 同时确认 Compose Markdown、WebView、共享组件、平台 adapter、lite/full variant 差异。
-6. 新手势: 明确方向、阈值，以及和现有回答切换、底栏自动隐藏、图片查看的冲突关系。
-
-## 验证入口
-
-UI 代码改动按 `CLAUDE.md` 的 AVD 和 UI 双代理流程执行。文档或纯注释改动不需要启动 AVD，但仍应做 Markdown 自查、关键路径 `rg` 复核和 `git diff --check`。
-
-常用定位命令:
+查调用方时覆盖所有共享模块，不只搜 `shared`：
 
 ```bash
-rg "Account\\.AppearanceSettings|Account\\.RecommendSettings|NavDestination|MainTabs" shared app
-rg "rememberSettingsStore|putBoolean|putString|putInt|getBoolean|getString|getInt" shared app
-rg "testTag\\(|nav_tab_|ACCOUNT_SETTINGS_|APPEARANCE_SETTINGS_" shared app
+rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g '!**/build/**'
 ```
+
+## 导航与启动
+
+- 新增目标先检查 `NavDestination` 和宿主的路由注册；页面使用宿主提供的导航入口，不另建返回栈。
+- 当前 `NavDestination` 实现 `NavKey`；主栈根为 `MainTabs`，详情栏根为 `EmptyDetail`。`OnlineHistoryRoute` 是普通页面，不是主 pager 页。
+- 业务目标相同不意味着同一次进入；保留页面实例、ViewModel、保存状态和返回上下文，不按业务 ID 删除已有实例。
+- `bottom_bar_items`、`startDestination` 和账号快捷入口尊重用户保存的选择，不为了迁移改变默认值、顺序或在线历史的进入方式。
+- 平台入口继续承担外链解析、历史记录和来源信息。新增 deep link 同时检查 Android intent、剪贴板与桌面入口。
+- 点开链接用 `resolveNavigationUrl`：已支持的知乎内容进原生页，其他 HTTP(S) 链接进 `WebPage`。明确要求网页视图时直接用 `rememberWebViewUrlOpener`；只有「在浏览器打开」使用系统浏览器。被动识别剪贴板仍用 `resolveContent`，不要自动打开普通网页。
+- 返回沿用现有宿主。详情、弹层和主 tab 的返回优先级分别核对，不叠加会重复退栈的 handler。
+- 大屏按实际栏位和布局边界处理转场，不能裁切或压暗另一栏；窄宽切换保留阅读实例与来源上下文。
+- 分隔线拖动时预览栏宽，松手后保存 `landscape_list_pane_ratio`。窗口变化按当前可用宽度换算，不把单栏或窄窗口的临时宽度写回设置。
+- 桌面窗口只保留框架的返回 dispatcher；焦点控件先处理按键，未消费才转换为返回。真实 ESC 链路在打包应用中验证，离屏 handler 测试不能代替。
+- 原生 chrome 只渲染调用侧提供的模型、选中态和动作，不硬编码产品目的地，不用可变回调槽转发。macOS 分组侧栏使用 source-list 语义，保留 Compose 根视图，并在全部 overlay 的共同父布局施加侧栏 inset。
+- Android Launcher 为 `SplashActivity`，动画完成后进入 `MainActivity`；外链直接进入主 Activity。部署时解析真实 Launcher，不把直接打开业务页当作启动页验收。
+
+## 设置
+
+| 页面 | 内容 |
+| --- | --- |
+| 外观 | 皮肤、明暗、配色、AMOLED、玻璃与悬浮控件 |
+| 导航与交互 | 启动页、底栏、分栏、返回、分享和搜索行为 |
+| 阅读与排版 | 排版预览、字号/行高/段间距、正文渲染、回答切换；电纸书翻页为子页 |
+| 朗读与播放 | 朗读预览、内容顺序、时间与评论、队列 |
+| 推荐与信息流 | 推荐来源、信息流样式与刷新 |
+| 内容过滤 | 质量、去重、屏蔽规则、记录与维护 |
+
+- 复用 `AppSettingsPage` 和 `SettingItem*`。跳转行有箭头；开关和选择行由控件表达状态，整行保持可操作。
+- 设置读取使用现有可观察绑定。需确认后保存的输入仍持有草稿，不改成每次按键立即写入。
+- 新增或移动设置时核对 key、默认值、运行时读取、父项禁用、设置搜索和 `settingKey` 高亮。目标被隐藏时跳到父项，不跳到空白位置。
+- 父项禁用时，行内分段控件和按钮也禁用；不只改说明文字。恢复备份不覆盖本机连接信息和凭据。
+- `themeMode`、`uiThemeStyle`、`bottom_bar_items`、`startDestination` 等状态只从权威设置读取，平台 toolbar 不再维护另一份选择。
+- 提椠使用 `tiqian_markdown`、`tiqian_math_font`。主壳初始化时仅在正式键缺失且旧 `duo3_*` 键存在时迁入；两套键并存以正式键为准，不删除旧键或用默认值覆盖显式选择。
+- 账号设置按“账号与安全／显示与阅读／内容与隐私／系统／关于”分组，账号与登录维护不依赖开发者模式。手机底栏默认主页、关注、日报；历史从账号面板进入，不占手机底栏位置。其余可选项目保留用户选择，没有主页时须保留账号设置出口。
+
+## 皮肤与共享组件
+
+- Lite 只编译 Material 3 Expressive 主题，但保留 miuix-nav 和共享玻璃。Full、JVM 和 Apple 目标保留双皮肤；Lite 读取旧 `MIUIX` 偏好时降级显示，不删除用户偏好。
+- Miuix 实现放在 `miuixThemeMain`，Lite 提供对应 actual。共享页面通过 `App*` 和 `LocalAppSkinTokens` 取控件、颜色与字阶，不直接依赖 miuix theme/basic/popup。
+- API 与平台能力以版本目录、上游 lock 及源码为准；参考镜像保留出处与许可，不当作运行实现。
+- 主题根的组合位置保持不变，换肤只更新值，避免重建导航和浮层状态。两套皮肤共用业务状态，不复制页面或 ViewModel。
+- Miuix 的「HyperOS 风格」通过独立 `miuixStyle` 偏好选择 HyperOS 3 / 4，默认 HyperOS 3。明暗、配色与玻璃仍独立；关闭玻璃或设备不支持渲染时保留可用控件，不改写已保存的风格。HyperOS 4 在共享呈现入口采用已发布玻璃组件；复杂标题、复合菜单及导航标签不能为更换材质而丢失。
+- Miuix 容器中的 Material `Text`/`Icon` 需要在容器内容作用域桥接内容色；只改页面颜色不能修复按钮或卡片中的前景色。Markdown 等 Material 路径也要使用投影后的配色。
+- 形状、字阶和动效优先采用原生 token；共享固定尺寸使用 `AppDimens`。无实际布局或状态差异时，不增加 index、圆角或颜色参数。
+- 顶栏复用 `AppTopBar`、`AppCompactTopBar`、`AppPageTitleBar`，通过 `onBack` 和 `backTag` 提供返回。保留已有 tag；Miuix 不提供逐项 tag 的原生控件按容器和文字定位，不加透明影子点击项。
+- 分组标题与行内前导容器对齐，前导图标使用共享尺寸；底部滑杆和分段选择占满可用宽度。大字号放不下时允许增高或换成单选列表。
+- 单值选择使用现有原生选择菜单；带独立删除动作的复合菜单不强改成单选菜单。长菜单可滚动，末项必须可达。
+
+## 状态式输入与控件
+
+- `AppTextField`、`AppSearchField` 直接接收所有者持有的 `TextFieldState`，不在控件内复制 String 状态。输入过滤仅修改 `TextFieldBuffer`；搜索、字段联动和保存等业务副作用由所有者处理。提交直接读取当前状态，不等待观察器回写第二份文本。
+- M3E 表单使用官方 `roundedShape`、`tonalColors()` 与 `TextFieldLabelPosition.Inside` 配套样式；普通输入和安全输入一致，搜索保留胶囊，Miuix 保留原生外观。
+- 密码、Token 和 Cookie 使用 `AppSecureTextField`，显隐复用同一状态；不得使用普通输入加遮罩替代安全文本框，也不把敏感内容放进 Saver。Cookie 导入是单行横向滚动，完整粘贴文本仍交给导入校验。
+- `AppSlider` 使用 `SliderState` 和明确的变更/完成回调。范围和步数由状态定义，外部设置变更同步到同一状态；即时保存和松手提交不能互换。
+- 想法正文在规范 Markdown 话题链接中保存 ID，`OutputTransformation` 只改变显示；选择、删除及撤销使用同一文本状态。预览、草稿与发布从同一快照生成 HTML 和话题列表，不按显示名称重新绑定 ID。系统复制提供可见文字，「复制 Markdown」保留选区中的明确话题链接。旧草稿只在读入时迁移，无法解码或版本未知时不自动覆盖原稿。
+
+## 评论发送
+
+- 发件账号入口使用真实头像和昵称；选择账号不修改全局登录状态或草稿，只在发送时使用所选身份。
+- 「默认同步」是设备设置，取消勾选同时关闭默认；段评不发送同步选项。账号绑定的附件不能静默改投其他身份。
+- 关联身份切回失败时保留恢复信息，后续恢复不得重发已经成功的评论；错误必须与发送结果区分。
+
+## 玻璃与弹层
+
+- `AppScaffold` 登记当前层的内容采样源；采样前铺不透明底色，避免透明区模糊扩散。浮动控件只采样下方内容，不采样自身。
+- 开启玻璃时容器透明，tint 在模糊结果中混合；另画不透明底色会盖住模糊。半径和 tint 取共享值。
+- RuntimeShader 不支持或用户关闭效果时退回实心容器，导航文字、选中反馈和手势仍保留。
+- 默认导航使用各皮肤的官方图文项；Apple 悬浮底栏在 Full 的 MD3E 与 Lite 共用布局和折射材质，不切换主题。两种样式保留整格 tab 语义及 `nav_tab_*`，重选交给分页宿主处理；底栏不拦截横拖切页，页面仍可左右滑动。
+- `AppOverlayHost` 在背景模糊之外承载 popup。确认框使用能覆盖当前 Sheet/Dialog 的窗口级宿主；独立评论窗口内的排序菜单不能投递到下层页面。
+- 页面被新路由覆盖时隐藏所属弹层，但不执行 dismiss、不重置草稿和滚动位置；返回后恢复。发布、删除和退出等动作先确认。
+- 窗口级底部面板使用 `AppBottomSheet` 与 `rememberBottomSheetState`，通过 `enabledValues` 明确可达状态。录音等业务限制保留 `confirmValueChange`；关闭须在 `hide()` 完成且状态确实隐藏后通知页面，评论返回仍先收键盘、再收表情面板。
+
+## 阅读与页面状态
+
+- 完整标题、作者、正文和操作区共用阅读列，最大宽度 720dp；双栏阅读列靠所在栏起点，单栏居中。图片和悬浮控件按实际 pane 与遮挡范围避让。
+- 长标题展开时完整测量，收起状态按组件契约显示。不为新增按钮把原标题或正文改成省略号。
+- 加载、失败和成功空态分开。刷新与追加失败保留已有内容；旧请求或异步过滤不能回写新一轮状态。
+- 下拉刷新使用业务层的同一加载真值，在刷新回调首次挂起前同步发布刷新状态，避免控件先回弹再进入加载；不另建计时状态镜像。
+- 触摸拖拽、鼠标滚轮和键盘滚动按各自输入路径验证，短内容也单独核对 overscroll；框架默认效果与自定义效果只保留一份，不用触摸结果代替桌面输入验收。
+- 正文字号、行高、段间距变化不需要重建 AST。WebView 正文仅保留兼容，不接新阅读功能。
+- 正文搜索与用户选区独立，使用真实命中行几何和现有 requester 定位，见 [正文搜索](article-search-design.md)。
+- 段评创建要求可靠的原始段落和偏移，保留正文格式；选区规则见 [段评选区契约](segment-selection-contract.md)。评论计数按客户端和正文身份隔离，失败不增加计数。
+- 段评末端图标不占原文字符，复制、搜索和选区不能泄漏布局占位符。
+- 正文格式优先于段评注入。保留加粗、斜体；脚注、链接、图片或公式无法可靠保留时跳过该段高亮，不展平原文来匹配段评。
+
+## 验证与参考
+
+按 [测试维护方法](testing-maintenance.md) 选择最小检查，覆盖受影响的共享消费者、平台 actual、皮肤和变体。布局核对真实截图与语义中的展开/收起、大字号及末项可达性；交互确认目标状态。
+
+设备流程见 [UI 测试](../.agents/skills/ui-test/SKILL.md)，macOS 使用 [后台调试](../.agents/skills/background-ui-debug/SKILL.md)。原生规范查看 [Miuix](https://github.com/compose-miuix-ui/miuix) 和 [Material Components](https://github.com/material-components/material-components-android) 的对应版本；变体见 [KMP Android 构建](kmp-android-variants.md)。

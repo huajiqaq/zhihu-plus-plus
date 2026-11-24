@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 @Entity(tableName = BlockedQuestionAuthor.TABLE_NAME)
 data class BlockedQuestionAuthor(
@@ -33,5 +33,3 @@ data class BlockedQuestionAuthor(
         const val TABLE_NAME = "blocked_question_authors"
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

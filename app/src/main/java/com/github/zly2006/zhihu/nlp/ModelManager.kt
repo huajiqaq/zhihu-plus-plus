@@ -19,9 +19,9 @@ package com.github.zly2006.zhihu.nlp
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
-import io.ktor.client.plugins.onDownload
 import io.ktor.client.request.head
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
@@ -57,7 +57,6 @@ object ModelManager {
         val fileSizes = mutableMapOf<String, Long>()
         var totalBytesToDownload = 0L
 
-        // Check for updates and calculate total size
         val filesToDownload = mutableListOf<RemoteFile>()
         val metadataPrefs = context.getSharedPreferences("model_manager", Context.MODE_PRIVATE)
 
@@ -72,7 +71,6 @@ object ModelManager {
                 val storedSize = metadataPrefs.getLong(storedMetadataKey(modelId, file.localFileName, "size"), -1L)
                 val storedSha256 = metadataPrefs.getString(storedMetadataKey(modelId, file.localFileName, "sha256"), null)
 
-                // Verify local file integrity: check size and SHA256
                 val needsRedownload =
                     if (destFile.exists()) {
                         val localSize = destFile.length()
@@ -85,17 +83,14 @@ object ModelManager {
                             )
                             true
                         } else if (storedSha256 != null) {
-                            // Verify SHA256 if we have it stored
                             val localSha256 = calculateSha256(destFile)
                             if (localSha256 != storedSha256) {
                                 Log.w(TAG, "File ${file.localFileName} SHA256 mismatch")
                                 true
                             } else {
-                                // Check if remote has newer version
                                 remoteEtag == null || storedEtag != remoteEtag
                             }
                         } else {
-                            // No SHA256 stored, just check ETag
                             remoteEtag == null || storedEtag != remoteEtag
                         }
                     } else {
@@ -113,7 +108,6 @@ object ModelManager {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to check update for ${file.url}", e)
-                // If we have a local file, verify its integrity before using it
                 if (destFile.exists()) {
                     val storedSize = metadataPrefs.getLong(storedMetadataKey(modelId, file.localFileName, "size"), -1L)
                     if (storedSize > 0 && destFile.length() == storedSize) {
@@ -142,11 +136,8 @@ object ModelManager {
             Log.d(TAG, "Downloading ${file.url}...")
 
             client
-                .prepareGet(file.url) {
-                    onDownload { bytesSentTotal, contentLength ->
-                        // handled manually below for aggregated progress
-                    }
-                }.execute { httpResponse ->
+                .prepareGet(file.url)
+                .execute { httpResponse ->
                     val channel = httpResponse.bodyAsChannel()
                     val output = FileOutputStream(tempFile)
                     try {
@@ -165,7 +156,6 @@ object ModelManager {
                         output.close()
                     }
 
-                    // Verify downloaded file size
                     val expectedSize = fileSizes[file.url] ?: 0L
                     if (expectedSize > 0 && tempFile.length() != expectedSize) {
                         tempFile.delete()
@@ -175,17 +165,14 @@ object ModelManager {
                         )
                     }
 
-                    // Calculate and save SHA256
                     val sha256 = calculateSha256(tempFile)
-                    metadataPrefs
-                        .edit()
-                        .apply {
-                            putString(storedMetadataKey(modelId, file.localFileName, "sha256"), sha256)
-                            httpResponse.etag()?.let { etag ->
-                                putString(storedMetadataKey(modelId, file.localFileName, "etag"), etag)
-                            }
-                            putLong(storedMetadataKey(modelId, file.localFileName, "size"), tempFile.length())
-                        }.apply()
+                    metadataPrefs.edit {
+                        putString(storedMetadataKey(modelId, file.localFileName, "sha256"), sha256)
+                        httpResponse.etag()?.let { etag ->
+                            putString(storedMetadataKey(modelId, file.localFileName, "etag"), etag)
+                        }
+                        putLong(storedMetadataKey(modelId, file.localFileName, "size"), tempFile.length())
+                    }
                 }
 
             if (destFile.exists()) destFile.delete()
@@ -193,7 +180,6 @@ object ModelManager {
             result[file.localFileName] = destFile
         }
 
-        // Ensure all requested files are in result
         for (file in files) {
             if (!result.containsKey(file.localFileName)) {
                 result[file.localFileName] = File(modelDir, file.localFileName)

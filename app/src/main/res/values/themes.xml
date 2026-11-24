@@ -1,3 +1,12 @@
 <resources>
     <style name="Theme.Zhihu" parent="@android:style/Theme.Material.Light.NoActionBar"/>
+    <color name="splash_background">#FAFAFA</color>
+    <style name="Theme.Zhihu.Main" parent="Theme.Zhihu">
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+    <style name="Theme.Zhihu.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
+        <item name="postSplashScreenTheme">@style/Theme.Zhihu</item>
+    </style>
 </resources>

@@ -1,0 +1,22 @@
+{
+  "type": "pin",
+  "id": 301,
+  "url": "https://www.zhihu.com/pin/301",
+  "author": {
+    "id": "synthetic-author",
+    "url": "https://www.zhihu.com/people/synthetic-author",
+    "user_type": "people",
+    "url_token": "synthetic-author",
+    "name": "合成作者",
+    "headline": "合成回归样本",
+    "avatar_url": "",
+    "is_following": false
+  },
+  "content": [
+    {
+      "type": "text",
+      "title": "",
+      "content": "<p>合成想法正文 <strong>保留完整摘要</strong></p>"
+    }
+  ]
+}

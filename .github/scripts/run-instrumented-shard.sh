@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+# Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation (version 3 only).
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 set -euo pipefail
 
@@ -9,7 +23,12 @@ fi
 
 readonly shard_count=$1
 readonly shard_index=$2
-readonly device_serial=${ANDROID_SERIAL:-emulator-5554}
+device_serial=${ANDROID_SERIAL:-}
+if [[ -z "$device_serial" ]]; then
+    device_serial=$(adb get-serialno)
+fi
+[[ -n "$device_serial" && "$device_serial" != unknown ]]
+readonly device_serial
 readonly results_dir=app/build/outputs/androidTest-results
 readonly app_apk=${INSTRUMENT_APP_APK:?INSTRUMENT_APP_APK must point to the app APK}
 readonly test_apk=${INSTRUMENT_TEST_APK:?INSTRUMENT_TEST_APK must point to the test APK}
@@ -17,16 +36,6 @@ readonly instrumentation_component=com.github.zly2006.zhplus.lite.test/com.githu
 readonly instrumentation_result="$results_dir/instrumentation-shard-$shard_index.txt"
 
 mkdir -p "$results_dir"
-adb -s "$device_serial" logcat -c
-adb -s "$device_serial" logcat -v time -s ZHPP_TEST:I &
-logcat_pid=$!
-
-capture_diagnostics() {
-    kill "$logcat_pid" 2>/dev/null || true
-    wait "$logcat_pid" 2>/dev/null || true
-    adb -s "$device_serial" logcat -d > "$results_dir/logcat-shard-$shard_index.txt" || true
-}
-trap capture_diagnostics EXIT
 
 adb -s "$device_serial" install -r -t "$app_apk"
 adb -s "$device_serial" install -r -t "$test_apk"
@@ -35,4 +44,5 @@ adb -s "$device_serial" shell am instrument -w \
     -e numShards "$shard_count" \
     -e shardIndex "$shard_index" \
     "$instrumentation_component" | tee "$instrumentation_result"
-grep -Eq '^OK \([0-9]+ tests?\)$' "$instrumentation_result"
+# OK (0 tests) 不能算通过。
+grep -Eq '^OK \([1-9][0-9]* tests?\)$' "$instrumentation_result"

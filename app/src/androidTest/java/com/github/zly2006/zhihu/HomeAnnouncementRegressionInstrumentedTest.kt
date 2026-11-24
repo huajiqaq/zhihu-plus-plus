@@ -19,13 +19,21 @@ package com.github.zly2006.zhihu
 
 import android.content.Context
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -36,22 +44,31 @@ import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.navigation.Article
+import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Search
+import com.github.zly2006.zhihu.notification.HOME_NOTIFICATION_READ_UUIDS_PREFERENCE_KEY
+import com.github.zly2006.zhihu.notification.ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.ui.DailyScreen
 import com.github.zly2006.zhihu.ui.HOME_FEED_LIST_TAG
+import com.github.zly2006.zhihu.ui.HOME_TOP_ACTIONS_TAG
 import com.github.zly2006.zhihu.ui.HomeScreen
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.ZHIHU_PLUS_AUTHOR_PINS_URL
 import com.github.zly2006.zhihu.ui.homeAuthorPollAnnouncementTag
+import com.github.zly2006.zhihu.ui.homeOnlineNotificationTag
 import com.github.zly2006.zhihu.ui.homePinAnnouncementReadKey
 import com.github.zly2006.zhihu.updater.UpdateManager
 import com.github.zly2006.zhihu.viewmodel.feed.HomeFeedViewModel
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -65,7 +82,7 @@ class HomeAnnouncementRegressionInstrumentedTest {
     @Before
     fun setUp() {
         composeRule.setScreenContent {}
-        composeRule.resetAppPreferences()
+        composeRule.resetAppPreferences(forceMock = true)
         composeRule.activity.runOnUiThread {
             UpdateManager.updateState.value = UpdateManager.UpdateState.NoUpdate
             ViewModelProvider(composeRule.activity)[HomeFeedViewModel::class.java].apply {
@@ -90,9 +107,7 @@ class HomeAnnouncementRegressionInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/476
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/479
-     * Multi-item read-state correction: https://github.com/zly2006/zhihu-plus-plus/commit/d4b935329cb316a0b3793e807ca23cf4fb448f7c
+     * 展开通知与动态后逐条关闭，验证未读项保留及恢复前台后的刷新，防止整组误标已读。
      */
     @Test
     fun authorAnnouncements_keepUnreadItemsWhenOneIsDismissed() {
@@ -102,7 +117,6 @@ class HomeAnnouncementRegressionInstrumentedTest {
         val secondPin = authorTopicPin(secondPinId, "第二条开发动态")
         mockAuthorAnnouncements(firstPin, secondPin)
         composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE).edit(commit = true) {
-            putBoolean("duo3_home_account", false)
             putBoolean("showRefreshFab", false)
             putBoolean("loginForRecommendation", true)
             putBoolean("survey_feedback_done", true)
@@ -117,8 +131,13 @@ class HomeAnnouncementRegressionInstrumentedTest {
         composeRule.waitForIdle()
 
         composeRule.waitUntilRequestCount(1)
+        composeRule.waitUntilHomeFeedTagExists("home_transactions_toggle")
+        composeRule.onNodeWithTag("home_create_fab").assertIsDisplayed()
+        composeRule.expandTransactions()
+        composeRule.onNodeWithTag("home_create_fab").assertIsDisplayed()
         composeRule.waitUntilHomeFeedTagExists(homeAuthorPollAnnouncementTag(firstPinId))
         composeRule.waitUntilHomeFeedTagExists(homeAuthorPollAnnouncementTag(secondPinId))
+        composeRule.waitUntilHomeFeedTagExists(homeAuthorPollAnnouncementTag(firstPinId))
         composeRule
             .onNode(hasText("关闭") and hasAnyAncestor(hasTestTag(homeAuthorPollAnnouncementTag(firstPinId))))
             .performClick()
@@ -138,7 +157,7 @@ class HomeAnnouncementRegressionInstrumentedTest {
 
         val thirdPinId = 2064848000000000000L
         mockAuthorAnnouncements(
-            authorTopicPin(thirdPinId, "关于来自123duo3的UI修改<br><p>详细投票说明</p>"),
+            authorTopicPin(thirdPinId, "关于新版界面的调整<br><p>详细投票说明</p>"),
             secondPin,
             firstPin,
         )
@@ -149,21 +168,114 @@ class HomeAnnouncementRegressionInstrumentedTest {
         composeRule.waitUntilHomeFeedTagExists(homeAuthorPollAnnouncementTag(secondPinId))
         composeRule.waitUntilHomeFeedTagExists(homeAuthorPollAnnouncementTag(thirdPinId))
         composeRule.onNodeWithTag(homeAuthorPollAnnouncementTag(firstPinId)).assertDoesNotExist()
-        composeRule.onNodeWithText("关于来自123duo3的UI修改").assertExists()
+        composeRule.onNodeWithText("关于新版界面的调整").assertExists()
         composeRule.onNodeWithText("详细投票说明").assertDoesNotExist()
     }
 
-    private fun MainActivityComposeRule.waitUntilHomeFeedTagExists(tag: String) {
-        waitUntil("Expected tag $tag in home feed", timeoutMillis = 5_000) {
-            runCatching {
-                onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToNode(hasTestTag(tag))
-                true
-            }.getOrDefault(false)
+    @Test
+    fun onlineNotifications_keepPerUuidReadStateAndRefreshOnResume() {
+        val firstUuid = "da811fe3-858a-4655-afd4-a63024b74dbb"
+        val secondUuid = "2c9fe00a-80f3-4b8f-89a1-b96dbe411791"
+        val thirdUuid = "18e0690f-ecc8-4b22-afd6-cc5d1578b92d"
+        val first = """{"uuid":"$firstUuid","expiresAt":4102444800000,"title":"第一条在线通知","accept":{"text":"查看","key":"open_answer","value":"123"},"dismiss":"关闭"}"""
+        val second = """{"uuid":"$secondUuid","expiresAt":4102444800000,"title":"第二条在线通知","accept":{"text":"查看","key":"open_article","value":456},"dismiss":"关闭"}"""
+        val third = """{"uuid":"$thirdUuid","expiresAt":4102444800000,"title":"第三条在线通知","dismiss":"关闭"}"""
+        val duplicate = """{"uuid":"$firstUuid","expiresAt":4102444800000,"title":"不应重复显示","dismiss":"关闭"}"""
+        val invalid = """{"uuid":"fe17a116-717f-4cab-8d63-06e73c0b473e","expiresAt":4102444800000,"title":"无效通知","accept":{"text":"执行","key":"future_action"},"dismiss":"关闭"}"""
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL,
+            body = """{"notifications":[$first,$second,$duplicate,$invalid]}""",
+        )
+        mockAuthorAnnouncements()
+        val preferences = composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
+        preferences.edit(commit = true) {
+            putBoolean("showRefreshFab", false)
+            putBoolean("survey_feedback_done", true)
+            putString("recommendationMode", RecommendationMode.WEB.key)
         }
+        val navigator = composeRule.setScreenContent {
+            HomeScreen(scrollToTopTrigger = 0, innerPadding = PaddingValues())
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            ZhihuMockApi.requestCount(HttpMethod.Get, ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL) == 1
+        }
+        composeRule.waitUntilHomeFeedTagExists("home_transactions_toggle")
+        composeRule.expandTransactions()
+        composeRule.waitUntilHomeFeedTagExists(homeOnlineNotificationTag(firstUuid))
+        composeRule.waitUntilHomeFeedTagExists(homeOnlineNotificationTag(secondUuid))
+        composeRule.onNodeWithText("不应重复显示").assertDoesNotExist()
+        composeRule.onNodeWithText("无效通知").assertDoesNotExist()
+        composeRule.waitUntilHomeFeedTagExists(homeOnlineNotificationTag(firstUuid))
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(firstUuid) + "_accept").performClick()
+        assertEquals(Article(type = ArticleType.Answer, id = 123), navigator.destinations.single())
+        assertEquals(setOf(firstUuid), preferences.getStringSet(HOME_NOTIFICATION_READ_UUIDS_PREFERENCE_KEY, emptySet()))
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(firstUuid)).assertDoesNotExist()
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(secondUuid)).assertExists()
+
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL,
+            body = """{"notifications":[$third,$second,$first]}""",
+        )
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            ZhihuMockApi.requestCount(HttpMethod.Get, ZHIHU_PLUS_PLUS_HOME_NOTIFICATIONS_URL) == 2
+        }
+        composeRule.waitUntilHomeFeedTagExists(homeOnlineNotificationTag(thirdUuid))
+        composeRule.waitUntilHomeFeedTagExists(homeOnlineNotificationTag(secondUuid))
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(firstUuid)).assertDoesNotExist()
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(secondUuid) + "_accept").performClick()
+        assertEquals(Article(type = ArticleType.Article, id = 456), navigator.destinations.last())
+        assertEquals(setOf(firstUuid, secondUuid), preferences.getStringSet(HOME_NOTIFICATION_READ_UUIDS_PREFERENCE_KEY, emptySet()))
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(secondUuid)).assertDoesNotExist()
+        composeRule.onNodeWithTag(homeOnlineNotificationTag(thirdUuid)).assertExists()
+    }
+
+    @Test
+    fun dailyFailureRetriesThroughTheActualPageAndShowsSuccessfulEmptyState() {
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = "https://news-at.zhihu.com/api/4/stories",
+            body = "{}",
+            status = HttpStatusCode.InternalServerError,
+        )
+        composeRule.setScreenContent { DailyScreen() }
+        composeRule.onNodeWithTag("daily_screen_error").assertIsDisplayed()
+        val failedRequests = ZhihuMockApi.requestCount(urlSubstring = "/api/4/stories")
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = "https://news-at.zhihu.com/api/4/stories",
+            body = """{"date":"20260101","stories":[]}""",
+        )
+        composeRule.onNodeWithText("重试").performClick()
+        composeRule.waitForIdle()
+        assertEquals(failedRequests + 1, ZhihuMockApi.requestCount(urlSubstring = "/api/4/stories"))
+        composeRule.onNodeWithTag("daily_screen_empty").assertIsDisplayed()
+        composeRule.onAllNodesWithText("日报加载失败").assertCountEquals(0)
+    }
+
+    private fun MainActivityComposeRule.expandTransactions() {
+        onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToIndex(0)
+        val toggle = onNodeWithTag("home_transactions_toggle")
+        val bounds = toggle.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val topBar = onNodeWithTag(HOME_TOP_ACTIONS_TAG).fetchSemanticsNode().boundsInRoot
+        assertTrue("真实点击不能落在固定搜索顶栏下方：$bounds / $topBar", bounds.center.y >= topBar.bottom)
+        if (toggle.fetchSemanticsNode().config[SemanticsProperties.StateDescription] == "已收起") toggle.performClick()
+        toggle.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
+    }
+
+    private fun MainActivityComposeRule.waitUntilHomeFeedTagExists(tag: String) {
+        waitForIdle()
+        if (onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()) {
+            onNodeWithTag(HOME_FEED_LIST_TAG).performScrollToNode(hasTestTag(tag))
+        }
+        onNodeWithTag(tag).assertExists()
     }
 
     private fun MainActivityComposeRule.waitUntilRequestCount(count: Int) {
-        waitUntil("Expected $count author announcement requests", timeoutMillis = 5_000) {
+        waitUntil("等待 $count 次作者公告请求", timeoutMillis = 5_000) {
             ZhihuMockApi.requestCount(HttpMethod.Get, ZHIHU_PLUS_AUTHOR_PINS_URL) == count
         }
     }
@@ -203,7 +315,7 @@ class HomeAnnouncementRegressionInstrumentedTest {
         ZhihuMockApi.mockJson(
             method = HttpMethod.Get,
             url = ZHIHU_PLUS_AUTHOR_PINS_URL,
-            body = """{"data":${ZhihuJson.json.encodeToString(pins.toList())}}""",
+            body = """{"data":${ZhihuJson.json.encodeToString(pins)}}""",
         )
     }
 }

@@ -23,29 +23,23 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
 <div style="  display: flex; flex-flow: column; max-width: 520px; margin: auto; align-items: center" align="center">
   <img height="320" alt="知乎++在老年机上都能流畅运行" src="https://github.com/user-attachments/assets/e85e899c-d899-4309-8382-2a2aee25a1f9" />
   <div>
-    知乎++在老年机上都能流畅运行 photo by @zeky
+    知乎++在老年机上都能流畅运行，照片由 @zeky 提供
   </div>
 </div>
 
-
 ## 下载
 
-告别知乎 110MB+ 的 Android 客户端，Lite APK 只要不到 4 MB！
+Lite 不包含离线推理框架，安装包更小；Full 包含 ONNX 离线推理，支持基于 LLM embedding 的智能内容过滤。
 
 [点我下载](https://github.com/zly2006/zhihu-plus-plus/releases)
 
 [下载最新开发版本](https://github.com/zly2006/zhihu-plus-plus/releases/tag/nightly)
 
+[在电脑打开：浏览器扩展使用说明](misc/chrome-open-on-pc/README.md)
+
 桌面版提供 Windows MSI 安装包与 Linux AppImage（均内置 Java 运行时，下载安装即可使用，无需另外安装 Java），macOS 提供 arm64 原生应用。
 
-> 关于Full和Lite两个版本的说明：
-> Full版本包含了一个onnx框架，可以在端侧进行离线AI推理，支持基于LLM embedding的智能内容过滤功能，
-> 这实际上主要是本人对端侧AI的技术尝试，实际功能还有很多没开发的，比如人本地知识库（懒）；
-> Lite版本不支持智能内容过滤，但体积更小，性能更好。您可以根据自己的需求选择下载哪个版本。
-
-## 路线图
-
-### 已经实现的功能
+## 功能
 
 - 登录与账号
   - 支持手机验证码登录
@@ -63,6 +57,7 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   - 浏览问题详情页（排序、关注、日志、分享、评论）
   - 浏览想法（Pin）详情页（点赞、评论、分享、话题、投票）
   - 浏览收藏夹及收藏夹内容
+  - 支持「在电脑打开」：发送到私密收藏夹，用浏览器扩展直接打开最新一条（[说明](misc/chrome-open-on-pc/README.md)）
   - 在用户主页内搜索 TA 的创作
   - 历史记录（在线历史 + 本地历史，支持删除）
   - 展示知乎官方认证徽章
@@ -77,7 +72,7 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   - **支持导出整个收藏夹**
   - 内容划线高亮
   - 图片查看器支持动图（GIF）与多图滑动切换
-  - 数学公式渲染（LaTeX，字体动态下载）
+  - 数学公式渲染（LaTeX，内置 KaTeX 字体，可离线使用）
   - 支持调节正文段间距
   - 可拖动滚动条、上划/下划自动隐藏/显示操作按钮
 - 内容创作
@@ -90,7 +85,7 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   - 通知（支持分类、红点设置、全部标记已读、自动标记已读与通知筛选）
   - 可记名标记疑似 AIGC 内容，并查看有效标记和投票人
   - 表情包
-    - 经典表情`[惊喜]` <img src="misc/emojis/emoji_1114211280118018048.png" height="18" style="diSplay:inline"> 强势回归！
+    - 经典表情`[惊喜]` <img src="misc/emojis/emoji_1114211280118018048.png" height="18" style="diSplay:inline">
 - 屏蔽系统
   - 屏蔽词（支持正则表达式）
   - NLP 屏蔽词（基于 LLM embedding 和向量相似度匹配，仅 full 版本可用）
@@ -100,7 +95,7 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
   - 屏蔽历史记录
 - 其他
   - 基于 Kotlin Multiplatform 共享核心代码，支持 Android 与实验性桌面端
-  - 支持 zse96 v2 签名算法（可以调用 99% 的网页端 API）
+  - 支持 zse96 v2 网页请求签名
   - 支持模拟安卓端 API 调用
   - 支持 Deep Link 与剪贴板链接识别跳转
   - 支持二维码扫码结果展示和复制，可用于提取网址、Wi-Fi 密码等信息
@@ -121,16 +116,31 @@ Zhihu++独创本地推荐算法，把内容推荐完全放在本地进行，为�
 
 除此之外，我们不会收集任何其他数据，包括但不限于您的浏览记录、推荐算法的输入输出、屏蔽词列表等。
 
-### See Also
+### 其他客户端
 
 如果对其他知乎客户端感兴趣，这些客户端都不需要你root即可使用，也欢迎尝试：
 
 - [Hydrogen](https://github.com/zhihulite/Hydrogen)
-- [Zhihu--](https://github.com/huamurui/zhihu-minus-minus) （极早期开发阶段，功能尚有欠缺）
+- [Zhihu--](https://github.com/huamurui/zhihu-minus-minus)
 - [Zhihu++ swift版（iOS）](https://github.com/kangyun1994/zhihu-plus-plus-swift)
 - [Zhihu++ HMOS （鸿蒙版）](https://github.com/zhuoyi233/zhihu-plus-plus-HMOS)
 
 注意：这里的所有项目与知乎++无关，在此列出不代表其实得到了知乎++的支持或背书。
+
+## 开发构建
+
+打包需要 Python 3.11+、Git 和可用的上游输入。首次构建新的提椠版本时，先按[上游补丁维护](docs/upstream-dependency-patches.md#构建入口)配置 `ZHIHU_TIQIAN_TOOLCHAIN`。打包任务会生成引擎和字体并重放必要补丁；HRM Markdown 直接使用官方 Maven 构件。
+
+```bash
+./gradlew :app:assembleLiteDebug
+./gradlew :desktopApp:packageReleaseUberJarForCurrentOS
+```
+
+独立编译的补丁模式与维护方法见 [上游补丁](docs/upstream-dependency-patches.md)。离线只能复用已成功准备且校验完整的同版本输入；缺失、损坏或补丁冲突都会失败。缓存与生成产物不提交。
+
+## 参与开发
+
+协作规则见 [CLAUDE.md](CLAUDE.md)，提交 PR 时使用 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)。
 
 ## 贡献者
 

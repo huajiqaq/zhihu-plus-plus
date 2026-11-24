@@ -1,0 +1,48 @@
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb80577876afb 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -1,5 +1,3 @@
+-val tiqianSampleRepository = providers.gradleProperty("tiqianSampleRepository").orNull
+-
+ pluginManagement {
+     repositories {
+         google()
+@@ -12,13 +10,8 @@ dependencyResolutionManagement {
+     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+     repositories {
+         google()
+-        mavenCentral()
+-        tiqianSampleRepository?.let { repositoryPath ->
+-            maven {
+-                name = "tiqianSample"
+-                url = uri(repositoryPath)
+-                content { includeGroup("org.tiqian") }
+-            }
++        mavenCentral {
++            content { excludeGroup("org.tiqian") }
+         }
+         exclusiveContent {
+             forRepository {
+@@ -50,21 +43,11 @@ rootProject.name = "tiqian-math"
+ include(
+     ":engine",
+     ":font:tooling",
+     ":font:gradle-plugin",
+     ":font:metadata-generator",
+     ":font:stix",
+     ":platforms:android:font",
+     ":platforms:jvm:skia",
+     ":platforms:compose:compose",
+     ":scanner",
+-    ":preview",
+-    ":demo:android-app",
+ )
+-
+-project(":demo:android-app").projectDir = file("demo/android")
+-
+-// README artwork is an explicit cross-repository integration check. Keep it out of the normal
+-// build graph; readme-sample/generate.sh publishes one Tiqian checkout to an isolated repository.
+-if (tiqianSampleRepository != null) {
+-    include(":readme-sample")
+-}

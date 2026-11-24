@@ -16,4 +16,4 @@
 interface:
   display_name: "后台 UI 调试"
   short_description: "不抢前台地驱动 Compose UI 并收集可审计证据"
-  default_prompt: "Use $background-ui-debug to drive the debug-only UI control interface without bringing the app to the foreground."
+  default_prompt: "使用 $background-ui-debug 驱动仅调试版提供的 UI 控制接口，不将应用带到前台。"

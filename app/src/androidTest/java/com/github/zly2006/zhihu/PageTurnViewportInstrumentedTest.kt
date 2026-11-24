@@ -18,15 +18,16 @@
 package com.github.zly2006.zhihu
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarState
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,20 +36,29 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
+import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.ThemeMode
+import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
+import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
+import com.github.zly2006.zhihu.ui.components.AppPageTitleBarScrollState
+import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnCommand
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.appPageTitleBarScroll
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
+import com.github.zly2006.zhihu.ui.components.rememberAppPageTitleBarScrollState
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
-import com.github.zly2006.zhihu.ui.components.rememberPreferCollapsedExitUntilCollapsedScrollBehavior
 import com.github.zly2006.zhihu.ui.subscreens.PREF_PAGE_TURN_PERCENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,7 +66,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class PageTurnViewportInstrumentedTest {
@@ -64,8 +73,7 @@ class PageTurnViewportInstrumentedTest {
     val composeRule: MainActivityComposeRule = createAndroidComposeRule<MainActivity>()
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/630
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/728
+     * 翻页距离须按视口计算，禁用目标后按键交还系统；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/630
      */
     @Test
     fun modifierReportsViewportAndDisabledTargetReturnsKeysToSystem() {
@@ -110,9 +118,8 @@ class PageTurnViewportInstrumentedTest {
     }
 
     /**
-     * Regression: 编程式翻页（Page Down 键、翻页悬浮按钮、音量键翻页）不产生嵌套滚动事件，
-     * 基于 NestedScrollConnection 的自动隐藏 UI（主 tab 底栏、文章页顶栏收起）收不到通知。
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/760
+     * 编程式翻页须产生嵌套滚动通知，让基于 NestedScrollConnection 的自动隐藏界面
+     * （主标签底栏、文章页顶栏收起）响应翻页，但不得触发仅处理用户直接输入的回答切换。
      */
     @Test
     fun pageTurnCommandsDispatchNestedScrollEventsToAncestors() {
@@ -186,8 +193,7 @@ class PageTurnViewportInstrumentedTest {
     }
 
     /**
-     * Regression: 编程式翻页跳过顶栏收起阶段直接滚动正文，正文中间仍显示展开版顶栏。
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/760
+     * 祖先完整消费翻页距离以收起顶栏时，正文不得提前滚动，避免正文中间仍显示展开的顶栏。
      */
     @Test
     fun pageTurnDefersToAncestorConsumingEntirePreScroll() {
@@ -245,9 +251,8 @@ class PageTurnViewportInstrumentedTest {
     }
 
     /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/630
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/760
      * 祖先部分消费翻页距离时，正文移动剩余距离，后滚动事件不能重复计算祖先的消费量。
+     * 行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/630
      */
     @Test
     fun pageTurnPassesPartialPreScrollRemainderToContent() {
@@ -302,51 +307,82 @@ class PageTurnViewportInstrumentedTest {
         assertEquals(0.0, toolbarConnection.remaining.toDouble(), 0.01)
     }
 
-    /**
-     * Regression: 翻页结束未触发真实顶栏的吸附，超高标题会停在半收起状态。
-     * 验证首次翻页收完顶栏且正文不动，第二次才滚动正文。
-     * 关联 issue 未提出这项两阶段翻页行为；维护者 zly2006 已于 2026-09-25 明确认可其作为交互契约。
-     * Related issue: https://github.com/zly2006/zhihu-plus-plus/issues/630
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/760
-     */
+    /** 超高标题先收起、正文下次翻页才滚动；行为依据：#630。 */
     @Test
     @OptIn(ExperimentalMaterial3Api::class)
     fun pageTurnDrivesOversizedToolbarCollapseToCompletion() {
-        composeRule.resetAppPreferences()
+        composeRule.resetAppPreferences(forceMock = true)
+        ThemeManager.setThemeStyle(ThemeStyle.MATERIAL_EXPRESSIVE)
+        ThemeManager.setThemeMode(ThemeMode.LIGHT)
         composeRule.activity
             .getSharedPreferences(PREFERENCE_NAME, 0)
             .edit()
             .putInt(PREF_PAGE_TURN_PERCENT, 90)
             .commit()
 
-        val expectedPage = (300 * composeRule.activity.resources.displayMetrics.density).roundToInt() * 0.9f
         val dispatcher = PageTurnDispatcher()
-        lateinit var toolbarState: TopAppBarState
+        lateinit var titleBarState: AppPageTitleBarScrollState
         lateinit var scrollState: ScrollState
         composeRule.setScreenContent {
             CompositionLocalProvider(LocalPageTurnDispatcher provides dispatcher) {
-                toolbarState = rememberTopAppBarState(initialHeightOffsetLimit = -2 * expectedPage)
-                val toolbarBehavior = rememberPreferCollapsedExitUntilCollapsedScrollBehavior(toolbarState)
+                titleBarState = rememberAppPageTitleBarScrollState()
                 scrollState = rememberScrollState()
                 val target = rememberPageTurnTarget(
                     scrollState = scrollState,
                     enabled = true,
+                    titleBarScrollState = titleBarState,
                 )
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .nestedScroll(toolbarBehavior.nestedScrollConnection)
-                        .pageTurnViewportWithGuide(target)
-                        .verticalScroll(scrollState),
-                ) {
-                    repeat(80) { Text("第 $it 行", fontSize = 20.sp) }
+                Box(Modifier.fillMaxWidth().height(1000.dp)) {
+                    AppScaffold(
+                        modifier = Modifier.fillMaxSize().appPageTitleBarScroll(titleBarState),
+                        topBar = {
+                            AppPageTitleBar(
+                                title = (1..8).joinToString("\n") { "第 $it 行实际超高标题" },
+                                scrollState = titleBarState,
+                                multilineTitle = true,
+                            )
+                        },
+                    ) { padding ->
+                        Column(
+                            Modifier
+                                .padding(padding)
+                                .fillMaxWidth()
+                                .height(100.dp)
+                                .testTag("oversized_title_body")
+                                .pageTurnViewportWithGuide(target)
+                                .verticalScroll(scrollState),
+                        ) {
+                            repeat(80) { Text("第 $it 行正文", fontSize = 20.sp) }
+                        }
+                    }
                 }
             }
         }
+        /** 只读真实组件持有的状态，不为测试增加生产 getter 或手工测量上限。 */
+        val materialScroll = titleBarState.javaClass.declaredFields
+            .single { it.type == androidx.compose.material3.TopAppBarScrollBehavior::class.java }
+            .apply { isAccessible = true }
+            .get(titleBarState) as androidx.compose.material3.TopAppBarScrollBehavior
+        val toolbarState = materialScroll.state
+        composeRule.waitUntil(5_000) {
+            toolbarState.heightOffsetLimit > -Float.MAX_VALUE &&
+                composeRule
+                    .onNodeWithTag("oversized_title_body")
+                    .fetchSemanticsNode()
+                    .boundsInRoot.height > 0f
+        }
+        val viewport = composeRule.onNodeWithTag("oversized_title_body").fetchSemanticsNode()
+        val viewportHeight = viewport.size.height.toFloat()
+        assertTrue("实际正文视口必须完整位于可见布局内", viewportHeight > 0f && viewport.boundsInRoot.height == viewportHeight)
+        val expectedPage = viewportHeight * 0.9f
+        assertTrue(expectedPage > 0f)
+        assertTrue(toolbarState.heightOffsetLimit > -Float.MAX_VALUE)
+        assertTrue(-toolbarState.heightOffsetLimit > 2 * expectedPage)
+        assertEquals(0f, toolbarState.collapsedFraction, 0f)
 
         assertTrue(dispatcher.dispatch(PageTurnCommand.PageDown))
         composeRule.waitUntil(5_000) { toolbarState.collapsedFraction == 1f }
+        assertEquals(1f, toolbarState.collapsedFraction)
         assertEquals(0, scrollState.value)
 
         assertTrue(dispatcher.dispatch(PageTurnCommand.PageDown))

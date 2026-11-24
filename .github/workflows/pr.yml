@@ -4,6 +4,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: pull-request-check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -19,7 +22,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
@@ -50,7 +53,8 @@ jobs:
             exit 0
           fi
 
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(app/|shared/|\.github/scripts/run-instrumented-shard\.sh$|\.github/workflows/(instrument-test|pr)\.yml$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/)'; then
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          if grep -Eq '^(app/|shared(-[^/]+)?/|build-logic/|buildSrc/|\.github/scripts/run-instrumented-shard\.sh$|\.github/workflows/(instrument-test|pr)\.yml$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/)' <<< "$changed_files"; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
@@ -60,21 +64,17 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 默认的 tools 包已无法安装；失败记录：https://github.com/zly2006/zhihu-plus-plus/actions/runs/35182179380/job/105076511639
-          packages: platform-tools
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Build Lite APKs
         env:
-          CI_BUILD_MINIFY: false
           RUN_INSTRUMENTED_TESTS: ${{ steps.instrumented_changes.outputs.required }}
         run: |
           tasks=(assembleLiteDebug)
@@ -127,18 +127,22 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
       - name: Build Desktop Release Package
         run: ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS --max-workers=2
 
   unit-tests:
-    name: Unit Tests
+    name: Lite, Shared JVM, Tooling and Upstream Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -146,14 +150,149 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: zulu
-          java-version: "23"
+          java-version: "21"
           cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
-      - name: Run unit tests
-        run: ./gradlew :shared:jvmTest :app:testLiteDebugUnitTest --max-workers=2
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
+      - name: Run Lite, shared JVM and build tooling tests
+        run: |
+          set -euo pipefail
+          tasks=(:app:testLiteDebugUnitTest :build-logic:test)
+          reports=(app/build/test-results/testLiteDebugUnitTest build-logic/build/test-results/test)
+          for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
+            [[ -f "$build_script" ]] || continue
+            module="${build_script%%/*}"
+            tasks+=(":$module:jvmTest")
+            if [[ -n "$(find "$module/src" -type f \( -path '*/commonTest/*' -o -path '*/jvmTest/*' \) \( -name '*.kt' -o -name '*.java' \) -print -quit)" ]]; then
+              reports+=("$module/build/test-results/jvmTest")
+            else
+              printf '%s\n' "$module:jvmTest: NO-SOURCE，不计为测试通过" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
+
+      - name: Run buildSrc JVM tests
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          ./gradlew --project-dir buildSrc test --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py buildSrc/build/test-results/test
+
+      - name: Prepare the validated upstream module matrix
+        if: ${{ !cancelled() }}
+        id: upstream
+        run: |
+          set -euo pipefail
+          inputs="$(python3 -I gradle/prepare-upstream-sources.py --package --offline)"
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          . "$inputs/sources/tiqian-core/tools/module-test-tasks.sh"
+          printf 'execute: %s\ncompile only: %s\n' "${MODULE_TEST_EXECUTE_TASKS[*]}" "${MODULE_TEST_COMPILE_ONLY_TASKS[*]}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Upstream Android device suites: compile only here; iOS suites: compile only, not executed. macOS Apple suites run in macos-native.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the official core JVM and host matrix
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        env:
+          UPSTREAM_INPUTS: ${{ steps.upstream.outputs.inputs }}
+        run: |
+          set -euo pipefail
+          core="$UPSTREAM_INPUTS/sources/tiqian-core"
+          . "$core/tools/module-test-tasks.sh"
+          ./gradlew --project-dir "$core" "${MODULE_TEST_EXECUTE_TASKS[@]}" -PtiqianUpstreamSkiko=true --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py \
+            "$core/platforms/compose/compose/build/test-results/jvmTest" \
+            "$core/platforms/compose/material3/build/test-results/jvmTest" \
+            "$core/platforms/compose/skia-jvm/build/test-results/jvmTest" \
+            "$core/platforms/android/native-font/build/test-results/testDebugUnitTest" \
+            "$core/platforms/android/view/build/test-results/testDebugUnitTest" \
+            "$core/demo/font-diagnostics/build/test-results/testDebugUnitTest"
+
+      - name: Run all official core assertion probes
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        env:
+          UPSTREAM_INPUTS: ${{ steps.upstream.outputs.inputs }}
+        run: |
+          set -euo pipefail
+          . "$UPSTREAM_INPUTS/sources/tiqian-core/tools/module-test-tasks.sh"
+          mkdir -p "$RUNNER_TEMP/core-probes"
+          classes="$(module_test_probe_classes "$UPSTREAM_INPUTS/sources/tiqian-core")"
+          test -n "$classes"
+          status=0
+          while IFS= read -r probe; do
+            log="$RUNNER_TEMP/core-probes/$probe.log"
+            if ! ./gradlew ":upstream-tiqian-core$MODULE_TEST_PROBE_TASK" -PprobeClass="$probe" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true -PtiqianUpstreamSkiko=true --max-workers=2 2>&1 | tee "$log"; then status=1; fi
+            if ! grep -Eq '^OK \([1-9][0-9]* tests?\)' "$log"; then status=1; fi
+          done <<< "$classes"
+          exit "$status"
+
+      - name: Run the complete generated Kotlin suite outside source inputs
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        env:
+          UPSTREAM_INPUTS: ${{ steps.upstream.outputs.inputs }}
+        run: |
+          set -euo pipefail
+          generated="$RUNNER_TEMP/core-generated-suite"
+          mkdir -p "$generated"
+          export ZHIHU_GENERATED_TEST_OUTPUT="$generated"
+          printf '%s\n' \
+            'gradle.afterProject { project ->' \
+            '  if (project.path == ":boring-kotlin-f32") {' \
+            '    project.tasks.withType(org.gradle.api.tasks.JavaExec).configureEach { task ->' \
+            '      if (task.name == "generatedTestSuite") {' \
+            '        task.workingDir(System.getenv("ZHIHU_GENERATED_TEST_OUTPUT"))' \
+            '      }' \
+            '    }' \
+            '  }' \
+            '}' > "$generated/working-dir.gradle"
+          ./gradlew :upstream-tiqian-core:boring-kotlin-f32:generatedTestSuite --init-script "$generated/working-dir.gradle" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2 2>&1 | tee "$generated/gradle.log"
+          python3 -I .github/scripts/verify-test-results.py \
+            --generated-main "$UPSTREAM_INPUTS/sources/tiqian-core/engine-haxe/out/kotlin-f32/gen-tests/TestMain.kt" \
+            --generated-results "$UPSTREAM_INPUTS/sources/tiqian-core/build/boring-kotlin-f32/test-results/generated-suite.jsonl"
+          python3 -I gradle/prepare-upstream-sources.py --package --offline
+
+      - name: Run markdown and math JVM, host and tooling suites
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        env:
+          UPSTREAM_INPUTS: ${{ steps.upstream.outputs.inputs }}
+        run: |
+          set -euo pipefail
+          ./gradlew :upstream-tiqian-markdown:jvmTest \
+            :upstream-tiqian-math:engine:jvmTest :upstream-tiqian-math:engine:testAndroidHostTest \
+            :upstream-tiqian-math:font:stix:jvmTest :upstream-tiqian-math:platforms:jvm:skia:jvmTest \
+            :upstream-tiqian-math:platforms:compose:compose:jvmTest \
+            :upstream-tiqian-math:font:tooling:test :upstream-tiqian-math:font:gradle-plugin:test \
+            :upstream-tiqian-math:font:metadata-generator:test :upstream-tiqian-math:scanner:test \
+            :upstream-tiqian-math:font:metadata-generator:verifyBundledMathMetadata \
+            -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true -PtiqianUpstreamSkiko=true --continue --max-workers=2
+          math="$UPSTREAM_INPUTS/sources/tiqian-math"
+          python3 -I .github/scripts/verify-test-results.py \
+            "$UPSTREAM_INPUTS/sources/tiqian-markdown/build/test-results/jvmTest" \
+            "$math/engine/build/test-results/jvmTest" "$math/engine/build/test-results/testAndroidHostTest" \
+            "$math/font/stix/build/test-results/jvmTest" "$math/platforms/jvm/skia/build/test-results/jvmTest" \
+            "$math/platforms/compose/compose/build/test-results/jvmTest" \
+            "$math/font/tooling/build/test-results/test" "$math/font/gradle-plugin/build/test-results/test" \
+            "$math/scanner/build/test-results/test"
+          echo 'math metadata-generator:test has no test sources; verifyBundledMathMetadata is the real metadata check. Non-consumed JS and non-host native targets are not executed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compile upstream suites that require another runtime
+        if: ${{ !cancelled() && steps.upstream.outcome == 'success' }}
+        env:
+          UPSTREAM_INPUTS: ${{ steps.upstream.outputs.inputs }}
+        run: |
+          set -euo pipefail
+          . "$UPSTREAM_INPUTS/sources/tiqian-core/tools/module-test-tasks.sh"
+          status=0
+          if ! ./gradlew --project-dir "$UPSTREAM_INPUTS/sources/tiqian-core" "${MODULE_TEST_COMPILE_ONLY_TASKS[@]}" --continue --max-workers=2; then status=1; fi
+          if ! ./gradlew :upstream-tiqian-markdown:compileAndroidDeviceTest \
+            :upstream-tiqian-math:platforms:android:font:compileDebugAndroidTestKotlin \
+            :upstream-tiqian-math:platforms:compose:compose:compileAndroidDeviceTest \
+            -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=2; then status=1; fi
+          exit "$status"
 
       - name: Upload test reports
         if: always()
@@ -162,7 +301,194 @@ jobs:
           name: PR Test Reports
           path: |
             app/build/reports
-            shared/build/reports
+            app/build/test-results
+            build-logic/build/reports
+            build-logic/build/test-results
+            buildSrc/build/reports
+            buildSrc/build/test-results
+            shared*/build/reports
+            shared*/build/test-results
+            .gradle/upstream-inputs/*/provenance.json
+            .gradle/upstream-inputs/*/sources/**/build/reports/**
+            .gradle/upstream-inputs/*/sources/**/build/test-results/**
+            .gradle/upstream-inputs/*/sources/tiqian-core/build/boring-kotlin-f32/test-results/**
+            .gradle/upstream-inputs/*/sources/tiqian-core/engine-haxe/out/kotlin-f32/gen/**
+            .gradle/upstream-inputs/*/sources/tiqian-core/engine-haxe/out/kotlin-f32/gen-tests/**
+            ${{ runner.temp }}/core-probes/**
+            ${{ runner.temp }}/core-generated-suite/**
+          include-hidden-files: true
+          if-no-files-found: error
+
+  rust-verification:
+    name: Rust and Android JNI Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
+
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          override: true
+
+      - name: Add Rust components and Android targets
+        run: |
+          rustup component add rustfmt clippy
+          rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Check and test Rust
+        working-directory: rs-hf-tokenizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --color never 2>&1 | tee "$RUNNER_TEMP/rust-tests.log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/rust-tests.log"
+
+      - name: Run Full app JVM tests
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          ./gradlew :app:testFullDebugUnitTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py app/build/test-results/testFullDebugUnitTest
+
+      - name: Build tokenizer AAR and test APK
+        if: ${{ !cancelled() }}
+        id: tokenizer_apks
+        run: ./gradlew :sentence_embeddings:assembleDebug :sentence_embeddings:assembleDebugAndroidTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
+
+      - name: Enable KVM
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test HFTokenizer JNI on emulator
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: default
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew :sentence_embeddings:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
+
+      - name: Verify JNI tests ran
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
+        run: python3 -I .github/scripts/verify-test-results.py sentence_embeddings/build/outputs/androidTest-results --class-name com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest
+
+      - name: Upload JNI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HFTokenizer JNI Test Reports
+          path: |
+            app/build/reports/tests/testFullDebugUnitTest/**
+            app/build/test-results/testFullDebugUnitTest/**
+            sentence_embeddings/build/reports/androidTests/**
+            sentence_embeddings/build/outputs/androidTest-results/**
+            ${{ runner.temp }}/rust-tests.log
+          if-no-files-found: error
+
+  macos-native:
+    name: macOS Native Compile and Tests
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      - name: Change wrapper permissions
+        run: chmod +x ./gradlew
+
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
+      - name: Compile native hosts and run every populated common/native suite
+        run: |
+          set -euo pipefail
+          tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:syncDebugMacosUiDebug :macosUiDebug:verifyMacosReleaseIsolation)
+          reports=(macosApp/build/test-results/macosArm64Test)
+          for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
+            [[ -f "$build_script" ]] || continue
+            module="${build_script%%/*}"
+            tasks+=(":$module:macosArm64Test")
+            if [[ -n "$(find "$module/src" -type f \( -path '*/commonTest/*' -o -path '*/macosTest/*' -o -path '*/nativeTest/*' -o -path '*/appleTest/*' \) -name '*.kt' -print -quit)" ]]; then
+              reports+=("$module/build/test-results/macosArm64Test")
+            else
+              printf '%s\n' "$module:macosArm64Test: NO-SOURCE，不计为测试通过" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          for module in shaping frontend frontend:coretext-render; do
+            tasks+=(":upstream-tiqian-core:platforms:apple:$module:macosArm64Test")
+          done
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=2
+          inputs="$(python3 -I gradle/prepare-upstream-sources.py --package --offline)"
+          for module in shaping frontend frontend/coretext-render; do
+            reports+=("$inputs/sources/tiqian-core/platforms/apple/$module/build/test-results/macosArm64Test")
+          done
+          python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
+          echo 'macOS arm64 host/common and upstream Apple suites execute here. iOS device/simulator tests and other native targets are not executed.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run isolated offscreen native smoke without a window
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python3 -I .github/scripts/verify-test-results.py \
+            --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
+            --smoke-output "$RUNNER_TEMP/macos-native-smoke/login"
+          python3 -I .github/scripts/verify-test-results.py \
+            --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
+            --smoke-root main --smoke-output "$RUNNER_TEMP/macos-native-smoke/main"
+
+      - name: Upload native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS Native Test Reports
+          path: |
+            shared*/build/reports/tests/macosArm64Test/**
+            shared*/build/test-results/macosArm64Test/**
+            macosApp/build/reports/tests/macosArm64Test/**
+            macosApp/build/test-results/macosArm64Test/**
+            .gradle/upstream-inputs/*/provenance.json
+            .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/reports/tests/macosArm64Test/**
+            .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/test-results/macosArm64Test/**
+            ${{ runner.temp }}/macos-native-smoke/**
+          include-hidden-files: true
+          if-no-files-found: error
 
   mock-instrumented-shards:
     name: Mock Instrumented Shard (${{ matrix.shard_label }}/5)
@@ -199,7 +525,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 默认的 tools 包已无法安装；失败记录：https://github.com/zly2006/zhihu-plus-plus/actions/runs/35182179380/job/105076511639
           packages: platform-tools
 
       - name: Enable KVM
@@ -237,6 +562,9 @@ jobs:
       - ktlint
       - build_pr
       - unit-tests
+      - desktop-jar
+      - rust-verification
+      - macos-native
       - mock-instrumented-shards
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -246,12 +574,18 @@ jobs:
           KTLINT_RESULT: ${{ needs.ktlint.result }}
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
+          DESKTOP_RESULT: ${{ needs.desktop-jar.result }}
+          RUST_RESULT: ${{ needs.rust-verification.result }}
+          MACOS_RESULT: ${{ needs.macos-native.result }}
           RUN_INSTRUMENTED_TESTS: ${{ needs.build_pr.outputs.run_instrumented_tests }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
           test "$KTLINT_RESULT" = "success"
           test "$BUILD_RESULT" = "success"
           test "$UNIT_TEST_RESULT" = "success"
+          test "$DESKTOP_RESULT" = "success"
+          test "$RUST_RESULT" = "success"
+          test "$MACOS_RESULT" = "success"
           if [[ "$RUN_INSTRUMENTED_TESTS" == "true" ]]; then
             test "$SHARD_RESULT" = "success"
           else

@@ -44,8 +44,11 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
+
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Change wrapper permissions
         shell: bash
@@ -188,8 +191,8 @@ jobs:
       - name: Set Up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu' # See 'Supported distributions' for available options
-          java-version: '17'
+          distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
+          java-version: '21'
           cache: 'gradle'
       - name: Setup rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -197,7 +200,7 @@ jobs:
           override: true
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk || true
+        run: cargo install cargo-ndk --locked
 
       - name: Add Android Rust targets
         run: |
@@ -209,7 +212,7 @@ jobs:
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
       - name: Cache Rust
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -221,7 +224,7 @@ jobs:
           restore-keys: |
             rust-cache-
       - name: Cache Gradle
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -229,13 +232,9 @@ jobs:
             ~/.m2/repository
             ./.gradle
             ./**/.gradle
-          # dont invalidate cache if only gradle.properties is changed -- they
-          key: gradle-cache-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 默认的 tools 包已无法安装；失败记录：https://github.com/zly2006/zhihu-plus-plus/actions/runs/35182179380/job/105076511639
-          packages: platform-tools
+          key: gradle-cache-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties', 'gradle/upstream-sources.lock.json') }}
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
 
       - name: Install Android NDK
         run: |
@@ -244,21 +243,24 @@ jobs:
       - name: Run KtLint
         run: ./gradlew ktlintCheck
       - name: Build App
-        # Build .apk
         run: |
+          if [[ "$PUBLISH_RELEASE" == "true" && -z "${signingKey//[[:space:]]/}" ]]; then
+            printf '%s\n' 'A signing key is required to publish Android release artifacts.' >&2
+            exit 1
+          fi
           bash ./gradlew ${{inputs.args}} assembleFullRelease
           bash ./gradlew ${{inputs.args}} assembleLiteRelease
         env:
+          PUBLISH_RELEASE: ${{ inputs.release || inputs.nightly_release }}
           signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
           keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          CI_BUILD_MINIFY: ${{ inputs.minify }}
       - name: Move files
         run: |
           mkdir -p app/build/upload
-          mv app/build/outputs/apk/full/release/app-full-release.apk app/build/upload/zhihu++-full.apk
-          mv app/build/outputs/apk/lite/release/app-lite-release.apk app/build/upload/zhihu++-lite.apk
+          mv app/build/outputs/apk/full/release/app-full-release*.apk app/build/upload/zhihu++-full.apk
+          mv app/build/outputs/apk/lite/release/app-lite-release*.apk app/build/upload/zhihu++-lite.apk
       - name: Compress lite mapping file
         if: ${{ inputs.minify }}
         run: |
@@ -303,7 +305,7 @@ jobs:
           path: app/build/upload/
           if-no-files-found: error
 
-      # Delete existing nightly release
+      # 删除现有 nightly 发布。
       - name: Delete existing nightly release
         if: ${{ inputs.minify && inputs.nightly_release }}
         uses: actions/github-script@v7
@@ -343,7 +345,7 @@ jobs:
               }
             }
 
-      # Generate nightly changelog
+      # 生成 nightly 更新记录。
       - name: Generate nightly changelog
         if: ${{ inputs.minify && inputs.nightly_release }}
         id: nightly_changelog
@@ -356,7 +358,7 @@ jobs:
               per_page: 100,
             });
 
-            // Find the latest non-nightly tag
+            // 查找最近的非 nightly 标签。
             const lastReleaseTag = tags.find(t => t.name !== 'nightly');
             let since;
             if (lastReleaseTag) {
@@ -367,7 +369,7 @@ jobs:
               });
               since = tagCommit.commit.committer.date;
             } else {
-              // Fallback: 24 hours ago
+              // 没有发布标签时仅回溯 24 小时。
               since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
             }
 
@@ -396,7 +398,7 @@ jobs:
             }
           result-encoding: string
 
-      # Create new nightly release
+      # 创建新的 nightly 发布。
       - name: Create Nightly Release
         if: ${{ inputs.minify && inputs.nightly_release }}
         id: nightly_release
@@ -446,7 +448,6 @@ jobs:
 
             > 关于Full和Lite两个版本的说明：
             > Full版本包含了一个onnx框架，可以在端侧进行离线AI推理，支持基于LLM embedding的智能内容过滤功能，
-            > 这实际上主要是本人对端侧AI的技术尝试，实际功能还有很多没开发的，比如人本地知识库（懒）；
             > Lite版本不支持智能内容过滤，但体积更小，性能更好。您可以根据自己的需求选择下载哪个版本。
 
             ${{ steps.release_notes.outputs.result }}

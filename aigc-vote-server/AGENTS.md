@@ -1,4 +1,4 @@
-# AIGC Vote Server Instructions
+# AIGC 标记服务协作说明
 
 ## 数据迁移
 

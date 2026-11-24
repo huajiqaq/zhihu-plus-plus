@@ -1,0 +1,26 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 125962eeed2070de08365a8bfeed016a24c1f6ba..a991009f2a88bcfb2ecaf4174dbf1d22434382a6 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -228,3 +228,21 @@ tasks.register("publishMathToCentralSnapshots") {
+     description = "Uploads every public Tiqian Math module to the Central Portal SNAPSHOT repository."
+     dependsOn(publishedModules.keys.map { "$it:publishAllPublicationsToCentralSnapshotsRepository" })
+ }
++
++// The host application runs on the Skiko that ships with its Compose Multiplatform release.
++// Skiko 0.156 turned FontStyle into a value class, so JVM classes compiled against 0.144.6
++// fail there with NoSuchMethodError. Resolve Skiko at the host version on JVM classpaths.
++// -PtiqianUpstreamSkiko=true keeps the Skiko this build declares, for running its own tests.
++if (providers.gradleProperty("tiqianUpstreamSkiko").orNull != "true") {
++    allprojects {
++        configurations.configureEach {
++            val attributes = attributes
++            resolutionStrategy.eachDependency {
++                val jvm = attributes.keySet().any {
++                    it.name == "org.jetbrains.kotlin.platform.type" && attributes.getAttribute(it).toString() == "jvm"
++                }
++                if (jvm && requested.group == "org.jetbrains.skiko") useVersion("0.156.1")
++            }
++        }
++    }
++}

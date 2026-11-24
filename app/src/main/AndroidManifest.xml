@@ -6,6 +6,9 @@
             android:name="android.hardware.camera"
             android:required="false"/>
 
+    <!-- 模糊只在 isRuntimeShaderSupported() 为真时启用，旧设备使用实色容器。 -->
+    <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur"/>
+
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
@@ -17,12 +20,15 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
+            android:name=".ZhihuApplication"
             android:allowBackup="true"
             android:dataExtractionRules="@xml/data_extraction_rules"
             android:fullBackupContent="@xml/backup_rules"
@@ -50,15 +56,19 @@
                 android:enableOnBackInvokedCallback="true"
                 tools:ignore="DiscouragedApi,LockedOrientationActivity"/>
         <activity
-                android:name=".MainActivity"
+                android:name=".SplashActivity"
                 android:exported="true"
-                android:theme="@style/Theme.Zhihu"
-                android:windowSoftInputMode="adjustResize">
+                android:theme="@style/Theme.Zhihu.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
-
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+        </activity>
+        <activity
+                android:name=".MainActivity"
+                android:exported="true"
+                android:theme="@style/Theme.Zhihu.Main"
+                android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
 
@@ -81,6 +91,12 @@
                 <data android:scheme="zhihu"/>
             </intent-filter>
         </activity>
+        <activity
+                android:name=".FatalErrorActivity"
+                android:exported="false"
+                android:process=":error"
+                android:taskAffinity=""
+                android:persistableMode="persistNever"/>
         <activity
                 android:name=".WebviewActivity"
                 android:exported="false"/>

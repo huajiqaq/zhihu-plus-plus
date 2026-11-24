@@ -1,4 +1,22 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import org.gradle.jvm.tasks.Jar
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -6,10 +24,32 @@ val appVersionName = property("app.versionName").toString()
 val desktopPackageVersion = if (appVersionName.count { it == '.' } >= 2) appVersionName else "$appVersionName.0"
 
 plugins {
-    kotlin("jvm")
-    id("org.jetbrains.compose")
-    kotlin("plugin.compose")
-    id("org.jlleitschuh.gradle.ktlint")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.plugin.compose)
+    id("com.mikepenz.aboutlibraries.plugin")
+    alias(libs.plugins.ktlint)
+}
+
+val desktopLicenseManifest = layout.buildDirectory.file("generated/aboutLibraries/aboutlibraries.json")
+
+aboutLibraries {
+    collect {
+        all.set(true)
+        // 许可证清单只包含安装包的实际运行依赖，不把 compileOnly 的平台类型算入。
+        filterVariants.set(setOf("runtimeClasspath"))
+    }
+    export {
+        outputFile.set(desktopLicenseManifest)
+    }
+}
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(tasks.named("exportLibraryDefinitions"))
+    from(desktopLicenseManifest)
+    if (rootProject.extensions.extraProperties.has("zhihuUpstreamInputs")) {
+        from(File(rootProject.extensions.extraProperties["zhihuUpstreamInputs"] as String, "assets"))
+    }
 }
 
 ktlint {
@@ -22,34 +62,27 @@ ktlint {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_17
+        jvmTarget = JvmTarget.JVM_21
     }
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
-    }
-}
-
-// Force material3 to 1.10.0-alpha05，与 shared 模块保持一致。
-// 根因：shared 模块 commonMain 通过 material-kolor 的 strictly 约束解析到 1.10.0-alpha05，
-// 但平台配置和本模块如果没有 force，会各自解析到不同版本（1.9.0 或 1.11.0-alpha07），
-// 导致运行时类冲突或编译时 internal API 不可见。
-configurations.configureEach {
-    resolutionStrategy {
-        force("org.jetbrains.compose.material3:material3:1.10.0-alpha05")
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 
 dependencies {
     implementation(projects.shared)
-    implementation(compose.desktop.currentOs)
-    // JavaFX WebView 用于桌面端内嵌风控验证页面。
-    // JavaFX POM 使用 ${javafx.platform} classifier，Gradle 不会自动解析。
-    // 使用 resolutionStrategy 强制所有 JavaFX 模块使用平台 classifier。
+    implementation(project(":shared-feature-settings"))
+    runtimeOnly(libs.dbus.java.transport.native.unixsocket)
+    implementation(project(":shared-ui-foundation"))
+    implementation(project(":shared-ui-components"))
+    implementation(libs.jb.compose.ui)
+    // Gradle 不解析 JavaFX POM 的平台 classifier；显式指定才能取得类和 JNI。
+    // 桌面内嵌 WebView 使用 JavaFX；共享模块编译类型，宿主通过 runtimeOnly 提供类与 JNI。
     val osName = System.getProperty("os.name").lowercase()
     val osArch = System.getProperty("os.arch").lowercase()
     val fxClassifier =
@@ -60,9 +93,10 @@ dependencies {
             osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
             else -> "linux"
         }
-    val javafxModules = listOf("javafx-base", "javafx-controls", "javafx-graphics", "javafx-web", "javafx-swing", "javafx-media")
+    val javafxModules =
+        listOf(libs.openjfx.base, libs.openjfx.graphics, libs.openjfx.controls, libs.openjfx.web, libs.openjfx.swing, libs.openjfx.media)
     javafxModules.forEach { module ->
-        implementation("org.openjfx:$module:21.0.2:$fxClassifier")
+        runtimeOnly(variantOf(module) { classifier(fxClassifier) })
     }
 }
 
@@ -124,18 +158,16 @@ compose.desktop {
         }
 
         nativeDistributions {
-            // 对外发布的安装形式：Windows 用 MSI，Linux 用 AppImage（由 CI 用 appimagetool
-            // 把 jpackage 的 app-image 目录封装成单文件）。macOS 走 macosApp 的 Kotlin/Native 构建。
+            // 保留 JavaFX WebView 的 JRE 字体后备，不依赖用户系统是否安装相同字体。
+            stripJreFonts = false
+            // AppImage 由 CI 封装 jpackage app-image；macOS 使用 macosApp 的 Native 构建。
             targetFormats(TargetFormat.AppImage, TargetFormat.Msi)
             packageName = "Zhihu++"
             packageVersion = desktopPackageVersion
             description = "Free and ad-free third-party Zhihu client"
             vendor = "zly2006"
 
-            // jlink 裁剪内嵌运行时：默认只含 java.base/java.desktop/java.logging/jdk.crypto.ec，
-            // 其余模块按依赖补齐（JavaFX WebView 的 JS 互操作、JDBC、HTTP、中文扩展字符集等）。
-            // 依赖变化后用 ./gradlew :desktopApp:suggestModules 校对；注意 checkRuntime 不会
-            // 校验模块是否齐全，缺模块只会在启动时报错，改完列表要实际跑一次安装包。
+            // jlink 需保留 WebView JS/JDBC/HTTP/中文字符集所用模块；checkRuntime 不检查缺失模块。
             modules(
                 "java.management",
                 "java.naming",
@@ -146,6 +178,8 @@ compose.desktop {
                 "java.xml",
                 "jdk.charsets",
                 "jdk.jsobject",
+                "jdk.net",
+                "jdk.security.auth",
                 "jdk.unsupported",
                 "jdk.zipfs",
             )

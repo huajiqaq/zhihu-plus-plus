@@ -1,3 +1,20 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -6,7 +23,7 @@ const katex = require("katex");
 const projectRoot = path.resolve(__dirname, "../..");
 const corpusRoot = path.join(
   projectRoot,
-  "shared/src/jvmTest/resources/zhihu-formula-corpus",
+  "shared-domain/src/jvmTest/resources/zhihu-formula-corpus",
 );
 const formulas = JSON.parse(
   fs.readFileSync(path.join(corpusRoot, "formulas.json"), "utf8"),

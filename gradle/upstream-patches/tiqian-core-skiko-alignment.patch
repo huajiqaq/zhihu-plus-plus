@@ -1,0 +1,108 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 15dad1435b4ccdcfe9c1ae5f67b30686fd47ae82..cc8d6efff061fe14f1da68114b5b04ee60a381d3 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -264,3 +264,21 @@ tasks.register("runComposeDemo") {
+     description = "Opens the shared Tiqian Compose demo on Desktop."
+     dependsOn(":demo:runComposeDemo")
+ }
++
++// The host application runs on the Skiko that ships with its Compose Multiplatform release.
++// Skiko 0.156 turned FontStyle into a value class, so JVM classes compiled against 0.144.6
++// fail there with NoSuchMethodError. Resolve Skiko at the host version on JVM classpaths.
++// -PtiqianUpstreamSkiko=true keeps the Skiko this build declares, for running its own tests.
++if (providers.gradleProperty("tiqianUpstreamSkiko").orNull != "true") {
++    allprojects {
++        configurations.configureEach {
++            val attributes = attributes
++            resolutionStrategy.eachDependency {
++                val jvm = attributes.keySet().any {
++                    it.name == "org.jetbrains.kotlin.platform.type" && attributes.getAttribute(it).toString() == "jvm"
++                }
++                if (jvm && requested.group == "org.jetbrains.skiko") useVersion("0.156.1")
++            }
++        }
++    }
++}
+diff --git a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt b/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
+index 56073f0bcc30a81f6cbae86d1f19049c413065dc..462a0567fd34277100c8a2d659e137503e0218a9 100644
+--- a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
++++ b/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
+@@ -221,7 +221,7 @@ internal actual fun ContentDrawScope.drawParagraph(
+         for (ruby in result.debug.rubyDecisions) {
+             // 注文 uses its OWN font (注音 needs ㄅㄆㄇ glyphs; 拼音/释义 may differ) —
+             // resolved via the shared resolver, defaulting to the Latin face.
+-            val rubyStyle = org.jetbrains.skia.FontStyle(ruby.fontWeight, org.jetbrains.skia.FontStyle.NORMAL.width, org.jetbrains.skia.FontSlant.UPRIGHT)
++            val rubyStyle = org.jetbrains.skia.FontStyle.NORMAL.withWeight(ruby.fontWeight).withSlant(org.jetbrains.skia.FontSlant.UPRIGHT)
+             val tf = SkiaSystemTypefaces.typeface(isLatin = true, family = ruby.fontFamilies.firstOrNull(), style = rubyStyle)
+                 ?: SkiaSystemTypefaces.latin
+             val rubyFont = drawCache.annotationFont.apply {
+@@ -241,7 +241,7 @@ internal actual fun ContentDrawScope.drawParagraph(
+                 SkiaSystemTypefaces.typeface(
+                     isLatin = false,
+                     family = z.fontFamilies.firstOrNull(),
+-                    style = org.jetbrains.skia.FontStyle(z.fontWeight, org.jetbrains.skia.FontStyle.NORMAL.width, org.jetbrains.skia.FontSlant.UPRIGHT),
++                    style = org.jetbrains.skia.FontStyle.NORMAL.withWeight(z.fontWeight).withSlant(org.jetbrains.skia.FontSlant.UPRIGHT),
+                 )
+                     ?: SkiaSystemTypefaces.cjk
+                 ) ?: continue
+diff --git a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaFontMetricsResolver.kt b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaFontMetricsResolver.kt
+index 26fca0083e3e25452ffb2e202c593d17749250ee..44751d4daf222ee72445307a67013030372efd5c 100644
+--- a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaFontMetricsResolver.kt
++++ b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaFontMetricsResolver.kt
+@@ -33,11 +33,9 @@ class SkiaFontMetricsResolver(
+ 
+     override fun resolve(request: FontMetricsRequest): RawFontMetrics {
+         val isLatin = request.role.usesLatinFace() // LatinVsCjkFaceSelection (shared rule)
+-        val requestedStyle = FontStyle(
+-            request.fontWeight,
+-            FontStyle.NORMAL.width,
+-            if (request.italic) FontSlant.ITALIC else FontSlant.UPRIGHT,
+-        )
++        val requestedStyle = FontStyle.NORMAL
++            .withWeight(request.fontWeight)
++            .withSlant(if (request.italic) FontSlant.ITALIC else FontSlant.UPRIGHT)
+         // Per-span family (rich text): measure the requested serif/mono face's OWN 字身框
+         // so mixed fonts align by their ideographic box. Empty → the role default below.
+         val familyTypeface = request.fontFamilies.firstOrNull()?.let {
+diff --git a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
+index bf99f7d0f8009ed935e78cebae7106a72f927fd3..6ae5be5f9db00f6b086373c93fc01a7e82150cbd 100644
+--- a/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
++++ b/platforms/compose/skia-jvm/src/jvmMain/kotlin/org/tiqian/shaping/skia/SkiaTextBlobs.kt
+@@ -144,7 +144,7 @@ fun vertGlyphIds(typeface: Typeface, shaper: Shaper, text: String, language: Str
+  * [FontStyle.NORMAL], so unstyled clusters resolve the same typeface as before.
+  */
+ fun TextStyle.toSkiaFontStyle(): FontStyle =
+-    FontStyle(fontWeight, FontStyle.NORMAL.width, if (italic) FontSlant.ITALIC else FontSlant.UPRIGHT)
++    FontStyle.NORMAL.withWeight(fontWeight).withSlant(if (italic) FontSlant.ITALIC else FontSlant.UPRIGHT)
+ 
+ // SyntheticCjkItalicSkew (ADR 0030 Amendment 2026-08-17): Skia synthetic-oblique shear for an
+ // italic CJK cluster (CJK faces ship no real italic instance). -0.105 ≈ 6° (得意黑 / Smiley Sans
+@@ -301,11 +301,9 @@ internal inline fun LayoutResult.forEachPositionedCluster(
+                     SkiaSystemTypefaces.typeface(
+                         isLatin,
+                         family,
+-                        FontStyle(
+-                            weight,
+-                            FontStyle.NORMAL.width,
+-                            if (italic && !synthesizeCjkItalic) FontSlant.ITALIC else FontSlant.UPRIGHT,
+-                        ),
++                        FontStyle.NORMAL
++                            .withWeight(weight)
++                            .withSlant(if (italic && !synthesizeCjkItalic) FontSlant.ITALIC else FontSlant.UPRIGHT),
+                     ) ?: baseFont.typeface
+                 }
+                 Font(tf, size).apply { if (synthesizeCjkItalic) skewX = SYNTHETIC_CJK_ITALIC_SKEW }
+diff --git a/tools/engine-probes/src/jvmMain/kotlin/org/tiqian/layout/tooling/ReadmeSampleMain.kt b/tools/engine-probes/src/jvmMain/kotlin/org/tiqian/layout/tooling/ReadmeSampleMain.kt
+index 80198d4e68ee128e8adf53bf6f39e5e533bc7601..cb0447201e53343b77a9083be133533a3aa83007 100644
+--- a/tools/engine-probes/src/jvmMain/kotlin/org/tiqian/layout/tooling/ReadmeSampleMain.kt
++++ b/tools/engine-probes/src/jvmMain/kotlin/org/tiqian/layout/tooling/ReadmeSampleMain.kt
+@@ -148,7 +148,7 @@ private fun renderSvg(result: LayoutResult, inkColor: Int): ByteArray {
+         }
+ 
+         result.debug.rubyDecisions.forEach { ruby ->
+-            val rubyStyle = FontStyle(ruby.fontWeight, FontStyle.NORMAL.width, FontSlant.UPRIGHT)
++            val rubyStyle = FontStyle.NORMAL.withWeight(ruby.fontWeight).withSlant(FontSlant.UPRIGHT)
+             val typeface = SkiaSystemTypefaces.typeface(
+                 isLatin = true,
+                 family = ruby.fontFamilies.firstOrNull(),

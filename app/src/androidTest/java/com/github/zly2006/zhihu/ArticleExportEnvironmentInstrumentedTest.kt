@@ -17,19 +17,39 @@
 
 package com.github.zly2006.zhihu
 
-import android.content.ContentResolver
 import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.webkit.WebViewAssetLoader
+import com.github.zly2006.zhihu.account.ZhihuAccountRepository
+import com.github.zly2006.zhihu.account.ZhihuAccountSession
+import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.data.AigcVoteVoter
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.util.buildArticleExportHtml
+import com.github.zly2006.zhihu.util.buildOfflineArticleExportHtml
 import com.github.zly2006.zhihu.viewmodel.AndroidPreparedExportWebView
 import com.github.zly2006.zhihu.viewmodel.SharedAndroidPaginationEnvironment
+import com.hrm.latex.renderer.export.ExportConfig
+import com.hrm.latex.renderer.export.LatexExporterState
+import com.hrm.latex.renderer.export.rememberLatexExporter
+import com.hrm.latex.renderer.model.LatexConfig
+import com.hrm.latex.renderer.model.systemLatexFontFamilies
+import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,162 +59,210 @@ import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class ArticleExportEnvironmentInstrumentedTest {
-    /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/428
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/429
-     */
+    @Test
+    fun androidEnvironmentUsesOnlyItsInjectedAccountForAigcVoter() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "synthetic-voter-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+        val store = ZhihuAccountStore(
+            ZhihuAccountRepository(kotlinx.io.files.Path(directory.resolve("account.json").path)),
+            MockEngine { error("投票身份读取不应发起网络请求") },
+        )
+        val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true, accountStore = store)
+        try {
+            assertNull(environment.aigcVoteVoter())
+            for (id in listOf("voter-a", "voter-b")) {
+                store.replaceSession(
+                    ZhihuAccountSession(
+                        login = true,
+                        username = id,
+                        self = ZhihuJson.json.parseToJsonElement(
+                            """{"id":"$id","name":"$id","url":"https://example.invalid/$id","user_type":"people","url_token":"$id-token","headline":"","avatar_url":"https://example.invalid/$id.png"}""",
+                        ),
+                    ),
+                )
+                assertEquals(
+                    AigcVoteVoter(id = id, name = id, urlToken = "$id-token", avatarUrl = "https://example.invalid/$id.png"),
+                    environment.aigcVoteVoter(),
+                )
+            }
+            store.replaceSession(store.session.copy(self = ZhihuJson.json.parseToJsonElement("{}")))
+            assertNull(environment.aigcVoteVoter())
+            store.clear()
+            assertNull(environment.aigcVoteVoter())
+        } finally {
+            environment.close()
+            store.close()
+            check(directory.deleteRecursively())
+        }
+    }
+
     @Test
     fun androidEnvironmentBuildsOfflineArticleExportHtml() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true)
-
-        val html = environment.buildOfflineArticleExportHtml(
-            content = sampleArticleContent(),
-            includeAppAttribution = true,
-            httpClient = environment.httpClient(),
+        val directory = File(context.cacheDir, "synthetic-export-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+        val store = ZhihuAccountStore(
+            ZhihuAccountRepository(kotlinx.io.files.Path(directory.resolve("account.json").path)),
+            MockEngine { error("合成导出不应发起网络请求") },
         )
+        try {
+            val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true, accountStore = store)
 
-        assertTrue(html.contains("导出环境回归"))
-        assertTrue(html.length > 1_000)
+            val html = buildOfflineArticleExportHtml(
+                loadAssetText = environment::loadExportAssetText,
+                content = sampleArticleContent(),
+                includeAppAttribution = true,
+                httpClient = environment.httpClient(),
+            )
+
+            assertTrue(html.contains("导出环境回归"))
+            assertTrue(html.contains("<p>正文</p>"))
+        } finally {
+            store.close()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun webContentCanReadOnlyTheSelectedCustomFont() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "synthetic-web-files-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+        val privateFiles = File(directory, "files").apply { check(mkdirs()) }
+        val fontBytes = byteArrayOf(0, 1, 2, 3)
+        val privateBytes = byteArrayOf(7, 8, 9)
+        val font = File(privateFiles, "custom_font").apply { writeBytes(fontBytes) }
+        val privateFile = File(privateFiles, "synthetic-private.txt").apply { writeBytes(privateBytes) }
+        val outside = File(directory, "synthetic-outside.txt").apply { writeBytes(privateBytes) }
+        val fixtureContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getFilesDir(): File = privateFiles
+        }
+        try {
+            val handler = Class
+                .forName("com.github.zly2006.zhihu.ui.components.UserFilesPathHandler")
+                .getDeclaredConstructor(Context::class.java)
+                .apply { isAccessible = true }
+                .newInstance(fixtureContext) as WebViewAssetLoader.PathHandler
+            val response = handler.handle("custom_font")
+            assertNotNull(response)
+            assertEquals(200, response!!.statusCode)
+            assertArrayEquals(fontBytes, response.data.use { it.readBytes() })
+            for (path in listOf("synthetic-private.txt", "../synthetic-outside.txt", "custom_font/../synthetic-private.txt", "")) {
+                assertNull(handler.handle(path))
+            }
+            check(font.delete())
+            android.system.Os.symlink(outside.absolutePath, font.absolutePath)
+            assertNull(handler.handle("custom_font"))
+            check(font.delete())
+            assertArrayEquals(privateBytes, privateFile.readBytes())
+            assertArrayEquals(privateBytes, outside.readBytes())
+        } finally {
+            check(directory.deleteRecursively())
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun latexFontsRenderOfflineWithoutUsingDownloadCache() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "synthetic-latex-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+        val fixtureContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getCacheDir(): File = directory
+        }
+        try {
+            runComposeUiTest {
+                lateinit var exporter: LatexExporterState
+                lateinit var fallbackExporter: LatexExporterState
+                setContent {
+                    CompositionLocalProvider(LocalContext provides fixtureContext) {
+                        exporter = rememberLatexExporter(LatexConfig(fontSize = 32.sp))
+                        fallbackExporter = rememberLatexExporter(
+                            LatexConfig(fontSize = 32.sp, fontFamilies = systemLatexFontFamilies()),
+                        )
+                    }
+                }
+                val formula = "\\left(\\frac{x}{y}\\right) + \\mathbb{R} + \\sum_{n=1}^{2}n"
+                val exportConfig = ExportConfig(scale = 1f, transparentBackground = true)
+                val fallbackBytes = runOnIdle { checkNotNull(fallbackExporter.export(formula, exportConfig = exportConfig)).bytes }
+                /** 官方默认字体异步加载；用公开渲染结果确认未停留在系统字体兜底。 */
+                waitUntil(timeoutMillis = 10_000) {
+                    runOnIdle {
+                        exporter.export(formula, exportConfig = exportConfig)?.bytes?.contentEquals(fallbackBytes) == false
+                    }
+                }
+                runOnIdle {
+                    val result = exporter.export(formula, exportConfig = exportConfig)
+                    assertNotNull("内置字体应能走真实公式测量与绘制", result)
+                    val bitmap = result!!.imageBitmap.asAndroidBitmap()
+                    try {
+                        val pixels = IntArray(bitmap.width * bitmap.height)
+                        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                        val middle = pixels.size / 2
+                        assertTrue("公式上半部应有实际字形，不能只输出空画布", pixels.take(middle).count { it ushr 24 > 128 } > 20)
+                        assertTrue("公式下半部应绘出分母和下标", pixels.drop(middle).count { it ushr 24 > 128 } > 20)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            }
+            assertTrue("官方内置字体不应创建下载缓存或 .done 标记", directory.listFiles().orEmpty().isEmpty())
+        } finally {
+            check(directory.deleteRecursively())
+        }
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/428
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/429
-     * Target: the exported long image includes both the first and last body paragraphs.
-     * Distinct marker colors verify those paragraphs were drawn, rather than merely measuring a nonblank header.
+     * 导出的长图应包含首段和末段正文。
+     * 用不同颜色的标记验证正文确已绘制，避免仅凭非空标题判断导出成功。
      */
     @Test
     fun articleImageRendererUsesStableContentHeightBeforeFullLayout() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true)
-        val renderer = environment.articleImageExportRenderer()
-        val prepared = renderer.prepareExportWebView(
-            htmlContent = environment.buildArticleExportHtml(
-                content = sampleLongAnswerContent(),
-                includeAppAttribution = true,
-                extraSectionsHtml = "",
-            ),
-            timeoutMs = 15_000,
-        ) as AndroidPreparedExportWebView
-        val bitmap = renderer.captureExportBitmap(prepared) as Bitmap
+        val directory = File(context.cacheDir, "synthetic-export-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
+        val store = ZhihuAccountStore(
+            ZhihuAccountRepository(kotlinx.io.files.Path(directory.resolve("account.json").path)),
+            MockEngine { error("合成导出不应发起网络请求") },
+        )
         try {
-            assertTrue(prepared.contentHeightPx < 60_000)
-            assertEquals(prepared.expectedBitmapWidthPx(context), bitmap.width)
-            assertEquals(prepared.expectedBitmapHeightPx(context), bitmap.height)
-            assertTrue(
-                "导出图上半部分应包含首段正文的青色标记",
-                bitmap.hasMarkerPixels(red = 0, green = 255, blue = 255, startY = 0, endY = bitmap.height / 2),
-            )
-            assertTrue(
-                "导出图下半部分应包含末段正文的品红标记，不能只画出标题或前几段",
-                bitmap.hasMarkerPixels(red = 255, green = 0, blue = 255, startY = bitmap.height / 2, endY = bitmap.height),
-            )
-            ByteArrayOutputStream().use { output ->
-                assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 70, output))
-                assertTrue(output.size() > 0)
+            val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true, accountStore = store)
+            val renderer = environment.articleImageExportRenderer()
+            val prepared = renderer.prepareExportWebView(
+                htmlContent = buildArticleExportHtml(
+                    loadAssetText = environment::loadExportAssetText,
+                    content = sampleLongAnswerContent(),
+                    includeAppAttribution = true,
+                    extraSectionsHtml = "",
+                ),
+                timeoutMs = 15_000,
+            ) as AndroidPreparedExportWebView
+            val bitmap = renderer.captureExportBitmap(prepared) as Bitmap
+            try {
+                assertTrue(prepared.contentHeightPx < 60_000)
+                assertEquals(prepared.expectedBitmapWidthPx(context), bitmap.width)
+                assertEquals(prepared.expectedBitmapHeightPx(context), bitmap.height)
+                assertTrue(
+                    "导出图上半部分应包含首段正文的青色标记",
+                    bitmap.hasMarkerPixels(red = 0, green = 255, blue = 255, startY = 0, endY = bitmap.height / 2),
+                )
+                assertTrue(
+                    "导出图下半部分应包含末段正文的品红标记，不能只画出标题或前几段",
+                    bitmap.hasMarkerPixels(red = 255, green = 0, blue = 255, startY = bitmap.height / 2, endY = bitmap.height),
+                )
+                ByteArrayOutputStream().use { output ->
+                    assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 70, output))
+                    assertTrue(output.size() > 0)
+                }
+            } finally {
+                bitmap.recycle()
+                renderer.destroyExportWebView(prepared)
             }
         } finally {
-            bitmap.recycle()
-            renderer.destroyExportWebView(prepared)
+            store.close()
+            directory.deleteRecursively()
         }
     }
-
-    private fun Context.savedImageExists(displayName: String): Boolean =
-        contentResolver.querySavedImage(displayName) { count > 0 } == true
-
-    private fun Context.deleteSavedImage(displayName: String) {
-        contentResolver.delete(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-            arrayOf(displayName),
-        )
-    }
-
-    private fun Context.savedDownloadExists(displayName: String): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentResolver.querySavedDownload(displayName) { count > 0 } == true
-        } else {
-            File(
-                File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "Zhihu++",
-                ),
-                displayName,
-            ).exists()
-        }
-
-    private fun Context.savedDownloadSize(displayName: String): Long =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentResolver.querySavedDownloadSize(displayName) ?: -1L
-        } else {
-            File(
-                File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "Zhihu++",
-                ),
-                displayName,
-            ).length()
-        }
-
-    private fun Context.deleteSavedDownload(displayName: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentResolver.delete(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-                arrayOf(displayName),
-            )
-        } else {
-            File(
-                File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "Zhihu++",
-                ),
-                displayName,
-            ).delete()
-        }
-    }
-
-    private fun <T> ContentResolver.querySavedImage(
-        displayName: String,
-        block: android.database.Cursor.() -> T,
-    ): T? = query(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        arrayOf(MediaStore.MediaColumns._ID),
-        "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-        arrayOf(displayName),
-        null,
-    )?.use(block)
-
-    private fun <T> ContentResolver.querySavedDownload(
-        displayName: String,
-        block: android.database.Cursor.() -> T,
-    ): T? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        query(
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.MediaColumns._ID),
-            "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-            arrayOf(displayName),
-            null,
-        )?.use(block)
-    } else {
-        null
-    }
-
-    private fun ContentResolver.querySavedDownloadSize(displayName: String): Long? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.MediaColumns.SIZE),
-                "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-                arrayOf(displayName),
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getLong(0) else null
-            }
-        } else {
-            null
-        }
 
     private fun AndroidPreparedExportWebView.expectedBitmapWidthPx(context: Context): Int =
         (viewportWidthPx * context.exportScale()).roundToInt().coerceAtLeast(1)

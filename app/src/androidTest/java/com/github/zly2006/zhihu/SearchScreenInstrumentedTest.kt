@@ -21,6 +21,7 @@ import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -33,9 +34,9 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Search
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.ZhihuMockApi
@@ -43,9 +44,14 @@ import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.SearchScreen
+import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -58,21 +64,14 @@ class SearchScreenInstrumentedTest {
 
     @Before
     fun setUp() {
-        composeRule.resetAppPreferences()
-        ZhihuMockApi.install(enabled = true)
-        ZhihuMockApi.reset()
+        composeRule.resetAppPreferences(forceMock = true)
     }
 
     @After
     fun tearDown() {
-        ZhihuMockApi.install(enabled = InstrumentedTestEnvironment.isMockMode())
+        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences(forceMock = true)
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/356
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/362
-     * Focus regression fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/527
-     */
     @Test
     fun searchBoxEditingClearImeAndBackAreDeterministic() {
         composeRule.activity
@@ -116,10 +115,6 @@ class SearchScreenInstrumentedTest {
         assertEquals(listOf(Search(query = "jetpack compose")), recordingNavigator.destinations)
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/374
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/408
-     */
     @Test
     fun memberScopedSearchKeepsRestrictionWhenSubmittingQuery() {
         val preferences = composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
@@ -163,11 +158,6 @@ class SearchScreenInstrumentedTest {
         assertEquals("""["全局历史"]""", preferences.getString("searchHistoryQueries", null))
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/374
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/408
-     * Focus regression fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/527
-     */
     @Test
     fun prefilledSearchDoesNotStealFocusFromResultsState() {
         composeRule.activity
@@ -186,10 +176,6 @@ class SearchScreenInstrumentedTest {
         composeRule.onAllNodesWithText("搜索内容").assertCountEquals(0)
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/642
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/652
-     */
     @Test
     fun peopleTabHidesGeneralSearchFilterAndSwitchingBackRestoresIt() {
         ZhihuMockApi.mockJsonPrefix(
@@ -199,19 +185,50 @@ class SearchScreenInstrumentedTest {
         )
         composeRule.setScreenContent { SearchScreen(search = Search(query = "用户")) }
 
-        composeRule.onAllNodesWithTag("search_filter_button").assertCountEquals(1)
+        composeRule.waitUntil { ZhihuMockApi.requestCount(urlSubstring = "/search_v3") == 1 }
+        composeRule.onNodeWithTag("search_filter_button").performClick()
+        composeRule.onNodeWithTag("search_filter_sort_Latest").performClick()
+        composeRule.onNodeWithTag("search_filter_type_Answer").performClick()
+        composeRule.onNodeWithTag("search_filter_time_Week").performClick()
+        composeRule.onNodeWithTag("search_filter_time_Week").assertIsSelected()
+        assertEquals(1, ZhihuMockApi.requestCount(urlSubstring = "/search_v3"))
+        composeRule.onNodeWithTag("search_filter_cancel").performClick()
+        composeRule.onNodeWithTag("search_filter_button").performClick()
+        composeRule.onNodeWithTag("search_filter_sort_Default").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_type_All").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_time_All").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_sort_Latest").performClick()
+        composeRule.onNodeWithTag("search_filter_type_Answer").performClick()
+        composeRule.onNodeWithTag("search_filter_time_Week").performClick()
+        composeRule.onNodeWithTag("search_filter_apply").performClick()
+        composeRule.waitUntil { ZhihuMockApi.requestCount(urlSubstring = "/search_v3") == 2 }
+        val applied = Url(ZhihuMockApi.recordedRequests().last { it.url.contains("/search_v3") }.url)
+        assertEquals("created_time", applied.parameters["sort"])
+        assertEquals("answer", applied.parameters["vertical"])
+        assertEquals("a_week", applied.parameters["time_interval"])
+        composeRule.onNodeWithTag("search_filter_button").performClick()
+        composeRule.onNodeWithTag("search_filter_apply").performClick()
+        assertEquals(2, ZhihuMockApi.requestCount(urlSubstring = "/search_v3"))
         composeRule.onNodeWithTag("search_tab_People").performClick()
         composeRule.onAllNodesWithTag("search_filter_button").assertCountEquals(0)
         composeRule.onNodeWithTag("search_tab_General").performClick()
+        composeRule.onNodeWithTag("search_filter_button").performClick()
+        composeRule.onNodeWithTag("search_filter_time_Week").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_reset").performClick()
+        composeRule.onNodeWithTag("search_filter_sort_Default").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_time_All").assertIsSelected()
+        composeRule.onNodeWithTag("search_filter_cancel").performClick()
         composeRule.onAllNodesWithTag("search_filter_button").assertCountEquals(1)
     }
 
     /**
-     * Regression: https://github.com/zly2006/zhihu-plus-plus/issues/667
-     * Fixed by: https://github.com/zly2006/zhihu-plus-plus/pull/673
+     * 展示原始返回样本的用户与内容徽章；关闭无关质量过滤，避免低赞文章变成不展示作者的占位卡。
      */
     @Test
     fun peopleAndGeneralResultsRenderReturnedAuthorBadges() {
+        composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE).edit(commit = true) {
+            putString(QUALITY_FILTER_MODE_PREFERENCE_KEY, QualityFilterMode.OFF.name)
+        }
         ZhihuMockApi.mockJsonPrefix(
             method = HttpMethod.Get,
             urlPrefix = "https://www.zhihu.com/api/v4/search_v3",
@@ -236,18 +253,8 @@ class SearchScreenInstrumentedTest {
         composeRule.onNodeWithContentDescription("已认证机构号").assertIsDisplayed()
     }
 
-    /**
-     * Contract: https://github.com/zly2006/zhihu-plus-plus/issues/356
-     * Introduced by: https://github.com/zly2006/zhihu-plus-plus/pull/362
-     */
     @Test
     fun searchHistoryRendersRecordsSearchesAndSupportsMenuActions() {
-        // This disables hot-search so the history surface can be tested without network requests.
-        // Expected behavior:
-        // 1. Existing history renders above the empty search state in most-recent-first order.
-        // 2. Clicking a history row navigates to that query and keeps it as the most recent entry.
-        // 3. Typing a new query records it without duplicating old entries.
-        // 4. The overflow menu can clear history and can navigate to the related appearance setting.
         val preferences = composeRule.activity.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
         preferences
             .edit()
@@ -280,20 +287,48 @@ class SearchScreenInstrumentedTest {
         composeRule.onNodeWithTag("search_history_more_button").performClick()
         composeRule.onNodeWithText("清空搜索历史").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("暂无搜索历史，输入关键词搜索后会保存在这里").assertIsDisplayed()
+        assertEquals("""["new query","old query","older query"]""", preferences.getString("searchHistoryQueries", null))
+        composeRule.onNodeWithText("清空").assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("暂无搜索历史").assertIsDisplayed()
         assertEquals("[]", preferences.getString("searchHistoryQueries", null))
 
         composeRule.onNodeWithTag("search_history_more_button").performClick()
-        composeRule.onNodeWithText("前往设置关闭搜索历史").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("关闭搜索历史").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
+        assertEquals(false, preferences.getBoolean("showSearchHistory", true))
+        composeRule.onAllNodesWithText("搜索历史").assertCountEquals(0)
         assertEquals(
-            listOf(
-                Search(query = "old query"),
-                Search(query = "new query"),
-                Account.AppearanceSettings("showSearchHistory"),
-            ),
+            listOf(Search(query = "old query"), Search(query = "new query")),
             recordingNavigator.destinations,
         )
+    }
+
+    @Test
+    fun failedPeopleResultsKeepRetryAndRecoverWithoutAutomaticRequests() {
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = "https://www.zhihu.com/api/v4/search_v3",
+            body = "{}",
+            status = HttpStatusCode.InternalServerError,
+        )
+        composeRule.setScreenContent { SearchScreen(search = Search(query = "重试用户")) }
+        composeRule.onNodeWithTag("search_tab_People").performClick()
+        composeRule.onNodeWithText("加载失败").assertIsDisplayed()
+        val failedRequests = ZhihuMockApi.requestCount(urlSubstring = "/search_v3")
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.waitForIdle()
+        assertEquals(failedRequests, ZhihuMockApi.requestCount(urlSubstring = "/search_v3"))
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = "https://www.zhihu.com/api/v4/search_v3",
+            body = """{"data":[],"paging":{"is_end":true,"next":""}}""",
+        )
+        composeRule.onNodeWithText("重试").performClick()
+        composeRule.waitForIdle()
+        assertTrue(ZhihuMockApi.requestCount(urlSubstring = "/search_v3") > failedRequests)
+        composeRule.onNodeWithTag("search_results_empty").assertIsDisplayed()
+        composeRule.onAllNodesWithText("加载失败").assertCountEquals(0)
     }
 
     private fun readTestAsset(fileName: String): String =

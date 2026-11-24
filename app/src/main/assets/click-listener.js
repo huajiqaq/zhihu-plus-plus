@@ -1,3 +1,20 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 // noinspection ES6ConvertVarToLetConst
 
 (function() {
@@ -47,11 +64,9 @@
                 clickedElement = clickedElement.parentElement;
             }
             
-            // 对于其他元素，正常处理
-            var outerHtml = target.outerHTML;
-            // 调用 Android 接口
-            if (window.AndroidInterface) {
-                AndroidInterface.onElementClick(outerHtml);
+            // body.outerHTML 在原生端会被解析成正文的第一个子元素，只有点中图片才转发。
+            if (target.tagName === 'IMG' && window.AndroidInterface) {
+                AndroidInterface.onElementClick(target.outerHTML);
             }
         } catch (e) {
             console.error('Error in click listener:', e);
@@ -80,7 +95,7 @@
     var observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
             mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) { // Element node
+                if (node.nodeType === 1) { // 仅处理元素节点。
                     if (node.tagName === 'A' && node.classList.contains('video-box')) {
                         // 新添加的视频链接
                         node.addEventListener('click', function(event) {

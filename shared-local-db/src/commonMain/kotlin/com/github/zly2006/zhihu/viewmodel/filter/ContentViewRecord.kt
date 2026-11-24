@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlin.time.Clock
+import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
 
 /**
  * 内容曝光记录实体。
@@ -28,7 +28,7 @@ import kotlin.time.Clock
 @Entity(tableName = ContentViewRecord.TABLE_NAME)
 data class ContentViewRecord(
     @PrimaryKey val id: String, // 使用 targetType:targetId 作为主键
-    val targetType: String, // answer, article, etc.
+    val targetType: String, // 内容类型，如 answer、article。
     val targetId: String, // 目标内容ID
     val viewCount: Int = 0, // 展示次数
     val hasInteraction: Boolean = false, // 是否有过交互（点击、点赞等）
@@ -44,5 +44,3 @@ data class ContentViewRecord(
         fun generateId(targetType: String, targetId: String): String = "$targetType:$targetId"
     }
 }
-
-private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()

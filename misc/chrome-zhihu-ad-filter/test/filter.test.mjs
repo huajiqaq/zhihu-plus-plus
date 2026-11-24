@@ -1,3 +1,20 @@
+/*
+ * Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ * Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation (version 3 only).
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -97,38 +114,38 @@ vm.createContext(sandbox);
 vm.runInContext(injectedCode, sandbox, { filename: injectedPath });
 
 const core = sandbox.window.__zhihuFeedAdFilterCore__;
-assert.ok(core, 'core API should exist on window');
+assert.ok(core, 'window 上应存在核心 API');
 
 const { checkForAd, filterRecommendPayload } = core;
 
 assert.equal(
   checkForAd({ type: 'feed', target: { type: 'answer', paid_info: { id: 1 }, content: 'normal' } }),
   true,
-  'paid_info should be treated as ad'
+  'paid_info 应判为广告'
 );
 
 assert.equal(
   checkForAd({ type: 'feed', target: { type: 'article', content: '<a href="https://xg.zhihu.com">ad</a>' } }),
   true,
-  'xg.zhihu.com should be treated as ad link'
+  'xg.zhihu.com 应判为广告链接'
 );
 
 assert.equal(
   checkForAd({ type: 'feed', target: { type: 'pin', content_html: '<a href="https://mp.weixin.qq.com/s/abc">wx</a>' } }),
   true,
-  'mp.weixin.qq.com should be treated as ad link'
+  'mp.weixin.qq.com 应判为广告链接'
 );
 
 assert.equal(
   checkForAd({ type: 'feed_advert', action_text: 'promoted' }),
   true,
-  'feed_advert should be treated as ad'
+  'feed_advert 应判为广告'
 );
 
 assert.equal(
   checkForAd({ type: 'feed', target: { type: 'answer', content: '<p>normal content</p>' } }),
   false,
-  'normal entry should not be filtered'
+  '普通条目不应被过滤'
 );
 
 const payload = {
@@ -158,35 +175,31 @@ const payload = {
 };
 
 const filteredPayload = filterRecommendPayload(payload);
-assert.ok(filteredPayload, 'payload with ads should be rewritten');
-assert.equal(filteredPayload.data.length, 1, 'only one clean entry should remain');
-assert.equal(filteredPayload.paging.totals, 18, 'paging.totals should be reduced by removed count');
+assert.ok(filteredPayload, '含广告的响应载荷应被改写');
+assert.equal(filteredPayload.data.length, 1, '应只保留一个非广告条目');
+assert.equal(filteredPayload.paging.totals, 18, 'paging.totals 应减去已移除条目数');
 
 const toastContainer = fakeDocument.getElementById('zhihu-ad-filter-toast-container');
-assert.ok(toastContainer, 'toast container should be created');
-assert.equal(toastContainer.children.length, 2, 'each filtered item should render one toast');
+assert.ok(toastContainer, '应创建提示容器');
+assert.equal(toastContainer.children.length, 2, '每个被过滤条目应显示一条提示');
 
 const firstToast = toastContainer.children[0];
 const secondToast = toastContainer.children[1];
-assert.equal(firstToast.style.background, '#ffffff', 'toast background should be white');
-assert.equal(secondToast.style.background, '#ffffff', 'toast background should be white');
+assert.equal(firstToast.style.background, '#ffffff', '提示背景应为白色');
 
 const firstIcon = firstToast.children[0];
 const firstText = firstToast.children[1];
-const secondIcon = secondToast.children[0];
 const secondText = secondToast.children[1];
 
-assert.equal(firstIcon.textContent, '✓', 'toast icon should be checkmark');
-assert.equal(secondIcon.textContent, '✓', 'toast icon should be checkmark');
-assert.equal(firstIcon.style.color, '#16a34a', 'toast checkmark should be green');
-assert.equal(secondIcon.style.color, '#16a34a', 'toast checkmark should be green');
-assert.ok(firstText.textContent.includes('付费回答标题'), 'first toast should include filtered answer title');
-assert.ok(secondText.textContent.includes('学堂文章标题'), 'second toast should include filtered article title');
+assert.equal(firstIcon.textContent, '✓', '提示图标应为对勾');
+assert.equal(firstIcon.style.color, '#16a34a', '提示对勾应为绿色');
+assert.ok(firstText.textContent.includes('付费回答标题'), '第一条提示应包含被过滤回答的标题');
+assert.ok(secondText.textContent.includes('学堂文章标题'), '第二条提示应包含被过滤文章的标题');
 
 assert.equal(
   filterRecommendPayload({ data: [{ type: 'feed', target: { type: 'answer', content: 'clean' } }] }),
   null,
-  'payload without ads should not be rewritten'
+  '不含广告的响应载荷不应被改写'
 );
 
-console.log('zhihu ad filter tests passed');
+console.log('知乎广告过滤测试通过');
