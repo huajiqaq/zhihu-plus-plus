@@ -26,7 +26,10 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.platform.app.InstrumentationRegistry
 
-internal enum class MockUiScreenshotCase(val suite: String, val method: String) {
+internal enum class MockUiScreenshotCase(
+    val suite: String,
+    val method: String,
+) {
     HIGHLIGHT_SELECTION("ArticleScreenInstrumentedTest", "highlightedParagraphSelectionHandleCanExtendToFollowingParagraph"),
     HANDLE_SELECTION("ArticleScreenInstrumentedTest", "draggingSelectionHandleUsesSameCompleteTextLayer"),
     CHILD_COMMENT_MENU("CommentScreenInstrumentedTest", "childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers"),
@@ -44,16 +47,20 @@ internal enum class MockUiScreenshotCase(val suite: String, val method: String) 
     }
 }
 
-internal class MockUiScreenshots(private val case: MockUiScreenshotCase) {
+internal class MockUiScreenshots(
+    private val case: MockUiScreenshotCase,
+) {
     private var sequence = 0
 
     fun capture(phase: String) {
         runCatching {
             val args = InstrumentationRegistry.getArguments()
             if (
-                args.getString("zhpp_mock_screenshots") != "ci" || args.getString(InstrumentedTestEnvironment.DATA_MODE_ARG) != "mock" ||
+                args.getString("zhpp_mock_screenshots") != "ci" ||
+                args.getString(InstrumentedTestEnvironment.DATA_MODE_ARG) != "mock" ||
                 InstrumentedTestEnvironment.installedDataMode != InstrumentedTestEnvironment.DataMode.MOCK ||
-                Build.VERSION.SDK_INT != Build.VERSION_CODES.BAKLAVA || Build.HARDWARE != "ranchu" ||
+                Build.VERSION.SDK_INT != Build.VERSION_CODES.BAKLAVA ||
+                Build.HARDWARE != "ranchu" ||
                 Build.SUPPORTED_ABIS.firstOrNull() != "x86_64"
             ) {
                 return
@@ -124,7 +131,9 @@ private fun UiAutomation.screenshotScope(targetPackage: String): Pair<String, Bo
         val foregroundApp = visibleWindows
             .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
             .maxByOrNull { it.layer }
-            ?.root?.packageName?.toString()
+            ?.root
+            ?.packageName
+            ?.toString()
         val allowed = when (layer) {
             "target" -> foregroundApp == null || foregroundApp == targetPackage
             "system", "IME" -> foregroundApp == targetPackage
@@ -132,9 +141,11 @@ private fun UiAutomation.screenshotScope(targetPackage: String): Pair<String, Bo
         }
         return layer to allowed
     } finally {
-        if (needsFlag) runCatching {
-            info.flags = originalFlags
-            serviceInfo = info
+        if (needsFlag) {
+            runCatching {
+                info.flags = originalFlags
+                serviceInfo = info
+            }
         }
     }
 }
