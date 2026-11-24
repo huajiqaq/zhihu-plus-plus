@@ -550,12 +550,17 @@ jobs:
           arch: x86_64
           target: default
           profile: pixel_7
+          avd-name: zhihu-pr
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
+          # 分栏与字形手柄用例使用启动时确定的平板视口。
+          pre-emulator-launch-script: >-
+            sed -i
+            -e 's/^hw\.lcd\.width[[:space:]]*=.*/hw.lcd.width=900/'
+            -e 's/^hw\.lcd\.height[[:space:]]*=.*/hw.lcd.height=1600/'
+            -e 's/^hw\.lcd\.density[[:space:]]*=.*/hw.lcd.density=240/'
+            "$ANDROID_AVD_HOME/zhihu-pr.avd/config.ini"
           script: |
-            # 分栏与字形手柄用例需要平板宽度和足够的触摸区域。
-            adb -s "$ANDROID_SERIAL" shell wm size 900x1600
-            adb -s "$ANDROID_SERIAL" shell wm density 240
             adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
             bash .github/scripts/run-instrumented-shard.sh 5 ${{ matrix.shard_index }}
 
