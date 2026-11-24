@@ -434,6 +434,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Prepare build inputs
+        id: native_inputs
         uses: ./.github/actions/setup-build-inputs
 
       - name: Compile native hosts and run every populated common/native suite
@@ -463,7 +464,7 @@ jobs:
           echo 'macOS arm64 host/common and upstream Apple suites execute here. iOS device/simulator tests and other native targets are not executed.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run isolated offscreen native smoke without a window
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.native_inputs.outcome == 'success' }}
         run: |
           set -euo pipefail
           python3 -I .github/scripts/verify-test-results.py \

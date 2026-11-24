@@ -133,10 +133,11 @@ def directory_digest(directory):
     for path in sorted(directory.rglob('*')):
         relative = relative_path(path.relative_to(directory).as_posix())
         if path.is_symlink():
-            if not path.resolve().is_relative_to(directory.resolve()):
-                raise ValueError('工具输入链接越界：' + relative)
-            files[relative] = 'link:' + path.readlink().as_posix()
-        elif path.is_file():
+            target = path.resolve()
+            if not target.is_relative_to(directory.resolve()) or not target.is_file():
+                raise ValueError('工具链接必须指向源码树内的文件：' + relative)
+            path = target
+        if path.is_file():
             files[relative] = file_digest(path)
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode('utf-8')).hexdigest()
 
