@@ -219,7 +219,7 @@ internal actual object MiuixSettingsRenderer {
                 onPositioned = onPositioned,
                 bringIntoViewRequester = bringIntoViewRequester,
             )
-            val backdrop = LocalAppBackdrop.current
+            val backdrop = LocalAppPopupBackdrop.current ?: LocalAppBackdrop.current
             if (useMiuixGlassStyle() && backdrop != null && summaries == null && icon == null && fieldModifier == Modifier) {
                 if (!rememberNavEntryOnTop()) return
                 val surface = glassSurface(

@@ -159,6 +159,12 @@ jobs:
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
 
+      - name: Install CJK fonts for text shaping tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-match -f '%{family}\n' ':lang=zh-cn'
+
       - name: Run Lite, shared JVM and build tooling tests
         run: |
           set -euo pipefail
@@ -546,7 +552,12 @@ jobs:
           profile: pixel_7
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash .github/scripts/run-instrumented-shard.sh 5 ${{ matrix.shard_index }}
+          script: |
+            # 分栏与字形手柄用例需要平板宽度和足够的触摸区域。
+            adb -s "$ANDROID_SERIAL" shell wm size 900x1600
+            adb -s "$ANDROID_SERIAL" shell wm density 240
+            adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
+            bash .github/scripts/run-instrumented-shard.sh 5 ${{ matrix.shard_index }}
 
       - name: Upload shard test reports
         if: always()
