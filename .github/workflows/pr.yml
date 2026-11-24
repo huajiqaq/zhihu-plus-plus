@@ -423,11 +423,20 @@ jobs:
           if-no-files-found: error
 
   macos-native:
-    name: macOS Native Compile and Tests
-    runs-on: macos-26
+    name: macOS Native Compile and Tests (${{ matrix.macos }})
+    runs-on: ${{ matrix.macos }}
+    strategy:
+      fail-fast: false
+      matrix:
+        macos: [macos-26, macos-15]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify actual arm64 runner
+        run: |
+          test "$(uname -m)" = arm64
+          sw_vers -productVersion >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set Up JDK
         uses: actions/setup-java@v4
@@ -486,7 +495,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: macOS Native Test Reports
+          name: macOS Native Test Reports-${{ matrix.macos }}
           path: |
             shared*/build/reports/tests/macosArm64Test/**
             shared*/build/test-results/macosArm64Test/**

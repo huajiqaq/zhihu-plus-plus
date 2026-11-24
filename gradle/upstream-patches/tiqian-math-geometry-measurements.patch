@@ -1,0 +1,45 @@
+diff --git a/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshot.kt b/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshot.kt
+--- a/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshot.kt
++++ b/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshot.kt
+@@ -53,12 +53,16 @@
+ 
+ // Only decimal measurements receive tolerance. Integer IDs/ranges and all textual structure
+ // remain exact; identifiers such as policy version numbers are not numeric measurements.
+-private val decimalMeasurement = Regex("(?<![A-Za-z0-9_.])[-+]?\\d+\\.\\d+(?:[Ee][+-]?\\d+)?(?![A-Za-z0-9_.])")
++// A double dot separates signed rule endpoints; a single dot still binds a version number.
++private val decimalMeasurement = Regex(
++    "(?:(?<![A-Za-z0-9_.])|(?<!\\.\\.\\.)(?<=\\.\\.))[-+]?\\d+\\.\\d+(?:[Ee][+-]?\\d+)?(?:(?![A-Za-z0-9_.])|(?=\\.\\.(?!\\.)))",
++)
+ 
+ internal fun assertStructuralGeometryEquals(expected: String, actual: String) {
+     assertEquals(decimalMeasurement.replace(expected, "<measurement>"), decimalMeasurement.replace(actual, "<measurement>"))
+     val before = decimalMeasurement.findAll(expected).toList()
+     val after = decimalMeasurement.findAll(actual).toList()
++    assertEquals(before.size, after.size, "Geometry measurement count")
+     before.zip(after).forEach { (left, right) ->
+         assertTrue(abs(left.value.toDouble() - right.value.toDouble()) <= 0.001,
+             "Geometry measurement at offset ${left.range.first}: expected ${left.value}, actual ${right.value}")
+diff --git a/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshotTest.kt b/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshotTest.kt
+--- a/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshotTest.kt
++++ b/platforms/jvm/skia/src/jvmTest/kotlin/org/tiqian/math/font/skia/StructuralGeometrySnapshotTest.kt
+@@ -43,4 +43,20 @@
+         assertFailsWith<AssertionError> { assertStructuralGeometryEquals("baseline=1.0", "baseline=1.01") }
+         assertFailsWith<AssertionError> { assertStructuralGeometryEquals("style=Script", "style=Text") }
+     }
++
++    @Test
++    fun signedRuleEndpointsAreMeasurementsButSourceRangesAndVersionsRemainExact() {
++        val expected = "rule=-61.859997..-58.819996 source=0..12 policy=Tectonic0.17.0"
++        assertStructuralGeometryEquals(expected, "rule=-61.86..-58.82 source=0..12 policy=Tectonic0.17.0")
++        assertStructuralGeometryEquals("rule=-0.0001..-0.0002", "rule=0.0001..0.0002")
++        listOf(
++            "-61.859997" to "-61.861",
++            "-58.819996" to "58.819996",
++            "-58.819996" to "-58.822",
++            "0..12" to "0..13",
++            "0.17.0" to "0.17.1",
++        ).forEach { (from, to) ->
++            assertFailsWith<AssertionError> { assertStructuralGeometryEquals(expected, expected.replace(from, to)) }
++        }
++    }
+ }

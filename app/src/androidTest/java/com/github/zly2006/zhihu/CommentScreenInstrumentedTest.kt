@@ -92,6 +92,7 @@ import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.mockCommentDetail
 import com.github.zly2006.zhihu.test.mockRootComments
+import com.github.zly2006.zhihu.test.reportCommentMockCiSystemFocus
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.seedViewModel
 import com.github.zly2006.zhihu.test.setScreenContent
@@ -934,9 +935,15 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         var activePackage: String? = null
+        var activeSystemWindowId: Int? = null
         composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
-            activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            val root = automation.rootInActiveWindow
+            activePackage = root?.packageName?.toString()
+            activeSystemWindowId = root?.windowId?.takeIf { activePackage == "android" }
             activePackage != null
+        }
+        activeSystemWindowId?.let { windowId ->
+            runCatching { reportCommentMockCiSystemFocus(automation, composeRule.activity, windowId) }
         }
         assertEquals(composeRule.activity.packageName, activePackage)
         val downTime = SystemClock.uptimeMillis()

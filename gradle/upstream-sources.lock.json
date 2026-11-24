@@ -151,6 +151,11 @@
           "sha256": "74a718a0a8d42f2cbd5de67c2c9ba48b9f31dbb63e6807d83fcee04abbbefaea",
           "reason": "Skia 数学字形和行内文本使用线性度量，保留字体设计的小数步进；上游支持相同度量后移除"
         },
+        "upstream-patches/tiqian-math-geometry-measurements.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "01bdef73adf5921cd8507b598dc4a70a42913fb59d93e444ffce5d31583fb5e8",
+          "reason": "几何快照按原容差分别比较带符号的区间端点，源码整数范围与版本仍须精确相等；上游比较器覆盖相同行为后移除"
+        },
         "upstream-patches/tiqian-math-build-configuration.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
           "sha256": "17e1db8e07ae5a3bf2b644ae9d9633f7c39b095ea13d7ffebcfd751e278a2bc5",

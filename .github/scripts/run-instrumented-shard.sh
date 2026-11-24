@@ -52,8 +52,8 @@ if [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted &&
                 stage_name=${remote##*/}
                 [[ "$remote" == "$dir/$stage_name" && $stage_name =~ ^${suite}__${method}__[a-zA-Z0-9-]+__[0-9]{2}\.png$ ]] || continue
                 mkdir -p "$results_dir/frames"
-                adb -s "$device_serial" pull "$remote" "$results_dir/frames/$stage_name" || printf 'Unable to collect %s\n' "$stage_name" >&2
-            done < <(adb -s "$device_serial" shell "if test -d '$dir'; then find '$dir' -maxdepth 1 -type f -name '*.png'; fi")
+                adb -s "$device_serial" pull "$remote" "$results_dir/frames/$stage_name" </dev/null || printf 'Unable to collect %s\n' "$stage_name" >&2
+            done < <(adb -s "$device_serial" shell -n "if test -d '$dir'; then find '$dir' -maxdepth 1 -type f -name '*.png'; fi")
         done <<'MOCK_CASES'
 ArticleScreenInstrumentedTest highlightedParagraphSelectionHandleCanExtendToFollowingParagraph
 ArticleScreenInstrumentedTest draggingSelectionHandleUsesSameCompleteTextLayer

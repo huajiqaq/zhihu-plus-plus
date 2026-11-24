@@ -25,11 +25,15 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.inspector.WindowInspector
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -83,6 +87,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
+import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -105,6 +110,7 @@ import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.MockUiScreenshotCase
+import com.github.zly2006.zhihu.test.MockUiScreenshots
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
@@ -117,6 +123,7 @@ import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.ArticleScreen
 import com.github.zly2006.zhihu.ui.COMMENT_COMPOSER_ENTRY_TAG
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
+import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.CustomWebView
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnCommand
@@ -810,7 +817,12 @@ class ArticleScreenInstrumentedTest {
     }
 
     /** DOWN 命中原生圆柄；HRM 从正文逻辑锚点累加位移，不能用移动 Popup 的中心代替它。 */
-    private fun dragSelectionHandleTo(description: String, anchorInRoot: Offset, destinationInRoot: Offset) {
+    private fun dragSelectionHandleTo(
+        description: String,
+        anchorInRoot: Offset,
+        destinationInRoot: Offset,
+        evidence: MockUiScreenshots? = null,
+    ) {
         val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed().fetchSemanticsNode()
         val downPoint = composeRule.runOnUiThread {
             val view = (handle.root as ViewRootForTest).view
@@ -824,6 +836,41 @@ class ArticleScreenInstrumentedTest {
             toolType = MotionEvent.TOOL_TYPE_FINGER
         }
         val downTime = SystemClock.uptimeMillis()
+
+        fun inspect(phase: String, point: Offset) {
+            evidence?.capture(phase) { bitmap ->
+                composeRule.runOnUiThread {
+                    val handleView = (handle.root as ViewRootForTest).view
+                    val decor = composeRule.activity.window.decorView
+                    val insets = decor.rootWindowInsets?.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    val decorOrigin = IntArray(2).also(decor::getLocationOnScreen)
+                    val windowOrigin = IntArray(2).also(handleView::getLocationOnScreen)
+                    val owners = WindowInspector.getGlobalWindowViews().filterIsInstance<ViewGroup>().flatMap { root ->
+                        root.descendants.filterIsInstance<ViewRootForTest>().map { it.view }.map { view ->
+                            val owner = when {
+                                view === handleView -> "handle"
+                                root === decor -> "activity"
+                                else -> "other-popup"
+                            }
+                            // Compose 在 dispatchTouchEvent 保存本窗口最后的真实输入；只读取本次 downTime，不安装 listener 或改派事件。
+                            val received = runCatching {
+                                val field = view.javaClass.getDeclaredField("previousMotionEvent").apply { isAccessible = true }
+                                (field.get(view) as? MotionEvent)?.takeIf { it.downTime == downTime }?.let {
+                                    "${it.actionMasked}@${it.rawX},${it.rawY}"
+                                } ?: "none"
+                            }.getOrElse { "unavailable" }
+                            "$owner:$received"
+                        }.toList()
+                    }
+                    val at = handle.positionOnScreen
+                    val pixel = if (point.x.toInt() in 0 until bitmap.width && point.y.toInt() in 0 until bitmap.height) {
+                        Integer.toHexString(bitmap.getPixel(point.x.toInt(), point.y.toInt()))
+                    } else "outside"
+                    "point=$point argb=$pixel handle=$at/${handle.size} rootOffset=${handle.positionInRoot} windowOrigin=${windowOrigin.toList()} " +
+                        "decor=${decorOrigin.toList()}/${decor.width}x${decor.height} insets=$insets anchor=$anchorInRoot destination=$destinationInRoot owners=$owners"
+                }
+            }
+        }
 
         fun touch(action: Int, point: Offset) {
             val coordinates = MotionEvent.PointerCoords().apply {
@@ -856,8 +903,11 @@ class ArticleScreenInstrumentedTest {
             composeRule.waitForIdle()
         }
         touch(MotionEvent.ACTION_DOWN, downPoint)
+        inspect("handle-down", downPoint)
         repeat(10) { step ->
-            touch(MotionEvent.ACTION_MOVE, downPoint + deltaInRoot * ((step + 1) / 10f))
+            val point = downPoint + deltaInRoot * ((step + 1) / 10f)
+            touch(MotionEvent.ACTION_MOVE, point)
+            if (step == 4) inspect("handle-move", point)
         }
         touch(MotionEvent.ACTION_UP, downPoint + deltaInRoot)
     }
@@ -1139,7 +1189,12 @@ class ArticleScreenInstrumentedTest {
                 CompositionLocalProvider(LocalClipboard provides clipboard) {
                     RenderMarkdown(
                         html = "$HIGHLIGHTED_PARAGRAPH_HTML<p>$HIGHLIGHT_SELECTION_TARGET</p>",
-                        modifier = Modifier.width(280.dp).background(scheme.surface).testTag(tag),
+                        modifier = Modifier
+                            .safeDrawingPadding()
+                            .padding(horizontal = AppDimens.PageHorizontalPadding)
+                            .width(280.dp)
+                            .background(scheme.surface)
+                            .testTag(tag),
                         enableScroll = false,
                     )
                 }
@@ -1157,6 +1212,7 @@ class ArticleScreenInstrumentedTest {
             endHandle,
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd),
+            evidence = this,
         )
         capture("after-short-drag")
         assertEquals("划线内手动收短的选区不能被工具栏重置", HIGHLIGHTED_PARAGRAPH.take(prefixEnd), copySelection(clipboard))
@@ -1501,6 +1557,7 @@ class ArticleScreenInstrumentedTest {
                     RenderMarkdownText(
                         markdown = paragraphs.joinToString("\n\n"),
                         modifier = Modifier
+                            .safeDrawingPadding()
                             .padding(start = 24.dp, top = 96.dp)
                             .width(280.dp)
                             .background(scheme.surface)
@@ -1537,6 +1594,7 @@ class ArticleScreenInstrumentedTest {
             "Markdown selection start handle",
             selectionHandleAnchor(tag, paragraphs.first(), word.start, isStart = true),
             textPoint(tag, paragraphs.first(), 0),
+            evidence = this,
         )
         waitUntilHandleSelection(tag, paragraphs.first(), TextRange(0, word.end), selectionColor)
         dragSelectionHandleTo(
