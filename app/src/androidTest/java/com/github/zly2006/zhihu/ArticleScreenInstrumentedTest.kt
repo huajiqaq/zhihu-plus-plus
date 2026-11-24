@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.NativeClipboard
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -793,10 +794,14 @@ class ArticleScreenInstrumentedTest {
         return rootPoint
     }
 
-    /** 从 HRM 可见圆柄走真实手指的窗口命中；同步分派不等待手柄弹窗重布局，下一事件前须等布局完成。 */
+    /** Compose 在同一动画帧内缓存窗口屏幕位置；系统 DOWN 用移动手柄自身窗口的当前屏幕原点。 */
     private fun dragSelectionHandleTo(description: String, destinationOnScreen: Offset) {
         val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed().fetchSemanticsNode()
-        val anchor = handle.positionOnScreen + Offset(handle.size.width / 2f, handle.size.height / 2f)
+        val anchor = composeRule.runOnUiThread {
+            val view = (handle.root as ViewRootForTest).view
+            val origin = IntArray(2).also(view::getLocationOnScreen)
+            handle.positionInRoot + Offset(origin[0] + handle.size.width / 2f, origin[1] + handle.size.height / 2f)
+        }
         val grip = Offset(0f, handle.size.height / 4f)
         val input = InstrumentationRegistry.getInstrumentation()
         val pointer = MotionEvent.PointerProperties().apply {
@@ -1721,7 +1726,9 @@ class ArticleScreenInstrumentedTest {
         }
 
         composeRule.onNodeWithContentDescription("更多选项").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("开始连续朗读").assertIsDisplayed().performClick()
+        val startReading = composeRule.onNodeWithText("开始连续朗读")
+        composeRule.waitUntil("等待朗读操作随菜单展开", 5_000) { startReading.isDisplayed() }
+        startReading.assertIsDisplayed().performClick()
 
         waitForReadingQueue(listOf(ANSWER.id, NEXT_ANSWER.id, 779L))
         assertEquals(ANSWER.id, snapshotCurrentId.get())

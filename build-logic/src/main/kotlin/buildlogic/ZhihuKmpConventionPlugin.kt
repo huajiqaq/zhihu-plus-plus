@@ -73,13 +73,14 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
                     }
                 }
                 if (project.name in setOf("shared-ui-base", "shared-feature-settings")) {
-                    val emojiMapping = project.rootProject.file("misc/emoji_mapping.json")
+                    val resourcePath = "misc/emoji_mapping.json"
+                    val emojiMapping = project.rootProject.file(resourcePath)
                     project.tasks.withType(KotlinNativeTest::class.java).matching { it.name == "macosArm64Test" }.configureEach { test ->
                         test.inputs.file(emojiMapping)
-                        // NSBundle 从独立测试可执行文件旁的 Resources 读取映射。
+                        // 未打包的 test.kexe 以自身所在目录作为 NSBundle 的资源根。
                         test.doFirst { task ->
-                            val bin = (task as KotlinNativeTest).executableProperty.get().singleFile.parentFile
-                            emojiMapping.copyTo(bin.resolve("Resources/misc/emoji_mapping.json"), overwrite = true)
+                            val resourceRoot = (task as KotlinNativeTest).executable.parentFile
+                            emojiMapping.copyTo(resourceRoot.resolve(resourcePath), overwrite = true)
                         }
                     }
                 }

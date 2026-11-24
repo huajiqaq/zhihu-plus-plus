@@ -252,7 +252,7 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-        pressBackAfterImeHidden(picker)
+        pressBackAfterImeHidden(picker) { pressSystemBack() }
         composeRule.waitUntil("等待返回收起表情面板", 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_EMOJI_PICKER_TAG).fetchSemanticsNodes().isEmpty()
         }
@@ -324,21 +324,6 @@ class CommentScreenInstrumentedTest {
             fun node(pane: String, tag: String) = composeRule.onNode(
                 hasTestTag(tag) and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, pane)),
             )
-
-            fun pressSystemBack(closingTag: String? = null) {
-                assertTrue(
-                    "系统必须接受返回操作",
-                    InstrumentationRegistry
-                        .getInstrumentation()
-                        .uiAutomation
-                        .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
-                )
-                if (closingTag != null) {
-                    composeRule.waitUntil("等待系统返回关闭 $closingTag", 5_000) {
-                        composeRule.onAllNodesWithTag(closingTag).fetchSemanticsNodes().isEmpty()
-                    }
-                }
-            }
 
             fun awaitIme(pane: String, visible: Boolean) {
                 val view = (node(pane, COMMENT_INPUT_TAG).fetchSemanticsNode().root as ViewRootForTest).view
@@ -1282,8 +1267,26 @@ class CommentScreenInstrumentedTest {
         }
     }
 
+    private fun pressSystemBack(closingTag: String? = null) {
+        assertTrue(
+            "系统必须接受返回操作",
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+        )
+        if (closingTag != null) {
+            composeRule.waitUntil("等待系统返回关闭 $closingTag", 5_000) {
+                composeRule.onAllNodesWithTag(closingTag).fetchSemanticsNodes().isEmpty()
+            }
+        }
+    }
+
     /** 返回键由系统按窗口焦点分发；关闭编辑器或切换表情的回调不会等待窗口与 IME 的交接。 */
-    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
+    private fun pressBackAfterImeHidden(
+        target: SemanticsNodeInteraction,
+        pressBack: () -> Unit = { InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK) },
+    ) {
         val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
         val ime = WindowInsetsCompat.Type.ime()
         composeRule.waitUntil("等待目标评论窗口获得焦点且系统键盘完全收起", 5_000) {
@@ -1292,7 +1295,7 @@ class CommentScreenInstrumentedTest {
                 view.hasWindowFocus() && !insets.isVisible(ime) && insets.getInsets(ime).bottom == 0
             }
         }
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack()
     }
 
     private fun setCommentScreen(

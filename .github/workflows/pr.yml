@@ -461,7 +461,7 @@ jobs:
           for module in shaping frontend frontend:coretext-render; do
             tasks+=(":upstream-tiqian-core:platforms:apple:$module:macosArm64Test")
           done
-          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=2
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
           inputs="$(python3 -I gradle/prepare-upstream-sources.py --package --offline)"
           for module in shaping frontend frontend/coretext-render; do
             reports+=("$inputs/sources/tiqian-core/platforms/apple/$module/build/test-results/macosArm64Test")

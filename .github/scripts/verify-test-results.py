@@ -182,9 +182,10 @@ if args.smoke_binary:
                 request('advance', milliseconds=300)
                 if 'Apple' not in request('dump', selector=style):
                     raise RuntimeError('Apple 底栏选择未写回设置')
-                back = {'tag': 'appearance_settings_back_button', 'useUnmergedTree': False}
+                back = {'contentDescription': '返回', 'useUnmergedTree': False}
                 request('dump', selector=back)
                 request('click', selector=back)
+                request('wait', selector={'tag': 'appearance_settings_back_button'}, exists=False, timeoutMs=10000)
                 if 'accountSettings.appearance' in request('dump'):
                     request('back')
                 home_tab = {'tag': 'nav_tab_home', 'useUnmergedTree': False}
