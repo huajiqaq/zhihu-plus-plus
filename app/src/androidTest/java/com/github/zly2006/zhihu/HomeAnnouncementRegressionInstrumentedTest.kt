@@ -27,6 +27,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -242,7 +243,9 @@ class HomeAnnouncementRegressionInstrumentedTest {
             status = HttpStatusCode.InternalServerError,
         )
         composeRule.setScreenContent { DailyScreen() }
-        composeRule.onNodeWithTag("daily_screen_error").assertIsDisplayed()
+        val errorPage = composeRule.onNodeWithTag("daily_screen_error")
+        composeRule.waitUntil("等待日报首个请求显示错误页", 5_000) { errorPage.isDisplayed() }
+        errorPage.assertIsDisplayed()
         val failedRequests = ZhihuMockApi.requestCount(urlSubstring = "/api/4/stories")
         ZhihuMockApi.mockJsonPrefix(
             method = HttpMethod.Get,
@@ -250,9 +253,10 @@ class HomeAnnouncementRegressionInstrumentedTest {
             body = """{"date":"20260101","stories":[]}""",
         )
         composeRule.onNodeWithText("重试").performClick()
-        composeRule.waitForIdle()
+        val emptyPage = composeRule.onNodeWithTag("daily_screen_empty")
+        composeRule.waitUntil("等待重试后的日报空页", 5_000) { emptyPage.isDisplayed() }
         assertEquals(failedRequests + 1, ZhihuMockApi.requestCount(urlSubstring = "/api/4/stories"))
-        composeRule.onNodeWithTag("daily_screen_empty").assertIsDisplayed()
+        emptyPage.assertIsDisplayed()
         composeRule.onAllNodesWithText("日报加载失败").assertCountEquals(0)
     }
 

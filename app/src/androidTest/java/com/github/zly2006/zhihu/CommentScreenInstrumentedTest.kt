@@ -250,9 +250,10 @@ class CommentScreenInstrumentedTest {
         )
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
+        awaitImeVisibility(composeRule.onNodeWithTag(COMMENT_INPUT_TAG), visible = true)
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-        pressBackAfterImeHidden(picker) { pressSystemBack() }
+        pressBackAfterImeHidden(picker)
         composeRule.waitUntil("等待返回收起表情面板", 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_EMOJI_PICKER_TAG).fetchSemanticsNodes().isEmpty()
         }
@@ -1282,20 +1283,22 @@ class CommentScreenInstrumentedTest {
         }
     }
 
-    /** 返回键由系统按窗口焦点分发；关闭编辑器或切换表情的回调不会等待窗口与 IME 的交接。 */
-    private fun pressBackAfterImeHidden(
-        target: SemanticsNodeInteraction,
-        pressBack: () -> Unit = { InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK) },
-    ) {
+    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
+        awaitImeVisibility(target, visible = false)
+        pressSystemBack()
+    }
+
+    /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */
+    private fun awaitImeVisibility(target: SemanticsNodeInteraction, visible: Boolean) {
         val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
         val ime = WindowInsetsCompat.Type.ime()
-        composeRule.waitUntil("等待目标评论窗口获得焦点且系统键盘完全收起", 5_000) {
+        val state = if (visible) "显示" else "收起"
+        composeRule.waitUntil("等待目标评论窗口获得焦点且系统键盘$state", 5_000) {
             composeRule.runOnUiThread {
                 val insets = ViewCompat.getRootWindowInsets(view) ?: return@runOnUiThread false
-                view.hasWindowFocus() && !insets.isVisible(ime) && insets.getInsets(ime).bottom == 0
+                view.hasWindowFocus() && insets.isVisible(ime) == visible && (visible || insets.getInsets(ime).bottom == 0)
             }
         }
-        pressBack()
     }
 
     private fun setCommentScreen(

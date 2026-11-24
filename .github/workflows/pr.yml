@@ -551,7 +551,7 @@ jobs:
           target: default
           profile: pixel_7
           avd-name: zhihu-pr
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           # 分栏与字形手柄用例使用启动时确定的平板视口。
           pre-emulator-launch-script: >-

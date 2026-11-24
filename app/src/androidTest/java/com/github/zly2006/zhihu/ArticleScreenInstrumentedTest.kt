@@ -381,7 +381,9 @@ class ArticleScreenInstrumentedTest {
         injectSwipe(0.3f, 0.8f, 240)
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("更多选项").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("复制链接").assertIsDisplayed()
+        val copyLink = composeRule.onNodeWithText("复制链接")
+        composeRule.waitUntil("等待文章操作菜单展开", 5_000) { composeRule.onAllNodesWithText("复制链接").fetchSemanticsNodes().size == 1 }
+        copyLink.performScrollTo().assertIsDisplayed()
     }
 
     /**
