@@ -104,6 +104,7 @@ import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
+import com.github.zly2006.zhihu.test.MockUiScreenshotCase
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
@@ -1128,7 +1129,7 @@ class ArticleScreenInstrumentedTest {
      * 划线段落须保留标准文字选择交互；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/322
      */
     @Test
-    fun highlightedParagraphSelectionHandleCanExtendToFollowingParagraph() {
+    fun highlightedParagraphSelectionHandleCanExtendToFollowingParagraph() = MockUiScreenshotCase.HIGHLIGHT_SELECTION.record {
         val clipboard = RecordingClipboard()
         val scheme = lightColorScheme()
         val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
@@ -1151,11 +1152,13 @@ class ArticleScreenInstrumentedTest {
         val prefixEnd = HIGHLIGHTED_PARAGRAPH.indexOf("账号")
         val fullHighlight = TextRange(0, HIGHLIGHTED_PARAGRAPH.length)
         waitUntilHandleSelection(tag, HIGHLIGHTED_PARAGRAPH, fullHighlight, selectionColor)
+        capture("before-short-drag")
         dragSelectionHandleTo(
             endHandle,
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd),
         )
+        capture("after-short-drag")
         assertEquals("划线内手动收短的选区不能被工具栏重置", HIGHLIGHTED_PARAGRAPH.take(prefixEnd), copySelection(clipboard))
 
         composeRule.onRoot().performTouchInput { longClick(press) }
@@ -1165,6 +1168,7 @@ class ArticleScreenInstrumentedTest {
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHT_SELECTION_TARGET, HIGHLIGHT_SELECTION_TARGET.length),
         )
+        capture("after-cross-paragraph-drag")
         val selectedPixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap().let { pixels ->
             (0 until pixels.height).sumOf { y ->
                 (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
@@ -1481,7 +1485,7 @@ class ArticleScreenInstrumentedTest {
      * 行为来源：https://github.com/zly2006/zhihu-plus-plus/issues/495
      */
     @Test
-    fun draggingSelectionHandleUsesSameCompleteTextLayer() {
+    fun draggingSelectionHandleUsesSameCompleteTextLayer() = MockUiScreenshotCase.HANDLE_SELECTION.record {
         val clipboard = RecordingClipboard()
         val scheme = lightColorScheme()
         val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
@@ -1515,6 +1519,7 @@ class ArticleScreenInstrumentedTest {
         val endHandle = "Markdown selection end handle"
         composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
+        capture("before-dismiss-selection")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.waitUntil("收起选择须移除双手柄和菜单", timeoutMillis = 5_000) {
             composeRule
@@ -1527,6 +1532,7 @@ class ArticleScreenInstrumentedTest {
 
         composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
+        capture("before-first-drag")
         dragSelectionHandleTo(
             "Markdown selection start handle",
             selectionHandleAnchor(tag, paragraphs.first(), word.start, isStart = true),
@@ -1544,6 +1550,7 @@ class ArticleScreenInstrumentedTest {
             selectionHandleAnchor(tag, paragraphs[1], paragraphs[1].length),
             textPoint(tag, paragraphs.last(), paragraphs.last().length),
         )
+        capture("after-final-drag")
         val container = composeRule.onNodeWithTag(tag)
         val bounds = container.fetchSemanticsNode().boundsInRoot
         val pixels = container.captureToImage().toPixelMap()

@@ -74,6 +74,11 @@
           "sha256": "e42fa9c5b488fa5a6fc7e6c2bd3af727d74c3c63e22a54dc3d86a9244deae447",
           "reason": "组合构建禁止回落到未替换的 Tiqian Maven；保留官方完整模块与断言。固定上游 LegacyFontConfigParserTest 的文件名比较统一 Windows 路径分隔符，字体链与顺序断言不变；所选上游含等价修正后移除该测试补丁"
         },
+        "upstream-patches/tiqian-core-apple-italic-ink.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "fec4aa356d25239f9844c0253fe4854dd7a62ee753ce7767b442848402977ad0",
+          "reason": "在隔离的 CoreText 字形测试中保存全画布的直立、斜体与对照图；保留原断言"
+        },
         "upstream-patches/tiqian-core-skiko-alignment.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
           "sha256": "dee031e763c2337f37060e9c2ec188eff2bc8292a79382efb9255ac98970a15e",

@@ -123,6 +123,15 @@ if args.smoke_binary:
                 raise RuntimeError(f'离屏命令失败：{command}, {response}')
             return response.get('data')
         request.counter = 1
+        def capture_frame(name):
+            target = Path(screenshots) / name
+            image = request('screenshot', file=str(target))
+            if image.get('file') != str(target) or not target.is_file():
+                raise RuntimeError('离屏截图未写入指定的临时目录')
+            shutil.copyfile(target, output / name)
+            return image
+
+        isolation_confirmed = False
         try:
             ready = json.loads(messages.get(timeout=30))
             home = Path(ready['dataHome']).resolve()
@@ -131,6 +140,7 @@ if args.smoke_binary:
             state = request('state')
             if any(state.get(key) != ready.get(key) for key in ('protocol', 'root', 'windowHost', 'dataMode', 'dataHome')):
                 raise RuntimeError('ready 与 state 的离屏隔离状态不一致')
+            isolation_confirmed = True
             selector = {'tag': 'login_notice_step_1', 'useUnmergedTree': False}
             request('wait', selector=selector, timeoutMs=10000)
             before = request('dump', selector=selector)
@@ -196,16 +206,21 @@ if args.smoke_binary:
             request('show_message', message='Native 离屏 CI smoke', duration='long')
             request('wait', selector={'text': 'Native 离屏 CI smoke'}, timeoutMs=10000)
             request('dump')
-            image_name = args.smoke_root + '.png'
-            image = request('screenshot', file=str(Path(screenshots) / image_name))
+            image = capture_frame(args.smoke_root + '.png')
             if image.get('nonUniform') is not True or image.get('sampledColors', 0) <= 1 or image.get('bytes', 0) <= 0:
                 raise RuntimeError('离屏画布没有真实绘制内容')
-            shutil.copyfile(image['file'], output / image_name)
             request('quit')
             process.wait(timeout=15)
             if process.returncode != 0 or home.exists():
                 raise RuntimeError('离屏宿主退出失败或临时数据未删除')
             print(f'macOS {args.smoke_root} 离屏 smoke：隔网、隔离、说明展开/收起、消息语义、真实绘制和退出清理通过')
+        except Exception:
+            if isolation_confirmed and process.poll() is None:
+                try:
+                    capture_frame(args.smoke_root + '-failed.png')
+                except Exception as capture_error:
+                    print(f'无法保留离屏失败帧：{capture_error}')
+            raise
         finally:
             if process.poll() is None:
                 process.kill()

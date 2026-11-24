@@ -87,6 +87,7 @@ import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
+import com.github.zly2006.zhihu.test.MockUiScreenshotCase
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.mockCommentDetail
@@ -759,7 +760,7 @@ class CommentScreenInstrumentedTest {
     }
 
     @Test
-    fun childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers() {
+    fun childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers() = MockUiScreenshotCase.CHILD_COMMENT_MENU.record {
         mockRootComments(
             "https://www.zhihu.com/api/v4/comment_v5/answers/9001/root_comment",
             listOf(seedRootComment(1, childCommentCount = 24)),
@@ -789,12 +790,13 @@ class CommentScreenInstrumentedTest {
         val menuTag = "comment_more_menu_child-12"
         val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-        fun openMenuAndCheckAnchor(): Float {
+        fun openMenuAndCheckAnchor(phase: String): Float {
             val anchor = button.assertIsDisplayed().fetchSemanticsNode()
             val view = (anchor.root as ViewRootForTest).view
             button.performTouchInput { click() }
             val menu = composeRule.onNodeWithTag(menuTag).assertIsDisplayed().fetchSemanticsNode()
             val menuTop = menu.positionOnScreen.y
+            capture(phase)
             composeRule.onNodeWithText("举报").assertIsDisplayed()
             composeRule.onNodeWithTag("comment_delete_menu_item_child-12").assertIsDisplayed()
             composeRule.onAllNodes(isDialog()).assertCountEquals(2)
@@ -833,14 +835,14 @@ class CommentScreenInstrumentedTest {
 
         val firstAnchor = button.fetchSemanticsNode()
         val firstAnchorY = firstAnchor.positionOnScreen.y
-        val firstMenuY = openMenuAndCheckAnchor()
+        val firstMenuY = openMenuAndCheckAnchor("first-menu")
         val scrollDistance = childList.fetchSemanticsNode().size.height * 0.45f
         childList.performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, -scrollDistance)) }
         assertTrue(
             "必须在实际列表滚动后的不同位置再次打开菜单",
             button.fetchSemanticsNode().positionOnScreen.y > firstAnchorY + firstAnchor.size.height,
         )
-        val secondMenuY = openMenuAndCheckAnchor()
+        val secondMenuY = openMenuAndCheckAnchor("second-menu")
         assertTrue("菜单位置必须随锚点改变", kotlin.math.abs(secondMenuY - firstMenuY) > 1f)
 
         button.performTouchInput { click() }
@@ -848,6 +850,7 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(menuTag).assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertIsDisplayed().assert(hasAnyAncestor(isDialog()))
         composeRule.onAllNodes(isDialog()).assertCountEquals(3)
+        capture("delete-dialog")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertDoesNotExist()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Delete, "/comment_v5/comment/child-12"))
@@ -858,6 +861,7 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag("comment_more_button_root-1").performTouchInput { click() }
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
+        capture("root-menu")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.onNodeWithTag("comment_more_menu_root-1").assertDoesNotExist()
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)

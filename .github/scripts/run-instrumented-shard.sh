@@ -39,8 +39,33 @@ mkdir -p "$results_dir"
 
 adb -s "$device_serial" install -r -t "$app_apk"
 adb -s "$device_serial" install -r -t "$test_apk"
+frames=()
+if [[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted && ${GITHUB_EVENT_NAME:-} == workflow_dispatch && $device_serial == emulator-* ]]; then
+    frames=(-e zhpp_mock_screenshots ci)
+    collect_mock_frames() {
+        local root=/sdcard/Android/data/com.github.zly2006.zhplus.lite/files/finishcheck/screenshots
+        local suite method stage_name remote dir
+        while read -r suite method; do
+            dir="$root/$suite/$method"
+            while IFS= read -r remote; do
+                remote=${remote%$'\r'}
+                stage_name=${remote##*/}
+                [[ "$remote" == "$dir/$stage_name" && $stage_name =~ ^${suite}__${method}__[a-zA-Z0-9-]+__[0-9]{2}\.png$ ]] || continue
+                mkdir -p "$results_dir/frames"
+                adb -s "$device_serial" pull "$remote" "$results_dir/frames/$stage_name" || printf 'Unable to collect %s\n' "$stage_name" >&2
+            done < <(adb -s "$device_serial" shell "if test -d '$dir'; then find '$dir' -maxdepth 1 -type f -name '*.png'; fi")
+        done <<'MOCK_CASES'
+ArticleScreenInstrumentedTest highlightedParagraphSelectionHandleCanExtendToFollowingParagraph
+ArticleScreenInstrumentedTest draggingSelectionHandleUsesSameCompleteTextLayer
+CommentScreenInstrumentedTest childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers
+WriteAnswerScreenInstrumentedTest markdownShortcutsHideOnlyWhileTheSoftKeyboardIsVisible
+MOCK_CASES
+    }
+    trap collect_mock_frames EXIT
+fi
 adb -s "$device_serial" shell am instrument -w \
     -e zhpp_data_mode mock \
+    "${frames[@]}" \
     -e numShards "$shard_count" \
     -e shardIndex "$shard_index" \
     "$instrumentation_component" | tee "$instrumentation_result"

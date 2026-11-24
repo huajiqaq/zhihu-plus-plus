@@ -446,6 +446,8 @@ jobs:
       - name: Compile native hosts and run every populated common/native suite
         run: |
           set -euo pipefail
+          export TIQIAN_CORETEXT_TEST_BITMAP_DIR="$RUNNER_TEMP/macos-coretext"
+          mkdir -p "$TIQIAN_CORETEXT_TEST_BITMAP_DIR"
           tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:packageDebugMacosUiDebug :macosUiDebug:verifyMacosReleaseIsolation)
           reports=(macosApp/build/test-results/macosArm64Test)
           for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
@@ -494,6 +496,7 @@ jobs:
             .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/reports/tests/macosArm64Test/**
             .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/test-results/macosArm64Test/**
             ${{ runner.temp }}/macos-native-smoke/**
+            ${{ runner.temp }}/macos-coretext/italicShearsGlyphInk-*.pgm
           include-hidden-files: true
           if-no-files-found: error
 

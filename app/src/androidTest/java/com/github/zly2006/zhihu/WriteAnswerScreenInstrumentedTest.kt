@@ -54,6 +54,7 @@ import androidx.test.filters.SdkSuppress
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.navigation.WriteAnswer
 import com.github.zly2006.zhihu.navigation.WriteArticle
+import com.github.zly2006.zhihu.test.MockUiScreenshotCase
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.ui.WRITE_ANSWER_CONTENT_TAG
@@ -241,12 +242,13 @@ class WriteAnswerScreenInstrumentedTest {
 
     @Test
     @SdkSuppress(minSdkVersion = 30)
-    fun markdownShortcutsHideOnlyWhileTheSoftKeyboardIsVisible() {
+    fun markdownShortcutsHideOnlyWhileTheSoftKeyboardIsVisible() = MockUiScreenshotCase.MARKDOWN_SHORTCUTS.record {
         composeRule.setScreenContent { WritePinScreen() }
         val editor = composeRule.onNodeWithTag(WRITE_PIN_CONTENT_TAG)
         val shortcuts = composeRule.onNodeWithTag("markdown_shortcut_toolbar")
         val view = composeRule.activity.window.decorView
         val keyboard = WindowInsets.Type.ime()
+        capture("before-keyboard")
         for (draft in listOf("保留正文", "以及再次输入")) {
             shortcuts.assertIsDisplayed()
             editor.performTouchInput { click() }
@@ -258,10 +260,12 @@ class WriteAnswerScreenInstrumentedTest {
             }
             editor.performTextInput(draft)
             composeRule.onNodeWithTag("write_pin_action_toolbar").assertIsDisplayed()
+            capture("keyboard-visible")
             Espresso.closeSoftKeyboard()
             composeRule.waitUntil("等待输入法收起", timeoutMillis = 5_000) {
                 composeRule.runOnUiThread { view.rootWindowInsets?.isVisible(keyboard) == false }
             }
+            capture("keyboard-hidden")
             shortcuts.assertIsDisplayed()
         }
         editor.assertTextEquals("保留正文以及再次输入")
