@@ -248,9 +248,11 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("\u3000已有草稿")),
         )
+        val input = composeRule.onNodeWithTag(COMMENT_INPUT_TAG)
+        awaitImeVisibility(input, visible = false)
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
-        awaitImeVisibility(composeRule.onNodeWithTag(COMMENT_INPUT_TAG), visible = true)
+        awaitImeVisibility(input, visible = true)
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsNotFocused()
@@ -1294,7 +1296,7 @@ class CommentScreenInstrumentedTest {
 
     private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
         awaitImeVisibility(target, visible = false)
-        pressSystemBack()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     }
 
     /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */

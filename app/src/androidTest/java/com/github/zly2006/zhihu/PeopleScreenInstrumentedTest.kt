@@ -414,12 +414,13 @@ class PeopleScreenInstrumentedTest {
             )
         }
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val targetPackage = composeRule.activity.packageName
         var activePackage: String? = null
         composeRule.waitUntil("更多菜单必须存在活跃应用窗口", timeoutMillis = 5_000) {
             activePackage = automation.rootInActiveWindow?.packageName?.toString()
-            activePackage != null
+            activePackage == targetPackage
         }
-        assertEquals(composeRule.activity.packageName, activePackage)
+        assertEquals(targetPackage, activePackage)
         val downTime = SystemClock.uptimeMillis()
         assertTrue(
             automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),
