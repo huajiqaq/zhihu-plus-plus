@@ -95,6 +95,8 @@ for directory in args.directories:
     print(f'{directory}: {executed} 项测试通过，{skipped} 项跳过')
 
 if args.smoke_binary:
+    if not args.smoke_binary.is_file():
+        raise SystemExit(f'缺少离屏调试可执行文件：{args.smoke_binary}')
     output = args.smoke_output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     messages = Queue()

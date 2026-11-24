@@ -17,7 +17,11 @@
 
 package com.github.zly2006.zhihu
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -30,6 +34,7 @@ import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.navigation.Account
@@ -182,7 +187,11 @@ class SettingsSearchScreenInstrumentedTest {
         composeRule.setScreenContent {
             host = rememberAppNavHost(MainTabs)
             CompositionLocalProvider(LocalNavigator provides Navigator(host::open, host::onBack)) {
-                AppNavDisplay(navHost = host) {
+                // “屏蔽”结果的首组就是内容过滤；高屏可能无需滚动就能看到付费内容行。
+                AppNavDisplay(
+                    navHost = host,
+                    modifier = Modifier.wrapContentHeight(Alignment.Top).heightIn(max = 480.dp),
+                ) {
                     entry<MainTabs> { }
                     entry<Account.SettingsSearch> { SettingsSearchScreen() }
                     entry<Account.ReadingSettings> { ReadingSettingsScreen(it.setting) }

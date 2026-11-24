@@ -141,6 +141,11 @@
       "releaseRef": "refs/tags/v{version}",
       "snapshotRef": "refs/heads/main",
       "patches": {
+        "upstream-patches/tiqian-math-font-metrics.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "74a718a0a8d42f2cbd5de67c2c9ba48b9f31dbb63e6807d83fcee04abbbefaea",
+          "reason": "Skia 数学字形和行内文本使用线性度量，保留字体设计的小数步进；上游支持相同度量后移除"
+        },
         "upstream-patches/tiqian-math-build-configuration.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
           "sha256": "17e1db8e07ae5a3bf2b644ae9d9633f7c39b095ea13d7ffebcfd751e278a2bc5",

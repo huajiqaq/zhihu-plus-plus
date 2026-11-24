@@ -1,0 +1,34 @@
+diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
+--- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
++++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
+@@ -280,12 +280,12 @@ class SkiaMathFontFace(
+     }
+ 
+     /**
+-     * Math layout retains fractional design-space advances. Without subpixel positioning Skia's
+-     * shaper quantizes [RunInfo.advanceX] to whole device pixels even though the selected glyph's
+-     * OpenType advance remains fractional, which moves following noads at phase-dependent sizes.
++     * Subpixel positioning keeps the shaper from rounding advances; linear metrics keep FreeType
++     * from supplying pixel-hinted advances in the first place. Glyphs still rasterize normally.
+      */
+     override fun font(fontSizePx: Float): Font = Font(typeface, fontSizePx).apply {
+         isSubpixel = true
++        isLinearMetrics = true
+     }
+ 
+     override fun glyphPath(glyphId: UShort, fontSizePx: Float): Path? = font(fontSizePx).use { font ->
+diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
+--- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
++++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
+@@ -117,7 +117,10 @@ class SkiaMathTextRunProvider private constructor(
+             }
+         }
+ 
+-        override fun font(fontSizePx: Float) = Font(typeface, fontSizePx).apply { isSubpixel = true }
++        override fun font(fontSizePx: Float) = Font(typeface, fontSizePx).apply {
++            isSubpixel = true
++            isLinearMetrics = true
++        }
+         override fun glyphPath(glyphId: UShort, fontSizePx: Float): Path? = font(fontSizePx).use {
+             it.getPath(glyphId.toShort())
+         }

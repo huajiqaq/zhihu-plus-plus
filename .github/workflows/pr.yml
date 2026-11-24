@@ -424,7 +424,7 @@ jobs:
 
   macos-native:
     name: macOS Native Compile and Tests
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -446,7 +446,7 @@ jobs:
       - name: Compile native hosts and run every populated common/native suite
         run: |
           set -euo pipefail
-          tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:syncDebugMacosUiDebug :macosUiDebug:verifyMacosReleaseIsolation)
+          tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:packageDebugMacosUiDebug :macosUiDebug:verifyMacosReleaseIsolation)
           reports=(macosApp/build/test-results/macosArm64Test)
           for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
             [[ -f "$build_script" ]] || continue

@@ -793,29 +793,53 @@ class ArticleScreenInstrumentedTest {
         return rootPoint
     }
 
-    /** Compose 直接向手柄节点发事件会绕过窗口命中；从 HRM 锚点下方的可见圆柄走系统触摸分派。 */
+    /** 从 HRM 可见圆柄走真实手指的窗口命中；同步分派不等待手柄弹窗重布局，下一事件前须等布局完成。 */
     private fun dragSelectionHandleTo(description: String, destinationOnScreen: Offset) {
         val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed().fetchSemanticsNode()
         val anchor = handle.positionOnScreen + Offset(handle.size.width / 2f, handle.size.height / 2f)
         val grip = Offset(0f, handle.size.height / 4f)
         val input = InstrumentationRegistry.getInstrumentation()
+        val pointer = MotionEvent.PointerProperties().apply {
+            id = 0
+            toolType = MotionEvent.TOOL_TYPE_FINGER
+        }
         val downTime = SystemClock.uptimeMillis()
 
         fun touch(action: Int, point: Offset) {
-            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, point.x, point.y, 0)
+            val coordinates = MotionEvent.PointerCoords().apply {
+                x = point.x
+                y = point.y
+                pressure = if (action == MotionEvent.ACTION_UP) 0f else 1f
+                size = 1f
+            }
+            val event = MotionEvent.obtain(
+                downTime,
+                SystemClock.uptimeMillis(),
+                action,
+                1,
+                arrayOf(pointer),
+                arrayOf(coordinates),
+                0,
+                0,
+                1f,
+                1f,
+                0,
+                0,
+                InputDevice.SOURCE_TOUCHSCREEN,
+                0,
+            )
             try {
-                event.source = InputDevice.SOURCE_TOUCHSCREEN
                 assertTrue("系统触摸事件必须成功注入", input.uiAutomation.injectInputEvent(event, true))
             } finally {
                 event.recycle()
             }
+            composeRule.waitForIdle()
         }
         touch(MotionEvent.ACTION_DOWN, anchor + grip)
         repeat(10) { step ->
             touch(MotionEvent.ACTION_MOVE, anchor + grip + (destinationOnScreen - anchor) * ((step + 1) / 10f))
         }
         touch(MotionEvent.ACTION_UP, destinationOnScreen + grip)
-        composeRule.waitForIdle()
     }
 
     private fun copySelection(clipboard: RecordingClipboard): String {
@@ -1004,6 +1028,10 @@ class ArticleScreenInstrumentedTest {
 
         val body = composeRule.onNodeWithText(paragraph, useUnmergedTree = true)
         body.performTouchInput { longClick(Offset(8.dp.toPx(), center.y)) }
+        composeRule.waitUntil("长按菜单须在平台文本分类后完成可见布局", timeoutMillis = 5_000) {
+            composeRule.onNodeWithText("复制").isDisplayed() &&
+                composeRule.onNodeWithText("全选").isDisplayed()
+        }
         composeRule.onNodeWithText("复制").assertIsDisplayed()
         composeRule.onNodeWithText("全选").assertIsDisplayed().performClick()
         val selection = body.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]

@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
@@ -65,14 +66,12 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.AnnotatedString
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.test.espresso.Espresso
-import androidx.test.espresso.action.ViewActions
-import androidx.test.espresso.matcher.RootMatchers
-import androidx.test.espresso.matcher.ViewMatchers
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
@@ -252,12 +251,12 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
-        composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-        Espresso.closeSoftKeyboard()
-        Espresso.pressBack()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            runCatching { composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertDoesNotExist() }.isSuccess
+        val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
+        pressBackAfterImeHidden(picker)
+        composeRule.waitUntil("等待返回收起表情面板", 5_000) {
+            composeRule.onAllNodesWithTag(COMMENT_EMOJI_PICKER_TAG).fetchSemanticsNodes().isEmpty()
         }
+        picker.assertDoesNotExist()
         composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(1)
         composeRule.onNodeWithTag(COMMENT_COMPOSER_SHEET_TAG).assertIsDisplayed()
         composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
@@ -326,14 +325,19 @@ class CommentScreenInstrumentedTest {
                 hasTestTag(tag) and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, pane)),
             )
 
-            fun pressSystemBack() {
+            fun pressSystemBack(closingTag: String? = null) {
                 assertTrue(
                     "系统必须接受返回操作",
-                    androidx.test.platform.app.InstrumentationRegistry
+                    InstrumentationRegistry
                         .getInstrumentation()
                         .uiAutomation
                         .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 )
+                if (closingTag != null) {
+                    composeRule.waitUntil("等待系统返回关闭 $closingTag", 5_000) {
+                        composeRule.onAllNodesWithTag(closingTag).fetchSemanticsNodes().isEmpty()
+                    }
+                }
             }
 
             fun awaitIme(pane: String, visible: Boolean) {
@@ -343,9 +347,10 @@ class CommentScreenInstrumentedTest {
                     composeRule.waitUntil("等待 $pane Dialog 的系统软键盘 visible=$visible（需允许停靠软键盘）", 5_000) {
                         composeRule.runOnUiThread {
                             val insets = view.rootWindowInsets ?: return@runOnUiThread false
+                            val bottom = insets.getInsets(ime).bottom
                             view.hasWindowFocus() &&
                                 insets.isVisible(ime) == visible &&
-                                (!visible || insets.getInsets(ime).bottom > insets.getInsets(WindowInsets.Type.navigationBars()).bottom)
+                                (if (visible) bottom > insets.getInsets(WindowInsets.Type.navigationBars()).bottom else bottom == 0)
                         }
                     }
                 } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
@@ -410,7 +415,7 @@ class CommentScreenInstrumentedTest {
             awaitIme("写评论", false)
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(1)
             rootInput.assertTextEquals("根草稿")
-            pressSystemBack()
+            pressSystemBack(closingTag = COMMENT_COMPOSER_SHEET_TAG)
             composeRule.onNodeWithTag(COMMENT_COMPOSER_SHEET_TAG).assertDoesNotExist()
             composeRule.onNodeWithTag("comment_child_button_root-1").performClick()
 
@@ -427,7 +432,7 @@ class CommentScreenInstrumentedTest {
             awaitIme("写回复", false)
             childInput.assertIsNotFocused()
             node("写回复", COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-            pressSystemBack()
+            pressSystemBack(closingTag = COMMENT_EMOJI_PICKER_TAG)
             node("写回复", COMMENT_EMOJI_PICKER_TAG).assertDoesNotExist()
             childInput.assertIsDisplayed()
             emoji.performTouchInput { click() }
@@ -440,7 +445,7 @@ class CommentScreenInstrumentedTest {
             awaitIme("写回复", false)
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(2)
             childInput.assertContentDescriptionEquals("回复 子回复作者 15 的评论").assertTextEquals("子草稿")
-            pressSystemBack()
+            pressSystemBack(closingTag = COMMENT_COMPOSER_SHEET_TAG)
             childInput.assertDoesNotExist()
             childList.assertIsDisplayed()
             composeRule.onNodeWithTag("comment_row_child-15").assertIsDisplayed()
@@ -700,7 +705,7 @@ class CommentScreenInstrumentedTest {
         childEntry.performClick()
         input.assertTextEquals("回复草稿")
         closeEditor.performClick()
-        pressBackOnTopDialog()
+        pressBackAfterImeHidden(childList)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
@@ -718,12 +723,12 @@ class CommentScreenInstrumentedTest {
         childEntry.performClick()
         input.assertIsDisplayed().assertTextEquals("回复草稿")
         closeEditor.performClick()
-        pressBackOnTopDialog()
+        pressBackAfterImeHidden(childList)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
-        Espresso.pressBack()
+        pressBackAfterImeHidden(rootList)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().isEmpty()
         }
@@ -1277,13 +1282,17 @@ class CommentScreenInstrumentedTest {
         }
     }
 
-    // Espresso.pressBack() 只在界面空闲的那一刻挑一次窗口；编辑面板刚关、焦点还没回到评论弹窗时
-    // 会挑中 Activity 窗口，随后等不到焦点而失败。这里直接把返回键发给最上层的弹窗。
-    private fun pressBackOnTopDialog() {
-        Espresso
-            .onView(ViewMatchers.isRoot())
-            .inRoot(RootMatchers.isDialog())
-            .perform(ViewActions.pressBack())
+    /** 返回键由系统按窗口焦点分发；关闭编辑器或切换表情的回调不会等待窗口与 IME 的交接。 */
+    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
+        val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
+        val ime = WindowInsetsCompat.Type.ime()
+        composeRule.waitUntil("等待目标评论窗口获得焦点且系统键盘完全收起", 5_000) {
+            composeRule.runOnUiThread {
+                val insets = ViewCompat.getRootWindowInsets(view) ?: return@runOnUiThread false
+                view.hasWindowFocus() && !insets.isVisible(ime) && insets.getInsets(ime).bottom == 0
+            }
+        }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     }
 
     private fun setCommentScreen(
