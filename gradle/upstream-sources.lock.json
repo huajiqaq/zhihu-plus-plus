@@ -112,7 +112,7 @@
         },
         "upstream-patches/tiqian-markdown-visible-block-layers.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
-          "sha256": "a50ad004717b8c22f011e085abdae655e1540057634f0f4db548b774c08c1579",
+          "sha256": "2468e4fb73accabcfb11f9474e79e4461c849f0eaae4323f6ea003b014cb31f0",
           "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/9 为已物化正文块保留独立绘制层，滚动时未变化的相邻段落不再重新塑造字形；所选上游包含修复且邻块绘制与越界像素回归通过后移除"
         },
         "upstream-patches/tiqian-markdown-build-configuration.patch": {

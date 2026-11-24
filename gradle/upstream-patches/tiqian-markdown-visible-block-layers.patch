@@ -13,10 +13,10 @@ index 5f1496c..8170869 100644
      }
 diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt
 new file mode 100644
-index 0000000..eadcc88
+index 0000000..a14af4d
 --- /dev/null
 +++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownDeferredDrawingTest.kt
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,80 @@
 +package org.tiqian.markdown.compose
 +
 +import androidx.compose.foundation.Canvas
@@ -25,6 +25,7 @@ index 0000000..eadcc88
 +import androidx.compose.foundation.layout.height
 +import androidx.compose.foundation.rememberScrollState
 +import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.snapshots.Snapshot
 +import androidx.compose.ui.ExperimentalComposeUiApi
 +import androidx.compose.ui.ImageComposeScene
 +import androidx.compose.ui.Modifier
@@ -87,7 +88,7 @@ index 0000000..eadcc88
 +            val draws = stableDraws
 +            assertTrue(draws > 0)
 +            assertEquals(Color.Magenta, before[x, first - 1])
-+            color.value = Color.Green
++            Snapshot.withMutableSnapshot { color.value = Color.Green }
 +            val after = scene.render().use { it.toComposeImageBitmap().toPixelMap() }
 +            assertEquals(Color.Green, after[x, first])
 +            assertEquals(Color.Magenta, after[x, first - 1])
