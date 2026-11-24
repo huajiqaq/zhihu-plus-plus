@@ -25,9 +25,6 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.ViewGroup
-import android.view.WindowInsets
-import android.view.inspector.WindowInspector
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,7 +84,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
-import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -109,8 +105,6 @@ import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
-import com.github.zly2006.zhihu.test.MockUiScreenshotCase
-import com.github.zly2006.zhihu.test.MockUiScreenshots
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
@@ -817,12 +811,7 @@ class ArticleScreenInstrumentedTest {
     }
 
     /** DOWN 命中原生圆柄；HRM 从正文逻辑锚点累加位移，不能用移动 Popup 的中心代替它。 */
-    private fun dragSelectionHandleTo(
-        description: String,
-        anchorInRoot: Offset,
-        destinationInRoot: Offset,
-        evidence: MockUiScreenshots? = null,
-    ) {
+    private fun dragSelectionHandleTo(description: String, anchorInRoot: Offset, destinationInRoot: Offset) {
         val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed().fetchSemanticsNode()
         val downPoint = composeRule.runOnUiThread {
             val view = (handle.root as ViewRootForTest).view
@@ -836,46 +825,6 @@ class ArticleScreenInstrumentedTest {
             toolType = MotionEvent.TOOL_TYPE_FINGER
         }
         val downTime = SystemClock.uptimeMillis()
-
-        fun inspect(phase: String, point: Offset) {
-            evidence?.capture(phase) { bitmap ->
-                composeRule.runOnUiThread {
-                    val handleView = (handle.root as ViewRootForTest).view
-                    val decor = composeRule.activity.window.decorView
-                    val insets = decor.rootWindowInsets?.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                    val decorOrigin = IntArray(2).also(decor::getLocationOnScreen)
-                    val windowOrigin = IntArray(2).also(handleView::getLocationOnScreen)
-                    val owners = WindowInspector.getGlobalWindowViews().filterIsInstance<ViewGroup>().flatMap { root ->
-                        root.descendants
-                            .filterIsInstance<ViewRootForTest>()
-                            .map { it.view }
-                            .map { view ->
-                                val owner = when {
-                                    view === handleView -> "handle"
-                                    root === decor -> "activity"
-                                    else -> "other-popup"
-                                }
-                                // Compose 在 dispatchTouchEvent 保存本窗口最后的真实输入；只读取本次 downTime，不安装 listener 或改派事件。
-                                val received = runCatching {
-                                    val field = view.javaClass.getDeclaredField("previousMotionEvent").apply { isAccessible = true }
-                                    (field.get(view) as? MotionEvent)?.takeIf { it.downTime == downTime }?.let {
-                                        "${it.actionMasked}@${it.rawX},${it.rawY}"
-                                    } ?: "none"
-                                }.getOrElse { "unavailable" }
-                                "$owner:$received"
-                            }.toList()
-                    }
-                    val at = handle.positionOnScreen
-                    val pixel = if (point.x.toInt() in 0 until bitmap.width && point.y.toInt() in 0 until bitmap.height) {
-                        Integer.toHexString(bitmap.getPixel(point.x.toInt(), point.y.toInt()))
-                    } else {
-                        "outside"
-                    }
-                    "point=$point argb=$pixel handle=$at/${handle.size} rootOffset=${handle.positionInRoot} windowOrigin=${windowOrigin.toList()} " +
-                        "decor=${decorOrigin.toList()}/${decor.width}x${decor.height} insets=$insets anchor=$anchorInRoot destination=$destinationInRoot owners=$owners"
-                }
-            }
-        }
 
         fun touch(action: Int, point: Offset) {
             val coordinates = MotionEvent.PointerCoords().apply {
@@ -908,11 +857,8 @@ class ArticleScreenInstrumentedTest {
             composeRule.waitForIdle()
         }
         touch(MotionEvent.ACTION_DOWN, downPoint)
-        inspect("handle-down", downPoint)
         repeat(10) { step ->
-            val point = downPoint + deltaInRoot * ((step + 1) / 10f)
-            touch(MotionEvent.ACTION_MOVE, point)
-            if (step == 4) inspect("handle-move", point)
+            touch(MotionEvent.ACTION_MOVE, downPoint + deltaInRoot * ((step + 1) / 10f))
         }
         touch(MotionEvent.ACTION_UP, downPoint + deltaInRoot)
     }
@@ -1184,7 +1130,7 @@ class ArticleScreenInstrumentedTest {
      * 划线段落须保留标准文字选择交互；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/322
      */
     @Test
-    fun highlightedParagraphSelectionHandleCanExtendToFollowingParagraph() = MockUiScreenshotCase.HIGHLIGHT_SELECTION.record {
+    fun highlightedParagraphSelectionHandleCanExtendToFollowingParagraph() {
         val clipboard = RecordingClipboard()
         val scheme = lightColorScheme()
         val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
@@ -1212,14 +1158,11 @@ class ArticleScreenInstrumentedTest {
         val prefixEnd = HIGHLIGHTED_PARAGRAPH.indexOf("账号")
         val fullHighlight = TextRange(0, HIGHLIGHTED_PARAGRAPH.length)
         waitUntilHandleSelection(tag, HIGHLIGHTED_PARAGRAPH, fullHighlight, selectionColor)
-        capture("before-short-drag")
         dragSelectionHandleTo(
             endHandle,
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd),
-            evidence = this,
         )
-        capture("after-short-drag")
         assertEquals("划线内手动收短的选区不能被工具栏重置", HIGHLIGHTED_PARAGRAPH.take(prefixEnd), copySelection(clipboard))
 
         composeRule.onRoot().performTouchInput { longClick(press) }
@@ -1229,7 +1172,6 @@ class ArticleScreenInstrumentedTest {
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHT_SELECTION_TARGET, HIGHLIGHT_SELECTION_TARGET.length),
         )
-        capture("after-cross-paragraph-drag")
         val selectedPixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap().let { pixels ->
             (0 until pixels.height).sumOf { y ->
                 (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
@@ -1546,7 +1488,7 @@ class ArticleScreenInstrumentedTest {
      * 行为来源：https://github.com/zly2006/zhihu-plus-plus/issues/495
      */
     @Test
-    fun draggingSelectionHandleUsesSameCompleteTextLayer() = MockUiScreenshotCase.HANDLE_SELECTION.record {
+    fun draggingSelectionHandleUsesSameCompleteTextLayer() {
         val clipboard = RecordingClipboard()
         val scheme = lightColorScheme()
         val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
@@ -1581,7 +1523,6 @@ class ArticleScreenInstrumentedTest {
         val endHandle = "Markdown selection end handle"
         composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
-        capture("before-dismiss-selection")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.waitUntil("收起选择须移除双手柄和菜单", timeoutMillis = 5_000) {
             composeRule
@@ -1594,12 +1535,10 @@ class ArticleScreenInstrumentedTest {
 
         composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
-        capture("before-first-drag")
         dragSelectionHandleTo(
             "Markdown selection start handle",
             selectionHandleAnchor(tag, paragraphs.first(), word.start, isStart = true),
             textPoint(tag, paragraphs.first(), 0),
-            evidence = this,
         )
         waitUntilHandleSelection(tag, paragraphs.first(), TextRange(0, word.end), selectionColor)
         dragSelectionHandleTo(
@@ -1613,7 +1552,6 @@ class ArticleScreenInstrumentedTest {
             selectionHandleAnchor(tag, paragraphs[1], paragraphs[1].length),
             textPoint(tag, paragraphs.last(), paragraphs.last().length),
         )
-        capture("after-final-drag")
         val container = composeRule.onNodeWithTag(tag)
         val bounds = container.fetchSemanticsNode().boundsInRoot
         val pixels = container.captureToImage().toPixelMap()

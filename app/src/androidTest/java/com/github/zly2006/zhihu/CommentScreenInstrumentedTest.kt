@@ -87,12 +87,10 @@ import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
-import com.github.zly2006.zhihu.test.MockUiScreenshotCase
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
 import com.github.zly2006.zhihu.test.mockCommentDetail
 import com.github.zly2006.zhihu.test.mockRootComments
-import com.github.zly2006.zhihu.test.reportCommentMockCiSystemFocus
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.seedViewModel
 import com.github.zly2006.zhihu.test.setScreenContent
@@ -648,6 +646,15 @@ class CommentScreenInstrumentedTest {
         val childEntry = composeRule.onNode(hasTestTag(COMMENT_COMPOSER_ENTRY_TAG) and hasAnyAncestor(childPane))
         val input = composeRule.onNodeWithTag(COMMENT_INPUT_TAG)
         val closeEditor = composeRule.onNodeWithContentDescription("关闭编辑面板")
+
+        fun closeEditorAndPressBack(target: SemanticsNodeInteraction) {
+            closeEditor.performClick()
+            composeRule.waitUntil("等待异步关闭的评论编辑窗口离开", timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag(COMMENT_COMPOSER_SHEET_TAG).fetchSemanticsNodes().isEmpty()
+            }
+            pressBackAfterImeHidden(target)
+        }
+
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("comment_child_button_root-99").fetchSemanticsNodes().isNotEmpty()
         }
@@ -693,8 +700,7 @@ class CommentScreenInstrumentedTest {
         childList.assert(hasAnyAncestor(isDialog())).assertIsDisplayed()
         childEntry.performClick()
         input.assertTextEquals("回复草稿")
-        closeEditor.performClick()
-        pressBackAfterImeHidden(childList)
+        closeEditorAndPressBack(childList)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
@@ -711,8 +717,7 @@ class CommentScreenInstrumentedTest {
         composeRule.onAllNodes(isDialog()).assertCountEquals(2)
         childEntry.performClick()
         input.assertIsDisplayed().assertTextEquals("回复草稿")
-        closeEditor.performClick()
-        pressBackAfterImeHidden(childList)
+        closeEditorAndPressBack(childList)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
@@ -761,7 +766,7 @@ class CommentScreenInstrumentedTest {
     }
 
     @Test
-    fun childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers() = MockUiScreenshotCase.CHILD_COMMENT_MENU.record {
+    fun childCommentMoreMenuTracksAnchorWithinWindowAndBackLayers() {
         mockRootComments(
             "https://www.zhihu.com/api/v4/comment_v5/answers/9001/root_comment",
             listOf(seedRootComment(1, childCommentCount = 24)),
@@ -791,13 +796,12 @@ class CommentScreenInstrumentedTest {
         val menuTag = "comment_more_menu_child-12"
         val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-        fun openMenuAndCheckAnchor(phase: String): Float {
+        fun openMenuAndCheckAnchor(): Float {
             val anchor = button.assertIsDisplayed().fetchSemanticsNode()
             val view = (anchor.root as ViewRootForTest).view
             button.performTouchInput { click() }
             val menu = composeRule.onNodeWithTag(menuTag).assertIsDisplayed().fetchSemanticsNode()
             val menuTop = menu.positionOnScreen.y
-            capture(phase)
             composeRule.onNodeWithText("举报").assertIsDisplayed()
             composeRule.onNodeWithTag("comment_delete_menu_item_child-12").assertIsDisplayed()
             composeRule.onAllNodes(isDialog()).assertCountEquals(2)
@@ -836,14 +840,14 @@ class CommentScreenInstrumentedTest {
 
         val firstAnchor = button.fetchSemanticsNode()
         val firstAnchorY = firstAnchor.positionOnScreen.y
-        val firstMenuY = openMenuAndCheckAnchor("first-menu")
+        val firstMenuY = openMenuAndCheckAnchor()
         val scrollDistance = childList.fetchSemanticsNode().size.height * 0.45f
         childList.performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, -scrollDistance)) }
         assertTrue(
             "必须在实际列表滚动后的不同位置再次打开菜单",
             button.fetchSemanticsNode().positionOnScreen.y > firstAnchorY + firstAnchor.size.height,
         )
-        val secondMenuY = openMenuAndCheckAnchor("second-menu")
+        val secondMenuY = openMenuAndCheckAnchor()
         assertTrue("菜单位置必须随锚点改变", kotlin.math.abs(secondMenuY - firstMenuY) > 1f)
 
         button.performTouchInput { click() }
@@ -851,7 +855,6 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(menuTag).assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertIsDisplayed().assert(hasAnyAncestor(isDialog()))
         composeRule.onAllNodes(isDialog()).assertCountEquals(3)
-        capture("delete-dialog")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertDoesNotExist()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Delete, "/comment_v5/comment/child-12"))
@@ -862,7 +865,6 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag("comment_more_button_root-1").performTouchInput { click() }
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
-        capture("root-menu")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         composeRule.onNodeWithTag("comment_more_menu_root-1").assertDoesNotExist()
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
@@ -936,18 +938,9 @@ class CommentScreenInstrumentedTest {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val targetPackage = composeRule.activity.packageName
         var activePackage: String? = null
-        var activeSystemWindowId: Int? = null
-        try {
-            composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
-                val root = automation.rootInActiveWindow
-                activePackage = root?.packageName?.toString()
-                activeSystemWindowId = root?.windowId?.takeIf { activePackage == "android" }
-                activePackage == targetPackage
-            }
-        } finally {
-            activeSystemWindowId?.let { windowId ->
-                runCatching { reportCommentMockCiSystemFocus(automation, composeRule.activity, windowId) }
-            }
+        composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
+            activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            activePackage == targetPackage
         }
         assertEquals(targetPackage, activePackage)
         val downTime = SystemClock.uptimeMillis()
