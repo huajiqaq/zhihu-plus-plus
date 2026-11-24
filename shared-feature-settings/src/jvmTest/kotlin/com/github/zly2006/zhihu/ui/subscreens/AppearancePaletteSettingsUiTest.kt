@@ -29,6 +29,8 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
+import com.github.zly2006.zhihu.platform.MapSettingsStore
+import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
 import com.github.zly2006.zhihu.theme.AMOLED_THEME_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.MIUIX_STYLE_PREFERENCE_KEY
@@ -52,6 +54,27 @@ import kotlin.test.assertFalse
 @OptIn(ExperimentalTestApi::class)
 class AppearancePaletteSettingsUiTest {
     @Test
+    fun legacyDesktopThemeValuesCanBeReadFromStrictPreferences() {
+        val oldBackground = 0x4037474F
+        val exportedValues = mutableMapOf<String, Any>(
+            AMOLED_THEME_PREFERENCE_KEY to "true",
+            "backgroundColorDark" to oldBackground.toString(),
+            THEME_STYLE_PREFERENCE_KEY to false,
+        )
+        val settings = object : SettingsStore by MapSettingsStore(exportedValues) {
+            override fun getBoolean(key: String, defaultValue: Boolean) = exportedValues[key]?.let { it as Boolean } ?: defaultValue
+
+            override fun getInt(key: String, defaultValue: Int) = exportedValues[key]?.let { it as Int } ?: defaultValue
+
+            override fun getStringOrNull(key: String) = exportedValues[key]?.let { it as String }
+        }
+        val theme = readThemeSnapshot(settings)
+        assertEquals(0xFF37474F.toInt(), theme.backgroundColorDark)
+        assertEquals(true, theme.amoledTheme)
+        assertEquals(ThemeStyle.MATERIAL_EXPRESSIVE, theme.themeStyle)
+    }
+
+    @Test
     fun miuixUsesNativeColoursAndPreservesMaterialChoicesAcrossSkinSwitches() {
         val originalHome = System.getProperty("user.home")
         val originalTheme = ThemeManager.snapshot()
@@ -59,14 +82,15 @@ class AppearancePaletteSettingsUiTest {
         try {
             System.setProperty("user.home", directory.absolutePath)
             val settings = desktopSettingsStore()
+            settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeStyle.MIUIX.name)
+            settings.putString("themeMode", ThemeMode.LIGHT.name)
             settings.putBoolean("useDynamicColor", false)
             settings.putInt("customThemeColor", 0xFFCC4455.toInt())
             settings.putBoolean(APP_BLUR_PREFERENCE_KEY, false)
             assertEquals(MiuixStyle.HYPEROS_3, readThemeSnapshot(settings).miuixStyle)
             assertEquals(MiuixStyle.HYPEROS_3, MiuixStyle.fromName("unknown"))
             val otherEntries = settings.allEntries()
-            ThemeManager.load(originalTheme.copy(themeStyle = ThemeStyle.MIUIX, themeMode = ThemeMode.LIGHT, useDynamicColor = false, customColor = 0xFFCC4455.toInt(), miuixStyle = MiuixStyle.Default))
-            val nativeTheme = ThemeManager.snapshot()
+            val nativeTheme = readThemeSnapshot(settings)
             runDesktopComposeUiTest(width = 540, height = 1200) {
                 setContent {
                     ZhihuTheme {
@@ -141,7 +165,6 @@ class AppearancePaletteSettingsUiTest {
                     savedFile.copyTo(desktopZhihuDataFile("settings.properties"))
                 }
                 val store = desktopSettingsStore()
-                ThemeManager.load(readThemeSnapshot(store))
                 runDesktopComposeUiTest(width = 540, height = 1200) {
                     setContent {
                         ZhihuTheme {
@@ -182,7 +205,7 @@ class AppearancePaletteSettingsUiTest {
             System.setProperty("user.home", directory.absolutePath)
             val settings = desktopSettingsStore()
             settings.putBoolean("useDynamicColor", true)
-            ThemeManager.load(originalTheme.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT, useDynamicColor = true))
+            settings.putString("themeMode", ThemeMode.LIGHT.name)
             runDesktopComposeUiTest(width = 540, height = 1200) {
                 setContent {
                     ZhihuTheme {

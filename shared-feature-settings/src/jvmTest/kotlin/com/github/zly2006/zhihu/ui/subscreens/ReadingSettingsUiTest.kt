@@ -71,9 +71,9 @@ class ReadingSettingsUiTest {
         val testDirectory = Files.createTempDirectory("zhihu-reading-layout-ui-").toFile()
         try {
             System.setProperty("user.home", testDirectory.absolutePath)
-            ThemeManager.load(originalTheme.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT))
             val settings = desktopSettingsStore()
-            settings.putString("uiThemeStyle", "MATERIAL_EXPRESSIVE")
+            settings.putString("uiThemeStyle", ThemeStyle.MATERIAL_EXPRESSIVE.name)
+            settings.putString("themeMode", ThemeMode.LIGHT.name)
             settings.putBoolean(TIQIAN_MARKDOWN_PREFERENCE_KEY, false)
             runDesktopComposeUiTest(width = 412, height = 500) {
                 val visit = mutableIntStateOf(0)

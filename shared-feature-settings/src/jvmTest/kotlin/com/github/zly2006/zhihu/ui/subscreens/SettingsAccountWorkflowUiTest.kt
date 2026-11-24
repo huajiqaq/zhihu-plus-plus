@@ -63,6 +63,7 @@ import com.github.zly2006.zhihu.navigation.History
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Navigator
+import com.github.zly2006.zhihu.platform.desktopSettingsStore
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
@@ -97,7 +98,7 @@ class SettingsAccountWorkflowUiTest {
     fun first403FeedbackIsAlwaysRedactedAndClearRequiresConsent() {
         for (style in ThemeStyle.entries) {
             withIsolatedAccount(MockEngine { respond("{}", HttpStatusCode.Forbidden, jsonHeaders) }) { store ->
-                ThemeManager.setThemeStyle(style)
+                desktopSettingsStore().putString("uiThemeStyle", style.name)
                 runBlocking {
                     store.client
                         .httpClient()
@@ -158,7 +159,7 @@ class SettingsAccountWorkflowUiTest {
     fun first403PromptDoesNotRepeatOrCoverVerification() {
         for (style in ThemeStyle.entries) {
             withIsolatedAccount(MockEngine { respond("{}", HttpStatusCode.Forbidden, jsonHeaders) }) { store ->
-                ThemeManager.setThemeStyle(style)
+                desktopSettingsStore().putString("uiThemeStyle", style.name)
                 val client = store.client
                 runBlocking {
                     client.httpClient().get("https://www.zhihu.com/fixture").bodyAsText()
@@ -192,7 +193,7 @@ class SettingsAccountWorkflowUiTest {
     fun verificationCannotBeSkippedAndRestartAcknowledgementDoesNotReopenIt() {
         for (style in ThemeStyle.entries) {
             withIsolatedAccount(MockEngine { respond("{}", HttpStatusCode.Forbidden, jsonHeaders) }) { store ->
-                ThemeManager.setThemeStyle(style)
+                desktopSettingsStore().putString("uiThemeStyle", style.name)
                 val client = store.client
                 runBlocking {
                     client.httpClient().get("https://www.zhihu.com/before-verification").bodyAsText()

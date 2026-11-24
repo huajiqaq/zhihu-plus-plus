@@ -81,7 +81,7 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 - `AppScaffold` 登记当前层的内容采样源；采样前铺不透明底色，避免透明区模糊扩散。浮动控件只采样下方内容，不采样自身。
 - 开启玻璃时容器透明，tint 在模糊结果中混合；另画不透明底色会盖住模糊。半径和 tint 取共享值。
 - RuntimeShader 不支持或用户关闭效果时退回实心容器，导航文字、选中反馈和手势仍保留。
-- 默认导航使用各皮肤的官方图文项；Apple 悬浮底栏在 Full 的 MD3E 与 Lite 共用布局和折射材质，不切换主题。两种样式保留整格 tab 语义及 `nav_tab_*`，重选交给分页宿主处理；底栏不拦截横拖切页，页面仍可左右滑动。
+- 默认导航使用各皮肤的图文项。Full 的 MD3E 与 Lite 共用 Apple 悬浮底栏的布局和折射材质。底栏横拖时选中指示、图标和文字颜色随位置更新，松手才切换。窄窗可滑动查看屏外项，从当前项拖选。整格保留 tab 语义和 `nav_tab_*`，轻点重选交给分页宿主。内容区可左右滑动。
 - `AppOverlayHost` 在背景模糊之外承载 popup。确认框使用能覆盖当前 Sheet/Dialog 的窗口级宿主；独立评论窗口内的排序菜单不能投递到下层页面。
 - 页面被新路由覆盖时隐藏所属弹层，但不执行 dismiss、不重置草稿和滚动位置；返回后恢复。发布、删除和退出等动作先确认。
 - 窗口级底部面板使用 `AppBottomSheet` 与 `rememberBottomSheetState`，通过 `enabledValues` 明确可达状态。录音等业务限制保留 `confirmValueChange`；关闭须在 `hide()` 完成且状态确实隐藏后通知页面，评论返回仍先收键盘、再收表情面板。

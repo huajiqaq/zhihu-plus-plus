@@ -87,7 +87,7 @@ class ExpressiveControlsTest {
                 var enabled by mutableStateOf(true)
                 var clicks = 0
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             AppFilledTonalIconButton(
                                 onClick = { clicks++ },
@@ -132,7 +132,7 @@ class ExpressiveControlsTest {
                     var confirmed = 0
                     var dismissed = 0
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             AppScaffold {
                                 AppDialog(
                                     title = "错误详情",
@@ -181,7 +181,7 @@ class ExpressiveControlsTest {
                     val draft = TextFieldState("尚未提交的草稿")
                     var confirmed: String? = null
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             AppScaffold {
                                 AppAlertDialog(
                                     onDismissRequest = {},
@@ -224,7 +224,7 @@ class ExpressiveControlsTest {
                 var expected = androidx.compose.ui.text.TextStyle.Default
                 runDesktopComposeUiTest(width = 360, height = 280) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             expected = MaterialTheme.typography.bodyLarge
                             val owner = LocalNavigationEventDispatcherOwner.current
                                 ?: rememberNavigationEventDispatcherOwner(parent = null)
@@ -282,7 +282,7 @@ class ExpressiveControlsTest {
                 var rawSelections = 0
                 runDesktopComposeUiTest(width = 360, height = 300) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             val owner = LocalNavigationEventDispatcherOwner.current
                                 ?: rememberNavigationEventDispatcherOwner(parent = null)
                             CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
@@ -343,7 +343,7 @@ class ExpressiveControlsTest {
                 ThemeManager.load(original.copy(themeStyle = skin, themeMode = ThemeMode.LIGHT))
                 runSkikoComposeUiTest(size = Size(360f, 640f), density = Density(1f)) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             Column {
                                 for (row in rows) {
                                     SettingItem(
@@ -395,7 +395,7 @@ class ExpressiveControlsTest {
             var changes = 0
             runDesktopComposeUiTest(width = 320, height = 600) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         SettingItemGroup {
                             SettingItemSelect(
                                 title = { Text("完整设置标题需要自然换行", Modifier.testTag("budget_title")) },
@@ -452,7 +452,7 @@ class ExpressiveControlsTest {
                     var selections = 0
                     runDesktopComposeUiTest(width = 412, height = 400) {
                         setContent {
-                            ZhihuTheme {
+                            ZhihuTheme(settings = null) {
                                 val owner = LocalNavigationEventDispatcherOwner.current ?: rememberNavigationEventDispatcherOwner(parent = null)
                                 CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
                                     AppScaffold {
@@ -524,7 +524,7 @@ class ExpressiveControlsTest {
                 var deletions = 0
                 runDesktopComposeUiTest(width = 412, height = 400) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             val owner = LocalNavigationEventDispatcherOwner.current ?: rememberNavigationEventDispatcherOwner(parent = null)
                             CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
                                 AppScaffold {
@@ -607,7 +607,7 @@ class ExpressiveControlsTest {
                 var parentDismissals = 0
                 runDesktopComposeUiTest(width = 600, height = 800) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             val owner = LocalNavigationEventDispatcherOwner.current
                                 ?: rememberNavigationEventDispatcherOwner(parent = null)
                             CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {

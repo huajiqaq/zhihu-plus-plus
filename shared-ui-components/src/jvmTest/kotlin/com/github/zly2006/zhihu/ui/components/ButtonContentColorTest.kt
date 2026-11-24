@@ -61,7 +61,7 @@ class ButtonContentColorTest {
                 var expected = Color.Unspecified
                 runDesktopComposeUiTest(width = 412, height = 200) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             expected = LocalAppSkinTokens.current.onPrimary
                             AppButton(onClick = {}) { Text("关注") }
                         }
@@ -92,7 +92,7 @@ class ButtonContentColorTest {
             var primary = Color.Unspecified
             runDesktopComposeUiTest(width = 412, height = 260) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         secondary = LocalAppSkinTokens.current.secondaryVariant
                         onSecondary = LocalAppSkinTokens.current.onSecondaryVariant
                         primary = LocalAppSkinTokens.current.primary
@@ -128,7 +128,7 @@ class ButtonContentColorTest {
                 var onError = Color.Unspecified
                 runDesktopComposeUiTest(width = 412, height = 180) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             onError = MaterialTheme.colorScheme.onError
                             AppButton(onClick = {}, containerColor = MaterialTheme.colorScheme.error) { Text("清空全部") }
                         }
@@ -152,7 +152,7 @@ class ButtonContentColorTest {
                 var disabledColor = Color.Unspecified
                 runDesktopComposeUiTest(width = 412, height = 180) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             disabledColor = ButtonDefaults.textButtonColors(contentColor = Color.Red).disabledContentColor
                             AppTextButton("删除", {}, enabled = false, contentColor = Color.Red, modifier = Modifier.testTag("disabled_delete"))
                         }
@@ -175,7 +175,7 @@ class ButtonContentColorTest {
             ThemeManager.load(original.copy(themeStyle = ThemeStyle.MIUIX, themeMode = ThemeMode.DARK))
             runDesktopComposeUiTest(width = 412, height = 260) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         Column {
                             AppIconButton(
                                 onClick = {},
@@ -213,7 +213,7 @@ class ButtonContentColorTest {
             var expectedPaddingPx = 0f
             runDesktopComposeUiTest(width = 412, height = 220) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         expectedPaddingPx = with(androidx.compose.ui.platform.LocalDensity.current) { 36.dp.toPx() }
                         Column {
                             AppButton(onClick = {}, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 18.dp), modifier = Modifier.testTag("padded_button")) {
@@ -245,7 +245,7 @@ class ButtonContentColorTest {
             var onPrimary = Color.Unspecified
             runDesktopComposeUiTest(width = 412, height = 180) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         primary = MaterialTheme.colorScheme.primary
                         onPrimary = MaterialTheme.colorScheme.onPrimary
                         AppCard(containerColor = primary, shape = RectangleShape) {
@@ -273,7 +273,7 @@ class ButtonContentColorTest {
             var nativeSpinnerSizePx = 0
             runDesktopComposeUiTest(width = 412, height = 220) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         val density = androidx.compose.ui.platform.LocalDensity.current
                         requestedSpinnerSizePx = with(density) { 40.dp.roundToPx() }
                         nativeSpinnerSizePx = with(density) { 20.dp.roundToPx() }

@@ -68,7 +68,7 @@ class PullRefreshContractTest {
                 val refreshing = mutableStateOf(false)
                 runDesktopComposeUiTest(width = 412, height = 400) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             expected = PullToRefreshDefaults.loadingIndicatorContainerColor
                             Box(Modifier.fillMaxSize().background(Color.Red).testTag("refresh_host")) {
                                 AppPullToRefreshBox(refreshing.value, {}, modifier = Modifier.fillMaxSize()) {}
@@ -111,7 +111,7 @@ class PullRefreshContractTest {
             val feedback = mutableListOf<HapticFeedbackType>()
             runDesktopComposeUiTest(width = 412, height = 600) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         CompositionLocalProvider(
                             LocalHapticFeedback provides object : HapticFeedback {
                                 override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {

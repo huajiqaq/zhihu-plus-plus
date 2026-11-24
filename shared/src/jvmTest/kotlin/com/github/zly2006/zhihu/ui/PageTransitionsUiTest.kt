@@ -167,7 +167,7 @@ class PageTransitionsUiTest {
                 putBoolean("enable_predictive_back", true)
                 putString(PAGE_TRANSITION_PREFERENCE_KEY, "miuix")
             }
-            ThemeManager.load(originalTheme.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT))
+            settings.putString("themeMode", ThemeMode.LIGHT.name)
             var host: AppNavHost? = null
             var articleInstance: Any? = null
             var articleScope: NavTransitionScope? = null
@@ -369,7 +369,7 @@ class PageTransitionsUiTest {
             settings.putString(FEED_CARD_STYLE_PREFERENCE_KEY, "divider")
             for (style in ThemeStyle.entries) {
                 for (mainStack in listOf(false, true)) {
-                    ThemeManager.load(originalTheme.copy(themeStyle = style, themeMode = ThemeMode.LIGHT))
+                    settings.putString("uiThemeStyle", style.name)
                     var paneHost: AppNavHost? = null
                     var topScope: NavTransitionScope? = null
                     val paneDirection = mutableStateOf(LayoutDirection.Ltr)

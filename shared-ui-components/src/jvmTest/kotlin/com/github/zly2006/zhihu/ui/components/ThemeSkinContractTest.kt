@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -48,8 +49,12 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.platform.desktopSettingsStore
+import com.github.zly2006.zhihu.theme.AMOLED_THEME_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
+import com.github.zly2006.zhihu.theme.MIUIX_STYLE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.MiuixStyle
+import com.github.zly2006.zhihu.theme.THEME_STYLE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.ThemeColorSpec
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
@@ -63,6 +68,7 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -87,37 +93,71 @@ class ThemeSkinContractTest {
     }
 
     @Test
-    fun changingSkinAndModeKeepsTheContentCompositionAlive() {
+    fun savedThemeChangesRepaintTheMountedPageWithoutReplacingIt() {
+        val settings = desktopSettingsStore()
+        val materialBackground = Color(0xFFE1F0FB)
+        settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeStyle.MIUIX.name)
+        settings.putString("themeMode", ThemeMode.LIGHT.name)
+        settings.putInt("backgroundColorLight", materialBackground.toArgb())
+        settings.putBoolean("useDynamicColor", false)
         var entered = 0
         var disposed = 0
         var contentIdentity: Any? = null
+        var primary = Color.Unspecified
         runDesktopComposeUiTest(width = 412, height = 300) {
             setContent {
                 ZhihuTheme {
                     val identity = remember { Any() }
-                    SideEffect { contentIdentity = identity }
+                    val accent = MaterialTheme.colorScheme.primary
+                    SideEffect {
+                        contentIdentity = identity
+                        primary = accent
+                    }
                     DisposableEffect(Unit) {
                         entered++
                         onDispose { disposed++ }
                     }
-                    Text("主题切换保留页面")
+                    CompositionLocalProvider(LocalAppGlassEnabled provides true) {
+                        AppScaffold(
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                            topBar = { AppBackButton({}, Modifier.testTag("back")) },
+                        ) { Box(Modifier.fillMaxSize().testTag("page")) }
+                    }
                 }
             }
+            fun backPixels(): IntArray {
+                val pixels = onNodeWithTag("back").captureToImage().toPixelMap()
+                return IntArray(pixels.width * pixels.height) { pixels[it % pixels.width, it / pixels.width].toArgb() }
+            }
+            fun background(): Color = onNodeWithTag("page").captureToImage().toPixelMap().let { it[it.width / 2, it.height / 2] }
             waitForIdle()
             val originalIdentity = contentIdentity
-            repeat(4) { iteration ->
-                for (style in ThemeStyle.entries) {
-                    runOnIdle {
-                        ThemeManager.setThemeStyle(style)
-                        ThemeManager.setThemeMode(if (iteration % 2 == 0) ThemeMode.DARK else ThemeMode.LIGHT)
-                        ThemeManager.setMiuixStyle(if (iteration % 2 == 0) MiuixStyle.HYPEROS_3 else MiuixStyle.HYPEROS_4)
-                    }
-                    waitForIdle()
-                    assertSame(originalIdentity, contentIdentity, "$style 不应重建页面状态")
-                    assertEquals(1, entered, "$style 内容只能进入组合一次")
-                    assertEquals(0, disposed, "$style 不应销毁导航和浮层宿主")
-                }
+            assertEquals(lightColorScheme().surface, background())
+            val os3 = backPixels()
+            runOnIdle { settings.putString(MIUIX_STYLE_PREFERENCE_KEY, MiuixStyle.HYPEROS_4.name) }
+            val os4 = backPixels()
+            assertTrue(!os3.contentEquals(os4), "OS4 必须更换可见返回按钮的材质")
+            assertEquals(lightColorScheme().primary, primary)
+            runOnIdle { settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeStyle.MATERIAL_EXPRESSIVE.name) }
+            assertEquals(materialBackground, background())
+            val materialAccent = primary
+            runOnIdle { settings.putInt("customThemeColor", 0xFFCA3311.toInt()) }
+            waitForIdle()
+            assertTrue(materialAccent != primary, "外部修改种子色应立即更新 Material 强调色")
+            runOnIdle {
+                settings.putString("themeMode", ThemeMode.DARK.name)
+                settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, true)
             }
+            assertEquals(Color.Black, background())
+            runOnIdle {
+                settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeStyle.MIUIX.name)
+                settings.putString("themeMode", ThemeMode.LIGHT.name)
+            }
+            assertContentEquals(os4, backPixels(), "切回原生皮肤应恢复已选的 OS4 材质")
+            assertEquals(lightColorScheme().primary, primary)
+            assertSame(originalIdentity, contentIdentity)
+            assertEquals(1, entered)
+            assertEquals(0, disposed)
         }
     }
 
@@ -153,7 +193,7 @@ class ThemeSkinContractTest {
                 var selectedText = Color.Unspecified
                 var grouped = Color.Unspecified
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         primary = LocalAppSkinTokens.current.primary
                         background = MaterialTheme.colorScheme.background
                         container = LocalAppSkinTokens.current.surfaceContainer
@@ -247,7 +287,7 @@ class ThemeSkinContractTest {
         var container = Color.Unspecified
         runDesktopComposeUiTest(width = 412, height = 200) {
             setContent {
-                ZhihuTheme {
+                ZhihuTheme(settings = null) {
                     background = MaterialTheme.colorScheme.background
                     foreground = MaterialTheme.colorScheme.onBackground
                     page = LocalAppSkinTokens.current.background
@@ -285,7 +325,7 @@ class ThemeSkinContractTest {
             ThemeManager.load(originalTheme.copy(themeStyle = style, themeMode = ThemeMode.LIGHT, amoledTheme = false))
             runDesktopComposeUiTest(width = 412, height = 300) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         AppScaffold(containerColor = explicit, contentWindowInsets = WindowInsets(0, 0, 0, 0)) {
                             Box(Modifier.fillMaxSize().testTag("explicit_scaffold_content"))
                         }
@@ -305,7 +345,7 @@ class ThemeSkinContractTest {
             val material = mutableListOf<Color>()
             runDesktopComposeUiTest(width = 412, height = 200) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         native.clear()
                         material.clear()
                         native += listOf(

@@ -583,8 +583,9 @@ class WriteCreationScreenTest {
                 putBoolean("allowTelemetry", false)
                 putBoolean("articleUseWebView", false)
                 putBoolean("floatingBottomBar", false)
+                putString("uiThemeStyle", ThemeStyle.MATERIAL_EXPRESSIVE.name)
+                putString("themeMode", ThemeMode.LIGHT.name)
             }
-            ThemeManager.load(originalTheme!!.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT))
         }
 
         @AfterClass

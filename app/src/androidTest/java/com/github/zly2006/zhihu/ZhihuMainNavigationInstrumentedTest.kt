@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu
 
 import android.content.pm.ActivityInfo
 import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -40,7 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
@@ -66,6 +70,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.room.useReaderConnection
@@ -114,9 +119,14 @@ import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.READING_QUEUE_SHEET_TAG
 import com.github.zly2006.zhihu.ui.components.appNavTransition
 import com.github.zly2006.zhihu.ui.rememberZhihuMainPreferenceState
+import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG
+import com.github.zly2006.zhihu.ui.subscreens.APPEARANCE_SETTINGS_SCROLL_TAG
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.FLOATING_BOTTOM_BAR_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.subscreens.FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.subscreens.LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.subscreens.NAVIGATION_SETTINGS_BACK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import kotlinx.coroutines.runBlocking
@@ -456,6 +466,89 @@ class ZhihuMainNavigationInstrumentedTest {
         composeRule.onNodeWithTag(QUESTION_SCREEN_LIST_TAG).assertIsDisplayed()
         composeRule.runOnIdle { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
         composeRule.onNodeWithTag("article_content").assertIsDisplayed()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun navigationSettingsSwitchResizesCurrentRouteInPlace() {
+        val activity = composeRule.activity
+        val preferences = activity.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE)
+        preferences.edit(commit = true) {
+            putStringSet(BOTTOM_BAR_ITEMS_PREFERENCE_KEY, deterministicBottomBarItems)
+            putString(START_DESTINATION_PREFERENCE_KEY, Account.name)
+            putBoolean(FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true)
+            putString(FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY, "apple")
+            putBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, false)
+            putFloat(LANDSCAPE_LIST_PANE_RATIO_KEY, 0.4f)
+        }
+        val landscape = DpSize(1100.dp, 700.dp)
+        var window by mutableStateOf(landscape)
+        activity.setContent { }
+        composeRule.waitForIdle()
+        activity.setContent {
+            val host = rememberAppNavHost(MainTabs)
+            LaunchedEffect(host) { activity.navHost = host }
+            DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(window)) {
+                CompositionLocalProvider(LocalActivity provides activity) {
+                    ZhihuTheme { AndroidZhihuMain(host) }
+                }
+            }
+        }
+        composeRule.waitUntilTabSelected("nav_tab_account")
+        val root = composeRule.runOnIdle { activity.navHost.pageEntries.single() }
+        val divider = composeRule.onNodeWithTag("list_detail_divider_line", useUnmergedTree = true)
+        divider.assertDoesNotExist()
+        val openSettings = composeRule.onNodeWithTag("accountSettings.navigation")
+        openSettings.performScrollTo().performClick()
+        val switch = composeRule.onNodeWithTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG)
+        val page = composeRule.onNodeWithTag(APPEARANCE_SETTINGS_SCROLL_TAG)
+        val entry = composeRule.runOnIdle { activity.navHost.pageEntries.last() }
+        assertEquals(Account.NavigationSettings(), entry.destination)
+        val fullWidth = page.fetchSemanticsNode().boundsInRoot.width
+
+        fun assertSplit() {
+            divider.assertIsDisplayed()
+            val line = divider.fetchSemanticsNode().boundsInRoot
+            val list = composeRule.onNodeWithTag("main_tabs_surface").fetchSemanticsNode().boundsInRoot
+            val detail = page.fetchSemanticsNode().boundsInRoot
+            assertEquals(list.right, line.left, 1f)
+            assertEquals(line.right, detail.left, 1f)
+            assertTrue(detail.width > 0f && list.width > 0f)
+        }
+
+        switch.performScrollTo().performClick()
+        assertSplit()
+        val rail = composeRule.onNodeWithTag("nav_rail")
+        rail.assertDoesNotExist()
+        composeRule.runOnIdle {
+            preferences.edit { putBoolean(FLOATING_BOTTOM_BAR_PREFERENCE_KEY, false) }
+        }
+        rail.assertIsDisplayed()
+        assertSplit()
+        switch.performScrollTo().performClick()
+        divider.assertDoesNotExist()
+        assertEquals(fullWidth, page.fetchSemanticsNode().boundsInRoot.width, 1f)
+        switch.performScrollTo().performClick()
+        composeRule.runOnIdle { window = DpSize(700.dp, 1100.dp) }
+        divider.assertDoesNotExist()
+        composeRule.runOnIdle { window = landscape }
+        assertSplit()
+        composeRule.runOnIdle {
+            assertSame(entry, activity.navHost.pageEntries.last())
+            assertEquals(0.4f, preferences.getFloat(LANDSCAPE_LIST_PANE_RATIO_KEY, 0f), 0f)
+        }
+        composeRule.onNodeWithTag(NAVIGATION_SETTINGS_BACK_BUTTON_TAG).performClick()
+        composeRule.onNodeWithTag("detail_pane_empty").assertIsDisplayed()
+        openSettings.performScrollTo().performClick()
+        assertSplit()
+        switch.performScrollTo().performClick()
+        divider.assertDoesNotExist()
+        assertEquals(fullWidth, page.fetchSemanticsNode().boundsInRoot.width, 1f)
+        switch.performScrollTo().performClick()
+        assertSplit()
+        composeRule.onNodeWithTag(NAVIGATION_SETTINGS_BACK_BUTTON_TAG).performClick()
+        composeRule.onNodeWithTag("detail_pane_empty").assertIsDisplayed()
+        composeRule.runOnIdle { assertSame(root, activity.navHost.pageEntries.single()) }
     }
 
     /**

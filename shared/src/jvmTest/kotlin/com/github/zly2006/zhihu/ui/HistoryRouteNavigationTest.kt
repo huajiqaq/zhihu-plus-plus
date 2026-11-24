@@ -204,8 +204,9 @@ class HistoryRouteNavigationTest {
                 putBoolean("floatingBottomBar", false)
                 putStringSet(BOTTOM_BAR_ITEMS_PREFERENCE_KEY, linkedSetOf(Home.name, Daily.name, OnlineHistory.name, Account.name))
                 putString(START_DESTINATION_PREFERENCE_KEY, OnlineHistory.name)
+                putString("uiThemeStyle", ThemeStyle.MATERIAL_EXPRESSIVE.name)
+                putString("themeMode", ThemeMode.LIGHT.name)
             }
-            ThemeManager.load(originalTheme.copy(themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE, themeMode = ThemeMode.LIGHT))
 
             var pagerHost: AppNavHost? = null
             var pagerMounted by mutableStateOf(true)

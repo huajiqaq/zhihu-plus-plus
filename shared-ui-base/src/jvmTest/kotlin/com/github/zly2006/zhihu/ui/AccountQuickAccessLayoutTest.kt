@@ -69,7 +69,7 @@ class AccountQuickAccessLayoutTest {
                     val context = "$style width=$width fontScale=$fontScale"
                     runSkikoComposeUiTest(size = Size(width.toFloat(), 900f), density = Density(1f)) {
                         setContent {
-                            ZhihuTheme {
+                            ZhihuTheme(settings = null) {
                                 CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
                                     AccountQuickAccessRow(visibleActions, Modifier.testTag("shortcuts"))
                                 }

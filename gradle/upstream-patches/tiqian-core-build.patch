@@ -1788,10 +1788,20 @@ index 79a073d8b02b98faa63177f1fedbf41f5c347f02..ad3c2d27975509243c5f11f350c6f618
              assertEquals(1, exposed.getUrlAnnotations(0, exposed.length).size)
              assertEquals(1, exposed.getTtsAnnotations(0, exposed.length).size)
 diff --git a/platforms/compose/compose/src/jvmTest/kotlin/org/tiqian/compose/CjkTextLinkClickTest.kt b/platforms/compose/compose/src/jvmTest/kotlin/org/tiqian/compose/CjkTextLinkClickTest.kt
-index b01083684e9933498bf991a3a69ac7f1fe40896f..1a5b4cc4602bb54a09baa6d0fcc3a2e9c77be409 100644
+index b01083684e9933498bf991a3a69ac7f1fe40896f..34a36dae63ccc3d900c2aacd3e76938e9e097032 100644
 --- a/platforms/compose/compose/src/jvmTest/kotlin/org/tiqian/compose/CjkTextLinkClickTest.kt
 +++ b/platforms/compose/compose/src/jvmTest/kotlin/org/tiqian/compose/CjkTextLinkClickTest.kt
-@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
+@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.width
+ import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.SideEffect
+ import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.snapshots.Snapshot
+ import androidx.compose.ui.ExperimentalComposeUiApi
+ import androidx.compose.ui.ImageComposeScene
+ import androidx.compose.ui.Modifier
+@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.sp
  import androidx.compose.ui.use
  import org.tiqian.core.LayoutResult
  import org.tiqian.core.getBoundingBoxes
@@ -1799,7 +1809,7 @@ index b01083684e9933498bf991a3a69ac7f1fe40896f..1a5b4cc4602bb54a09baa6d0fcc3a2e9
  import kotlin.test.Test
  import kotlin.test.assertEquals
  import kotlin.test.assertTrue
-@@ -63,17 +64,25 @@ class CjkTextLinkClickTest {
+@@ -63,17 +66,25 @@ class CjkTextLinkClickTest {
              scene.render()
              val result = layout ?: error("onTextLayout not called")
              val linkStart = "前文说明".length
@@ -1833,7 +1843,7 @@ index b01083684e9933498bf991a3a69ac7f1fe40896f..1a5b4cc4602bb54a09baa6d0fcc3a2e9
          }
      }
  
-@@ -109,7 +118,7 @@ class CjkTextLinkClickTest {
+@@ -109,7 +120,7 @@ class CjkTextLinkClickTest {
              scene.render()
              val result = layout ?: error("onTextLayout not called")
              val box = result.getBoundingBoxes("前文".length, "前文链接".length).first()
@@ -1842,7 +1852,7 @@ index b01083684e9933498bf991a3a69ac7f1fe40896f..1a5b4cc4602bb54a09baa6d0fcc3a2e9
  
              assertEquals(url, opened)
          }
-@@ -147,14 +156,14 @@ class CjkTextLinkClickTest {
+@@ -147,14 +158,14 @@ class CjkTextLinkClickTest {
              val box = (layout ?: error("onTextLayout not called"))
                  .getBoundingBoxes(0, text.length)
                  .first()
@@ -1859,29 +1869,49 @@ index b01083684e9933498bf991a3a69ac7f1fe40896f..1a5b4cc4602bb54a09baa6d0fcc3a2e9
          var clicks = 0
          val listener = LinkInteractionListener { clicks++ }
          val plain = AnnotatedString("链接正文后续。")
-@@ -178,13 +187,18 @@ class CjkTextLinkClickTest {
+@@ -165,11 +176,14 @@ class CjkTextLinkClickTest {
+             append("正文后续。")
+         }
+         val enabled = mutableStateOf(false)
++        var committedText: AnnotatedString? = null
+         var layout: LayoutResult? = null
+ 
+         ImageComposeScene(width = 360, height = 180) {
++            val shown = if (enabled.value) linked else plain
++            SideEffect { committedText = shown }
+             CjkText(
+-                text = if (enabled.value) linked else plain,
++                text = shown,
+                 modifier = Modifier.width(340.dp),
+                 style = TextStyle(fontSize = 20.sp),
+                 onTextLayout = { layout = it },
+@@ -178,13 +192,21 @@ class CjkTextLinkClickTest {
              scene.render()
              val result = layout ?: error("onTextLayout not called")
              val box = result.getBoundingBoxes(0, "链接".length).first()
++            assertEquals(plain, committedText)
 +            tap(scene, box.center, pressTime = 1_000L, releaseTime = 1_050L)
 +            assertEquals(0, clicks, "plain text must not dispatch a link click")
  
-             enabled.value = true
+-            enabled.value = true
++            Snapshot.withMutableSnapshot { enabled.value = true }
              scene.render()
 -            assertTrue(layout !== result, "link break policy must invalidate the previous layout")
 -            tap(scene, box.center)
 -
++            assertEquals(linked, committedText)
 +            tap(scene, box.center, pressTime = 2_000L, releaseTime = 2_050L)
              assertEquals(1, clicks, "link annotations added without text changes must still hit-test")
 +
-+            enabled.value = false
++            Snapshot.withMutableSnapshot { enabled.value = false }
 +            scene.render()
++            assertEquals(plain, committedText)
 +            tap(scene, box.center, pressTime = 3_000L, releaseTime = 3_050L)
 +            assertEquals(1, clicks, "removing annotations must stop link clicks without changing the text")
          }
      }
  
-@@ -233,11 +247,6 @@ class CjkTextLinkClickTest {
+@@ -233,11 +255,6 @@ class CjkTextLinkClickTest {
          }
      }
  

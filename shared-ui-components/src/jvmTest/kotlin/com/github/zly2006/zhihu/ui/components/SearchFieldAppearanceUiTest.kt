@@ -79,7 +79,7 @@ class SearchFieldAppearanceUiTest {
                     val requester = FocusRequester()
                     lateinit var focusManager: FocusManager
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             focusManager = LocalFocusManager.current
                             Box(Modifier.background(MaterialTheme.colorScheme.background).padding(12.dp).testTag("search_surface")) {
                                 AppSearchField(
@@ -145,7 +145,7 @@ class SearchFieldAppearanceUiTest {
                 ThemeManager.load(original.copy(themeStyle = ThemeStyle.MIUIX, themeMode = mode, amoledTheme = oled))
                 runDesktopComposeUiTest(width = 412, height = 160) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             AppSearchBar("搜索设置名称或关键词", {}, modifier = Modifier.testTag("search_entry"))
                         }
                     }
@@ -207,7 +207,7 @@ class SearchFieldAppearanceUiTest {
                     runDesktopComposeUiTest(width = 1067, height = 400) {
                         val query = TextFieldState()
                         setContent {
-                            ZhihuTheme {
+                            ZhihuTheme(settings = null) {
                                 val density = LocalDensity.current
                                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                                     AppTopBar(title = {
@@ -276,7 +276,7 @@ class SearchFieldAppearanceUiTest {
                 ThemeManager.load(original.copy(themeStyle = ThemeStyle.MIUIX, themeMode = mode, useDynamicColor = true))
                 runDesktopComposeUiTest(width = 412, height = 240) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             AppTextField(rememberTextFieldState(), labelText = "WebDAV目录地址", modifier = Modifier.testTag("server_probe"))
                         }
                     }
@@ -312,7 +312,7 @@ class SearchFieldAppearanceUiTest {
                 ThemeManager.load(original.copy(themeStyle = ThemeStyle.MIUIX, themeMode = mode, useDynamicColor = true))
                 runDesktopComposeUiTest(width = 412, height = 240) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             AppSearchField(rememberTextFieldState(), placeholder = "搜索设置名称或关键词", modifier = Modifier.testTag("search_probe"))
                         }
                     }
@@ -343,7 +343,7 @@ class SearchFieldAppearanceUiTest {
     @Test
     fun draggableUtilityGroupStaysAboveTheActualBottomAvoidance() = runDesktopComposeUiTest(width = 412, height = 300) {
         setContent {
-            ZhihuTheme {
+            ZhihuTheme(settings = null) {
                 Box(Modifier.fillMaxSize().testTag("utility_pane")) {
                     DraggableFabColumn(bottomAvoidance = 80.dp) {
                         AppButton("刷新", {}, modifier = Modifier.testTag("utility_button"))
@@ -363,7 +363,7 @@ class SearchFieldAppearanceUiTest {
         val title = "热榜完整标题与已有分页结果不能被缩略或裁切"
         var opens = 0
         setContent {
-            ZhihuTheme {
+            ZhihuTheme(settings = null) {
                 Column {
                     AppPageHeader(title = title, subtitle = "实际列表标题")
                     AppSearchBar("搜索内容", { opens++ }, modifier = Modifier.testTag("search_entry_click"))

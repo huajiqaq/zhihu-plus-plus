@@ -51,7 +51,7 @@
       "patches": {
         "upstream-patches/tiqian-core-build.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "78d7649bfb12dd30c8ef9d236842916f244aeb0ca8673eb8a9a85dc3bc379a53",
+          "sha256": "590cc9a22f34bcd1f255b742153c5c4cbf192cbdc2b8f50b80013a0354a97c59",
           "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的原文选区、行内占位几何与点线避墨；所选上游覆盖实现且相关原测试通过后移除"
         },
         "upstream-patches/tiqian-core-android-selection-locale.patch": {

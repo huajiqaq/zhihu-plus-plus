@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,15 +36,17 @@ import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarArrangement
 import androidx.compose.material3.ShortNavigationBarDefaults
 import androidx.compose.material3.ShortNavigationBarItem
+import androidx.compose.material3.ShortNavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -62,7 +65,6 @@ class BottomBarItem(
     val onClick: () -> Unit,
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppBottomBar(
     items: List<BottomBarItem>,
@@ -76,27 +78,7 @@ fun AppBottomBar(
         if (isMiuix) {
             MiuixBottomBar(items = items, modifier = barModifier, floating = floating)
         } else {
-            ShortNavigationBar(
-                // 放松宿主的最小宽度，避免 EqualWeight 把整栏 minWidth 传给每个导航项。
-                modifier = barModifier.wrapContentWidth(),
-                containerColor = if (floating) Color.Transparent else ShortNavigationBarDefaults.containerColor,
-                arrangement = ShortNavigationBarArrangement.EqualWeight,
-                windowInsets = if (floating) {
-                    WindowInsets(0, 0, 0, 0)
-                } else {
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
-                },
-            ) {
-                items.forEach { item ->
-                    ShortNavigationBarItem(
-                        selected = item.selected,
-                        onClick = item.onClick,
-                        label = { Text(item.label) },
-                        icon = { Icon(item.icon, contentDescription = null) },
-                        modifier = Modifier.testTag(item.testTag),
-                    )
-                }
-            }
+            MaterialBottomBar(items, barModifier, floating)
         }
     }
     if (floating) {
@@ -138,5 +120,43 @@ fun AppBottomBar(
         }
     } else {
         navigation(modifier)
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MaterialBottomBar(items: List<BottomBarItem>, modifier: Modifier, floating: Boolean) {
+    val container = if (floating) Color.Transparent else ShortNavigationBarDefaults.containerColor
+    val insets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+    BottomBarDragStrip(items, if (floating) modifier else modifier.background(container).windowInsetsPadding(insets)) { _, preview ->
+        ShortNavigationBar(
+            modifier = Modifier.wrapContentWidth(),
+            containerColor = container,
+            arrangement = ShortNavigationBarArrangement.EqualWeight,
+            windowInsets = WindowInsets(0, 0, 0, 0),
+        ) {
+            val colors = ShortNavigationBarItemDefaults.colors()
+            items.forEachIndexed { index, item ->
+                key(item.testTag) {
+                    val weight = preview?.tabWeight(index)
+                    ShortNavigationBarItem(
+                        selected = weight?.let { it > 0f } ?: item.selected,
+                        onClick = item.onClick,
+                        label = { Text(item.label) },
+                        icon = { Icon(item.icon, contentDescription = null) },
+                        modifier = Modifier.bottomBarTab(item),
+                        colors = if (weight == null) {
+                            colors
+                        } else {
+                            colors.copy(
+                                selectedIconColor = lerp(colors.unselectedIconColor, colors.selectedIconColor, weight),
+                                selectedTextColorTopIconPosition = lerp(colors.unselectedTextColor, colors.selectedTextColorTopIconPosition, weight),
+                                selectedIndicatorColor = colors.selectedIndicatorColor.copy(alpha = colors.selectedIndicatorColor.alpha * weight),
+                            )
+                        },
+                    )
+                }
+            }
+        }
     }
 }

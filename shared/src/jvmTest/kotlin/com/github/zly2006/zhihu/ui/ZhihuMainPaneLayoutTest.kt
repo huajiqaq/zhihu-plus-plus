@@ -72,7 +72,7 @@ class ZhihuMainPaneLayoutTest {
         detailTop = EmptyDetail,
         detailOwnerEntryId = "current",
         mainListEntry = null,
-        mainReadingStartIndex = -1,
+        mainDetailStartIndex = -1,
         sideRailEligible = true,
         minimumListWidth = 320.dp,
         minimumDetailWidth = 480.dp,
@@ -405,17 +405,34 @@ class ZhihuMainPaneLayoutTest {
         },
         check = { panes ->
             assertEquals(Search(), panes[0].mainListEntry?.destination)
-            assertEquals(2, panes[0].mainReadingStartIndex)
+            assertEquals(2, panes[0].mainDetailStartIndex)
             assertEquals(pin, panes[0].currentDestination)
             assertEquals(question, panes[0].detailTop)
             assertEquals(question, panes[0].selectedContentDestination)
             assertTrue(panes[0].hasMainReadingListContext)
             panes.slice(1..3).forEach {
                 assertNull(it.mainListEntry)
-                assertEquals(-1, it.mainReadingStartIndex)
+                assertEquals(-1, it.mainDetailStartIndex)
             }
             assertEquals(question, panes[4].mainListEntry?.destination)
-            assertEquals(2, panes[4].mainReadingStartIndex)
+            assertEquals(2, panes[4].mainDetailStartIndex)
+        },
+    )
+
+    @Test
+    fun mainStackSettingsUseTheirListSourceWithoutCoveringUnrelatedPages() = checkSnapshots(
+        content = {
+            val settings = Account.NavigationSettings()
+            listOf(
+                snapshot(main = listOf(MainTabs, Account.SettingsSearch, settings)),
+                snapshot(main = listOf(MainTabs, settings, Search(), settings)),
+                snapshot(main = listOf(MainTabs, settings, Login)),
+                snapshot(main = listOf(Account.RecommendSettings.BlockedFeedHistory, article)),
+            )
+        },
+        check = { panes ->
+            assertEquals(listOf(MainTabs, Search(), null, Account.RecommendSettings.BlockedFeedHistory), panes.map { it.mainListEntry?.destination })
+            assertEquals(listOf(true, true, false, true), panes.map { it.showMainStackListDetail })
         },
     )
 
@@ -430,10 +447,10 @@ class ZhihuMainPaneLayoutTest {
         },
         check = { panes ->
             assertEquals(Search(), panes[0].mainListEntry?.destination)
-            assertEquals(2, panes[0].mainReadingStartIndex)
+            assertEquals(2, panes[0].mainDetailStartIndex)
             panes.drop(1).forEach {
                 assertNull(it.mainListEntry)
-                assertEquals(-1, it.mainReadingStartIndex)
+                assertEquals(-1, it.mainDetailStartIndex)
             }
         },
     )

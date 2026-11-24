@@ -53,9 +53,13 @@ internal class ZhihuMainPaneState(
     /** 窄屏覆盖详情时保留原条目，返回原来源后恢复。 */
     var detailOwnerEntryId by detailOwnerEntryId
 
-    /** 主栈里正在显示的阅读条目及其来源列表页，由条目外框在进场、退场时登记和清除。 */
+    /** 主栈里正在显示的详情条目及其来源列表页，由条目外框在进场、退场时登记和清除。 */
     var renderedMainListEntry by mutableStateOf<AppNavEntry?>(null)
-    var renderedMainReadingEntryId by mutableStateOf<String?>(null)
+    var renderedMainDetailEntryId by mutableStateOf<String?>(null)
+
+    /** 返回来源时，详情先出栈再退场；进入其他主页面则不沿用旧来源。 */
+    fun mainListEntry(navHost: AppNavHost): AppNavEntry? =
+        navHost.listEntryForMainDetail() ?: renderedMainListEntry?.takeIf { it.id == navHost.topEntryId }
 
     var navigationRailWidth by mutableStateOf(0.dp)
     var savedListPaneRatio by mutableFloatStateOf(initialListPaneRatio)
@@ -91,7 +95,7 @@ internal data class ZhihuMainPaneLayout(
     val detailTop: NavDestination?,
     val detailOwnerEntryId: String?,
     val mainListEntry: AppNavEntry?,
-    val mainReadingStartIndex: Int,
+    val mainDetailStartIndex: Int,
     val sideRailEligible: Boolean,
     val minimumListWidth: Dp,
     val minimumDetailWidth: Dp,
@@ -167,9 +171,8 @@ internal fun zhihuMainPaneLayout(
     val currentDestination = navHost.top
     val sideRailEligible = containerWidth >= 600.dp && containerWidth > containerHeight && showMainNavigationBar && !floatingBottomBar
 
-    /** 出栈先于退场完成，来源栏位须保留到阅读条目退场。 */
-    val mainListEntry = navHost.listEntryBeforeFirstReading() ?: paneState.renderedMainListEntry?.takeIf { navHost.containsEntry(it.id) }
-    val mainReadingStartIndex = mainListEntry?.let { navHost.pageEntries.indexOfFirst { entry -> entry.id == it.id } + 1 } ?: -1
+    val mainListEntry = paneState.mainListEntry(navHost)
+    val mainDetailStartIndex = mainListEntry?.let { navHost.pageEntries.indexOfFirst { entry -> entry.id == it.id } + 1 } ?: -1
     val paneFontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     val sideRailWidth = if (sideRailEligible && (currentDestination == MainTabs || mainListEntry?.destination == MainTabs)) {
         paneState.navigationRailWidth
@@ -186,7 +189,7 @@ internal fun zhihuMainPaneLayout(
         detailTop = detailHost.top,
         detailOwnerEntryId = paneState.detailOwnerEntryId,
         mainListEntry = mainListEntry,
-        mainReadingStartIndex = mainReadingStartIndex,
+        mainDetailStartIndex = mainDetailStartIndex,
         sideRailEligible = sideRailEligible,
         minimumListWidth = minimumListWidth,
         minimumDetailWidth = minimumDetailWidth,

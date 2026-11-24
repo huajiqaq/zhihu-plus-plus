@@ -18,8 +18,11 @@
 package com.github.zly2006.zhihu.theme
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.github.zly2006.zhihu.platform.SettingsStore
@@ -32,31 +35,57 @@ private const val BACKGROUND_COLOR_DARK_PREFERENCE_KEY = "backgroundColorDark"
 const val DEFAULT_BACKGROUND_COLOR_LIGHT = 0xFFFFFFFF.toInt()
 const val DEFAULT_BACKGROUND_COLOR_DARK = 0xFF121212.toInt()
 
+private val themePreferenceKeys = setOf(
+    THEME_MODE_PREFERENCE_KEY,
+    USE_DYNAMIC_COLOR_PREFERENCE_KEY,
+    CUSTOM_THEME_COLOR_PREFERENCE_KEY,
+    BACKGROUND_COLOR_LIGHT_PREFERENCE_KEY,
+    BACKGROUND_COLOR_DARK_PREFERENCE_KEY,
+    THEME_STYLE_PREFERENCE_KEY,
+    THEME_PALETTE_STYLE_PREFERENCE_KEY,
+    THEME_COLOR_SPEC_PREFERENCE_KEY,
+    AMOLED_THEME_PREFERENCE_KEY,
+    MIUIX_STYLE_PREFERENCE_KEY,
+)
+
 fun readThemeSnapshot(settings: SettingsStore): ThemeSnapshot {
     val themeMode = runCatching {
-        ThemeMode.valueOf(settings.getString(THEME_MODE_PREFERENCE_KEY, ThemeMode.SYSTEM.name))
+        ThemeMode.valueOf(settings.themeString(THEME_MODE_PREFERENCE_KEY) ?: ThemeMode.SYSTEM.name)
     }.getOrElse { ThemeMode.SYSTEM }
-    val requestedStyle = ThemeStyle.fromName(
-        settings.getStringOrNull(THEME_STYLE_PREFERENCE_KEY) ?: ThemeStyle.Default.name,
-    )
+    val requestedStyle = ThemeStyle.fromName(settings.themeString(THEME_STYLE_PREFERENCE_KEY))
     val effectiveStyle = requestedStyle.takeIf { it != ThemeStyle.MIUIX || miuixThemeAvailable }
         ?: ThemeStyle.MATERIAL_EXPRESSIVE
     return ThemeSnapshot(
-        useDynamicColor = settings.getBoolean(USE_DYNAMIC_COLOR_PREFERENCE_KEY, true),
-        customColor = settings.getInt(CUSTOM_THEME_COLOR_PREFERENCE_KEY, 0xFF2196F3.toInt()),
-        backgroundColorLight = settings.getInt(BACKGROUND_COLOR_LIGHT_PREFERENCE_KEY, DEFAULT_BACKGROUND_COLOR_LIGHT) or 0xFF000000.toInt(),
-        backgroundColorDark = settings.getInt(BACKGROUND_COLOR_DARK_PREFERENCE_KEY, DEFAULT_BACKGROUND_COLOR_DARK) or 0xFF000000.toInt(),
+        useDynamicColor = settings.themeBoolean(USE_DYNAMIC_COLOR_PREFERENCE_KEY, true),
+        customColor = settings.themeInt(CUSTOM_THEME_COLOR_PREFERENCE_KEY, 0xFF2196F3.toInt()),
+        backgroundColorLight = settings.themeInt(BACKGROUND_COLOR_LIGHT_PREFERENCE_KEY, DEFAULT_BACKGROUND_COLOR_LIGHT) or 0xFF000000.toInt(),
+        backgroundColorDark = settings.themeInt(BACKGROUND_COLOR_DARK_PREFERENCE_KEY, DEFAULT_BACKGROUND_COLOR_DARK) or 0xFF000000.toInt(),
         themeMode = themeMode,
         themeStyle = effectiveStyle,
-        paletteStyle = ThemePaletteStyle.fromName(
-            settings.getStringOrNull(THEME_PALETTE_STYLE_PREFERENCE_KEY),
-        ),
-        colorSpec = ThemeColorSpec.fromName(
-            settings.getStringOrNull(THEME_COLOR_SPEC_PREFERENCE_KEY),
-        ),
-        amoledTheme = settings.getBoolean(AMOLED_THEME_PREFERENCE_KEY, false),
-        miuixStyle = MiuixStyle.fromName(settings.getStringOrNull(MIUIX_STYLE_PREFERENCE_KEY)),
+        paletteStyle = ThemePaletteStyle.fromName(settings.themeString(THEME_PALETTE_STYLE_PREFERENCE_KEY)),
+        colorSpec = ThemeColorSpec.fromName(settings.themeString(THEME_COLOR_SPEC_PREFERENCE_KEY)),
+        amoledTheme = settings.themeBoolean(AMOLED_THEME_PREFERENCE_KEY, false),
+        miuixStyle = MiuixStyle.fromName(settings.themeString(MIUIX_STYLE_PREFERENCE_KEY)),
     )
+}
+
+/** 旧桌面备份迁到 Android 后，布尔和整数偏好可能仍用字符串存储。 */
+private fun SettingsStore.themeBoolean(key: String, defaultValue: Boolean): Boolean = try {
+    getBoolean(key, defaultValue)
+} catch (_: ClassCastException) {
+    themeString(key)?.toBooleanStrictOrNull() ?: defaultValue
+}
+
+private fun SettingsStore.themeInt(key: String, defaultValue: Int): Int = try {
+    getInt(key, defaultValue)
+} catch (_: ClassCastException) {
+    themeString(key)?.toIntOrNull() ?: defaultValue
+}
+
+private fun SettingsStore.themeString(key: String): String? = try {
+    getStringOrNull(key)
+} catch (_: ClassCastException) {
+    null
 }
 
 data class ThemeSnapshot(
@@ -73,57 +102,51 @@ data class ThemeSnapshot(
 )
 
 object ThemeManager {
-    private val useDynamicColor = mutableStateOf(true)
-    private val customColorInt = mutableIntStateOf(0xFF2196F3.toInt())
-    private val backgroundColorLight = mutableIntStateOf(DEFAULT_BACKGROUND_COLOR_LIGHT)
-    private val backgroundColorDark = mutableIntStateOf(DEFAULT_BACKGROUND_COLOR_DARK)
-    private val themeMode = mutableStateOf(ThemeMode.SYSTEM)
-    private val themeStyle = mutableStateOf(ThemeStyle.Default)
-    private val paletteStyle = mutableStateOf(ThemePaletteStyle.Default)
-    private val colorSpec = mutableStateOf(ThemeColorSpec.Default)
-    private val amoledTheme = mutableStateOf(false)
-    private val miuixStyle = mutableStateOf(MiuixStyle.Default)
-    private var loadedFromSettings = false
+    private var theme by mutableStateOf(ThemeSnapshot())
 
-    /** 宿主已装载的主题不能被首次组合再次覆盖。 */
-    fun loadFromSettings(settings: SettingsStore) {
-        if (loadedFromSettings) return
-        load(readThemeSnapshot(settings))
+    /** 首帧使用已保存的皮肤；注册后重读，覆盖首次组合期间的设置变动。 */
+    @Composable
+    fun ObserveSettings(settings: SettingsStore) {
+        val initial = remember(settings) { readThemeSnapshot(settings).also { theme = it } }
+        DisposableEffect(settings) {
+            val subscription = settings.observeKeyChanges { key ->
+                if (key in themePreferenceKeys) theme = readThemeSnapshot(settings)
+            }
+            val latest = readThemeSnapshot(settings)
+            if (latest != initial) theme = latest
+            onDispose(subscription::close)
+        }
     }
 
     @Composable
-    fun getThemeStyle(): ThemeStyle = themeStyle.value
+    fun getThemeStyle(): ThemeStyle = theme.themeStyle
 
     @Composable
-    fun getMiuixStyle(): MiuixStyle = miuixStyle.value
+    fun getMiuixStyle(): MiuixStyle = theme.miuixStyle
 
     val currentStyle: ThemeStyle
-        get() = themeStyle.value
+        get() = theme.themeStyle
 
     @Composable
-    fun getUseDynamicColor(): Boolean = useDynamicColor.value
+    fun getUseDynamicColor(): Boolean = theme.useDynamicColor
 
     @Composable
-    fun getCustomColor(): Color = Color(customColorInt.intValue)
+    fun getCustomColor(): Color = Color(theme.customColor)
 
     @Composable
-    fun getBackgroundColor(): Color = if (isDarkTheme()) {
-        Color(backgroundColorDark.intValue)
-    } else {
-        Color(backgroundColorLight.intValue)
-    }
+    fun getBackgroundColor(): Color = Color(if (isDarkTheme()) theme.backgroundColorDark else theme.backgroundColorLight)
 
     @Composable
-    fun getThemeMode(): ThemeMode = themeMode.value
+    fun getThemeMode(): ThemeMode = theme.themeMode
 
     @Composable
-    fun getPaletteStyle(): ThemePaletteStyle = paletteStyle.value
+    fun getPaletteStyle(): ThemePaletteStyle = theme.paletteStyle
 
     @Composable
-    fun getColorSpec(): ThemeColorSpec = colorSpec.value
+    fun getColorSpec(): ThemeColorSpec = theme.colorSpec
 
     @Composable
-    fun getAmoledTheme(): Boolean = amoledTheme.value
+    fun getAmoledTheme(): Boolean = theme.amoledTheme
 
     var isDarkTheme: Boolean = false
         private set
@@ -131,7 +154,7 @@ object ThemeManager {
     @Composable
     fun isDarkTheme(): Boolean {
         val systemDarkTheme = currentSystemInDarkTheme()
-        val isDark = when (themeMode.value) {
+        val isDark = when (theme.themeMode) {
             ThemeMode.LIGHT -> false
             ThemeMode.DARK -> true
             ThemeMode.SYSTEM -> systemDarkTheme
@@ -141,70 +164,31 @@ object ThemeManager {
     }
 
     fun load(snapshot: ThemeSnapshot) {
-        loadedFromSettings = true
-        useDynamicColor.value = snapshot.useDynamicColor
-        customColorInt.intValue = snapshot.customColor
         /** 页面底色必须不透明，浮层材质自行控制透明度。 */
-        backgroundColorLight.intValue = snapshot.backgroundColorLight or 0xFF000000.toInt()
-        backgroundColorDark.intValue = snapshot.backgroundColorDark or 0xFF000000.toInt()
-        themeMode.value = snapshot.themeMode
-        themeStyle.value = snapshot.themeStyle.takeIf { it != ThemeStyle.MIUIX || miuixThemeAvailable }
-            ?: ThemeStyle.MATERIAL_EXPRESSIVE
-        paletteStyle.value = snapshot.paletteStyle
-        colorSpec.value = snapshot.colorSpec
-        amoledTheme.value = snapshot.amoledTheme
-        miuixStyle.value = snapshot.miuixStyle
+        theme = snapshot.copy(
+            backgroundColorLight = snapshot.backgroundColorLight or 0xFF000000.toInt(),
+            backgroundColorDark = snapshot.backgroundColorDark or 0xFF000000.toInt(),
+            themeStyle = snapshot.themeStyle.takeIf { it != ThemeStyle.MIUIX || miuixThemeAvailable } ?: ThemeStyle.MATERIAL_EXPRESSIVE,
+        )
     }
 
-    fun snapshot(): ThemeSnapshot = ThemeSnapshot(
-        useDynamicColor = useDynamicColor.value,
-        customColor = customColorInt.intValue,
-        backgroundColorLight = backgroundColorLight.intValue,
-        backgroundColorDark = backgroundColorDark.intValue,
-        themeMode = themeMode.value,
-        themeStyle = themeStyle.value,
-        paletteStyle = paletteStyle.value,
-        colorSpec = colorSpec.value,
-        amoledTheme = amoledTheme.value,
-        miuixStyle = miuixStyle.value,
-    )
-
-    fun setUseDynamicColor(useDynamic: Boolean) {
-        useDynamicColor.value = useDynamic
-    }
-
-    fun setCustomColor(color: Color) {
-        customColorInt.intValue = color.toArgb()
-    }
+    fun snapshot(): ThemeSnapshot = theme
 
     fun setBackgroundColor(color: Color, isDark: Boolean) {
         val colorInt = color.copy(alpha = 1f).toArgb()
-        if (isDark) {
-            backgroundColorDark.intValue = colorInt
+        theme = if (isDark) {
+            theme.copy(backgroundColorDark = colorInt)
         } else {
-            backgroundColorLight.intValue = colorInt
+            theme.copy(backgroundColorLight = colorInt)
         }
     }
 
     fun setThemeMode(mode: ThemeMode) {
-        themeMode.value = mode
+        theme = theme.copy(themeMode = mode)
     }
 
     fun setThemeStyle(style: ThemeStyle) {
-        themeStyle.value = style.takeIf { it != ThemeStyle.MIUIX || miuixThemeAvailable }
-            ?: ThemeStyle.MATERIAL_EXPRESSIVE
-    }
-
-    fun setMiuixStyle(style: MiuixStyle) {
-        miuixStyle.value = style
-    }
-
-    fun setPaletteStyle(style: ThemePaletteStyle) {
-        paletteStyle.value = style
-    }
-
-    fun setColorSpec(spec: ThemeColorSpec) {
-        colorSpec.value = spec
+        load(theme.copy(themeStyle = style))
     }
 
     fun resetPaletteAndBackground(settings: SettingsStore) {
@@ -212,13 +196,9 @@ object ThemeManager {
         settings.remove(THEME_COLOR_SPEC_PREFERENCE_KEY)
         settings.remove(BACKGROUND_COLOR_LIGHT_PREFERENCE_KEY)
         settings.remove(BACKGROUND_COLOR_DARK_PREFERENCE_KEY)
-        paletteStyle.value = ThemePaletteStyle.Default
-        colorSpec.value = ThemeColorSpec.Default
-        backgroundColorLight.intValue = DEFAULT_BACKGROUND_COLOR_LIGHT
-        backgroundColorDark.intValue = DEFAULT_BACKGROUND_COLOR_DARK
     }
 
     fun setAmoledTheme(enabled: Boolean) {
-        amoledTheme.value = enabled
+        theme = theme.copy(amoledTheme = enabled)
     }
 }

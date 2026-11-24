@@ -70,6 +70,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -86,6 +87,8 @@ import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
+import com.github.zly2006.zhihu.theme.MIUIX_STYLE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.theme.MiuixStyle
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemeStyle
@@ -592,7 +595,7 @@ class FloatingPlacementUiTest {
             runDesktopComposeUiTest(width = 640, height = 240) {
                 var foreground = Color.Unspecified
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         foreground = MiuixTheme.colorScheme.onSurfaceContainer
                         AppBottomBar(
                             items = listOf("主页", "关注").mapIndexed { index, label ->
@@ -807,6 +810,111 @@ class FloatingPlacementUiTest {
     }
 
     @Test
+    fun bottomBarDragBlendsBeforeCommittingAndDiscardsInterruptedGestures() {
+        for (style in ThemeStyle.entries) {
+            withIsolatedSettings(style) { settings ->
+                runSkikoComposeUiTest(size = Size(360f, 220f), density = Density(1f)) {
+                    var selected by mutableStateOf(0)
+                    var order by mutableStateOf(listOf(0, 1, 2))
+                    var floating by mutableStateOf(false)
+                    var direction by mutableStateOf(LayoutDirection.Ltr)
+                    val labels = listOf("主页", "收藏夹", "日报")
+                    val clicks = mutableListOf<Int>()
+                    setContent {
+                        ZhihuTheme {
+                            CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                                AppBottomBar(
+                                    order.map { id ->
+                                        BottomBarItem(labels[id], Icons.Default.Home, "drag_$id", selected == id) {
+                                            clicks += id
+                                            selected = id
+                                        }
+                                    },
+                                    floating = floating,
+                                )
+                            }
+                        }
+                    }
+
+                    fun tab(id: Int) = onNodeWithTag("drag_$id")
+
+                    fun labelColor(id: Int): Color {
+                        val layouts = mutableListOf<TextLayoutResult>()
+                        onNodeWithText(labels[id], useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                        return layouts
+                            .single()
+                            .layoutInput.style.color
+                    }
+                    val bars = if (style == ThemeStyle.MIUIX) listOf("docked", "default", "os4", "apple") else listOf("docked", "default", "apple")
+                    for (bar in bars) {
+                        runOnIdle {
+                            order = listOf(0, 1, 2)
+                            selected = 0
+                            clicks.clear()
+                            floating = bar != "docked"
+                            direction = if (floating) LayoutDirection.Rtl else LayoutDirection.Ltr
+                            settings.putString("floatingBottomBarStyle", if (bar == "apple") "apple" else "default")
+                            val miuixStyle = if (bar == "os4" || bar == "apple") MiuixStyle.HYPEROS_4 else MiuixStyle.HYPEROS_3
+                            settings.putString(MIUIX_STYLE_PREFERENCE_KEY, miuixStyle.name)
+                        }
+                        val source = tab(0).fetchSemanticsNode().boundsInRoot
+                        val start = source.center
+                        val end = tab(1).fetchSemanticsNode().boundsInRoot.center
+                        val active = labelColor(0)
+                        val inactive = labelColor(1)
+                        val before = tab(1).captureToImage().toPixelMap()
+                        val root = onRoot()
+                        root.performTouchInput {
+                            down(start)
+                            moveTo((start + end) / 2f)
+                        }
+                        for (id in 0..1) {
+                            val color = labelColor(id)
+                            assertTrue(color.toArgb() != active.toArgb() && color.toArgb() != inactive.toArgb(), "$style/$bar $id 按住半程未交接")
+                        }
+                        val during = tab(1).captureToImage().toPixelMap()
+                        val iconChanged = (0 until before.height / 2).any { y -> (0 until before.width).any { x -> before[x, y] != during[x, y] } }
+                        assertTrue(iconChanged, "$style/$bar 图标区域未交接")
+                        tab(0).assertIsSelected()
+                        assertTrue(clicks.isEmpty())
+                        root.performTouchInput {
+                            moveTo(Offset(end.x, source.bottom + 8f))
+                            up()
+                        }
+                        assertEquals(active.toArgb(), labelColor(0).toArgb())
+                        assertEquals(inactive.toArgb(), labelColor(1).toArgb())
+                        root.performTouchInput {
+                            down(start)
+                            moveTo(start + Offset(0f, source.height * 0.4f))
+                            up()
+                        }
+                        assertTrue(clicks.isEmpty())
+                        root.performTouchInput {
+                            down(start)
+                            moveTo(end)
+                            up()
+                        }
+                        tab(1).assertIsSelected()
+                        assertEquals(listOf(1), clicks)
+                        root.performTouchInput {
+                            down(end)
+                            moveTo(start)
+                        }
+                        runOnIdle {
+                            selected = 2
+                            order = order.reversed()
+                        }
+                        tab(2).assertIsSelected()
+                        root.performTouchInput { up() }
+                        assertEquals(listOf(1), clicks, "换页和重排不能提交旧目标")
+                        assertEquals(active.toArgb(), labelColor(2).toArgb())
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun appleBarKeepsFullLabelsTouchTargetsAndExternalSelection() =
         withIsolatedSettings(ThemeStyle.MATERIAL_EXPRESSIVE) { settings ->
             settings.putString("floatingBottomBarStyle", "apple")
@@ -890,6 +998,22 @@ class FloatingPlacementUiTest {
                     assertTrue(bounds.width >= 48f && bounds.height >= 48f, "Each item must have its own 48dp target: $bounds")
                     node.performClick().assertIsSelected()
                 }
+                val viewport = onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)).fetchSemanticsNode().boundsInRoot
+                val root = onRoot()
+                val last = onNodeWithTag("narrow_apple_6").fetchSemanticsNode().boundsInRoot.center
+                root.performTouchInput {
+                    down(last)
+                    moveTo(Offset(viewport.left + 1f, last.y))
+                }
+                val first = onNodeWithTag("narrow_apple_0")
+                assertTrue(first.fetchSemanticsNode().boundsInRoot.width >= 48f, "按住边缘应能抵达先前在屏外的项目")
+                assertEquals(6, selected)
+                root.performTouchInput { up() }
+                first.assertIsSelected()
+                val middle = onNodeWithTag("narrow_apple_3").fetchSemanticsNode().boundsInRoot.center
+                root.performTouchInput { swipe(middle, Offset(viewport.left + 1f, middle.y)) }
+                assertTrue(onNodeWithTag("narrow_apple_6").fetchSemanticsNode().boundsInRoot.width >= 48f)
+                assertEquals(0, selected, "从未选中项横滑只滚动，不导航")
             }
         }
 

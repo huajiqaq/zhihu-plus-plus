@@ -71,16 +71,16 @@ internal fun ZhihuMainListEntryFrame(
 ) {
     val density = LocalDensity.current
     val destination = entry.destination
-    val sourceEntry = remember(entry.id) { navHost.listEntryBeforeFirstReading(readingEntryId = entry.id) }
+    val sourceEntry = remember(entry.id) { navHost.listEntryForMainDetail(detailEntryId = entry.id) }
     DisposableEffect(entry.id, sourceEntry?.id) {
         if (sourceEntry != null) {
             paneState.renderedMainListEntry = sourceEntry
-            paneState.renderedMainReadingEntryId = entry.id
+            paneState.renderedMainDetailEntryId = entry.id
         }
         onDispose {
-            if (paneState.renderedMainReadingEntryId == entry.id) {
+            if (paneState.renderedMainDetailEntryId == entry.id) {
                 paneState.renderedMainListEntry = null
-                paneState.renderedMainReadingEntryId = null
+                paneState.renderedMainDetailEntryId = null
             }
         }
     }

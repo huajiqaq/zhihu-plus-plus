@@ -60,6 +60,7 @@ import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.rememberSetting
 
 const val NAVIGATION_SETTINGS_BACK_BUTTON_TAG = "navigation_settings_back_button"
+internal const val LANDSCAPE_LIST_DETAIL_DESCRIPTION = "平板和电脑的横屏窗口能同时容纳列表和详情时使用双栏。手机、竖屏和窄窗口保持单栏，侧边导航不受影响。"
 
 val NAVIGATION_SETTINGS_KEYS: Set<String> = setOf(
     APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY,
@@ -281,7 +282,7 @@ fun NavigationSettingsScreen(
             SettingItemWithSwitch(
                 modifier = Modifier.testTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG),
                 title = { Text("横屏双栏布局") },
-                description = { Text("开启后，平板和电脑在窗口宽度至少 840dp 且宽大于高时同时显示列表与详情；竖屏、窄窗口和手机始终单栏。侧边导航不受此开关影响。") },
+                description = { Text(LANDSCAPE_LIST_DETAIL_DESCRIPTION) },
                 checked = landscapeListDetail,
                 onCheckedChange = { landscapeListDetail = it },
                 settingKey = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,

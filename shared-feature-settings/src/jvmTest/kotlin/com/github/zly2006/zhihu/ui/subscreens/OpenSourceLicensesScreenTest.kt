@@ -34,7 +34,6 @@ import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
@@ -53,8 +52,10 @@ class OpenSourceLicensesScreenTest {
             "测试前提：classpath 上不能有许可证清单",
         )
         for (skin in ThemeStyle.entries) {
-            desktopSettingsStore().putString("uiThemeStyle", skin.name)
-            ThemeManager.load(ThemeManager.snapshot().copy(themeStyle = skin, themeMode = ThemeMode.LIGHT, amoledTheme = false))
+            desktopSettingsStore().apply {
+                putString("uiThemeStyle", skin.name)
+                putString("themeMode", ThemeMode.LIGHT.name)
+            }
             runSkikoComposeUiTest(size = Size(320f, 640f)) {
                 var background = Color.Unspecified
                 setContent {

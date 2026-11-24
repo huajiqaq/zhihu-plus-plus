@@ -36,6 +36,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -128,5 +129,31 @@ class AppleBottomBarInstrumentedTest {
         compose.onNodeWithTag("apple_device_1").assertIsSelected()
         compose.onNodeWithTag("apple_device_2").performClick().assertIsSelected()
         assertEquals(listOf(1, 1, 2), clicks)
+
+        val root = compose.onRoot()
+        val sourceBounds = compose.onNodeWithTag("apple_device_2").fetchSemanticsNode().boundsInRoot
+        val targetBounds = compose.onNodeWithTag("apple_device_1").fetchSemanticsNode().boundsInRoot
+        val start = sourceBounds.center
+        val target = targetBounds.center
+        val probe = target + (start - target) * 0.35f
+
+        fun capsulePixel() = root.captureToImage().toPixelMap()[probe.x.toInt(), probe.y.toInt()]
+        val empty = capsulePixel()
+        root.performTouchInput {
+            down(start)
+            moveTo((start + target) / 2f)
+        }
+        assertTrue("半程胶囊应覆盖下一项靠近手指的一侧", capsulePixel() != empty)
+        compose.onNodeWithTag("apple_device_2").assertIsSelected()
+        assertEquals(listOf(1, 1, 2), clicks)
+        root.performTouchInput { cancel() }
+        assertEquals(empty, capsulePixel())
+        root.performTouchInput {
+            down(start)
+            moveTo(target)
+            up()
+        }
+        compose.onNodeWithTag("apple_device_1").assertIsSelected()
+        assertEquals(listOf(1, 1, 2, 1), clicks)
     }
 }

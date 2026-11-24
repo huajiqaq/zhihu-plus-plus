@@ -118,7 +118,7 @@ class AppIconContractTest {
                 var direction by mutableStateOf(LayoutDirection.Ltr)
                 runSkikoComposeUiTest(size = Size(100f, 100f), density = Density(1f)) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             background = MaterialTheme.colorScheme.surface
                             CompositionLocalProvider(LocalLayoutDirection provides direction) {
                                 Box(Modifier.size(100.dp).background(background).testTag("button_host"), contentAlignment = Alignment.Center) {
@@ -176,7 +176,7 @@ class AppIconContractTest {
                 var direction by mutableStateOf(LayoutDirection.Ltr)
                 runSkikoComposeUiTest(size = Size(480f, 520f), density = Density(1f)) {
                     setContent {
-                        ZhihuTheme {
+                        ZhihuTheme(settings = null) {
                             CompositionLocalProvider(LocalLayoutDirection provides direction) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                     Column(Modifier.width(320.dp)) {
@@ -254,7 +254,7 @@ class AppIconContractTest {
             var insets by mutableStateOf(WindowInsets(28, 24, 12, 8))
             runSkikoComposeUiTest(size = Size(480f, 520f), density = Density(1f)) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                             AppTopBar(
                                 title = {

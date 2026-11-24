@@ -22,8 +22,8 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,30 +66,37 @@ internal actual fun MiuixBottomBar(items: List<BottomBarItem>, modifier: Modifie
         fontSize = NavigationBarDefaults.LabelFontSize,
         fontWeight = FontWeight.Bold,
     )
+    val labels = items.map { it.label }
+    val foreground = MiuixTheme.colorScheme.onSurfaceContainer
     MiuixNavigationBar(
         modifier = modifier,
         color = if (floating) Color.Transparent else MiuixTheme.colorScheme.surface,
         showDivider = !floating,
         defaultWindowInsetsPadding = !floating,
     ) {
-        items.forEach { item ->
-            BoxWithConstraints(Modifier.weight(1f)) {
-                val labelHeight = items.maxOf { entry ->
-                    textMeasurer.measure(entry.label, labelStyle, constraints = Constraints(maxWidth = constraints.maxWidth)).size.height
+        BottomBarDragStrip(items) { itemWidth, preview ->
+            val contentHeight = remember(labels, labelStyle, density, itemWidth, textMeasurer) {
+                val available = Constraints(maxWidth = with(density) { itemWidth.toPx().toInt().coerceAtLeast(1) })
+                val height = labels.maxOf { textMeasurer.measure(it, labelStyle, constraints = available).size.height }
+                NavigationBarDefaults.IconTopPadding + NavigationBarDefaults.IconSize + with(density) { height.toDp() } + NavigationBarDefaults.BottomPadding
+            }
+            Row(Modifier.fillMaxWidth()) {
+                items.forEachIndexed { index, item ->
+                    key(item.testTag) {
+                        val weight = preview?.tabWeight(index)
+                        val alpha = NavigationBarDefaults.UnselectedAlpha
+                        NavigationBarItem(
+                            selected = weight?.let { it > 0f } ?: item.selected,
+                            onClick = item.onClick,
+                            icon = appIconVector(item.icon),
+                            label = item.label,
+                            modifier = Modifier.heightIn(min = contentHeight.coerceAtLeast(NavigationBarDefaults.ItemHeight)).bottomBarTab(item),
+                            colors = NavigationBarDefaults.navigationBarItemColors(
+                                selectedContentColor = if (weight == null) foreground else foreground.copy(alpha = foreground.alpha * (alpha + (1f - alpha) * weight)),
+                            ),
+                        )
+                    }
                 }
-                val contentHeight = NavigationBarDefaults.IconTopPadding + NavigationBarDefaults.IconSize +
-                    with(density) { labelHeight.toDp() } + NavigationBarDefaults.BottomPadding
-                // 原生项固定 64dp；由外层最小约束为大字号保留空间，绘制与点击仍交给原生项。
-                this@MiuixNavigationBar.NavigationBarItem(
-                    selected = item.selected,
-                    onClick = item.onClick,
-                    icon = appIconVector(item.icon),
-                    label = item.label,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = contentHeight.coerceAtLeast(NavigationBarDefaults.ItemHeight))
-                        .testTag(item.testTag),
-                )
             }
         }
     }

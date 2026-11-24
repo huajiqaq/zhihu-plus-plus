@@ -195,10 +195,10 @@ def prepare_tiqian_engine(source, mirror, tree, commit, generation):
                 raise SystemExit('官方生成输出缺失或为空：' + relative)
             generated_files = path / '_GeneratedFiles.txt'
             if generated_files.is_file():
-                # reflaxe 的清理索引记录绝对路径；只搬迁索引，不改生成的 Kotlin 源码。
+                # reflaxe 的相对索引以输出目录为基准，跨输出目录的项可以是绝对路径。
                 names = []
                 for line in generated_files.read_text(encoding='utf-8').splitlines():
-                    item = Path(line).resolve().relative_to(project.resolve())
+                    item = (path / line).resolve().relative_to(project.resolve())
                     if not (project / item).is_file():
                         raise SystemExit('官方生成索引包含缺失文件')
                     names.append((target / 'sources' / source.name / item).as_posix())

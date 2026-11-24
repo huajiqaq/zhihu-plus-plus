@@ -291,7 +291,7 @@ fun ZhihuMain(
                                             val entryIndex = navHost.pageEntries.indexOfFirst { it.id == entry.id }
                                             val isRight = entry.destination != Login &&
                                                 (panes.showMainStackListDetail || panes.showMainReadingListContext) &&
-                                                (entryIndex < 0 || entryIndex >= panes.mainReadingStartIndex)
+                                                (entryIndex < 0 || entryIndex >= panes.mainDetailStartIndex)
                                             listDetailEntryTransition(
                                                 base = base,
                                                 isLeft = panes.showMainStackListDetail && entry.id == panes.mainListEntry?.id,

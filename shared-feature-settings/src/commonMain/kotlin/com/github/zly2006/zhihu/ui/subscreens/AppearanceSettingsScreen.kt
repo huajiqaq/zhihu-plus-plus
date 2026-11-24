@@ -163,7 +163,6 @@ fun AppearanceSettingsScreen(
                     initialColor = ThemeManager.getCustomColor(),
                     onDismiss = { showColorPicker = false },
                     onColorSelected = { color ->
-                        ThemeManager.setCustomColor(color)
                         settings.putInt("customThemeColor", color.toArgb())
                         userMessages.showShortMessage("主题色已保存")
                         showColorPicker = false
@@ -182,7 +181,6 @@ fun AppearanceSettingsScreen(
                     ),
                     onDismiss = { showBackgroundColorPicker = false },
                     onColorSelected = { color ->
-                        ThemeManager.setBackgroundColor(color, isDark)
                         settings.putInt(if (isDark) "backgroundColorDark" else "backgroundColorLight", color.toArgb())
                         userMessages.showShortMessage("背景颜色已保存")
                         showBackgroundColorPicker = false
@@ -216,9 +214,9 @@ fun AppearanceSettingsScreen(
                 val themeStyles = ThemeStyle.entries
 
                 fun selectThemeStyle(index: Int) {
-                    ThemeManager.setThemeStyle(themeStyles[index])
-                    settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeManager.currentStyle.name)
-                    userMessages.showShortMessage("已切换到${ThemeManager.currentStyle.displayName}皮肤")
+                    val style = themeStyles[index]
+                    settings.putString(THEME_STYLE_PREFERENCE_KEY, style.name)
+                    userMessages.showShortMessage("已切换到${style.displayName}皮肤")
                 }
 
                 /** 弹层退出与换皮同帧会向已销毁的 NavigationEventDispatcher 注册 BackHandler，故不用弹层选择器。 */
@@ -266,11 +264,7 @@ fun AppearanceSettingsScreen(
                         AppSegmentedControl(
                             options = miuixStyles.map(MiuixStyle::displayName),
                             selectedIndex = miuixStyles.indexOf(currentMiuixStyle),
-                            onSelect = { index ->
-                                val style = miuixStyles[index]
-                                ThemeManager.setMiuixStyle(style)
-                                settings.putString(MIUIX_STYLE_PREFERENCE_KEY, style.name)
-                            },
+                            onSelect = { index -> settings.putString(MIUIX_STYLE_PREFERENCE_KEY, miuixStyles[index].name) },
                             modifier = Modifier
                                 .padding(top = AppDimens.Space8)
                                 .fillMaxWidth()
@@ -288,7 +282,6 @@ fun AppearanceSettingsScreen(
 
             fun selectThemeMode(index: Int) {
                 val (mode, label) = themeModes[index]
-                ThemeManager.setThemeMode(mode)
                 settings.putString("themeMode", mode.name)
                 userMessages.showShortMessage("已切换到$label")
             }
@@ -314,10 +307,7 @@ fun AppearanceSettingsScreen(
                     title = { Text("使用 Material You 动态取色") },
                     description = { Text("从系统壁纸提取主题色，并应用所选调色风格；不支持壁纸取色的平台使用保存的主题色。") },
                     checked = useDynamicColor,
-                    onCheckedChange = { checked ->
-                        ThemeManager.setUseDynamicColor(checked)
-                        settings.putBoolean("useDynamicColor", checked)
-                    },
+                    onCheckedChange = { checked -> settings.putBoolean("useDynamicColor", checked) },
                     settingKey = "dynamicColor",
                 )
             }
@@ -340,10 +330,7 @@ fun AppearanceSettingsScreen(
                     Text(if (amoledAvailable) "暗色模式下使用纯黑背景和更低亮度的表面层级" else "仅深色模式可用")
                 },
                 checked = ThemeManager.getAmoledTheme(),
-                onCheckedChange = { enabled ->
-                    ThemeManager.setAmoledTheme(enabled)
-                    settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, enabled)
-                },
+                onCheckedChange = { enabled -> settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, enabled) },
                 enabled = amoledAvailable,
                 settingKey = AMOLED_THEME_PREFERENCE_KEY,
             )
@@ -379,11 +366,7 @@ fun AppearanceSettingsScreen(
                         description = { Text("决定强调色与中性色之间的关系") },
                         options = paletteStyles.map { it.displayName },
                         selectedIndex = paletteStyles.indexOf(ThemeManager.getPaletteStyle()),
-                        onSelect = { index ->
-                            val style = paletteStyles[index]
-                            ThemeManager.setPaletteStyle(style)
-                            settings.putString(THEME_PALETTE_STYLE_PREFERENCE_KEY, style.name)
-                        },
+                        onSelect = { index -> settings.putString(THEME_PALETTE_STYLE_PREFERENCE_KEY, paletteStyles[index].name) },
                         settingKey = THEME_PALETTE_STYLE_PREFERENCE_KEY,
                     )
                 }
@@ -403,11 +386,7 @@ fun AppearanceSettingsScreen(
                         },
                         options = colorSpecs.map { it.displayName },
                         selectedIndex = colorSpecs.indexOf(currentPalette.effectiveColorSpec(ThemeManager.getColorSpec())),
-                        onSelect = { index ->
-                            val spec = colorSpecs[index]
-                            ThemeManager.setColorSpec(spec)
-                            settings.putString(THEME_COLOR_SPEC_PREFERENCE_KEY, spec.name)
-                        },
+                        onSelect = { index -> settings.putString(THEME_COLOR_SPEC_PREFERENCE_KEY, colorSpecs[index].name) },
                         settingKey = THEME_COLOR_SPEC_PREFERENCE_KEY,
                     )
                 }

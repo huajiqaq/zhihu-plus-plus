@@ -183,7 +183,7 @@ private fun PageHost(
         LocalNavHostLifecycleOwner provides host,
         LocalAppOverlayBlurController provides blur,
     ) {
-        ZhihuTheme {
+        ZhihuTheme(settings = null) {
             val dispatcherOwner = LocalNavigationEventDispatcherOwner.current
                 ?: rememberNavigationEventDispatcherOwner(parent = null)
             CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides dispatcherOwner) {

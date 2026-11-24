@@ -17,6 +17,8 @@
 
 package com.github.zly2006.zhihu.ui
 
+import android.graphics.Point
+import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
@@ -30,10 +32,24 @@ import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 
+private const val TABLET_SHORTEST_SIDE_DP = 600
+
+/** 多窗口的 sw 限定符是应用窗口的短边，不代表它所在的屏幕；实际分栏仍按主壳约束。 */
+@Suppress("DEPRECATION")
+private fun MainActivity.hasTabletDisplay(): Boolean {
+    val shortSidePx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        windowManager.maximumWindowMetrics.bounds.run { minOf(width(), height()) }
+    } else {
+        Point().apply { windowManager.defaultDisplay.getRealSize(this) }.let { minOf(it.x, it.y) }
+    }
+    return shortSidePx / resources.displayMetrics.density >= TABLET_SHORTEST_SIDE_DP
+}
+
 @Composable
 fun AndroidZhihuMain(navHost: AppNavHost) {
     val activity = LocalActivity.current as MainActivity
-    val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= TABLET_SHORTEST_SIDE_DP ||
+        (activity.isInMultiWindowMode && activity.hasTabletDisplay())
     ZhihuMain(
         navHost = navHost,
         mainTabNavigationTarget = activity.mainTabNavigationTarget,

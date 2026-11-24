@@ -65,7 +65,7 @@ class SortableCheckSemanticsUiTest {
             val moves = mutableListOf<Pair<String, Int>>()
             runDesktopComposeUiTest(width = 480, height = 600) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         SettingItemGroup {
                             AppSortableCheckList(
                                 items = listOf(
@@ -115,7 +115,7 @@ class SortableCheckSemanticsUiTest {
             val moves = mutableListOf<Pair<String, Int>>()
             runDesktopComposeUiTest(width = 480, height = 600) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         SettingItemGroup {
                             AppSortableCheckList(
                                 items = listOf(
@@ -172,7 +172,7 @@ class SortableCheckSemanticsUiTest {
             val moves = mutableListOf<Pair<String, Int>>()
             runDesktopComposeUiTest(width = 360, height = 600) {
                 setContent {
-                    ZhihuTheme {
+                    ZhihuTheme(settings = null) {
                         SettingItemGroup {
                             AppSortableCheckList(
                                 items = listOf(

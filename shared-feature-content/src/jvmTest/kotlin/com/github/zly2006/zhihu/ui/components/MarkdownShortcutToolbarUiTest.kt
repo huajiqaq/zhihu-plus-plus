@@ -56,7 +56,7 @@ class MarkdownShortcutToolbarUiTest {
                     var expectedLabelWidth = 0
                     setContent {
                         CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
-                            ZhihuTheme {
+                            ZhihuTheme(settings = null) {
                                 expectedLabelWidth = rememberTextMeasurer()
                                     .measure(
                                         "Link",

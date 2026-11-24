@@ -223,14 +223,12 @@ class AppearanceNavigationSettingsUiTest {
         val testDirectory = Files.createTempDirectory("zhihu-appearance-ui-").toFile()
         try {
             System.setProperty("user.home", testDirectory.absolutePath)
-            ThemeManager.load(
-                originalTheme.copy(
-                    themeStyle = ThemeStyle.MATERIAL_EXPRESSIVE,
-                    themeMode = ThemeMode.LIGHT,
-                    useDynamicColor = useDynamicColor,
-                ),
-            )
-            desktopSettingsStore().prepare()
+            desktopSettingsStore().apply {
+                putString("uiThemeStyle", ThemeStyle.MATERIAL_EXPRESSIVE.name)
+                putString("themeMode", ThemeMode.LIGHT.name)
+                putBoolean("useDynamicColor", useDynamicColor)
+                prepare()
+            }
             body()
         } finally {
             System.setProperty("user.home", originalUserHome)

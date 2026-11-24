@@ -17,16 +17,14 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,14 +34,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -52,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -82,16 +79,10 @@ internal fun AppleBottomBar(items: List<BottomBarItem>, modifier: Modifier = Mod
     val selected = items.indexOfFirst { it.selected }
     val shape = RoundedCornerShape(50)
 
-    BoxWithConstraints(modifier) {
-        val viewportWidth = (maxWidth - 8.dp).coerceAtLeast(0.dp)
-        val itemWidth = (viewportWidth / items.size).coerceAtLeast(AppDimens.TouchTarget)
-        val scroll = rememberScrollState()
-        LaunchedEffect(selected, itemWidth, viewportWidth, scroll.maxValue) {
-            if (selected >= 0) {
-                val target = with(density) { (itemWidth * selected - (viewportWidth - itemWidth) / 2).roundToPx() }
-                scroll.animateScrollTo(target.coerceIn(0, scroll.maxValue))
-            }
-        }
+    BottomBarDragStrip(
+        items,
+        modifier.appAppleGlassSurface(shape, tokens.surfaceContainerHigh, dark).clip(shape).padding(4.dp),
+    ) { itemWidth, preview ->
         val labelHeight = remember(labels, labelStyle, density, itemWidth, measurer) {
             val available = with(density) { (itemWidth - 12.dp).roundToPx().coerceAtLeast(1) }
             val pixels = labels.maxOf { label ->
@@ -99,80 +90,76 @@ internal fun AppleBottomBar(items: List<BottomBarItem>, modifier: Modifier = Mod
             }
             with(density) { pixels.toDp() }
         }
-        val height = maxOf(64.dp, labelHeight + 52.dp)
-        val targetOffset = itemWidth * selected.coerceAtLeast(0)
-        val selectionOffset by animateDpAsState(targetOffset, spring(dampingRatio = 0.85f, stiffness = 450f), label = "appleTabOffset")
+        val height = maxOf(56.dp, labelHeight + 44.dp)
+        val settled by animateFloatAsState(
+            preview ?: selected.coerceAtLeast(0).toFloat(),
+            if (preview == null) spring(dampingRatio = 0.85f, stiffness = 450f) else snap(),
+            label = "appleTabPosition",
+        )
+        val position = preview ?: settled
         val selectionScale by animateFloatAsState(
             if (selected >= 0 && pressed[selected]) 0.96f else 1f,
             spring(dampingRatio = 0.8f, stiffness = 500f),
             label = "appleTabPress",
         )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(height)
-                .appAppleGlassSurface(shape, tokens.surfaceContainerHigh, dark)
-                .clip(shape)
-                .padding(4.dp),
-        ) {
-            Box(Modifier.horizontalScroll(scroll).width(itemWidth * items.size).height(height - 8.dp)) {
-                if (selected >= 0) {
-                    Box(
-                        Modifier
-                            .offset(x = selectionOffset)
-                            .width(itemWidth)
-                            .height(height - 8.dp)
-                            .graphicsLayer {
-                                scaleX = selectionScale
-                                scaleY = selectionScale
-                            }
-                            .background(tokens.onSurface.copy(alpha = if (dark) 0.12f else 0.06f), shape)
-                            .border(0.5.dp, Color.White.copy(alpha = if (dark) 0.14f else 0.5f), shape),
-                    )
-                }
-                Row(Modifier.fillMaxSize().selectableGroup()) {
-                    items.forEachIndexed { index, item ->
-                        key(item.testTag) {
-                            val scale by animateFloatAsState(
-                                if (pressed[index]) 0.94f else 1f,
-                                spring(dampingRatio = 0.8f, stiffness = 500f),
-                                label = "appleTabContent",
-                            )
-                            val foreground = if (item.selected) tokens.primary else tokens.onSurface
-                            Box(
+        Box(Modifier.fillMaxWidth().height(height)) {
+            if (selected >= 0 || preview != null) {
+                Box(
+                    Modifier
+                        .offset(x = itemWidth * position)
+                        .width(itemWidth)
+                        .height(height)
+                        .graphicsLayer {
+                            scaleX = selectionScale
+                            scaleY = selectionScale
+                        }
+                        .background(tokens.onSurface.copy(alpha = if (dark) 0.12f else 0.06f), shape)
+                        .border(0.5.dp, Color.White.copy(alpha = if (dark) 0.14f else 0.5f), shape),
+                )
+            }
+            Row(Modifier.fillMaxSize().selectableGroup()) {
+                items.forEachIndexed { index, item ->
+                    key(item.testTag) {
+                        val scale by animateFloatAsState(
+                            if (pressed[index]) 0.94f else 1f,
+                            spring(dampingRatio = 0.8f, stiffness = 500f),
+                            label = "appleTabContent",
+                        )
+                        val weight = if (selected >= 0 || preview != null) position.tabWeight(index) else 0f
+                        val foreground = lerp(tokens.onSurface, tokens.primary, weight)
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(height)
+                                .clip(shape)
+                                .selectable(
+                                    selected = item.selected,
+                                    onClick = item.onClick,
+                                    role = Role.Tab,
+                                    interactionSource = interactions[index],
+                                    indication = null,
+                                )
+                                .testTag(item.testTag),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
                                 Modifier
-                                    .weight(1f)
-                                    .height(height - 8.dp)
-                                    .clip(shape)
-                                    .selectable(
-                                        selected = item.selected,
-                                        onClick = item.onClick,
-                                        role = Role.Tab,
-                                        interactionSource = interactions[index],
-                                        indication = null,
-                                    )
-                                    .testTag(item.testTag),
-                                contentAlignment = Alignment.Center,
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 8.dp)
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    },
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Column(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 6.dp, vertical = 8.dp)
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                        },
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Icon(item.icon, null, Modifier.size(24.dp), tint = foreground)
-                                    Text(
-                                        item.label,
-                                        Modifier.fillMaxWidth().padding(top = 4.dp),
-                                        color = foreground,
-                                        style = labelStyle,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                }
+                                Icon(item.icon, null, Modifier.size(24.dp), tint = foreground)
+                                Text(
+                                    item.label,
+                                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    color = foreground,
+                                    style = labelStyle,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }

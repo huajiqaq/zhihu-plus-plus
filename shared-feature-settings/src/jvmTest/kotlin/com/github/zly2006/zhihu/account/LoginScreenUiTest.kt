@@ -80,7 +80,10 @@ class LoginScreenUiTest {
     @Test
     fun welcomeBackScrollsWithContentAndNoticePressKeepsSquareCorners() = ThemeStyle.entries.forEach { skin ->
         withLoginFixture(loginEngine()) { store ->
-            ThemeManager.load(ThemeSnapshot(themeStyle = skin, themeMode = ThemeMode.LIGHT))
+            desktopSettingsStore().apply {
+                putString("uiThemeStyle", skin.name)
+                putString("themeMode", ThemeMode.LIGHT.name)
+            }
             runDesktopComposeUiTest(width = 720, height = 420) {
                 val glassEnabled = mutableStateOf(false)
                 var backCount = 0
