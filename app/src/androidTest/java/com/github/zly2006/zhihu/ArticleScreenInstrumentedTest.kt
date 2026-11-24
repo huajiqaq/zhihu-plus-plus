@@ -107,6 +107,7 @@ import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.test.setZhihuMainContent
+import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.ui.ARTICLE_FULL_TITLE_TAG
 import com.github.zly2006.zhihu.ui.ARTICLE_IP_INFO_TAG
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
@@ -429,12 +430,22 @@ class ArticleScreenInstrumentedTest {
             0.5,
         )
 
+        val rangeBeforeSecondPage = scrollContainer.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertTrue(
+            "翻页夹具必须具有正文行程：${rangeBeforeSecondPage.value()}/${rangeBeforeSecondPage.maxValue()}，风格=${ThemeManager.currentStyle}",
+            rangeBeforeSecondPage.maxValue() > initialValue,
+        )
         assertTrue(dispatcher.dispatch(PageTurnCommand.PageDown))
-        composeRule.waitUntil(5_000) {
-            scrollContainer
-                .fetchSemanticsNode()
-                .config[SemanticsProperties.VerticalScrollAxisRange]
-                .value() > initialValue
+        try {
+            composeRule.waitUntil(5_000) {
+                scrollContainer
+                    .fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange]
+                    .value() > initialValue
+            }
+        } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+            val range = scrollContainer.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            throw AssertionError("第二次翻页未滚动：${range.value()}/${range.maxValue()}，风格=${ThemeManager.currentStyle}，标题=${title.fetchSemanticsNode().boundsInRoot}，按钮底=$toolbarActionBottom", error)
         }
     }
 
@@ -1848,7 +1859,7 @@ class ArticleScreenInstrumentedTest {
             viewModel.authorName = "离线作者"
             viewModel.authorId = "offline-author-id"
             viewModel.authorUrlToken = "offline-author"
-            viewModel.content = (1..20).joinToString("\n\n") { index ->
+            viewModel.content = (1..80).joinToString("\n\n") { index ->
                 "第 $index 段离线正文，用于 ArticleScreen instrumented test。"
             }
             viewModel.voteUpCount = 42

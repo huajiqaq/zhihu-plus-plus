@@ -47,7 +47,7 @@ tasks.withType<KotlinCompile>().configureEach {
 
 
 dependencies {
-    testImplementation(gradleApi())
+    implementation(gradleApi())
     testImplementation(libs.junit4)
 }
 

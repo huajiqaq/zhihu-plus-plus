@@ -168,48 +168,5 @@
         "org.tiqian:math-jvm-skia-jvm": ":platforms:jvm:skia"
       }
     }
-  },
-  "math": {
-    "source": "tiqian-math",
-    "output": "build/upstream-font-inputs",
-    "compiler": {
-      "path": "font/metadata-generator/tools/compile_runtime_font.py",
-      "sha256": "541e7bf3b791f02c3abb9723e1bbb15b897e969ecb072ee3b2e25ca2b0064fc8"
-    },
-    "fonts": [
-      {
-        "name": "lete-regular",
-        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Regular.otf",
-        "sha256": "ead643895be03f42f6fa201fb1176323f60dd330d4109387bac90bdf980fcf3e",
-        "property": "tiqianLeteRegular"
-      },
-      {
-        "name": "lete-bold",
-        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Bold.otf",
-        "sha256": "a521f128db0821a9943e4f703103204d8982aeb39c933e12344c43e9d3b0907a",
-        "property": "tiqianLeteBold"
-      },
-      {
-        "name": "stix-regular",
-        "path": "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/regular.otf",
-        "sha256": "95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b",
-        "property": "tiqianStix"
-      }
-    ],
-    "resources": {
-      "build/upstream-font-inputs/lete-regular-runtime.otf": "2ce41922dcfd6c98ffcd882f17bf7458e94574d83b5af04441cad0628f9ea1a8",
-      "build/upstream-font-inputs/lete-bold-runtime.otf": "20f690463874b6615638a398187a7029766167fcb371a32a5a0a3a48092ab670",
-      "build/upstream-font-inputs/stix-regular-runtime.otf": "1d565c9537e2c5938711426e3be6f2bb4224541706e3195be42255299f553b2f",
-      "build/generated/leteRuntimeMetadata/LeteSansMath-Regular.tqmath": "d0bbca52bc3d179824731f0f4cdf1c6f9c2429c4d6f1bc3d326d2b44fe7be53f",
-      "build/generated/leteRuntimeMetadata/LeteSansMath-Bold.tqmath": "ebd8a71d4e2cbe5b443b0b19b848738f3bb5147ec4c8f7460d3f4558ce786cbd",
-      "build/generated/stixRuntimeMetadata/regular.tqmath": "3332d022a4a8b99d54051d1777b046c598ecdbe9e7f261fbf99d133b3f13a028",
-      "build/generated/stixRuntimeMetadata/manifest.tqfont": "361a163b12bc36a4406685ae4872264df030821ec293f82766a27f7a03dc9d65",
-      "engine/src/jvmMain/resources/org/tiqian/math/fonts/OFL.txt": "81b36224f7e45447419a4d88b957b2d7a37acc3fd7052746cf32365ae99cc8af",
-      "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/STIX-OFL.txt": "ccee2172d0b1deb40e216efb0b7adec41573a14e813f3b17c143063607e54ec6"
-    },
-    "wheel": {
-      "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl",
-      "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d"
-    }
   }
 }

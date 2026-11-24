@@ -320,15 +320,13 @@ internal fun createCrawlingResult(
     )
 }
 
-internal fun isVoteupFeed(feed: Feed): Boolean {
-    return when (feed) {
-        is CommonFeed -> {
-            feed.brief.contains("赞同") ||
-                feed.brief.contains("点赞") ||
-                feed.attachedInfo.contains("VOTEUP")
-        }
-        else -> false
+internal fun isVoteupFeed(feed: Feed): Boolean = when (feed) {
+    is CommonFeed -> {
+        feed.brief.contains("赞同") ||
+            feed.brief.contains("点赞") ||
+            feed.attachedInfo.contains("VOTEUP")
     }
+    else -> false
 }
 
 internal fun extractQuestionIdFromUrl(url: String): String? {
