@@ -76,8 +76,8 @@
         },
         "upstream-patches/tiqian-core-apple-italic-ink.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "1bbfb178871fee43686f1a10de7e351db2dbb5c1c4785e9ac818d63789d495b3",
-          "reason": "在隔离的 CoreText 字形测试中保存全画布的直立、斜体与对照图；保留原断言"
+          "sha256": "7218a5b895b01cf6e637d2b1f391eb56a16e55d3e64741f954bd35d5f7030bfc",
+          "reason": "CoreText 斜体验证按固定基线逐行比较字形剪切；全字最右墨列不能表示笔画倾角。上游覆盖相同字形契约后移除"
         },
         "upstream-patches/tiqian-core-skiko-alignment.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",

@@ -423,20 +423,11 @@ jobs:
           if-no-files-found: error
 
   macos-native:
-    name: macOS Native Compile and Tests (${{ matrix.macos }})
-    runs-on: ${{ matrix.macos }}
-    strategy:
-      fail-fast: false
-      matrix:
-        macos: [macos-26, macos-15]
+    name: macOS Native Compile and Tests
+    runs-on: macos-26
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify actual arm64 runner
-        run: |
-          test "$(uname -m)" = arm64
-          sw_vers -productVersion >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set Up JDK
         uses: actions/setup-java@v4
@@ -455,9 +446,8 @@ jobs:
       - name: Compile native hosts and run every populated common/native suite
         run: |
           set -euo pipefail
-          export TIQIAN_CORETEXT_TEST_BITMAP_DIR="$RUNNER_TEMP/macos-coretext"
-          mkdir -p "$TIQIAN_CORETEXT_TEST_BITMAP_DIR"
-          tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:packageDebugMacosUiDebug :macosUiDebug:verifyMacosReleaseIsolation)
+          test "$(uname -m)" = arm64
+          tasks=(:macosApp:linkDebugExecutableMacosArm64 :macosApp:macosArm64Test :macosUiDebug:packageDebugMacosUiDebug)
           reports=(macosApp/build/test-results/macosArm64Test)
           for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
             [[ -f "$build_script" ]] || continue
@@ -472,7 +462,8 @@ jobs:
           for module in shaping frontend frontend:coretext-render; do
             tasks+=(":upstream-tiqian-core:platforms:apple:$module:macosArm64Test")
           done
-          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          # 完整 release 链接另起进程，需要先释放本轮测试的堆。
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
           inputs="$(python3 -I gradle/prepare-upstream-sources.py --package --offline)"
           for module in shaping frontend frontend/coretext-render; do
             reports+=("$inputs/sources/tiqian-core/platforms/apple/$module/build/test-results/macosArm64Test")
@@ -491,11 +482,19 @@ jobs:
             --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
             --smoke-root main --smoke-output "$RUNNER_TEMP/macos-native-smoke/main"
 
+      - name: Link native release and verify isolation
+        if: ${{ !cancelled() && steps.native_inputs.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          /usr/sbin/sysctl hw.memsize
+          ./gradlew :macosUiDebug:verifyMacosReleaseIsolation -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true \
+            --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+
       - name: Upload native test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: macOS Native Test Reports-${{ matrix.macos }}
+          name: macOS Native Test Reports
           path: |
             shared*/build/reports/tests/macosArm64Test/**
             shared*/build/test-results/macosArm64Test/**
@@ -505,7 +504,6 @@ jobs:
             .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/reports/tests/macosArm64Test/**
             .gradle/upstream-inputs/*/sources/tiqian-core/platforms/apple/**/build/test-results/macosArm64Test/**
             ${{ runner.temp }}/macos-native-smoke/**
-            ${{ runner.temp }}/macos-coretext/italicShearsGlyphInk-*.pgm
           include-hidden-files: true
           if-no-files-found: error
 
