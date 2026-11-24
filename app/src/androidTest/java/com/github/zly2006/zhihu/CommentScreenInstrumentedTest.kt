@@ -253,6 +253,7 @@ class CommentScreenInstrumentedTest {
         awaitImeVisibility(composeRule.onNodeWithTag(COMMENT_INPUT_TAG), visible = true)
         composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsNotFocused()
         pressBackAfterImeHidden(picker)
         composeRule.waitUntil("等待返回收起表情面板", 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_EMOJI_PICKER_TAG).fetchSemanticsNodes().isEmpty()

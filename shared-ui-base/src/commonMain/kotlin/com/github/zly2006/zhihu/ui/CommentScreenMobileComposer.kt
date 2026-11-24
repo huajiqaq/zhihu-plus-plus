@@ -138,12 +138,13 @@ internal fun CommentScreenMobileComposer(
             }
             if (platformName == "Android") {
                 PlatformBackHandler(enabled = true) {
+                    /** 手动切表情已释放输入焦点，IME 可见状态可能晚于面板切换更新。 */
                     when {
+                        showEmojiPicker -> onHideEmojiPicker()
                         keyboardVisible -> {
                             focus.clearFocus(force = true)
                             keyboard?.hide()
                         }
-                        showEmojiPicker -> onHideEmojiPicker()
                         else -> closeSheet()
                     }
                 }

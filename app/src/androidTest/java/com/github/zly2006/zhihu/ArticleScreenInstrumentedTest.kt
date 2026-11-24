@@ -140,6 +140,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
+import kotlin.math.ceil
 
 // ArticleScreen 自带 AppScaffold 并自己读取系统栏留白，应用里也是不套外层直接放的；
 // 用例外层的 Scaffold 只提供全屏容器，再把它的内边距传进去会重复留白。
@@ -796,15 +797,26 @@ class ArticleScreenInstrumentedTest {
         return rootPoint
     }
 
-    /** Compose 在同一动画帧内缓存窗口屏幕位置；系统 DOWN 用移动手柄自身窗口的当前屏幕原点。 */
-    private fun dragSelectionHandleTo(description: String, destinationOnScreen: Offset) {
+    /** HRM 1.7.1 的逻辑手柄位于 run 的 caret 横坐标和行底；末端在换行边界取前一个 run。 */
+    private fun selectionHandleAnchor(tag: String, text: String, offset: Int, isStart: Boolean = false): Offset {
+        val fragment = paragraphFragments(tag, text).single {
+            if (isStart) offset in it.startOffset until it.endOffset else offset > it.startOffset && offset <= it.endOffset
+        }
+        return Offset(
+            fragment.bounds.left + fragment.layout.getHorizontalPosition(offset - fragment.startOffset, usePrimaryDirection = true),
+            fragment.bounds.bottom,
+        )
+    }
+
+    /** DOWN 命中原生圆柄；HRM 从正文逻辑锚点累加位移，不能用移动 Popup 的中心代替它。 */
+    private fun dragSelectionHandleTo(description: String, anchorInRoot: Offset, destinationInRoot: Offset) {
         val handle = composeRule.onNodeWithContentDescription(description).assertIsDisplayed().fetchSemanticsNode()
-        val anchor = composeRule.runOnUiThread {
+        val downPoint = composeRule.runOnUiThread {
             val view = (handle.root as ViewRootForTest).view
             val origin = IntArray(2).also(view::getLocationOnScreen)
-            handle.positionInRoot + Offset(origin[0] + handle.size.width / 2f, origin[1] + handle.size.height / 2f)
+            handle.positionInRoot + Offset(origin[0] + handle.size.width / 2f, origin[1] + handle.size.height * 3f / 4f)
         }
-        val grip = Offset(0f, handle.size.height / 4f)
+        val deltaInRoot = destinationInRoot - anchorInRoot
         val input = InstrumentationRegistry.getInstrumentation()
         val pointer = MotionEvent.PointerProperties().apply {
             id = 0
@@ -842,11 +854,37 @@ class ArticleScreenInstrumentedTest {
             }
             composeRule.waitForIdle()
         }
-        touch(MotionEvent.ACTION_DOWN, anchor + grip)
+        touch(MotionEvent.ACTION_DOWN, downPoint)
         repeat(10) { step ->
-            touch(MotionEvent.ACTION_MOVE, anchor + grip + (destinationOnScreen - anchor) * ((step + 1) / 10f))
+            touch(MotionEvent.ACTION_MOVE, downPoint + deltaInRoot * ((step + 1) / 10f))
         }
-        touch(MotionEvent.ACTION_UP, destinationOnScreen + grip)
+        touch(MotionEvent.ACTION_UP, downPoint + deltaInRoot)
+    }
+
+    /** HRM 使用单一连续区间；检查两端及相邻未选字形，避免把初始高亮误当作完整选词/划线。 */
+    private fun waitUntilHandleSelection(tag: String, text: String, range: TextRange, selectionColor: Color) {
+        composeRule.waitUntil("正文 $range 的两端及双手柄须就绪", timeoutMillis = 5_000) {
+            runCatching {
+                val body = composeRule.onNodeWithTag(tag)
+                val bounds = body.fetchSemanticsNode().boundsInRoot
+                val pixels = body.captureToImage().toPixelMap()
+                val fragments = paragraphFragments(tag, text)
+                listOf(range.min - 1, range.min, range.max - 1, range.max).filter { it in text.indices }.all { offset ->
+                    val fragment = fragments.single { offset in it.startOffset until it.endOffset }
+                    val box = fragment.layout.getBoundingBox(offset - fragment.startOffset).translate(fragment.bounds.topLeft - bounds.topLeft)
+                    val x = box.center.x
+                        .toInt()
+                        .coerceIn(0, pixels.width - 1)
+                    val selected = (ceil(box.top).toInt().coerceIn(0, pixels.height) until box.bottom.toInt().coerceIn(0, pixels.height)).any { y ->
+                        pixels[x, y].matchesPixel(selectionColor)
+                    }
+                    selected == (offset in range.min until range.max)
+                } &&
+                    composeRule.onNodeWithText("复制").isDisplayed() &&
+                    composeRule.onNodeWithContentDescription("Markdown selection start handle").isDisplayed() &&
+                    composeRule.onNodeWithContentDescription("Markdown selection end handle").isDisplayed()
+            }.getOrDefault(false)
+        }
     }
 
     private fun copySelection(clipboard: RecordingClipboard): String {
@@ -1108,16 +1146,25 @@ class ArticleScreenInstrumentedTest {
         }
 
         val press = textPoint(tag, HIGHLIGHTED_PARAGRAPH, 1)
-        val root = composeRule.onRoot().fetchSemanticsNode()
         composeRule.onRoot().performTouchInput { longClick(press) }
-        val rootOrigin = root.positionOnScreen - root.positionInRoot
         val endHandle = "Markdown selection end handle"
         val prefixEnd = HIGHLIGHTED_PARAGRAPH.indexOf("账号")
-        dragSelectionHandleTo(endHandle, rootOrigin + textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd))
+        val fullHighlight = TextRange(0, HIGHLIGHTED_PARAGRAPH.length)
+        waitUntilHandleSelection(tag, HIGHLIGHTED_PARAGRAPH, fullHighlight, selectionColor)
+        dragSelectionHandleTo(
+            endHandle,
+            selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
+            textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd),
+        )
         assertEquals("划线内手动收短的选区不能被工具栏重置", HIGHLIGHTED_PARAGRAPH.take(prefixEnd), copySelection(clipboard))
 
         composeRule.onRoot().performTouchInput { longClick(press) }
-        dragSelectionHandleTo(endHandle, rootOrigin + textPoint(tag, HIGHLIGHT_SELECTION_TARGET, HIGHLIGHT_SELECTION_TARGET.length))
+        waitUntilHandleSelection(tag, HIGHLIGHTED_PARAGRAPH, fullHighlight, selectionColor)
+        dragSelectionHandleTo(
+            endHandle,
+            selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
+            textPoint(tag, HIGHLIGHT_SELECTION_TARGET, HIGHLIGHT_SELECTION_TARGET.length),
+        )
         val selectedPixels = composeRule.onNodeWithTag(tag).captureToImage().toPixelMap().let { pixels ->
             (0 until pixels.height).sumOf { y ->
                 (0 until pixels.width).count { x -> pixels[x, y].matchesPixel(selectionColor) }
@@ -1459,20 +1506,44 @@ class ArticleScreenInstrumentedTest {
                 }
             }
         }
-        val press = textPoint(tag, paragraphs.first(), paragraphs.first().indexOf("TARGET") + 2)
+        val pressOffset = paragraphs.first().indexOf("TARGET") + 2
+        val fragment = paragraphFragments(tag, paragraphs.first()).single { pressOffset in it.startOffset until it.endOffset }
+        val wordInRun = fragment.layout.getWordBoundary(pressOffset - fragment.startOffset)
+        val word = TextRange(fragment.startOffset + wordInRun.start, fragment.startOffset + wordInRun.end)
+        assertEquals("实际绘制的词边界必须选中 TARGET", "TARGET", paragraphs.first().substring(word.start, word.end))
+        val press = textPoint(tag, paragraphs.first(), pressOffset)
         val endHandle = "Markdown selection end handle"
-        val root = composeRule.onRoot().fetchSemanticsNode()
-        val rootOrigin = root.positionOnScreen - root.positionInRoot
         composeRule.onRoot().performTouchInput { longClick(press) }
-        waitUntilSelectionHighlight(tag, paragraphs.first(), selectionColor, "第一次长按未选中正文")
+        waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitUntil("收起选择须移除双手柄和菜单", timeoutMillis = 5_000) {
+            composeRule
+                .onAllNodes(
+                    hasContentDescription("Markdown selection start handle") or hasContentDescription(endHandle) or hasText("复制"),
+                ).fetchSemanticsNodes()
+                .isEmpty()
+        }
         composeRule.onNodeWithContentDescription(endHandle).assertDoesNotExist()
 
         composeRule.onRoot().performTouchInput { longClick(press) }
-        dragSelectionHandleTo("Markdown selection start handle", rootOrigin + textPoint(tag, paragraphs.first(), 0))
-        dragSelectionHandleTo(endHandle, rootOrigin + textPoint(tag, paragraphs[1], paragraphs[1].length))
-        waitUntilSelectionHighlight(tag, paragraphs[1], selectionColor, "重新选择后，第一次拖动末手柄未到达中段")
-        dragSelectionHandleTo(endHandle, rootOrigin + textPoint(tag, paragraphs.last(), paragraphs.last().length))
+        waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
+        dragSelectionHandleTo(
+            "Markdown selection start handle",
+            selectionHandleAnchor(tag, paragraphs.first(), word.start, isStart = true),
+            textPoint(tag, paragraphs.first(), 0),
+        )
+        waitUntilHandleSelection(tag, paragraphs.first(), TextRange(0, word.end), selectionColor)
+        dragSelectionHandleTo(
+            endHandle,
+            selectionHandleAnchor(tag, paragraphs.first(), word.end),
+            textPoint(tag, paragraphs[1], paragraphs[1].length),
+        )
+        waitUntilHandleSelection(tag, paragraphs[1], TextRange(0, paragraphs[1].length), selectionColor)
+        dragSelectionHandleTo(
+            endHandle,
+            selectionHandleAnchor(tag, paragraphs[1], paragraphs[1].length),
+            textPoint(tag, paragraphs.last(), paragraphs.last().length),
+        )
         val container = composeRule.onNodeWithTag(tag)
         val bounds = container.fetchSemanticsNode().boundsInRoot
         val pixels = container.captureToImage().toPixelMap()
