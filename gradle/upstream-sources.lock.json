@@ -24,15 +24,15 @@
           },
           "format": {
             "version": "3.8.0",
-            "url": "https://lib.haxe.org/files/3.0/format-3,8,0.zip",
-            "archiveSha256": "ea3a6725ee707d54965550d5331c8b1eab5c548c35b3680622fb0ffa15b509fd",
-            "sha256": "ca62d1c5269002657f6ec413789eae318eeca735b4aa02484fcc143c03c49572"
+            "repository": "https://github.com/HaxeFoundation/format.git",
+            "commit": "acde8a595c456ecaad8b11ed034c12983b73ab1a",
+            "sha256": "ea61a164917c7de4a8f45909b19e6566a037b12735d1b772939f3ca441b4f8e7"
           },
           "formatter": {
             "version": "1.18.0",
-            "url": "https://lib.haxe.org/files/3.0/formatter-1,18,0.zip",
-            "archiveSha256": "2d29c9b56e54b2643e07ee64003c3fc30a5bc133bdcb4cc15c48f09acda7a047",
-            "sha256": "fff1e6130e4f6919c2114b4f0d3f5acf66445f7246c620b2c0273c52e47e4b00"
+            "repository": "https://github.com/HaxeCheckstyle/haxe-formatter.git",
+            "commit": "93ba289893d515614298f4ce7cee8619c31b420c",
+            "sha256": "3676d2c0f84aa898e826ebba63ebcb3b0dda95f3a0537d6f94fbe49692ff4c97"
           }
         },
         "patches": {
