@@ -111,7 +111,7 @@ internal fun readLocalPinDraft(raw: String): LocalPinDraft? = runCatching {
         .apply {
             for ((marker, link) in items.asReversed()) {
                 val end = marker.endIn(draft.content)
-                replace(marker.start, end, if (end == marker.endExclusive) link else link + PIN_TOPIC_SEPARATOR)
+                setRange(marker.start, end, if (end == marker.endExclusive) link else link + PIN_TOPIC_SEPARATOR)
             }
         }.toString()
 

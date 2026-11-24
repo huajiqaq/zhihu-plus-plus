@@ -241,8 +241,7 @@ class ZhihuMainNavigationInstrumentedTest {
      */
     @Test
     fun secondarySettingsBackRestoresParent() {
-        composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        composeRule.launchZhihuMain(startDestination = Account.name)
+        composeRule.launchZhihuMain(startDestination = Account.name, windowSize = DpSize(1100.dp, 700.dp))
         composeRule.waitUntilTabSelected("nav_tab_account")
         val rootEntryId = composeRule.activity.navHost.topEntryId
         composeRule.onNodeWithTag("accountSettings.search").performScrollTo().performClick()
@@ -262,8 +261,7 @@ class ZhihuMainNavigationInstrumentedTest {
 
     @Test
     fun questionOpenedFromArticleRemainsInLandscapeListPane() {
-        composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        composeRule.launchZhihuMainWithFakeArticle()
+        composeRule.launchZhihuMainWithFakeArticle(width = { 1000.dp })
 
         val article = Article(type = ArticleType.Answer, id = 318L)
         composeRule.runOnIdle {
@@ -998,6 +996,7 @@ class ZhihuMainNavigationInstrumentedTest {
     private fun MainActivityComposeRule.launchZhihuMain(
         startDestination: String,
         bottomBarItems: Set<String> = deterministicBottomBarItems,
+        windowSize: DpSize? = null,
     ) {
         activity.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE).edit(commit = true) {
             putString(START_DESTINATION_PREFERENCE_KEY, startDestination)
@@ -1005,7 +1004,7 @@ class ZhihuMainNavigationInstrumentedTest {
             putBoolean("bottomBarTapScrollToTop", false)
             putBoolean("autoHideBottomBar", false)
         }
-        setZhihuMainContent()
+        setZhihuMainContent(windowSize = windowSize)
     }
 
     private fun MainActivityComposeRule.launchZhihuMainWithFakeArticle(

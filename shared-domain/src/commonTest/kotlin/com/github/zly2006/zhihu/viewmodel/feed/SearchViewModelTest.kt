@@ -72,7 +72,7 @@ class SearchViewModelTest {
 
         viewModel.process(environment("{}", blockedUserIds = setOf("blocked-user")), listOf(blocked, kept))
 
-        assertEquals(listOf<Feed>(kept), viewModel.allData)
+        assertEquals(kept, viewModel.allData.single())
         assertEquals(
             listOf("kept-user"),
             viewModel.displayItems.map {
