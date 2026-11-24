@@ -846,26 +846,31 @@ class ArticleScreenInstrumentedTest {
                     val decorOrigin = IntArray(2).also(decor::getLocationOnScreen)
                     val windowOrigin = IntArray(2).also(handleView::getLocationOnScreen)
                     val owners = WindowInspector.getGlobalWindowViews().filterIsInstance<ViewGroup>().flatMap { root ->
-                        root.descendants.filterIsInstance<ViewRootForTest>().map { it.view }.map { view ->
-                            val owner = when {
-                                view === handleView -> "handle"
-                                root === decor -> "activity"
-                                else -> "other-popup"
-                            }
-                            // Compose 在 dispatchTouchEvent 保存本窗口最后的真实输入；只读取本次 downTime，不安装 listener 或改派事件。
-                            val received = runCatching {
-                                val field = view.javaClass.getDeclaredField("previousMotionEvent").apply { isAccessible = true }
-                                (field.get(view) as? MotionEvent)?.takeIf { it.downTime == downTime }?.let {
-                                    "${it.actionMasked}@${it.rawX},${it.rawY}"
-                                } ?: "none"
-                            }.getOrElse { "unavailable" }
-                            "$owner:$received"
-                        }.toList()
+                        root.descendants
+                            .filterIsInstance<ViewRootForTest>()
+                            .map { it.view }
+                            .map { view ->
+                                val owner = when {
+                                    view === handleView -> "handle"
+                                    root === decor -> "activity"
+                                    else -> "other-popup"
+                                }
+                                // Compose 在 dispatchTouchEvent 保存本窗口最后的真实输入；只读取本次 downTime，不安装 listener 或改派事件。
+                                val received = runCatching {
+                                    val field = view.javaClass.getDeclaredField("previousMotionEvent").apply { isAccessible = true }
+                                    (field.get(view) as? MotionEvent)?.takeIf { it.downTime == downTime }?.let {
+                                        "${it.actionMasked}@${it.rawX},${it.rawY}"
+                                    } ?: "none"
+                                }.getOrElse { "unavailable" }
+                                "$owner:$received"
+                            }.toList()
                     }
                     val at = handle.positionOnScreen
                     val pixel = if (point.x.toInt() in 0 until bitmap.width && point.y.toInt() in 0 until bitmap.height) {
                         Integer.toHexString(bitmap.getPixel(point.x.toInt(), point.y.toInt()))
-                    } else "outside"
+                    } else {
+                        "outside"
+                    }
                     "point=$point argb=$pixel handle=$at/${handle.size} rootOffset=${handle.positionInRoot} windowOrigin=${windowOrigin.toList()} " +
                         "decor=${decorOrigin.toList()}/${decor.width}x${decor.height} insets=$insets anchor=$anchorInRoot destination=$destinationInRoot owners=$owners"
                 }

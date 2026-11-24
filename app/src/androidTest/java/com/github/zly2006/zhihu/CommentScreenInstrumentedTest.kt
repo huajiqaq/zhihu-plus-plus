@@ -934,18 +934,22 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val targetPackage = composeRule.activity.packageName
         var activePackage: String? = null
         var activeSystemWindowId: Int? = null
-        composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
-            val root = automation.rootInActiveWindow
-            activePackage = root?.packageName?.toString()
-            activeSystemWindowId = root?.windowId?.takeIf { activePackage == "android" }
-            activePackage != null
+        try {
+            composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
+                val root = automation.rootInActiveWindow
+                activePackage = root?.packageName?.toString()
+                activeSystemWindowId = root?.windowId?.takeIf { activePackage == "android" }
+                activePackage == targetPackage
+            }
+        } finally {
+            activeSystemWindowId?.let { windowId ->
+                runCatching { reportCommentMockCiSystemFocus(automation, composeRule.activity, windowId) }
+            }
         }
-        activeSystemWindowId?.let { windowId ->
-            runCatching { reportCommentMockCiSystemFocus(automation, composeRule.activity, windowId) }
-        }
-        assertEquals(composeRule.activity.packageName, activePackage)
+        assertEquals(targetPackage, activePackage)
         val downTime = SystemClock.uptimeMillis()
         assertTrue(
             automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),

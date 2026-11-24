@@ -146,7 +146,7 @@ internal fun reportCommentMockCiSystemFocus(
     val manager = activity.getSystemService(ActivityManager::class.java) ?: return
     val taskId = activity.taskId
     val targetVisible = manager.appTasks.any {
-        val task = it.taskInfo
+        val task = it.taskInfo ?: return@any false
         task.taskId == taskId && task.topActivity == activity.componentName && task.isVisible
     }
     if (!targetVisible) return
