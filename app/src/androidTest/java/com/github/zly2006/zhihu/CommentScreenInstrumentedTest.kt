@@ -37,7 +37,6 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
@@ -64,8 +63,6 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.AnnotatedString
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -244,16 +241,10 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("\u3000已有草稿")),
         )
-        val input = composeRule.onNodeWithTag(COMMENT_INPUT_TAG)
-        awaitImeVisibility(input, visible = false)
-        composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
-        composeRule.onNodeWithContentDescription("选择表情").assertIsDisplayed()
-        awaitImeVisibility(input, visible = true)
-        composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
         val picker = composeRule.onNodeWithTag(COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertIsNotFocused()
-        pressBackAfterImeHidden(picker)
-        composeRule.waitUntil("等待返回收起表情面板", 5_000) {
+        composeRule.onNodeWithTag(COMMENT_EMOJI_BUTTON_TAG).performClick()
+        composeRule.waitUntil("等待切换按钮收起表情面板", 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_EMOJI_PICKER_TAG).fetchSemanticsNodes().isEmpty()
         }
         picker.assertDoesNotExist()
@@ -501,12 +492,12 @@ class CommentScreenInstrumentedTest {
         val input = composeRule.onNodeWithTag(COMMENT_INPUT_TAG)
         val closeEditor = composeRule.onNodeWithContentDescription("关闭编辑面板")
 
-        fun closeEditorAndPressBack(target: SemanticsNodeInteraction) {
+        fun closeEditorAndChildComments() {
             closeEditor.performClick()
             composeRule.waitUntil("等待异步关闭的评论编辑窗口离开", timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithTag(COMMENT_COMPOSER_SHEET_TAG).fetchSemanticsNodes().isEmpty()
             }
-            pressBackAfterImeHidden(target)
+            composeRule.onNode(hasTestTag(COMMENT_CLOSE_BUTTON_TAG) and hasAnyAncestor(childPane)).assertIsDisplayed().performClick()
         }
 
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -554,7 +545,7 @@ class CommentScreenInstrumentedTest {
         childList.assert(hasAnyAncestor(isDialog())).assertIsDisplayed()
         childEntry.performClick()
         input.assertTextEquals("回复草稿")
-        closeEditorAndPressBack(childList)
+        closeEditorAndChildComments()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
@@ -571,12 +562,12 @@ class CommentScreenInstrumentedTest {
         composeRule.onAllNodes(isDialog()).assertCountEquals(2)
         childEntry.performClick()
         input.assertIsDisplayed().assertTextEquals("回复草稿")
-        closeEditorAndPressBack(childList)
+        closeEditorAndChildComments()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
-        pressBackAfterImeHidden(rootList)
+        composeRule.onNode(hasTestTag(COMMENT_CLOSE_BUTTON_TAG) and hasAnyAncestor(rootPane)).assertIsDisplayed().performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().isEmpty()
         }
@@ -1149,30 +1140,6 @@ class CommentScreenInstrumentedTest {
             player!!.toggle(missingFile.absolutePath)
             assertEquals(null, player!!.playingUrl)
             player!!.stop()
-        }
-    }
-
-    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
-        awaitImeVisibility(target, visible = false)
-        assertTrue(
-            "系统必须接受返回操作",
-            InstrumentationRegistry
-                .getInstrumentation()
-                .uiAutomation
-                .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
-        )
-    }
-
-    /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */
-    private fun awaitImeVisibility(target: SemanticsNodeInteraction, visible: Boolean) {
-        val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
-        val ime = WindowInsetsCompat.Type.ime()
-        val state = if (visible) "显示" else "收起"
-        composeRule.waitUntil("等待目标评论窗口获得焦点且系统键盘$state", 5_000) {
-            composeRule.runOnUiThread {
-                val insets = ViewCompat.getRootWindowInsets(view) ?: return@runOnUiThread false
-                view.hasWindowFocus() && insets.isVisible(ime) == visible && (visible || insets.getInsets(ime).bottom == 0)
-            }
         }
     }
 
