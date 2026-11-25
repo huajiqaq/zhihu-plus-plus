@@ -54,6 +54,8 @@ jobs:
           arch: x86_64
           target: default
           profile: pixel_7
+          cores: 4
+          ram-size: 4096M
           avd-name: zhihu-pr
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
