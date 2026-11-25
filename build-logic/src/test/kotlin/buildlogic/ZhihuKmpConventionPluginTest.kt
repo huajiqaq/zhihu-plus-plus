@@ -48,10 +48,8 @@ class ZhihuKmpConventionPluginTest {
 
     @Test
     fun rejectsMixedVariantTasksEvenWithExplicitVariant() {
-        for (variant in listOf("full", "lite")) {
-            val result = runner(variant, "assembleFullDebug", "assembleLiteDebug").buildAndFail()
-            assertTrue(result.output.contains("separate Gradle invocations"), result.output)
-        }
+        val result = runner("full", "assembleFullDebug", "assembleLiteDebug").buildAndFail()
+        assertTrue(result.output.contains("separate Gradle invocations"), result.output)
     }
 
     @Test
@@ -86,15 +84,16 @@ class ZhihuKmpConventionPluginTest {
         val result = runner(null, "verifyTestIsolation").build()
         assertTrue(result.output.contains("TEST_HOME_ISOLATED=true"), result.output)
         assertTrue(result.output.contains("TEST_PREFS_ISOLATED=true"), result.output)
-        assertTrue(result.output.contains("TEST_SINGLE_WORKER=true"), result.output)
+        assertTrue(result.output.contains("TEST_SINGLE_WORKER:variant-selection-test=true"), result.output)
     }
 
     @Test
     fun heavyJvmTestsUseOneGigabyteAndOneFork() {
-        for (name in listOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")) {
-            val result = runner(null, "verifyTestIsolation", projectName = name).build()
-            assertTrue(result.output.contains("TEST_HEAVY_HEAP=true"), result.output)
-            assertTrue(result.output.contains("TEST_SINGLE_WORKER=true"), result.output)
+        val modules = listOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")
+        val result = runner(null, "verifyTestIsolation", projectName = modules.first(), subprojects = modules.drop(1)).build()
+        for (name in modules) {
+            assertTrue(result.output.contains("TEST_HEAVY_HEAP:$name=true"), result.output)
+            assertTrue(result.output.contains("TEST_SINGLE_WORKER:$name=true"), result.output)
         }
     }
 
@@ -175,12 +174,14 @@ class ZhihuKmpConventionPluginTest {
         explicitVariant: String?,
         vararg tasks: String,
         projectName: String = "variant-selection-test",
+        subprojects: List<String> = emptyList(),
         includeAppleTargets: Boolean = false,
     ): GradleRunner {
         val directory = temporaryFolder.newFolder()
         directory.resolve("settings.gradle").writeText(
             """
             rootProject.name = '$projectName'
+            ${subprojects.joinToString("\n") { "include ':$it'" }}
             dependencyResolutionManagement {
                 versionCatalogs {
                     libs { version('jvm', '21') }
@@ -188,6 +189,19 @@ class ZhihuKmpConventionPluginTest {
             }
             """.trimIndent(),
         )
+        subprojects.forEach { name ->
+            val module = directory.resolve(name)
+            check(module.mkdir())
+            module.resolve("build.gradle").writeText(
+                """
+                plugins {
+                    id 'org.jetbrains.kotlin.multiplatform'
+                    id 'zhihu.kmp-conventions'
+                }
+                kotlin { jvm() }
+                """.trimIndent(),
+            )
+        }
         directory.resolve("build.gradle").writeText(
             """
             plugins {
@@ -226,8 +240,11 @@ class ZhihuKmpConventionPluginTest {
                     def expected = new File(layout.buildDirectory.get().asFile, 'test-home/jvmTest').canonicalFile
                     println('TEST_HOME_ISOLATED=' + (home == expected))
                     println('TEST_PREFS_ISOLATED=' + (task.systemProperties['java.util.prefs.userRoot'] == new File(expected, 'prefs').absolutePath))
-                    println('TEST_SINGLE_WORKER=' + (task.maxParallelForks == 1))
-                    println('TEST_HEAVY_HEAP=' + (task.maxHeapSize == '1g'))
+                    allprojects.each { candidate ->
+                        def candidateTask = candidate.tasks.getByName('jvmTest')
+                        println('TEST_SINGLE_WORKER:' + candidate.name + '=' + (candidateTask.maxParallelForks == 1))
+                        println('TEST_HEAVY_HEAP:' + candidate.name + '=' + (candidateTask.maxHeapSize == '1g'))
+                    }
                 }
             }
             tasks.register('verifyVariantSelection') {

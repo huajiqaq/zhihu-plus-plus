@@ -37,22 +37,6 @@ import kotlin.test.assertTrue
 
 class ContentFilterDatabaseTest {
     @Test
-    fun createsJvmRoomDatabaseAndStoresKeyword() = runTest {
-        val database = getContentFilterDatabase(
-            createTempDirectory("content-filter-room").resolve("content-filter.db").toFile(),
-        )
-
-        val keywordId = database.blockedKeywordDao().insertKeyword(
-            BlockedKeyword(keyword = "noise"),
-        )
-
-        val keywords = database.blockedKeywordDao().getAllKeywords()
-        assertEquals(1L, keywordId)
-        assertEquals(listOf("noise"), keywords.map { it.keyword })
-        database.close()
-    }
-
-    @Test
     fun migratesSyntheticVersionSevenKeywordsWithoutLosingRules() = runTest {
         val directory = createTempDirectory("keyword-scope-migration-")
         val file = directory.resolve("content-filter.db").toFile()

@@ -110,18 +110,6 @@ class BlocklistLoadStateUiTest {
     }
 
     @Test
-    fun blocklistShowsTheReasonWhenLoadingFails() = withFixture { database ->
-        withRenamedTable(database, BlockedKeyword.TABLE_NAME) {
-            runDesktopComposeUiTest(width = 412, height = 892) {
-                setScreen { BlocklistSettingsScreen() }
-                waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag(APP_LOAD_STATE_FAILED_TAG).fetchSemanticsNodes().isNotEmpty() }
-                onNode(hasText("no such table", substring = true)).assertExists()
-                onNodeWithText("暂无精确匹配关键词").assertDoesNotExist()
-            }
-        }
-    }
-
-    @Test
     fun filterOverviewShowsLoadingBeforeStatsReturn() = withFixture { database ->
         desktopSettingsStore().putBoolean("enableContentFilter", true)
         holding(database, readers = readerCount(database)) { release ->
@@ -218,6 +206,7 @@ class BlocklistLoadStateUiTest {
                 setScreen { BlocklistSettingsScreen() }
                 waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag(APP_LOAD_STATE_FAILED_TAG).fetchSemanticsNodes().isNotEmpty() }
                 onNode(hasText("no such table", substring = true)).assertExists()
+                onNodeWithText("暂无精确匹配关键词").assertDoesNotExist()
                 runBlocking { database.useWriterConnection { it.execSQL("ALTER TABLE `$hidden` RENAME TO `$table`") } }
                 restored = true
                 onNodeWithText("重试").performClick()

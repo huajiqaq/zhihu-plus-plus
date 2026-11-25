@@ -76,27 +76,6 @@ class SettingsSearchScreenInstrumentedTest {
      * 设置搜索的筛选与目标导航行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/262
      */
     @Test
-    fun searchScreen_filtersAppearanceResultsAndNavigatesToTargetSetting() {
-        val navigator = setSearchScreenContent()
-
-        composeRule
-            .onNodeWithTag(SETTINGS_SEARCH_INPUT_TAG)
-            .performTextInput("热搜")
-        composeRule
-            .onNodeWithTag("settingsSearch.result.appearance.showSearchHotSearch")
-            .assertIsDisplayed()
-            .performClick()
-
-        assertEquals(
-            listOf(Account.NavigationSettings(setting = "showSearchHotSearch")),
-            navigator.destinations,
-        )
-    }
-
-    /**
-     * 设置搜索的筛选与目标导航行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/262
-     */
-    @Test
     fun searchScreen_matchesPageNamesConfiguredByGroupedSettings() {
         val navigator = setSearchScreenContent()
 

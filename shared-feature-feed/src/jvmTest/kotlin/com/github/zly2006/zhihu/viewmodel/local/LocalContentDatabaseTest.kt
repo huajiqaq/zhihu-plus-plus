@@ -40,26 +40,6 @@ import kotlin.test.assertTrue
 
 class LocalContentDatabaseTest {
     @Test
-    fun createsJvmRoomDatabaseAndStoresTask() = runTest {
-        val database = getLocalContentDatabase(
-            createTempDirectory("local-content-room").resolve("local-content.db").toFile(),
-        )
-
-        database.contentDao().insertTasks(
-            listOf(
-                CrawlingTask(
-                    url = "https://www.zhihu.com/question/1",
-                    reason = CrawlingReason.Trending,
-                ),
-            ),
-        )
-
-        val tasks = database.contentDao().getTasksByStatus(CrawlingStatus.NotStarted)
-        assertEquals(listOf("https://www.zhihu.com/question/1"), tasks.map { it.url })
-        database.close()
-    }
-
-    @Test
     fun cancellingFailedStatusWriteDoesNotLeaveClaimInProgress() = runTest {
         val file = createTempDirectory("local-content-failure-room").resolve("local-content.db").toFile()
         val database = getLocalContentDatabase(file)
@@ -124,6 +104,7 @@ class LocalContentDatabaseTest {
             assertEquals(file.canonicalPath, java.io.File(dao.databaseFilePath()).canonicalPath)
             dao.insertTasks(listOf(CrawlingTask(url = "https://www.zhihu.com/question/1", reason = CrawlingReason.Trending)))
             val task = dao.getTasksByStatus(CrawlingStatus.NotStarted).single()
+            assertEquals("https://www.zhihu.com/question/1", task.url)
             val delayedDao = object : LocalContentDao by dao {
                 override suspend fun finishTask(id: Long, executedAt: Long, status: CrawlingStatus, errorMessage: String?): Int {
                     if (status == CrawlingStatus.NotStarted) {

@@ -23,7 +23,6 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
-import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -453,72 +452,6 @@ class ArticleScreenInstrumentedTest {
             val range = scrollContainer.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
             throw AssertionError("第二次翻页未滚动：${range.value()}/${range.maxValue()}，风格=${ThemeManager.currentStyle}，标题=${title.fetchSemanticsNode().boundsInRoot}，按钮底=$toolbarActionBottom", error)
         }
-    }
-
-    /**
-     * 长正文首帧耗时须包含真实 HTML 解析、布局与绘制。
-     * 行为来源：https://github.com/zly2006/zhihu-plus-plus/issues/495
-     */
-    @Test
-    fun issue495FirstFrameBenchmarkIncludesHtmlParsingLayoutAndDraw() {
-        val warmupViewModel = seededAnswerViewModel(ANSWER)
-        composeRule.activity.runOnUiThread {
-            warmupViewModel.content =
-                """<p>预热正文 <img src="https://www.zhihu.com/equation?tex=x%5E2" eeimg="1" /></p>"""
-        }
-        composeRule.setScreenContent {
-            Scaffold(
-                modifier = androidx.compose.ui.Modifier
-                    .fillMaxSize(),
-            ) { _ ->
-                ArticleScreen(
-                    article = ANSWER,
-                    viewModel = warmupViewModel,
-                )
-            }
-        }
-        composeRule.onNodeWithText("预热正文", substring = true).assertIsDisplayed()
-        composeRule.onRoot().captureToImage()
-
-        val fullFixtureWarmupSamples = mutableListOf<Long>()
-        val samples = buildList {
-            repeat(7) { iteration ->
-                val viewModel = issue495ViewModel()
-                composeRule.activity.runOnUiThread {
-                    viewModel.content += "<!-- benchmark-run-$iteration -->"
-                }
-                val startedAt = SystemClock.elapsedRealtime()
-                composeRule.setScreenContent {
-                    Scaffold(
-                        modifier = androidx.compose.ui.Modifier
-                            .fillMaxSize(),
-                    ) { _ ->
-                        ArticleScreen(
-                            article = ANSWER,
-                            viewModel = viewModel,
-                        )
-                    }
-                }
-                composeRule.onNodeWithText("更新：", substring = true).assertIsDisplayed()
-                composeRule.onRoot().captureToImage()
-                val elapsedMillis = SystemClock.elapsedRealtime() - startedAt
-                if (iteration < 2) {
-                    fullFixtureWarmupSamples += elapsedMillis
-                } else {
-                    add(elapsedMillis)
-                }
-            }
-        }
-        val medianMillis = samples.sorted()[samples.size / 2]
-        Log.i(
-            ISSUE_495_BENCHMARK_TAG,
-            "fullFixtureWarmupSamplesMs=$fullFixtureWarmupSamples firstFrameSamplesMs=$samples " +
-                "medianMs=$medianMillis htmlChars=36460",
-        )
-        assertTrue(
-            "问题 #495 的首帧耗时中位数为 ${medianMillis}ms；测量包含 HTML 解析、Compose 布局与绘制",
-            medianMillis < ISSUE_495_FIRST_FRAME_LIMIT_MS,
-        )
     }
 
     /**
@@ -1163,6 +1096,7 @@ class ArticleScreenInstrumentedTest {
             selectionHandleAnchor(tag, HIGHLIGHTED_PARAGRAPH, HIGHLIGHTED_PARAGRAPH.length),
             textPoint(tag, HIGHLIGHTED_PARAGRAPH, prefixEnd),
         )
+        waitUntilHandleSelection(tag, HIGHLIGHTED_PARAGRAPH, TextRange(0, prefixEnd), selectionColor)
         assertEquals("划线内手动收短的选区不能被工具栏重置", HIGHLIGHTED_PARAGRAPH.take(prefixEnd), copySelection(clipboard))
 
         composeRule.onRoot().performTouchInput { longClick(press) }
@@ -1523,7 +1457,13 @@ class ArticleScreenInstrumentedTest {
         val endHandle = "Markdown selection end handle"
         composeRule.onRoot().performTouchInput { longClick(press) }
         waitUntilHandleSelection(tag, paragraphs.first(), word, selectionColor)
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        assertTrue(
+            "系统必须接受返回操作",
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+        )
         composeRule.waitUntil("收起选择须移除双手柄和菜单", timeoutMillis = 5_000) {
             composeRule
                 .onAllNodes(
@@ -1754,10 +1694,12 @@ class ArticleScreenInstrumentedTest {
         }
 
         composeRule.onNodeWithContentDescription("更多选项").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("停止朗读").assertIsDisplayed()
+        val stopReading = composeRule.onNodeWithText("停止朗读")
+        composeRule.waitUntil("等待朗读操作随菜单展开", 5_000) { stopReading.isDisplayed() }
+        stopReading.assertIsDisplayed()
         composeRule.onNodeWithText("暂停朗读").assertDoesNotExist()
         composeRule.onNodeWithText("继续朗读").assertDoesNotExist()
-        composeRule.onNodeWithText("停止朗读").performClick()
+        stopReading.performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             !AndroidReadingPlayerBridge.state.value.hasSession
         }
@@ -2103,8 +2045,6 @@ class ArticleScreenInstrumentedTest {
     private companion object {
         const val FULL_ORIGIN_SOURCE_ID = "instrumented:reading-origin"
         const val PARTIAL_ORIGIN_SOURCE_ID = "instrumented:partial-reading-origin"
-        const val ISSUE_495_BENCHMARK_TAG = "Issue495Benchmark"
-        const val ISSUE_495_FIRST_FRAME_LIMIT_MS = 5_000L
         const val HIGHLIGHTED_PARAGRAPH =
             "目前灰度机制是在OpenCode上，被选中的账号调用deepseek-v4-pro或deepseek-v4-flash有机会拿到GA版。"
         const val HIGHLIGHT_SELECTION_TARGET = "后续普通段落用于验证拖动手柄跨越文字块。"

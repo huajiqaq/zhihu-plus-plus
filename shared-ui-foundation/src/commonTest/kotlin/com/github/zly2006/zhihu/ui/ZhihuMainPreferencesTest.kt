@@ -63,23 +63,15 @@ class ZhihuMainPreferencesTest {
     }
 
     @Test
-    fun defaultBottomBarSelectionUsesCompactMobileSet() {
+    fun normalizeBottomBarSelectionPreservesSelectionWithoutForcingAccount() {
         assertEquals(
             linkedSetOf(Home.name, Follow.name, Daily.name),
             defaultBottomBarSelectionKeys(),
         )
-    }
-
-    @Test
-    fun desktopDefaultSelectionIncludesAllTopLevelDestinationsExceptAccount() {
         assertEquals(
             linkedSetOf(Home.name, Follow.name, HotList.name, Daily.name, OnlineHistory.name, MyCollections.name),
             defaultBottomBarSelectionKeys(maximumSelection = null),
         )
-    }
-
-    @Test
-    fun normalizeBottomBarSelectionPreservesSelectionWithoutForcingAccount() {
         val selected = linkedSetOf(Home.name, Follow.name, HotList.name, Daily.name, OnlineHistory.name)
         val mobile = normalizeBottomBarSelection(selectedKeys = selected)
         assertEquals(linkedSetOf(Home.name, Follow.name, HotList.name, Daily.name), mobile)

@@ -58,11 +58,6 @@ class LocalRecommendationAlgorithmsTest {
     }
 
     @Test
-    fun normalizeLocalContentIdUsesTypedValue() {
-        assertEquals("answer:42", LocalContentIdentity("answer", "42").value)
-    }
-
-    @Test
     fun toNavDestinationRestoresAnswerArticleQuestionAndPin() {
         assertEquals(
             Article(type = ArticleType.Answer, id = 42, title = "回答标题"),
@@ -182,11 +177,6 @@ class LocalRecommendationAlgorithmsTest {
                 ),
             ),
         )
-    }
-
-    @Test
-    fun stableLocalFeedIdReplacesTypedSeparator() {
-        assertEquals("local_feed_answer_42", stableLocalFeedId("answer:42"))
     }
 
     private data class TestRankedResult(

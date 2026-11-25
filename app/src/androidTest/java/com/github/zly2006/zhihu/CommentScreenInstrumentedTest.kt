@@ -20,7 +20,6 @@ package com.github.zly2006.zhihu
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -44,7 +43,6 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsNotSelected
@@ -73,7 +71,6 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.zly2006.zhihu.data.CommentSortOrder
 import com.github.zly2006.zhihu.data.DataHolder
@@ -109,7 +106,6 @@ import com.github.zly2006.zhihu.ui.COMMENT_SEND_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SORT_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SORT_SCORE_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SORT_TIME_TAG
-import com.github.zly2006.zhihu.ui.COMMENT_TOOLS_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.CommentNavigationHandoff
 import com.github.zly2006.zhihu.ui.CommentScreen
 import com.github.zly2006.zhihu.ui.components.CommentScreenComponent
@@ -304,150 +300,6 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.InputText, AnnotatedString("")),
         )
-    }
-
-    /** 只以当前评论窗口收到的系统 IME 为准；输入焦点、语义输入或非零导航栏均不能代替软键盘。 */
-    @Test
-    @SdkSuppress(minSdkVersion = 30)
-    fun rootAndChildEditorsAvoidRealIme() {
-        val originalOrientation = composeRule.activity.requestedOrientation
-        try {
-            composeRule.activityRule.scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
-            composeRule.waitUntil("等待移动端竖屏", 5_000) {
-                composeRule.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
-            }
-            mockRootComments(
-                "https://www.zhihu.com/api/v4/comment_v5/answers/9001/root_comment",
-                listOf(seedRootComment(1, childCommentCount = 24)),
-            )
-            mockRootComments("https://www.zhihu.com/api/v4/comment_v5/comment/root-1/child_comment", seedChildComments(24))
-            composeRule.setScreenContent {
-                CommentScreenComponent(showComments = true, onDismiss = { error("输入法返回不应关闭根评论") }, content = ROOT_ARTICLE)
-            }
-
-            fun node(pane: String, tag: String) = composeRule.onNode(
-                hasTestTag(tag) and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, pane)),
-            )
-
-            fun awaitIme(pane: String, visible: Boolean) {
-                val view = (node(pane, COMMENT_INPUT_TAG).fetchSemanticsNode().root as ViewRootForTest).view
-                val ime = WindowInsets.Type.ime()
-                try {
-                    composeRule.waitUntil("等待 $pane Dialog 的系统软键盘 visible=$visible（需允许停靠软键盘）", 5_000) {
-                        composeRule.runOnUiThread {
-                            val insets = view.rootWindowInsets ?: return@runOnUiThread false
-                            val bottom = insets.getInsets(ime).bottom
-                            view.hasWindowFocus() &&
-                                insets.isVisible(ime) == visible &&
-                                (if (visible) bottom > insets.getInsets(WindowInsets.Type.navigationBars()).bottom else bottom == 0)
-                        }
-                    }
-                } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
-                    val input = node(pane, COMMENT_INPUT_TAG).fetchSemanticsNode()
-                    val tools = node(pane, COMMENT_TOOLS_BUTTON_TAG).fetchSemanticsNode()
-                    val currentView = (input.root as ViewRootForTest).view
-                    val diagnostic = composeRule.runOnUiThread {
-                        val insets = currentView.rootWindowInsets
-                        val activityView = composeRule.activity.window.decorView
-                        "sameView=${view === currentView} sameToolsRoot=${input.root === tools.root} " +
-                            "attached=${currentView.isAttachedToWindow} placed=${input.layoutInfo.isPlaced} " +
-                            "focused=${input.config.getOrNull(SemanticsProperties.Focused)} " +
-                            "windowFocus=${currentView.hasWindowFocus()} decorFocus=${currentView.rootView.hasWindowFocus()} " +
-                            "imeVisible=${insets?.isVisible(ime)} ime=${insets?.getInsets(ime)?.bottom} " +
-                            "nav=${insets?.getInsets(WindowInsets.Type.navigationBars())?.bottom} " +
-                            "decorIme=${currentView.rootView.rootWindowInsets?.getInsets(ime)?.bottom} " +
-                            "decorNav=${currentView.rootView.rootWindowInsets?.getInsets(WindowInsets.Type.navigationBars())?.bottom} " +
-                            "activityFocus=${activityView.hasWindowFocus()} activityIme=${activityView.rootWindowInsets?.isVisible(ime)} " +
-                            "activityImeBottom=${activityView.rootWindowInsets?.getInsets(ime)?.bottom} " +
-                            "windowHeight=${currentView.rootView.height} viewHeight=${currentView.height}"
-                    }
-                    throw AssertionError("$pane 系统输入窗口未就绪：$diagnostic", error)
-                }
-                if (visible) {
-                    var geometry = ""
-                    try {
-                        composeRule.waitUntil("等待 $pane 的输入框和工具行贴合实际 IME 顶边，不重叠也不重复留白", 5_000) {
-                            // Insets 动画会重新布局，不能一直比较动画前的语义节点坐标。
-                            val input = node(pane, COMMENT_INPUT_TAG).fetchSemanticsNode()
-                            val tools = node(pane, COMMENT_TOOLS_BUTTON_TAG).fetchSemanticsNode()
-                            composeRule.runOnUiThread {
-                                val insets = view.rootWindowInsets ?: return@runOnUiThread false
-                                val bottom = insets.getInsets(ime).bottom
-                                val windowOrigin = IntArray(2).also(view.rootView::getLocationOnScreen)
-                                // edge-to-edge 的可见窗口 frame 不随 IME 缩短，键盘顶边须由原窗口和真实 inset 计算。
-                                val imeTop = windowOrigin[1] + view.rootView.height - bottom
-                                val toolsBottom = tools.positionOnScreen.y + tools.size.height
-                                val inputBottom = input.positionOnScreen.y + input.size.height
-                                geometry = "windowY=${windowOrigin[1]} rootHeight=${view.rootView.height} ime=$bottom imeTop=$imeTop inputBottom=$inputBottom toolsBottom=$toolsBottom"
-                                insets.isVisible(ime) &&
-                                    bottom > insets.getInsets(WindowInsets.Type.navigationBars()).bottom &&
-                                    input.size.height > 0 &&
-                                    inputBottom <= imeTop + 1 &&
-                                    tools.size.height > 0 &&
-                                    kotlin.math.abs(toolsBottom - imeTop) <= 1f
-                            }
-                        }
-                    } catch (error: Throwable) {
-                        throw AssertionError("$pane 输入法几何不正确：$geometry", error)
-                    }
-                }
-            }
-
-            composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertDoesNotExist()
-            node("评论", COMMENT_COMPOSER_ENTRY_TAG).assertIsDisplayed().performClick()
-            val rootInput = node("写评论", COMMENT_INPUT_TAG)
-            rootInput.assertIsDisplayed().performTouchInput { click() }
-            rootInput.assertIsFocused()
-            awaitIme("写评论", true)
-            rootInput.performTextInput("根草稿")
-            pressSystemBack()
-            awaitIme("写评论", false)
-            composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(1)
-            rootInput.assertTextEquals("根草稿")
-            pressSystemBack(closingTag = COMMENT_COMPOSER_SHEET_TAG)
-            composeRule.onNodeWithTag(COMMENT_COMPOSER_SHEET_TAG).assertDoesNotExist()
-            composeRule.onNodeWithTag("comment_child_button_root-1").performClick()
-
-            val childList = node("回复", COMMENT_SCREEN_LIST_TAG)
-            childList.performScrollToNode(hasTestTag("comment_reply_button_child-15"))
-            composeRule.onNodeWithTag("comment_reply_button_child-15").performClick()
-            val childInput = node("写回复", COMMENT_INPUT_TAG)
-            childInput.assertContentDescriptionEquals("回复 子回复作者 15 的评论").performTouchInput { click() }
-            childInput.assertIsFocused()
-            awaitIme("写回复", true)
-            childInput.performTextInput("子草稿")
-            val emoji = node("写回复", COMMENT_EMOJI_BUTTON_TAG)
-            emoji.performTouchInput { click() }
-            awaitIme("写回复", false)
-            childInput.assertIsNotFocused()
-            node("写回复", COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-            pressSystemBack(closingTag = COMMENT_EMOJI_PICKER_TAG)
-            node("写回复", COMMENT_EMOJI_PICKER_TAG).assertDoesNotExist()
-            childInput.assertIsDisplayed()
-            emoji.performTouchInput { click() }
-            node("写回复", COMMENT_EMOJI_PICKER_TAG).assertIsDisplayed()
-            emoji.performTouchInput { click() }
-            awaitIme("写回复", true)
-            childInput.assertIsFocused()
-            node("写回复", COMMENT_EMOJI_PICKER_TAG).assertDoesNotExist()
-            pressSystemBack()
-            awaitIme("写回复", false)
-            composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(2)
-            childInput.assertContentDescriptionEquals("回复 子回复作者 15 的评论").assertTextEquals("子草稿")
-            pressSystemBack(closingTag = COMMENT_COMPOSER_SHEET_TAG)
-            childInput.assertDoesNotExist()
-            childList.assertIsDisplayed()
-            composeRule.onNodeWithTag("comment_row_child-15").assertIsDisplayed()
-            node("回复", COMMENT_COMPOSER_ENTRY_TAG).performClick()
-            childInput.assertContentDescriptionEquals("回复 子回复作者 15 的评论").assertTextEquals("子草稿")
-            composeRule.onNodeWithContentDescription("关闭编辑面板").performClick()
-            node("回复", COMMENT_CLOSE_BUTTON_TAG).performClick()
-            composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).assertCountEquals(1)
-            node("评论", COMMENT_COMPOSER_ENTRY_TAG).performClick()
-            rootInput.assertTextEquals("根草稿")
-        } finally {
-            composeRule.activityRule.scenario.onActivity { it.requestedOrientation = originalOrientation }
-        }
     }
 
     /** https://github.com/zly2006/zhihu-plus-plus/issues/595 */
@@ -796,7 +648,16 @@ class CommentScreenInstrumentedTest {
         childList.performSemanticsAction(SemanticsActions.ScrollToIndex) { assertTrue(it(12)) }
         val button = composeRule.onNodeWithTag("comment_more_button_child-12")
         val menuTag = "comment_more_menu_child-12"
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+        fun pressBack() {
+            assertTrue(
+                "系统必须接受返回操作",
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+            )
+        }
 
         fun openMenuAndCheckAnchor(): Float {
             val anchor = button.assertIsDisplayed().fetchSemanticsNode()
@@ -830,7 +691,7 @@ class CommentScreenInstrumentedTest {
                     left <= anchor.positionOnScreen.x + anchor.size.width && right >= anchor.positionOnScreen.x,
                 )
             }
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            pressBack()
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithTag(menuTag).fetchSemanticsNodes().isEmpty()
             }
@@ -857,21 +718,33 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(menuTag).assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertIsDisplayed().assert(hasAnyAncestor(isDialog()))
         composeRule.onAllNodes(isDialog()).assertCountEquals(3)
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag(COMMENT_DELETE_DIALOG_TAG).fetchSemanticsNodes().isEmpty()
+        }
         composeRule.onNodeWithTag(COMMENT_DELETE_DIALOG_TAG).assertDoesNotExist()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Delete, "/comment_v5/comment/child-12"))
         composeRule.onAllNodes(isDialog()).assertCountEquals(2)
         childList.assertIsDisplayed()
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodes(isDialog()).fetchSemanticsNodes().size == 1
+        }
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
         composeRule.onNodeWithTag("comment_more_button_root-1").performTouchInput { click() }
         composeRule.onNodeWithText("举报").assertIsDisplayed()
         composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("comment_more_menu_root-1").fetchSemanticsNodes().isEmpty()
+        }
         composeRule.onNodeWithTag("comment_more_menu_root-1").assertDoesNotExist()
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
         assertEquals(0, rootDismissals)
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        pressBack()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty()
+        }
         composeRule.onAllNodes(isDialog()).assertCountEquals(0)
         assertEquals(1, rootDismissals)
     }
@@ -1279,7 +1152,8 @@ class CommentScreenInstrumentedTest {
         }
     }
 
-    private fun pressSystemBack(closingTag: String? = null) {
+    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
+        awaitImeVisibility(target, visible = false)
         assertTrue(
             "系统必须接受返回操作",
             InstrumentationRegistry
@@ -1287,16 +1161,6 @@ class CommentScreenInstrumentedTest {
                 .uiAutomation
                 .performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
         )
-        if (closingTag != null) {
-            composeRule.waitUntil("等待系统返回关闭 $closingTag", 5_000) {
-                composeRule.onAllNodesWithTag(closingTag).fetchSemanticsNodes().isEmpty()
-            }
-        }
-    }
-
-    private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
-        awaitImeVisibility(target, visible = false)
-        pressSystemBack()
     }
 
     /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */

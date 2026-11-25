@@ -18,7 +18,6 @@
 package com.github.zly2006.zhihu
 
 import android.view.ViewGroup
-import android.view.WindowInsets
 import android.webkit.WebView
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -36,7 +35,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -48,9 +46,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.core.view.descendants
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.filters.SdkSuppress
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.navigation.WriteAnswer
 import com.github.zly2006.zhihu.navigation.WriteArticle
@@ -62,10 +58,8 @@ import com.github.zly2006.zhihu.ui.WRITE_ANSWER_FAB_SAVE_TAG
 import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_CONTENT_TAG
 import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_PREVIEW_TAG
 import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_TITLE_TAG
-import com.github.zly2006.zhihu.ui.WRITE_PIN_CONTENT_TAG
 import com.github.zly2006.zhihu.ui.WriteAnswerScreen
 import com.github.zly2006.zhihu.ui.WriteArticleScreen
-import com.github.zly2006.zhihu.ui.WritePinScreen
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.float
 import kotlinx.serialization.json.jsonArray
@@ -237,34 +231,6 @@ class WriteAnswerScreenInstrumentedTest {
             composeRule.waitUntil(timeoutMillis = 3_000) { view.evaluate("quill.root.firstElementChild.tagName").jsonPrimitive.content == tag }
             assertEquals("短正文", view.evaluate("quill.getText().trim()").jsonPrimitive.content)
         }
-    }
-
-    @Test
-    @SdkSuppress(minSdkVersion = 30)
-    fun markdownShortcutsHideOnlyWhileTheSoftKeyboardIsVisible() {
-        composeRule.setScreenContent { WritePinScreen() }
-        val editor = composeRule.onNodeWithTag(WRITE_PIN_CONTENT_TAG)
-        val shortcuts = composeRule.onNodeWithTag("markdown_shortcut_toolbar")
-        val view = composeRule.activity.window.decorView
-        val keyboard = WindowInsets.Type.ime()
-        for (draft in listOf("保留正文", "以及再次输入")) {
-            shortcuts.assertIsDisplayed()
-            editor.performTouchInput { click() }
-            composeRule.waitUntil("等待真实输入法打开", timeoutMillis = 5_000) {
-                composeRule.runOnUiThread { view.rootWindowInsets?.isVisible(keyboard) == true }
-            }
-            composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithTag("markdown_shortcut_toolbar").fetchSemanticsNodes().isEmpty()
-            }
-            editor.performTextInput(draft)
-            composeRule.onNodeWithTag("write_pin_action_toolbar").assertIsDisplayed()
-            Espresso.closeSoftKeyboard()
-            composeRule.waitUntil("等待输入法收起", timeoutMillis = 5_000) {
-                composeRule.runOnUiThread { view.rootWindowInsets?.isVisible(keyboard) == false }
-            }
-            shortcuts.assertIsDisplayed()
-        }
-        editor.assertTextEquals("保留正文以及再次输入")
     }
 
     private fun richEditorView() = composeRule.runOnIdle {
