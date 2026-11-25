@@ -1,5 +1,9 @@
 -dontwarn com.hrm.latex.parser.tokenizer.LatexTokenizer$Companion
 
+# PDFBox 的 mmap 清理器使用 JDK 签名多态调用，ProGuard 7.8.0 按普通方法描述符误报。
+# 待 https://github.com/Guardsquare/proguard-core/pull/180 随正式版本发布后移除。
+-dontwarn org.apache.pdfbox.io.IOUtils
+
 # LaTeX 1.6.3 的独立图片导出器引用旧 Skiko 双参数 ABI；应用未调用该导出包，release 收缩必须移除它。
 -dontwarn com.hrm.latex.renderer.export.LatexExporter_jvmKt
 
