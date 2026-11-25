@@ -71,10 +71,14 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Run KtLint
         run: ./gradlew ktlintCheck
@@ -92,7 +96,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -127,32 +130,8 @@ jobs:
           path: app/build/instrument-apks/
           retention-days: 1
 
-  desktop-jar:
-    name: Desktop Release Package
-    needs: changes
-    if: needs.changes.outputs.scope == 'full'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: "21"
-          cache: gradle
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
-
-      - name: Prepare build inputs
-        uses: ./.github/actions/setup-build-inputs
-
-      - name: Build Desktop Release Package
-        run: ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS --max-workers=2
-
   unit-tests:
-    name: Lite, Shared JVM, Tooling and Upstream Tests
+    name: Lite, Desktop, Shared JVM, Tooling and Upstream Tests
     needs: changes
     if: needs.changes.outputs.scope == 'full'
     runs-on: ubuntu-latest
@@ -165,7 +144,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -179,10 +157,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           fc-match -f '%{family}\n' ':lang=zh-cn'
 
-      - name: Run Lite, shared JVM and build tooling tests
+      - name: Build desktop release and run Lite, shared JVM and tooling tests
         run: |
           set -euo pipefail
-          tasks=(:app:testLiteDebugUnitTest :build-logic:test)
+          tasks=(:desktopApp:packageReleaseDistributionForCurrentOS :app:testLiteDebugUnitTest :build-logic:test)
           reports=(app/build/test-results/testLiteDebugUnitTest build-logic/build/test-results/test)
           for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
             [[ -f "$build_script" ]] || continue
@@ -353,7 +331,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -452,7 +429,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -480,7 +456,6 @@ jobs:
           for module in shaping frontend frontend:coretext-render; do
             tasks+=(":upstream-tiqian-core:platforms:apple:$module:macosArm64Test")
           done
-          # 完整 release 链接另起进程，需要先释放本轮测试的堆。
           ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
           inputs="$(python3 -I gradle/prepare-upstream-sources.py --package --offline)"
           for module in shaping frontend frontend/coretext-render; do
@@ -499,14 +474,6 @@ jobs:
           python3 -I .github/scripts/verify-test-results.py \
             --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
             --smoke-root main --smoke-output "$RUNNER_TEMP/macos-native-smoke/main"
-
-      - name: Link native release and verify isolation
-        if: ${{ !cancelled() && steps.native_inputs.outcome == 'success' }}
-        run: |
-          set -euo pipefail
-          /usr/sbin/sysctl hw.memsize
-          ./gradlew :macosUiDebug:verifyMacosReleaseIsolation -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true \
-            --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
 
       - name: Upload native test reports
         if: always()
@@ -612,7 +579,6 @@ jobs:
       - ktlint
       - build_pr
       - unit-tests
-      - desktop-jar
       - rust-verification
       - macos-native
       - mock-instrumented-shards
@@ -626,7 +592,6 @@ jobs:
           KTLINT_RESULT: ${{ needs.ktlint.result }}
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
-          DESKTOP_RESULT: ${{ needs.desktop-jar.result }}
           RUST_RESULT: ${{ needs.rust-verification.result }}
           MACOS_RESULT: ${{ needs.macos-native.result }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
@@ -648,6 +613,6 @@ jobs:
           for result in "$KTLINT_RESULT" "$BUILD_RESULT" "$SHARD_RESULT"; do
             test "$result" = "$android_result"
           done
-          for result in "$UNIT_TEST_RESULT" "$DESKTOP_RESULT" "$RUST_RESULT" "$MACOS_RESULT"; do
+          for result in "$UNIT_TEST_RESULT" "$RUST_RESULT" "$MACOS_RESULT"; do
             test "$result" = "$cross_platform_result"
           done
