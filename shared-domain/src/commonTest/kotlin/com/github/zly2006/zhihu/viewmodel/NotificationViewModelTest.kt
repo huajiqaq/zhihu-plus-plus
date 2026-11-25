@@ -1271,18 +1271,21 @@ class NotificationViewModelTest {
         val release = CompletableDeferred<Unit>()
         var active = true
         var posts = 0
-        val client = HttpClient(
-            MockEngine { request ->
-                posts++
-                if (posts == 2) started.complete(Unit)
-                release.await()
-                if (request.url.encodedPath == "/messages") {
-                    respond("""{"id":"late-send","created_time":1}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
-                } else {
-                    respond("", HttpStatusCode.NoContent)
+        val client = HttpClient(MockEngine) {
+            engine {
+                dispatcher = StandardTestDispatcher(testScheduler)
+                addHandler { request ->
+                    posts++
+                    if (posts == 2) started.complete(Unit)
+                    release.await()
+                    if (request.url.encodedPath == "/messages") {
+                        respond("""{"id":"late-send","created_time":1}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+                    } else {
+                        respond("", HttpStatusCode.NoContent)
+                    }
                 }
-            },
-        )
+            }
+        }
         val environment = object : MobileHomeFeedEnvironment {
             override fun httpClient(): HttpClient {
                 check(active)

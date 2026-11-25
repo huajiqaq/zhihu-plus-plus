@@ -148,8 +148,8 @@
       "patches": {
         "upstream-patches/tiqian-math-font-metrics.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
-          "sha256": "74a718a0a8d42f2cbd5de67c2c9ba48b9f31dbb63e6807d83fcee04abbbefaea",
-          "reason": "Skia 数学字形和行内文本使用线性度量，保留字体设计的小数步进；上游支持相同度量后移除"
+          "sha256": "139a6a0b99f72a2be3b4b522efd56925de6bb2611720d745961871fcdadb6098",
+          "reason": "JVM Skia 保留线性字距，直接用 CFF 设计轮廓度量和绘制伸展字形，分别计算精确几何与保守像素框；上游包含同等修复后移除"
         },
         "upstream-patches/tiqian-math-geometry-measurements.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",

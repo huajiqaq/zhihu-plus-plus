@@ -1,7 +1,270 @@
+diff --git a/platforms/jvm/skia/build.gradle.kts b/platforms/jvm/skia/build.gradle.kts
+index a28d05b7f53335e559e78cecc5addd1e21de2a8a..d784322d1d3a82a9c9953d75f566de8ef292f97d 100644
+--- a/platforms/jvm/skia/build.gradle.kts
++++ b/platforms/jvm/skia/build.gradle.kts
+@@ -11,6 +11,7 @@ kotlin {
+         jvmMain.dependencies {
+             api(project(":engine"))
+             implementation(compose.desktop.currentOs)
++            implementation("org.apache.pdfbox:fontbox:3.0.8") // Apache-2.0; design-space CFF outlines.
+         }
+         jvmTest.dependencies {
+             implementation(kotlin("test"))
+diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/CffGlyphOutlines.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/CffGlyphOutlines.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ae3cf16ce267ce3f2535408080cb3cc84b6295e
+--- /dev/null
++++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/CffGlyphOutlines.kt
+@@ -0,0 +1,154 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++package org.tiqian.math.font.skia
++
++import java.awt.geom.AffineTransform
++import java.awt.geom.GeneralPath
++import java.awt.geom.PathIterator
++import java.io.IOException
++import org.apache.fontbox.cff.CFFParser
++import org.apache.fontbox.cff.CFFType1Font
++import org.apache.fontbox.cff.CharStringCommand
++import org.apache.fontbox.cff.CharStringCommand.Type2KeyWord
++import org.apache.fontbox.cff.Type2CharString
++import org.apache.fontbox.cff.Type2CharStringParser
++import org.jetbrains.skia.Path
++import org.jetbrains.skia.PathBuilder
++import org.jetbrains.skia.Rect
++import org.jetbrains.skia.Typeface
++
++internal class CffGlyphOutlines(private val typeface: Typeface, private val unitsPerEm: Int) : AutoCloseable {
++    private var decoder: Decoder? = null
++    private var loaded = false
++    private val glyphs = object : LinkedHashMap<UShort, Glyph?>(16, 0.75f, true) {
++        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<UShort, Glyph?>?): Boolean =
++            size > MAX_OUTLINE_CACHE_ENTRIES
++    }
++
++    /** Null means fall back to Skia. A decoded glyph may legitimately have no ink. */
++    @Synchronized
++    fun glyph(glyphId: UShort): Glyph? {
++        if (!loaded) {
++            loaded = true
++            decoder = decodeOrNull { loadDecoder() }
++        }
++        val source = decoder ?: return null
++        if (glyphs.containsKey(glyphId)) return glyphs[glyphId]
++        return decodeOrNull { source.glyph(glyphId.toInt()) }.also { glyphs[glyphId] = it }
++    }
++
++    private fun loadDecoder(): Decoder? {
++        val bytes = typeface.getTableData("CFF ")?.use { it.bytes } ?: return null
++        // CFF2, CID FD-specific matrices, and transformed charstrings stay with the Skia scaler.
++        val font = CFFParser().parse(bytes) { bytes }.singleOrNull() as? CFFType1Font ?: return null
++        val unit = 1.0 / unitsPerEm
++        val identityInDesignUnits = listOf(unit, 0.0, 0.0, unit, 0.0, 0.0)
++        if (font.numCharStrings != typeface.glyphsCount || unitsPerEm != typeface.unitsPerEm ||
++            font.fontMatrix.map { it.toDouble() } != identityInDesignUnits
++        ) return null
++        return Decoder(font)
++    }
++
++    @Synchronized
++    override fun close() {
++        loaded = true
++        decoder = null
++        glyphs.clear()
++    }
++
++    internal class Glyph(private val contours: GeneralPath) {
++        private val designBounds = contours.toSkiaPath(1.0).use { if (it.isEmpty) null else it.computeTightBounds() }
++
++        fun bounds(scale: Double): Rect? = designBounds?.let {
++            Rect.makeLTRB(
++                (it.left * scale).toFloat(), (it.top * scale).toFloat(),
++                (it.right * scale).toFloat(), (it.bottom * scale).toFloat(),
++            )
++        }
++
++        fun path(scale: Double): Path? = if (designBounds == null) null else contours.toSkiaPath(scale)
++    }
++
++    private class Decoder(private val font: CFFType1Font) {
++        private val parser = Type2CharStringParser(font.name)
++        private val charStrings = font.charStringBytes
++        private val globalSubrs = font.globalSubrIndex.toTypedArray()
++        @Suppress("UNCHECKED_CAST")
++        private val localSubrs = font.privateDict["Subrs"] as? Array<ByteArray>
++
++        fun glyph(gid: Int): Glyph? {
++            val bytes = charStrings.getOrNull(gid) ?: return null
++            val name = font.charset.getNameForGID(gid)
++            val sequence = parser.parse(bytes, globalSubrs, localSubrs, name)
++            val program = ArrayList<Any>(sequence.size)
++            var argsStart = 0
++            for (token in sequence) {
++                if (token is Int) {
++                    program.add(token)
++                    continue
++                }
++                when ((token as? CharStringCommand)?.type2KeyWord) {
++                    Type2KeyWord.HFLEX1 -> {
++                        if (program.size - argsStart != 9) return null
++                        // FontBox 3.0.8 drops the final dy of hflex1 (Adobe Type 2 spec, section 4.4).
++                        val dy6 = -(program[argsStart + 1] as Int) - (program[argsStart + 3] as Int) - (program[argsStart + 7] as Int)
++                        program.add(argsStart + 5, 0)
++                        program.add(argsStart + 7, 0)
++                        program.add(dy6)
++                        program.add(CharStringCommand.COMMAND_RRCURVETO)
++                    }
++                    Type2KeyWord.ENDCHAR -> {
++                        if (program.size - argsStart > 1) return null // Deprecated seac composite.
++                        program.add(token)
++                    }
++                    Type2KeyWord.HSTEM, Type2KeyWord.VSTEM, Type2KeyWord.HSTEMHM, Type2KeyWord.VSTEMHM,
++                    Type2KeyWord.HINTMASK, Type2KeyWord.CNTRMASK, Type2KeyWord.RMOVETO, Type2KeyWord.HMOVETO,
++                    Type2KeyWord.VMOVETO, Type2KeyWord.RLINETO, Type2KeyWord.HLINETO, Type2KeyWord.VLINETO,
++                    Type2KeyWord.RRCURVETO, Type2KeyWord.RCURVELINE, Type2KeyWord.RLINECURVE, Type2KeyWord.VVCURVETO,
++                    Type2KeyWord.HHCURVETO, Type2KeyWord.VHCURVETO, Type2KeyWord.HVCURVETO,
++                    Type2KeyWord.FLEX, Type2KeyWord.FLEX1, Type2KeyWord.HFLEX -> program.add(token)
++                    // FontBox rounds fixed16.16 operands and doesn't implement Type 2 stack arithmetic.
++                    else -> return null
++                }
++                argsStart = program.size
++            }
++            if ((program.lastOrNull() as? CharStringCommand)?.type2KeyWord != Type2KeyWord.ENDCHAR) return null
++            val defaultWidth = (font.privateDict["defaultWidthX"] as? Number)?.toInt() ?: 1000
++            val nominalWidth = (font.privateDict["nominalWidthX"] as? Number)?.toInt() ?: 0
++            // Use the size-independent JVM outline cache above, not FontBox's unbounded charstring cache.
++            return Glyph(Type2CharString(font::getType1CharString, font.name, name, gid, program, defaultWidth, nominalWidth).path)
++        }
++    }
++
++    private inline fun <T> decodeOrNull(decode: () -> T?): T? = try {
++        decode()
++    } catch (_: IOException) {
++        null
++    } catch (_: RuntimeException) {
++        // Skia may still support a custom face that FontBox cannot decode.
++        null
++    } catch (_: StackOverflowError) {
++        // FontBox recursively expands subroutines in malformed custom programs.
++        null
++    }
++}
++
++private fun GeneralPath.toSkiaPath(scale: Double): Path = PathBuilder().use { path ->
++    val iterator = getPathIterator(AffineTransform.getScaleInstance(scale, -scale))
++    val p = FloatArray(6)
++    while (!iterator.isDone) {
++        when (iterator.currentSegment(p)) {
++            PathIterator.SEG_MOVETO -> path.moveTo(p[0], p[1])
++            PathIterator.SEG_LINETO -> path.lineTo(p[0], p[1])
++            PathIterator.SEG_QUADTO -> path.quadTo(p[0], p[1], p[2], p[3])
++            PathIterator.SEG_CUBICTO -> path.cubicTo(p[0], p[1], p[2], p[3], p[4], p[5])
++            PathIterator.SEG_CLOSE -> path.closePath()
++        }
++        iterator.next()
++    }
++    path.detach()
++}
++
++private const val MAX_OUTLINE_CACHE_ENTRIES = 512
+diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathConstructionOutline.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathConstructionOutline.kt
+index bd08a69d7a8944ab4e7568883a1910f0e882bd46..b8fa22812f910b55ce587aa32cb1e5c18383bfca 100644
+--- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathConstructionOutline.kt
++++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathConstructionOutline.kt
+@@ -104,21 +104,21 @@ internal class MathConstructionOutlineCache(
+         }
+ 
+         glyphs.forEach { glyph ->
+-            val positioned = face.font(glyph.fontSizePx).use { font ->
+-                val outline = font.getPath(glyph.glyphId.toShort())
+-                if (outline == null || outline.isEmpty) {
+-                    outline?.close()
+-                    combined?.close()
+-                    combined = null
+-                    return MathConstructionOutlineResult.Unavailable(
+-                        group.id,
+-                        MathConstructionOutlineUnavailableReason.GlyphOutlineUnavailable,
+-                        glyph.glyphId,
+-                    )
+-                }
+-                PathBuilder(outline).use { builder ->
++            val outline = face.glyphPath(glyph.glyphId, glyph.fontSizePx)
++            if (outline == null || outline.isEmpty) {
++                outline?.close()
++                combined?.close()
++                combined = null
++                return MathConstructionOutlineResult.Unavailable(
++                    group.id,
++                    MathConstructionOutlineUnavailableReason.GlyphOutlineUnavailable,
++                    glyph.glyphId,
++                )
++            }
++            val positioned = outline.use {
++                PathBuilder(it).use { builder ->
+                     builder.offset(glyph.x, glyph.baselineY).detach()
+-                }.also { outline.close() }
++                }
+             }
+             if (!merge(positioned)) {
+                 return MathConstructionOutlineResult.Unavailable(
+diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathRadicalSeamGeometry.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathRadicalSeamGeometry.kt
+index 18dc9d4c4d45cb31e96b1c6f65fc342e4f85cf67..9ead9c45dec50457db36299f0427b8cf75d5c9f9 100644
+--- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathRadicalSeamGeometry.kt
++++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/MathRadicalSeamGeometry.kt
+@@ -71,15 +71,14 @@ fun SkiaMathFontFace.radicalSeamGeometry(
+     val strokeThicknessTolerancePx = 2f * designUnitPx
+ 
+     positionedGlyphUnion(glyphs.map { glyph ->
+-        val positioned = font(glyph.fontSizePx).use { skiaFont ->
+-            val outline = checkNotNull(skiaFont.getPath(glyph.glyphId.toShort())) {
+-                "Glyph ${glyph.glyphId} has no outline for radical seam diagnostics"
+-            }
++        val outline = checkNotNull(glyphPath(glyph.glyphId, glyph.fontSizePx)) {
++            "Glyph ${glyph.glyphId} has no outline for radical seam diagnostics"
++        }
++        outline.use {
+             PathBuilder(outline).use { builder ->
+                 builder.offset(glyph.x, glyph.baselineY).detach()
+-            }.also { outline.close() }
++            }
+         }
+-        positioned
+     }).use { glyphOutline ->
+         val outlineBounds = glyphOutline.computeTightBounds()
+         val topZoneBottom = outlineBounds.top + 2f * fontRuleThicknessPx
 diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
+index ca9d5b3e27a7bed818c520e67b7ae423908836de..337739c4fa602b6541a603eabe94960e74e673e2 100644
 --- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
 +++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
-@@ -280,12 +280,12 @@ class SkiaMathFontFace(
+@@ -35,6 +35,8 @@ import org.tiqian.math.layout.ResolvedMathSymbolRun
+ import org.tiqian.math.layout.ResolvedMathOperator
+ import org.tiqian.math.layout.resolveBackendScalar
+ import java.util.LinkedHashMap
++import kotlin.math.ceil
++import kotlin.math.floor
+ import kotlin.math.max
+ 
+ /**
+@@ -65,6 +67,7 @@ class SkiaMathFontFace(
+     override val requestedWeight: MathFontWeight = resolvedWeight,
+ ) : MathComposeFontFace, SkiaReplayFace, SkiaReplayCatalog, AutoCloseable {
+     val typeface: Typeface
++    private val cffOutlines: CffGlyphOutlines
+     private val shaper = Shaper.makeShaperDrivenWrapper()
+     private val constructionOutlineCache = MathConstructionOutlineCache(this)
+     private val shapedRunCache = BoundedMeasuredRunCache<ShapeCacheKey>(MAX_SHAPED_RUN_CACHE_ENTRIES)
+@@ -80,6 +83,7 @@ class SkiaMathFontFace(
+         } finally {
+             data.close()
+         }
++        cffOutlines = CffGlyphOutlines(typeface, mathFont.unitsPerEm)
+     }
+ 
+     override fun resolveSymbol(
+@@ -280,18 +284,23 @@ class SkiaMathFontFace(
      }
  
      /**
@@ -16,8 +279,107 @@ diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/Ski
 +        isLinearMetrics = true
      }
  
-     override fun glyphPath(glyphId: UShort, fontSizePx: Float): Path? = font(fontSizePx).use { font ->
+-    override fun glyphPath(glyphId: UShort, fontSizePx: Float): Path? = font(fontSizePx).use { font ->
+-        font.getPath(glyphId.toShort())
++    override fun glyphPath(glyphId: UShort, fontSizePx: Float): Path? {
++        if (fontSizePx > 0f && fontSizePx.isFinite()) {
++            cffOutlines.glyph(glyphId)?.let { return it.path(outlineScale(fontSizePx)) }
++        }
++        return font(fontSizePx).use { it.getPath(glyphId.toShort()) }
+     }
+ 
++    private fun outlineScale(fontSizePx: Float): Double = fontSizePx.toDouble() / mathFont.unitsPerEm
++
+     override fun canReplayGlyph(glyphId: UShort): Boolean =
+         glyphId.toInt() != 0 && glyphId.toInt() < typeface.glyphsCount
+ 
+@@ -321,26 +330,31 @@ class SkiaMathFontFace(
+     ): MeasuredMathRun {
+         val widths = font.getWidths(glyphIds)
+         val reportedBounds = font.getBounds(glyphIds)
++        val scale = outlineScale(font.size)
+         var usedReportedBounds = false
+         val glyphs = glyphIds.indices.map { glyphIndex ->
++            val id = glyphIds[glyphIndex]
++            // SkFont.getPath normalizes to a fixed-size strike, losing CFF design precision on FreeType.
++            val cffGlyph = cffOutlines.glyph(id.toUShort())
++            val exactBounds = cffGlyph?.bounds(scale)
+             val bound = if (boundsSource == MathGlyphBoundsSource.Outline) {
+-                font.getPath(glyphIds[glyphIndex])?.let { outline ->
+-                    try {
+-                        if (outline.isEmpty) {
+-                            usedReportedBounds = true
+-                            reportedBounds[glyphIndex]
+-                        } else {
+-                            outline.computeTightBounds()
+-                        }
+-                    } finally {
+-                        outline.close()
+-                    }
+-                } ?: reportedBounds[glyphIndex].also { usedReportedBounds = true }
++                val outline = if (cffGlyph != null) exactBounds else font.getPath(id)?.use {
++                    if (it.isEmpty) null else it.computeTightBounds()
++                }
++                outline ?: reportedBounds[glyphIndex].also { usedReportedBounds = true }
++            } else if (exactBounds != null) {
++                // Skia's CoreText mask rounds out and reserves one pixel for antialiasing.
++                Rect.makeLTRB(
++                    floor(exactBounds.left) - 1f,
++                    floor(exactBounds.top) - 1f,
++                    ceil(exactBounds.right) + 1f,
++                    ceil(exactBounds.bottom) + 1f,
++                )
+             } else {
+                 reportedBounds[glyphIndex]
+             }
+             MeasuredMathGlyph(
+-                glyphId = glyphIds[glyphIndex].toUShort(),
++                glyphId = id.toUShort(),
+                 x = xPositions.getOrElse(glyphIndex) { widths.take(glyphIndex).sum() },
+                 baselineOffsetPx = 0f,
+                 advance = widths[glyphIndex],
+@@ -384,22 +398,15 @@ class SkiaMathFontFace(
+                 ),
+             )
+         }
+-        var replayable = false
+-        val evidence = font(fontSizePx).use { skiaFont ->
+-            val outline = skiaFont.getPath(glyph.glyphId.toShort())
+-            if (outline == null || outline.isEmpty) {
+-                outline?.close()
+-                MathConstructionOutlineEvidence.Unavailable(
+-                    MathConstructionOutlineUnavailableReason.GlyphOutlineUnavailable,
+-                )
+-            } else {
+-                replayable = true
+-                try {
+-                    outline.topStrokeEvidence(fontSizePx, glyph.x)
+-                } finally {
+-                    outline.close()
+-                }
+-            }
++        val outline = glyphPath(glyph.glyphId, fontSizePx)
++        val replayable = outline != null && !outline.isEmpty
++        val evidence = if (outline != null && replayable) {
++            outline.use { it.topStrokeEvidence(fontSizePx, glyph.x) }
++        } else {
++            outline?.close()
++            MathConstructionOutlineEvidence.Unavailable(
++                MathConstructionOutlineUnavailableReason.GlyphOutlineUnavailable,
++            )
+         }
+         return MeasuredOutlineConstructionRun(
+             run,
+@@ -479,6 +486,7 @@ class SkiaMathFontFace(
+         shapedRunCache.clear()
+         glyphMeasurementCache.clear()
+         constructionOutlineCache.close()
++        cffOutlines.close()
+         shaper.close()
+         typeface.close()
+     }
 diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
+index 4e7df9839ff28eee2da639ca1b4e1cda3e6d1267..648c66cc118bd6dd9d215aef7d89bf3009ebac07 100644
 --- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
 +++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathTextRunProvider.kt
 @@ -117,7 +117,10 @@ class SkiaMathTextRunProvider private constructor(
