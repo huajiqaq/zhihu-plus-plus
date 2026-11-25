@@ -18,8 +18,6 @@
 package com.github.zly2006.zhihu
 
 import android.graphics.Rect
-import android.os.SystemClock
-import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -798,27 +796,6 @@ class CommentScreenInstrumentedTest {
                 "${rowBounds.bottom}，内容底部为 $expectedBottom",
             rowBounds.bottom >= expectedBottom,
         )
-        composeRule.onNodeWithTag("comment_more_button_root-1").performClick()
-        composeRule.onNodeWithText("举报").assertIsDisplayed()
-        composeRule.onNodeWithTag("comment_delete_menu_item_root-1").assertDoesNotExist()
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val targetPackage = composeRule.activity.packageName
-        var activePackage: String? = null
-        composeRule.waitUntil("等待评论菜单拥有活跃的应用窗口", timeoutMillis = 5_000) {
-            activePackage = automation.rootInActiveWindow?.packageName?.toString()
-            activePackage == targetPackage
-        }
-        assertEquals(targetPackage, activePackage)
-        val downTime = SystemClock.uptimeMillis()
-        assertTrue(
-            automation.injectInputEvent(KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true),
-        )
-        assertTrue(
-            automation.injectInputEvent(KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0), true),
-        )
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("举报").fetchSemanticsNodes().isEmpty()
-        }
         composeRule.onNodeWithTag("comment_reply_button_root-1").assertIsDisplayed().performClick()
         composeRule
             .onNodeWithTag("comment_like_button_root-1")

@@ -35,7 +35,6 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.AppNavDisplay
@@ -204,7 +203,6 @@ class SettingsSearchScreenInstrumentedTest {
         assertEquals(0f, offset(), 0f)
 
         input.performTextInput("阅读")
-        Espresso.closeSoftKeyboard()
         results.performScrollToKey("阅读与排版")
         val result = composeRule.onNodeWithTag("settingsSearch.result.reading.lineHeight")
         result.performScrollTo().assertIsDisplayed()

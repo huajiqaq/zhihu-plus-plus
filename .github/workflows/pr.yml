@@ -543,7 +543,7 @@ jobs:
           INSTRUMENT_APP_APK: app/build/instrument-apks/app.apk
           INSTRUMENT_TEST_APK: app/build/instrument-apks/test.apk
         with:
-          api-level: 36
+          api-level: 35
           arch: x86_64
           target: default
           profile: pixel_7
