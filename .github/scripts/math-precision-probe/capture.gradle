@@ -1,0 +1,13 @@
+gradle.afterProject { project ->
+    if (project.rootProject.name == 'tiqian-math' && project.path == ':platforms:jvm:skia') {
+        def suite = project.tasks.named('jvmTest', Test)
+        project.tasks.register('captureMathPrecision', JavaExec) {
+            dependsOn(project.tasks.named('jvmTestClasses'))
+            classpath = project.files(suite.map { it.classpath })
+            mainClass.set(System.getenv('ZHIHU_MATH_PROBE'))
+            systemProperties(suite.get().systemProperties)
+            jvmArgs('-Djava.awt.headless=true')
+            args(new File(System.getenv('RUNNER_TEMP'), 'math-precision').absolutePath)
+        }
+    }
+}

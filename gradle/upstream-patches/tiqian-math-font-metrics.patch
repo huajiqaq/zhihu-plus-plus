@@ -255,7 +255,7 @@ index 18dc9d4c4d45cb31e96b1c6f65fc342e4f85cf67..9ead9c45dec50457db36299f0427b8cf
          val outlineBounds = glyphOutline.computeTightBounds()
          val topZoneBottom = outlineBounds.top + 2f * fontRuleThicknessPx
 diff --git a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
-index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4515da695 100644
+index ca9d5b3e27a7bed818c520e67b7ae423908836de..2b3fc232242c3cbe24157849a781af2a60e4b0e4 100644
 --- a/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
 +++ b/platforms/jvm/skia/src/jvmMain/kotlin/org/tiqian/math/font/skia/SkiaMathFontFace.kt
 @@ -35,6 +35,8 @@ import org.tiqian.math.layout.ResolvedMathSymbolRun
@@ -267,7 +267,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
  import kotlin.math.max
  
  /**
-@@ -65,11 +67,15 @@ class SkiaMathFontFace(
+@@ -65,11 +67,21 @@ class SkiaMathFontFace(
      override val requestedWeight: MathFontWeight = resolvedWeight,
  ) : MathComposeFontFace, SkiaReplayFace, SkiaReplayCatalog, AutoCloseable {
      val typeface: Typeface
@@ -277,13 +277,19 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
      private val shapedRunCache = BoundedMeasuredRunCache<ShapeCacheKey>(MAX_SHAPED_RUN_CACHE_ENTRIES)
      private val glyphMeasurementCache =
          BoundedMeasuredRunCache<GlyphMeasurementCacheKey>(MAX_GLYPH_MEASUREMENT_CACHE_ENTRIES)
-+    private val shapeInDesignUnits by lazy {
-+        typeface.getTableSize("fvar") == 0L && cffOutlines.glyph(0u) != null
++    private val designShapingSize by lazy {
++        val units = mathFont.unitsPerEm
++        if (units in 64..16384 && typeface.getTableSize("fvar") == 0L && cffOutlines.glyph(0u) != null) {
++            // One design unit per FreeType 26.6 unit, without Skia canonicalizing an oversized strike.
++            units / 64f
++        } else {
++            null
++        }
 +    }
  
      init {
          val data = Data.makeFromBytes(mathFont.bytes)
-@@ -80,6 +86,7 @@ class SkiaMathFontFace(
+@@ -80,6 +92,7 @@ class SkiaMathFontFace(
          } finally {
              data.close()
          }
@@ -291,18 +297,18 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
      }
  
      override fun resolveSymbol(
-@@ -188,7 +195,10 @@ class SkiaMathFontFace(
+@@ -188,7 +201,10 @@ class SkiaMathFontFace(
          val key = ShapeCacheKey(text, fontSizePx.toRawBits(), style.level, boundsSource)
          return shapedRunCache.getOrPut(key) {
              val font = font(fontSizePx)
 +            var shapingFont = font
              try {
-+                if (shapeInDesignUnits) shapingFont = font(mathFont.unitsPerEm.toFloat())
-+                val shapingScale = if (shapingFont === font) 1.0 else outlineScale(fontSizePx)
++                designShapingSize?.let { shapingFont = font(it) }
++                val shapingScale = if (shapingFont === font) 1.0 else fontSizePx.toDouble() / shapingFont.size
                  val collector = GlyphCollector()
                  val features = when (style.level) {
                      MathStyleLevel.Script -> "ssty=1"
-@@ -197,7 +207,7 @@ class SkiaMathFontFace(
+@@ -197,7 +213,7 @@ class SkiaMathFontFace(
                  }
                  shaper.shape(
                      text,
@@ -311,7 +317,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
                      TrivialBidiRunIterator(text, 0),
                      TrivialScriptRunIterator(text, "Zmth"),
                      TrivialLanguageRunIterator(text, "und"),
-@@ -205,15 +215,20 @@ class SkiaMathFontFace(
+@@ -205,15 +221,20 @@ class SkiaMathFontFace(
                      Float.MAX_VALUE,
                      collector,
                  )
@@ -335,7 +341,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
                  font.close()
              }
          }
-@@ -280,18 +295,23 @@ class SkiaMathFontFace(
+@@ -280,18 +301,23 @@ class SkiaMathFontFace(
      }
  
      /**
@@ -364,7 +370,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
      override fun canReplayGlyph(glyphId: UShort): Boolean =
          glyphId.toInt() != 0 && glyphId.toInt() < typeface.glyphsCount
  
-@@ -318,29 +338,35 @@ class SkiaMathFontFace(
+@@ -318,29 +344,35 @@ class SkiaMathFontFace(
          clusters: IntArray,
          runAdvance: Float,
          boundsSource: MathGlyphBoundsSource,
@@ -414,7 +420,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
                  x = xPositions.getOrElse(glyphIndex) { widths.take(glyphIndex).sum() },
                  baselineOffsetPx = 0f,
                  advance = widths[glyphIndex],
-@@ -384,22 +410,15 @@ class SkiaMathFontFace(
+@@ -384,22 +416,15 @@ class SkiaMathFontFace(
                  ),
              )
          }
@@ -446,7 +452,7 @@ index ca9d5b3e27a7bed818c520e67b7ae423908836de..ec094ef4ccd626256441c3ceaa1beaa4
          }
          return MeasuredOutlineConstructionRun(
              run,
-@@ -479,6 +498,7 @@ class SkiaMathFontFace(
+@@ -479,6 +504,7 @@ class SkiaMathFontFace(
          shapedRunCache.clear()
          glyphMeasurementCache.clear()
          constructionOutlineCache.close()

@@ -148,7 +148,7 @@
       "patches": {
         "upstream-patches/tiqian-math-font-metrics.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
-          "sha256": "43794ea68b831895a38727968e5ee11f65befe71e4e0c64433f5cdc92e4506b6",
+          "sha256": "d0494ed97a19fea40334443df6f9e8dbfa1cd5af8fcb5974f83f85200e4f1064",
           "reason": "JVM Skia 使用 CFF 设计单位轮廓和字距，保留独立的像素边界；XeTeX 伸展构件的偏移量避免逐项累计舍入。上游包含同等修复后移除"
         },
         "upstream-patches/tiqian-math-geometry-measurements.patch": {
