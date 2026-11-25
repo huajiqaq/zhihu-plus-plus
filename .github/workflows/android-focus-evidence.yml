@@ -28,17 +28,23 @@ jobs:
   shard-four:
     if: github.repository == 'huajiqaq/zhihu-plus-plus'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-java@v4
         with:
-          github-token: ${{ github.token }}
-          run-id: '45540152338'
-          name: Instrumented test APKs
-          path: ${{ runner.temp }}/original-apks
+          distribution: zulu
+          java-version: '21'
+          cache: gradle
+      - uses: ./.github/actions/setup-build-inputs
+      - name: Build original production sources with final-state probe
+        run: |
+          bash ./gradlew :app:assembleLiteDebug :app:assembleLiteDebugAndroidTest -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
+          mkdir "$RUNNER_TEMP/probe-apks"
+          cp app/build/outputs/apk/lite/debug/app-lite-debug.apk "$RUNNER_TEMP/probe-apks/app.apk"
+          cp app/build/outputs/apk/androidTest/lite/debug/app-lite-debug-androidTest.apk "$RUNNER_TEMP/probe-apks/test.apk"
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
@@ -67,7 +73,7 @@ jobs:
             "$ANDROID_AVD_HOME/zhihu-pr.avd/config.ini"
           script: |
             adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
-            python3 -I .github/scripts/android-focus-evidence.py "$RUNNER_TEMP/original-apks" "$RUNNER_TEMP/focus-evidence"
+            python3 -I .github/scripts/android-focus-evidence.py "$RUNNER_TEMP/probe-apks" "$RUNNER_TEMP/focus-evidence"
       - name: Archive synthetic test evidence
         if: always()
         uses: actions/upload-artifact@v4

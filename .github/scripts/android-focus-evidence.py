@@ -37,7 +37,7 @@ targets = {
 }
 window_field = re.compile(
     r'^(?:mCurrentFocus|mFocusedApp|mInputMethodWindow|mInputMethodTarget|mIme\w+Target|mObscuringWindow)='
-    r'|^Window #\d+ Window\{|\btype=ime\b', re.IGNORECASE,
+    r'|^Window #\d+ Window\{|\btype=ime\b|OnBackInvokedCallback|ImeBack', re.IGNORECASE,
 )
 
 
