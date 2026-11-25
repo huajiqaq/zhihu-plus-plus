@@ -1322,7 +1322,11 @@ class CommentScreenInstrumentedTest {
 
     private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
         awaitImeVisibility(target, visible = false)
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        if (InstrumentationRegistry.getArguments().getString("focus_probe_system_back") == "true") {
+            pressSystemBack()
+        } else {
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        }
     }
 
     /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */

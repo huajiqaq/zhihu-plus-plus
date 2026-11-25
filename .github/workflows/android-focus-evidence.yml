@@ -73,7 +73,7 @@ jobs:
             "$ANDROID_AVD_HOME/zhihu-pr.avd/config.ini"
           script: |
             adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
-            python3 -I .github/scripts/android-focus-evidence.py "$RUNNER_TEMP/probe-apks" "$RUNNER_TEMP/focus-evidence"
+            python3 -I .github/scripts/android-focus-evidence.py "$RUNNER_TEMP/probe-apks" "$RUNNER_TEMP/focus-evidence" compare
       - name: Archive synthetic test evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -25,7 +25,19 @@ import subprocess
 import sys
 import time
 
-apk_dir, output = map(Path, sys.argv[1:])
+apk_dir, output = map(Path, sys.argv[1:3])
+mode = sys.argv[3]
+if mode == 'compare':
+    output.mkdir()
+    outcomes = {}
+    for label in ('sync-1', 'system-1', 'system-2', 'sync-2'):
+        command = [sys.executable, '-I', __file__, str(apk_dir), str(output / label), label.split('-')[0]]
+        outcomes[label] = subprocess.run(command, check=False).returncode
+    (output / 'comparison.json').write_text(json.dumps(outcomes, indent=2) + '\n', encoding='utf-8')
+    print(outcomes, flush=True)
+    sys.exit(0 if all(not code for code in outcomes.values()) else 1)
+
+assert mode in {'sync', 'system'}
 output.mkdir()
 adb = ['adb', '-s', os.environ['ANDROID_SERIAL']]
 package = 'com.github.zly2006.zhplus.lite'
@@ -67,6 +79,7 @@ assert f'instrumentation:{runner} (target={package})'.encode() in query('shell',
 lines = Queue()
 with subprocess.Popen(
     adb + ['shell', '-n', 'am', 'instrument', '-r', '-w', '-e', 'zhpp_data_mode', 'mock',
+           '-e', 'focus_probe_system_back', str(mode == 'system').lower(),
            '-e', 'numShards', '5', '-e', 'shardIndex', '3', runner],
     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     text=True, encoding='utf-8', errors='replace',
