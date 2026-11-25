@@ -649,28 +649,6 @@ class CommentScreenInstrumentedTest {
         val input = composeRule.onNodeWithTag(COMMENT_INPUT_TAG)
         val closeEditor = composeRule.onNodeWithContentDescription("关闭编辑面板")
 
-        fun probe(label: String) {
-            val details = runCatching {
-                val nodes = composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes()
-                val lists = nodes.map { node ->
-                    val pane = generateSequence(node.parent) { it.parent }
-                        .mapNotNull { it.config.getOrNull(SemanticsProperties.PaneTitle) }.firstOrNull()
-                    val view = (node.root as ViewRootForTest).view
-                    composeRule.runOnUiThread {
-                        val insets = view.rootWindowInsets
-                        "$pane:root=${System.identityHashCode(view)}:size=${node.size}" +
-                            ":focus=${view.hasWindowFocus()}:attached=${view.isAttachedToWindow}" +
-                            ":ime=${insets?.isVisible(WindowInsets.Type.ime())}" +
-                            ":imeBottom=${insets?.getInsets(WindowInsets.Type.ime())?.bottom}"
-                    }
-                }
-                "lists=$lists rootDismissCalls=$rootDismissCalls visible=${commentsVisible.value}"
-            }.getOrElse { "probeError=${it::class.simpleName}" }
-            InstrumentationRegistry.getInstrumentation().sendStatus(
-                42, android.os.Bundle().apply { putString("focus_probe", "$label $details") },
-            )
-        }
-
         fun closeEditorAndPressBack(target: SemanticsNodeInteraction) {
             closeEditor.performClick()
             composeRule.waitUntil("等待异步关闭的评论编辑窗口离开", timeoutMillis = 5_000) {
@@ -742,12 +720,8 @@ class CommentScreenInstrumentedTest {
         childEntry.performClick()
         input.assertIsDisplayed().assertTextEquals("回复草稿")
         closeEditorAndPressBack(childList)
-        try {
-            composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
-            }
-        } finally {
-            probe("second-back-final")
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag(COMMENT_SCREEN_LIST_TAG).fetchSemanticsNodes().size == 1
         }
         composeRule.onAllNodes(isDialog()).assertCountEquals(1)
         pressBackAfterImeHidden(rootList)
@@ -1322,11 +1296,7 @@ class CommentScreenInstrumentedTest {
 
     private fun pressBackAfterImeHidden(target: SemanticsNodeInteraction) {
         awaitImeVisibility(target, visible = false)
-        if (InstrumentationRegistry.getArguments().getString("focus_probe_system_back") == "true") {
-            pressSystemBack()
-        } else {
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        }
+        pressSystemBack()
     }
 
     /** 切换表情和关闭编辑器需要等目标窗口完成焦点与输入法交接。 */
