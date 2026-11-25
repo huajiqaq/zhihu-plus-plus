@@ -56,13 +56,13 @@ jobs:
           cores: 4
           ram-size: 4096M
           avd-name: zhihu-pr
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           pre-emulator-launch-script: >-
             sed -i
-            -e 's/^hw\.lcd\.width[[:space:]]*=.*/hw.lcd.width=720/'
-            -e 's/^hw\.lcd\.height[[:space:]]*=.*/hw.lcd.height=1280/'
-            -e 's/^hw\.lcd\.density[[:space:]]*=.*/hw.lcd.density=192/'
+            -e 's/^hw\.lcd\.width[[:space:]]*=.*/hw.lcd.width=900/'
+            -e 's/^hw\.lcd\.height[[:space:]]*=.*/hw.lcd.height=1600/'
+            -e 's/^hw\.lcd\.density[[:space:]]*=.*/hw.lcd.density=240/'
             "$ANDROID_AVD_HOME/zhihu-pr.avd/config.ini"
           script: |
             adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
