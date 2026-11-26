@@ -124,7 +124,6 @@ private fun locatePinLinks(
         is Image, is Text, is InlineCode, is EscapedChar, is HtmlEntity -> true
         is LeafNode -> "]($TOPIC_URL" !in node.literal
         is ContainerNode -> node.children.all(::collect)
-        else -> true
     }
     if (!collect(block) || html.isNotEmpty() || links.isEmpty()) return
 

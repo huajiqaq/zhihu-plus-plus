@@ -476,7 +476,7 @@ class ZhihuAccountClient internal constructor(
         // HttpClient.close() 允许在途响应完成；已被退出/切换替换的 client 不得再把旧会话写回账户 store。
         if (!isCurrent) return@withLock
         val updatedCookies = session.cookies.toMap()
-        if (load() != session) accountState.saveCurrent(session.copy(cookies = updatedCookies.toMutableMap()))
+        accountState.saveCurrent(session.copy(cookies = updatedCookies.toMutableMap()))
         cookies.clear()
         cookies.putAll(updatedCookies)
     }

@@ -174,18 +174,16 @@ fun CollectionBrowseScreen(
                 isAtTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0,
             )
         ) {
-            TopLevelReselectAction.Refresh -> {
-                if (!useLocalCollections) {
-                    collectionsViewModel.refresh(environment)
-                    if (randomMode) {
-                        randomSeed = Random.nextInt()
-                    } else {
-                        contentViewModel?.refresh(contentEnvironment)
-                    }
+            TopLevelReselectAction.Refresh if !useLocalCollections -> {
+                collectionsViewModel.refresh(environment)
+                if (randomMode) {
+                    randomSeed = Random.nextInt()
+                } else {
+                    contentViewModel?.refresh(contentEnvironment)
                 }
             }
             TopLevelReselectAction.ScrollToTop -> listState.animateScrollToItem(0)
-            null -> Unit
+            TopLevelReselectAction.Refresh, null -> Unit
         }
         cachedScrollToTopTrigger = scrollToTopTrigger
     }

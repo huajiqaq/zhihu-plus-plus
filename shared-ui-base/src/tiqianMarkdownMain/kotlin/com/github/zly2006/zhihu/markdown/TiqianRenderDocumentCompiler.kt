@@ -246,15 +246,13 @@ internal class TiqianRenderDocumentCompiler {
             is DiagramBlock -> MarkdownDiagramBlock(node.diagramType, node.literal, metadata)
             is PageBreak -> MarkdownPageBreakBlock(metadata)
             is LinkReferenceDefinition, is AbbreviationDefinition, is BlankLine, is FrontMatter -> null
+            is DirectiveBlock if (node.tagName == "zhihu-video" && node.args["id"]?.toLongOrNull() != null) -> MarkdownCustomBlock(
+                kind = node.tagName,
+                attributes = node.args.toMap(),
+                blocks = compileBlockChildren(node, metadata, fieldDocument, issues),
+                metadata = metadata,
+            )
             else -> {
-                if (node is DirectiveBlock && node.tagName == "zhihu-video" && node.args["id"]?.toLongOrNull() != null) {
-                    return MarkdownCustomBlock(
-                        kind = node.tagName,
-                        attributes = node.args.toMap(),
-                        blocks = compileBlockChildren(node, metadata, fieldDocument, issues),
-                        metadata = metadata,
-                    )
-                }
                 issues += MarkdownCapabilityIssue(MarkdownCapabilityIssueKind.UnsupportedBlock, metadata.nodeType ?: "UnknownNode", metadata.sourceSpan)
                 if (node is ContainerNode) {
                     MarkdownContainerBlock(

@@ -227,9 +227,7 @@ class WebDavSyncViewModel(
             .mapValues { (_, value) ->
                 when (value) {
                     is Boolean -> JsonPrimitive(value)
-                    is Int -> JsonPrimitive(value)
-                    is Long -> JsonPrimitive(value)
-                    is Float -> JsonPrimitive(value)
+                    is Number -> JsonPrimitive(value)
                     else -> JsonPrimitive(value.toString())
                 }
             }

@@ -162,8 +162,8 @@ internal fun systemNotificationEvent(entry: String, item: MobileNotificationTime
 
 /** 持久化点击目标只保留导航所需 ID，不存通知正文、作者资料或外部 URL。 */
 private fun NavDestination.notificationContent(): NavDestination? = when (this) {
-    is Article -> if (id > 0) Article(type = type, id = id) else null
-    is Pin -> if (id > 0) Pin(id) else null
-    is Question -> if (questionId > 0) Question(questionId) else null
+    is Article if id > 0 -> Article(type = type, id = id)
+    is Pin if id > 0 -> Pin(id)
+    is Question if questionId > 0 -> Question(questionId)
     else -> null
 }

@@ -26,5 +26,5 @@ actual fun hmacSha1Hex(key: String, message: String): String {
     val mac = Mac.getInstance("HmacSHA1")
     mac.init(signingKey)
     val rawHmac = mac.doFinal(message.toByteArray(StandardCharsets.UTF_8))
-    return rawHmac.joinToString("") { "%02x".format(it) }
+    return rawHmac.toHexString()
 }

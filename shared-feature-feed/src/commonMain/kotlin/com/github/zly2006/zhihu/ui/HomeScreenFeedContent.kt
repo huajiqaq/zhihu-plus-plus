@@ -142,10 +142,7 @@ internal fun HomeScreenFeedContent(
                 FeedCard(
                     item,
                     readingQueueSourceId = readingQueueSourceId,
-                    thumbnailUrl = when (val target = item.feed?.target) {
-                        is Feed.AnswerTarget -> target.thumbnail
-                        else -> null
-                    },
+                    thumbnailUrl = (item.feed?.target as? Feed.AnswerTarget)?.thumbnail,
                     menuItems = { dismissMenu ->
                         HomeFeedCardMenuItems(
                             item = item,

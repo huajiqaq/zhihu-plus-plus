@@ -108,7 +108,7 @@ internal fun MobileNotificationTimelineItem.avatarDestination(): Person? {
     if (type == "empty" ||
         cardType in setOf("noti_invite_card", "noti_invite_card_dsl", "noti_guide_card", "noti_interval_card", "noti_time_slice") ||
         cardType.startsWith("noti_aggregated_card") ||
-        head?.avatarUrls?.count(String::isNotBlank)?.let { it > 1 } == true
+        (head?.avatarUrls?.count(String::isNotBlank) ?: 0) > 1
     ) {
         return null
     }

@@ -21,7 +21,7 @@ package com.github.zly2006.zhihu.account
 internal val verificationResponseObserver =
     """
     (() => {
-        if (!/(?:^|\/)(?:unhuman|risk_control)(?:\/|${'$'})/.test(location.pathname) || window.__zhppVerificationObserver) return;
+        if (!/(?:^|\/)(?:unhuman|risk_control)(?:\/|$)/.test(location.pathname) || window.__zhppVerificationObserver) return;
         window.__zhppVerificationObserver = true;
         let completed = false;
         const observe = (url, response, status) => {

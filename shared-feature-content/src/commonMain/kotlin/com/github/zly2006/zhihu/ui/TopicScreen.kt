@@ -414,12 +414,10 @@ fun topicFeedUrl(
     discussionSort: TopicDiscussionSort = TopicDiscussionSort.Hot,
     ideasSort: TopicIdeasSort = TopicIdeasSort.Hot,
 ): String = when (tab) {
-    TopicFeedTab.Discussion -> {
-        when (discussionSort) {
-            TopicDiscussionSort.Essence -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/top_activity/v2?limit=20&offset=0"
-            TopicDiscussionSort.Hot -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/essence/v2?limit=20&offset=0"
-            TopicDiscussionSort.Timeline -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/timeline_activity/v2?limit=20&offset=0"
-        }
+    TopicFeedTab.Discussion -> when (discussionSort) {
+        TopicDiscussionSort.Essence -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/top_activity/v2?limit=20&offset=0"
+        TopicDiscussionSort.Hot -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/essence/v2?limit=20&offset=0"
+        TopicDiscussionSort.Timeline -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/timeline_activity/v2?limit=20&offset=0"
     }
     TopicFeedTab.Ideas -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/${ideasSort.endpoint}?offset=0&limit=10"
     TopicFeedTab.Unanswered -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/top_question/v2?limit=20&offset=0"

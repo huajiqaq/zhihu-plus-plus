@@ -498,20 +498,10 @@ fun getFeedAdBlockReason(
     content: FilterableContent,
     settings: FeedAdBlockSettings,
 ): String? = when (val raw = content.raw) {
-    is DataHolder.Answer -> {
-        if (settings.blockPaidContent && raw.paidInfo != null) {
-            "知乎盐选付费内容"
-        } else {
-            getLinkBasedAdReason(raw.content, settings)
-        }
-    }
-    is DataHolder.Article -> {
-        if (settings.blockPaidContent && raw.paidInfo != null) {
-            "知乎盐选付费内容"
-        } else {
-            getLinkBasedAdReason(raw.content, settings)
-        }
-    }
+    is DataHolder.Answer if settings.blockPaidContent && raw.paidInfo != null -> "知乎盐选付费内容"
+    is DataHolder.Answer -> getLinkBasedAdReason(raw.content, settings)
+    is DataHolder.Article if settings.blockPaidContent && raw.paidInfo != null -> "知乎盐选付费内容"
+    is DataHolder.Article -> getLinkBasedAdReason(raw.content, settings)
     is DataHolder.Pin -> getLinkBasedAdReason(raw.contentHtml, settings)
     else -> null
 }

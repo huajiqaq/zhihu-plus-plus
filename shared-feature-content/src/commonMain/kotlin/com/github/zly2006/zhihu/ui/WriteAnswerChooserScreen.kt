@@ -146,10 +146,7 @@ internal fun decodeWriteAnswerChoices(
                 if (target.type != "question" || target.title.isBlank() || notification.content?.isDeleted == true || notification.targetSource?.isDeleted == true) {
                     return@mapNotNull null
                 }
-                val existingAnswer = target.myAnswerUrl
-                    .takeIf(String::isNotBlank)
-                    ?.let(::resolveContent)
-                    ?.let { it as? Article }
+                val existingAnswer = (target.myAnswerUrl.takeIf(String::isNotBlank)?.let(::resolveContent) as? Article)
                     ?.takeIf { it.type == ArticleType.Answer && it.id > 0 }
                 WriteAnswerChoice(
                     questionId = id,

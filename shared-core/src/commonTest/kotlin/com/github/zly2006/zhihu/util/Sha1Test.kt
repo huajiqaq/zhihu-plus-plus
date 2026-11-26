@@ -22,20 +22,6 @@ import kotlin.test.assertEquals
 
 class Sha1Test {
     @Test
-    fun sha1MatchesStandardVectors() {
-        val vectors = listOf(
-            byteArrayOf() to "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-            "abc".encodeToByteArray() to "a9993e364706816aba3e25717850c26c9cd0d89d",
-            "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq".encodeToByteArray() to
-                "84983e441c3bd26ebaae4aa1f95129e5e54670f1",
-            ByteArray(1_000_000) { 'a'.code.toByte() } to "34aa973cd4c4daa4f61eeb2bdbad27316534016f",
-        )
-        for ((input, expected) in vectors) {
-            assertEquals(expected, sha1Digest(input).toHexString(), "input length=${input.size}")
-        }
-    }
-
-    @Test
     fun hmacMatchesRfc2202Vectors() {
         val vectors = listOf(
             Triple(

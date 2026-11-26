@@ -322,18 +322,10 @@ class MainActivity : ComponentActivity() {
     private fun pageTurnCommand(keyCode: Int): PageTurnCommand? = when (keyCode) {
         KeyEvent.KEYCODE_PAGE_DOWN -> PageTurnCommand.PageDown
         KeyEvent.KEYCODE_PAGE_UP -> PageTurnCommand.PageUp
-        KeyEvent.KEYCODE_VOLUME_DOWN ->
-            if (androidSettingsStore(this).getBoolean(PREF_VOLUME_KEY_PAGE_TURN, false)) {
-                PageTurnCommand.PageDown
-            } else {
-                null
-            }
-        KeyEvent.KEYCODE_VOLUME_UP ->
-            if (androidSettingsStore(this).getBoolean(PREF_VOLUME_KEY_PAGE_TURN, false)) {
-                PageTurnCommand.PageUp
-            } else {
-                null
-            }
+        KeyEvent.KEYCODE_VOLUME_DOWN if (androidSettingsStore(this).getBoolean(PREF_VOLUME_KEY_PAGE_TURN, false)) ->
+            PageTurnCommand.PageDown
+        KeyEvent.KEYCODE_VOLUME_UP if (androidSettingsStore(this).getBoolean(PREF_VOLUME_KEY_PAGE_TURN, false)) ->
+            PageTurnCommand.PageUp
         else -> null
     }
 

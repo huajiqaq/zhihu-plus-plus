@@ -557,12 +557,7 @@ private fun String.findWordRangeAtCursor(cursor: Int): TextRange? {
     val index = cursor.coerceIn(0, length)
     val beforeClass = getOrNull(index - 1)?.let(::classify) ?: WordCharClass.Other
     val afterClass = getOrNull(index)?.let(::classify) ?: WordCharClass.Other
-    val baseClass =
-        when {
-            afterClass != WordCharClass.Other -> afterClass
-            beforeClass != WordCharClass.Other -> beforeClass
-            else -> WordCharClass.Other
-        }
+    val baseClass = if (afterClass != WordCharClass.Other) afterClass else beforeClass
     if (baseClass == WordCharClass.Other) return null
     val baseIndex = if (afterClass != WordCharClass.Other) index else (index - 1).coerceAtLeast(0)
 

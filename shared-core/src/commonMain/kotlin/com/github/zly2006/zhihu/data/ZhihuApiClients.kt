@@ -42,7 +42,7 @@ class ZhihuCookieStorage(
     private val lock: ReentrantLock = reentrantLock(),
 ) : CookiesStorage {
     override suspend fun addCookie(requestUrl: Url, cookie: Cookie) = lock.withLock {
-        // https://github.com/zly2006/zhihu-plus-plus/issues/25#issuecomment-3311926550
+        /** 空 z_c0 不能覆盖已保存的登录态；[来源](https://github.com/zly2006/zhihu-plus-plus/issues/25#issuecomment-3311926550)。 */
         if (cookie.name == "z_c0" && cookie.value.isBlank()) {
             return@withLock
         }

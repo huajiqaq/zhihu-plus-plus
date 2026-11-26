@@ -18,6 +18,4 @@
 package com.github.zly2006.zhihu.util
 
 actual fun hmacSha1Hex(key: String, message: String): String =
-    hmacSha1(key.encodeToByteArray(), message.encodeToByteArray()).joinToString("") { byte ->
-        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
-    }
+    hmacSha1(key.encodeToByteArray(), message.encodeToByteArray()).toHexString()

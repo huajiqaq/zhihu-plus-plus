@@ -428,31 +428,24 @@ private fun decodeWebpSize(bytes: ByteArray): Pair<Int, Int>? {
         if (chunkSize < 0 || dataOffset + chunkSize > bytes.size) return null
 
         when (chunkType) {
-            "VP8X" -> {
-                if (chunkSize >= 10) {
-                    val width = readUInt24LittleEndian(bytes, dataOffset + 4) + 1
-                    val height = readUInt24LittleEndian(bytes, dataOffset + 7) + 1
-                    return width to height
-                }
+            "VP8X" if chunkSize >= 10 -> {
+                val width = readUInt24LittleEndian(bytes, dataOffset + 4) + 1
+                val height = readUInt24LittleEndian(bytes, dataOffset + 7) + 1
+                return width to height
             }
-            "VP8L" -> {
-                if (chunkSize >= 5 && bytes[dataOffset] == 0x2f.toByte()) {
-                    val bits = readUInt32LittleEndian(bytes, dataOffset + 1)
-                    val width = (bits and 0x3fff) + 1
-                    val height = ((bits ushr 14) and 0x3fff) + 1
-                    return width to height
-                }
+            "VP8L" if chunkSize >= 5 && bytes[dataOffset] == 0x2f.toByte() -> {
+                val bits = readUInt32LittleEndian(bytes, dataOffset + 1)
+                val width = (bits and 0x3fff) + 1
+                val height = ((bits ushr 14) and 0x3fff) + 1
+                return width to height
             }
-            "VP8 " -> {
-                if (chunkSize >= 10 &&
-                    bytes[dataOffset + 3] == 0x9d.toByte() &&
-                    bytes[dataOffset + 4] == 0x01.toByte() &&
-                    bytes[dataOffset + 5] == 0x2a.toByte()
-                ) {
-                    val width = readUInt16LittleEndian(bytes, dataOffset + 6) and 0x3fff
-                    val height = readUInt16LittleEndian(bytes, dataOffset + 8) and 0x3fff
-                    return width to height
-                }
+            "VP8 " if chunkSize >= 10 &&
+                bytes[dataOffset + 3] == 0x9d.toByte() &&
+                bytes[dataOffset + 4] == 0x01.toByte() &&
+                bytes[dataOffset + 5] == 0x2a.toByte() -> {
+                val width = readUInt16LittleEndian(bytes, dataOffset + 6) and 0x3fff
+                val height = readUInt16LittleEndian(bytes, dataOffset + 8) and 0x3fff
+                return width to height
             }
         }
 

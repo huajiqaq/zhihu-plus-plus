@@ -55,8 +55,8 @@ suspend fun HttpClient.fetchDailyStoryDestination(story: DailyStory): NavDestina
     var question: Question? = null
     for (link in doc.select("a.originUrl[href]") + doc.select("div.view-more a[href]")) {
         when (val source = resolveContent(link.attr("href"))) {
-            is Article -> if (source.id > 0) return source
-            is Question -> if (question == null && source.questionId > 0) question = source
+            is Article if source.id > 0 -> return source
+            is Question if question == null && source.questionId > 0 -> question = source
             else -> Unit
         }
     }

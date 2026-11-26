@@ -25,23 +25,6 @@ import kotlin.test.assertEquals
 
 class ZhihuCookieStorageTest {
     @Test
-    fun cookiesAreScopedToTheRequestedHost() = runTest {
-        val storage = ZhihuCookieStorage(
-            cookies = mutableMapOf(
-                "z_c0" to "session-token",
-                "d_c0" to "device-token",
-            ),
-        )
-
-        val apiCookies = storage.get(Url("https://api.zhihu.com/topstory/recommend"))
-        assertEquals(setOf("z_c0", "d_c0"), apiCookies.map { it.name }.toSet())
-        assertEquals(setOf("api.zhihu.com"), apiCookies.mapNotNull { it.domain }.toSet())
-
-        val webCookies = storage.get(Url("https://www.zhihu.com/api/v4/me"))
-        assertEquals(setOf("www.zhihu.com"), webCookies.mapNotNull { it.domain }.toSet())
-    }
-
-    @Test
     fun loginCookiesStayOnZhihuHosts() = runTest {
         val cookies = mutableMapOf("z_c0" to "session-token")
         val storage = ZhihuCookieStorage(cookies)

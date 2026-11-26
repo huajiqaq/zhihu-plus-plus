@@ -320,16 +320,8 @@ internal fun createCrawlingResult(
     )
 }
 
-internal fun isVoteupFeed(feed: Feed): Boolean {
-    return when (feed) {
-        is CommonFeed -> {
-            feed.brief.contains("赞同") ||
-                feed.brief.contains("点赞") ||
-                feed.attachedInfo.contains("VOTEUP")
-        }
-        else -> false
-    }
-}
+internal fun isVoteupFeed(feed: Feed): Boolean =
+    feed is CommonFeed && (feed.brief.contains("赞同") || feed.brief.contains("点赞") || feed.attachedInfo.contains("VOTEUP"))
 
 internal fun extractQuestionIdFromUrl(url: String): String? {
     val regex = """question/(\d+)""".toRegex()

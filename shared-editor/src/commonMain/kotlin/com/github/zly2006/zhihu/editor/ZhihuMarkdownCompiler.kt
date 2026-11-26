@@ -301,9 +301,9 @@ private class ZhihuHtmlWriter(
 
     private fun renderListItem(item: ListItem) {
         out.append("<li>")
-        val children = item.children
-        if (children.size == 1 && children.single() is Paragraph) {
-            renderChildrenAsInlines(children.single() as Paragraph)
+        val child = item.children.singleOrNull()
+        if (child is Paragraph) {
+            renderChildrenAsInlines(child)
         } else {
             renderChildrenAsBlocks(item)
         }

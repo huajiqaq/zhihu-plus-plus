@@ -279,34 +279,36 @@ internal fun SystemUpdateStatusCard(
     val pendingName = pending?.let { if (it.isNightly) "Nightly 版 ${it.version}" else "正式版 ${it.version}" }
     val downloadLabel = if (pending?.opensExternally == true) "前往下载页面" else "下载更新"
     val (title, status) = when (state) {
-        SystemUpdateState.NoUpdate -> Pair("知乎++", null)
-        SystemUpdateState.Checking -> Pair("正在检查更新", null)
-        SystemUpdateState.Latest -> Pair("已是最新版本", null)
-        is SystemUpdateState.UpdateAvailable -> Pair("发现新版本", pendingName)
-        is SystemUpdateState.Downloading -> Pair("正在下载", pendingName)
-        is SystemUpdateState.Downloaded -> Pair("已下载", "$pendingName，可以安装")
+        SystemUpdateState.NoUpdate -> "知乎++" to null
+        SystemUpdateState.Checking -> "正在检查更新" to null
+        SystemUpdateState.Latest -> "已是最新版本" to null
+        is SystemUpdateState.UpdateAvailable -> "发现新版本" to pendingName
+        is SystemUpdateState.Downloading -> "正在下载" to pendingName
+        is SystemUpdateState.Downloaded -> "已下载" to "$pendingName，可以安装"
         is SystemUpdateState.Error -> {
             val failedStep = when (state.step) {
                 UpdateStep.Check -> "检查更新失败"
-                UpdateStep.Download -> if (pending?.opensExternally == true) "打开下载页面失败" else "下载失败"
+                UpdateStep.Download if pending?.opensExternally == true -> "打开下载页面失败"
+                UpdateStep.Download -> "下载失败"
                 UpdateStep.Install -> "安装失败"
             }
-            Pair(failedStep, state.message)
+            failedStep to state.message
         }
     }
     val (actionLabel, action) = when (state) {
-        SystemUpdateState.NoUpdate, SystemUpdateState.Latest -> Pair("检查更新", onCheck)
-        SystemUpdateState.Checking -> Pair("检查中...", null)
-        is SystemUpdateState.UpdateAvailable -> Pair(downloadLabel, onDownload)
-        is SystemUpdateState.Downloading -> Pair("下载中...", null)
-        is SystemUpdateState.Downloaded -> if (installSupported) Pair("安装更新", onInstall) else Pair("暂不支持安装 APK 更新", null)
+        SystemUpdateState.NoUpdate, SystemUpdateState.Latest -> "检查更新" to onCheck
+        SystemUpdateState.Checking -> "检查中..." to null
+        is SystemUpdateState.UpdateAvailable -> downloadLabel to onDownload
+        is SystemUpdateState.Downloading -> "下载中..." to null
+        is SystemUpdateState.Downloaded if installSupported -> "安装更新" to onInstall
+        is SystemUpdateState.Downloaded -> "暂不支持安装 APK 更新" to null
         is SystemUpdateState.Error -> {
             val retry = when {
                 state.update == null -> onCheck
                 state.step == UpdateStep.Install -> onInstall
                 else -> onDownload
             }
-            Pair("重试", retry)
+            "重试" to retry
         }
     }
     val skippableVersion = (state as? SystemUpdateState.UpdateAvailable)?.version

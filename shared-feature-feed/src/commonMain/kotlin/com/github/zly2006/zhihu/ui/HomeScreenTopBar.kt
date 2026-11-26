@@ -73,7 +73,7 @@ private fun HomeAccountAvatarAction(
         BadgedBox(
             badge = {
                 if (showUnreadBadge && unreadCount > 0) {
-                    Badge(modifier = Modifier.testTag(HOME_ACCOUNT_BADGE_TAG)) { }
+                    Badge(modifier = Modifier.testTag(HOME_ACCOUNT_BADGE_TAG))
                 }
             },
         ) {

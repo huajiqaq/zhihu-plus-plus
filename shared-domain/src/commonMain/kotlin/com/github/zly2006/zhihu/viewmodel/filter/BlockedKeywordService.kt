@@ -45,7 +45,7 @@ class BlockedKeywordService(
             .groupBy { it.getKeywordScopeEnum() }
         val matchedInfos = mutableListOf<MatchedKeywordInfo>()
         for ((scope, keywords) in keywordsByScope) {
-            // ALL 保留旧的空标题门槛和标题、摘要、纯文本正文合并方式。
+            /** ALL 的匹配文本保留标题和摘要原文，仅将正文转为纯文本。 */
             if (scope == KeywordScope.ALL && content.title.isBlank()) continue
             val texts = content.keywordTexts(scope).mapIndexed { index, text ->
                 if (scope != KeywordScope.ALL || index == 2) text?.let { Ksoup.parse(it).text() } else text

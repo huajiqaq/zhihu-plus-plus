@@ -214,9 +214,7 @@ internal fun PinContent(
             )
         }
 
-        val linkCard = pin.content.firstOrNull {
-            it is DataHolder.Pin.ContentLinkCard
-        } as? DataHolder.Pin.ContentLinkCard
+        val linkCard = pin.content.firstNotNullOfOrNull { it as? DataHolder.Pin.ContentLinkCard }
         if (linkCard != null) {
             Spacer(modifier = Modifier.height(AppDimens.Space16))
             var relatedTitle by remember(linkCard.dataContentType, linkCard.dataContentId, linkCard.url) {

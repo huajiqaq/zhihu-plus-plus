@@ -132,11 +132,9 @@ private class TiqianTextSnapshotBuilder(
             is Emphasis -> MarkdownTextMark.Emphasis
             is StrongEmphasis -> MarkdownTextMark.Strong
             is Strikethrough -> MarkdownTextMark.Strikethrough
-            is Highlight -> if (metadata.attributes.containsKey("data-highlight-id")) {
+            is Highlight if (metadata.attributes.containsKey("data-highlight-id")) ->
                 MarkdownTextMark.Custom(ZHIHU_SEGMENT_HIGHLIGHT_KIND, metadata.attributes)
-            } else {
-                MarkdownTextMark.Highlight
-            }
+            is Highlight -> MarkdownTextMark.Highlight
             is Superscript -> MarkdownTextMark.Superscript
             is Subscript -> MarkdownTextMark.Subscript
             is InsertedText -> MarkdownTextMark.Inserted

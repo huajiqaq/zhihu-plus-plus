@@ -310,15 +310,11 @@ private fun convertElementToBlock(
         element.childNodes().convertNodesToBlocks(noNativeBlock, element.attr("data-pid").ifBlank { inheritedPid })
     }
 
-    "a" -> {
-        if (element.attr("class").contains("video-box")) {
-            if (noNativeBlock) {
-                listOfNotNull(createVideoBoxLinkBlock(element))
-            } else {
-                listOfNotNull(createVideoBoxBlock(element))
-            }
+    "a" if element.attr("class").contains("video-box") -> {
+        if (noNativeBlock) {
+            listOfNotNull(createVideoBoxLinkBlock(element))
         } else {
-            emptyList()
+            listOfNotNull(createVideoBoxBlock(element))
         }
     }
 
@@ -979,8 +975,9 @@ private fun MarkdownNode.appendMarkdownBlock(
 
 private fun ListItem.appendMarkdownListItem(out: StringBuilder) {
     val childBlocks = children
-    if (childBlocks.size == 1 && childBlocks.single() is Paragraph) {
-        (childBlocks.single() as Paragraph).appendMarkdownInline(out)
+    val child = childBlocks.singleOrNull()
+    if (child is Paragraph) {
+        child.appendMarkdownInline(out)
         return
     }
     for (child in childBlocks) {

@@ -245,7 +245,7 @@ object UpdateManager {
     fun installUpdate(context: Context) {
         val update = when (val state = updateState.value) {
             is UpdateState.Downloaded -> state.update
-            is UpdateState.Error -> if (state.step == UpdateStep.Install) state.update else null
+            is UpdateState.Error if (state.step == UpdateStep.Install) -> state.update
             else -> null
         } ?: return
         val apkFile = context.updateApkFile()
