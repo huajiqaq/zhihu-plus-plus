@@ -556,10 +556,10 @@ index 70926d5ae7d343a26dd9ae26cb5d24fa26f871ba..de594e7a4f2ced580c6db59d8f16e96a
  }
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5aa04f2bff
+index 0000000000000000000000000000000000000000..4c5b15bd009aadb4a3696662818714d66b412d9d
 --- /dev/null
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownHeadingNavigation.kt
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,110 @@
 +package org.tiqian.markdown.compose
 +
 +import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -572,7 +572,9 @@ index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5a
 +import androidx.compose.runtime.rememberUpdatedState
 +import androidx.compose.runtime.staticCompositionLocalOf
 +import androidx.compose.ui.Modifier
++import androidx.compose.ui.layout.onGloballyPositioned
 +import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Job
 +import kotlinx.coroutines.launch
 +import org.tiqian.markdown.MarkdownBlock
 +import org.tiqian.markdown.MarkdownContainerBlock
@@ -591,15 +593,31 @@ index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5a
 +) {
 +    val selectedTabs = mutableStateMapOf<MarkdownNodeKey, Int>()
 +    private val requesters = mutableMapOf<MarkdownNodeKey, BringIntoViewRequester>()
-+    private val pending = mutableSetOf<MarkdownNodeKey>()
++    private var requestedKey: MarkdownNodeKey? = null
++    private var relocation: Job? = null
 +
 +    fun register(key: MarkdownNodeKey, requester: BringIntoViewRequester) {
-+        requesters[key] = requester
-+        if (pending.remove(key)) scope.launch { requester.bringIntoView() }
++        if (requesters.put(key, requester) === requester) return
++        if (requestedKey == key) relocate(key, requester)
 +    }
 +
 +    fun unregister(key: MarkdownNodeKey, requester: BringIntoViewRequester) {
-+        if (requesters[key] === requester) requesters.remove(key)
++        if (requesters[key] !== requester) return
++        requesters.remove(key)
++        if (requestedKey == key) {
++            relocation?.cancel()
++            requestedKey = null
++        }
++    }
++
++    private fun relocate(key: MarkdownNodeKey, requester: BringIntoViewRequester) {
++        relocation?.cancel()
++        relocation = scope.launch {
++            if (requesters[key] === requester) {
++                requester.bringIntoView()
++                requestedKey = null
++            }
++        }
 +    }
 +
 +    fun activateAncestors(key: MarkdownNodeKey): MarkdownNodeKey? {
@@ -619,10 +637,12 @@ index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5a
 +
 +    fun navigate(key: MarkdownNodeKey) {
 +        val ownerKey = activateAncestors(key) ?: return
++        requestedKey = key
 +        val requester = requesters[key]
-+        if (requester != null) scope.launch { requester.bringIntoView() }
-+        else {
-+            pending += key
++        if (requester != null) {
++            relocate(key, requester)
++        } else {
++            relocation?.cancel()
 +            materialize(ownerKey)
 +        }
 +    }
@@ -641,15 +661,17 @@ index 0000000000000000000000000000000000000000..9c5322ab005a4fcac8d1244c371aae5a
 +@Composable
 +internal fun Modifier.markdownHeadingTarget(heading: MarkdownHeading): Modifier {
 +    val navigation = LocalMarkdownHeadingNavigation.current
-+    val requester = remember { BringIntoViewRequester() }
-+    DisposableEffect(navigation, heading.metadata.key, requester) {
-+        navigation?.register(heading.metadata.key, requester)
-+        onDispose { navigation?.unregister(heading.metadata.key, requester) }
++    val key = heading.metadata.key
++    val requester = remember(navigation, key) { BringIntoViewRequester() }
++    DisposableEffect(navigation, key, requester) {
++        onDispose { navigation?.unregister(key, requester) }
 +    }
-+    return bringIntoViewRequester(requester)
++    return bringIntoViewRequester(requester).onGloballyPositioned {
++        if (it.isAttached && it.size.height > 0) navigation?.register(key, requester)
++    }
 +}
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
-index 157107d85b801ca45b35ac6fb53450231e596c83..220cfd05d617f742623b34564376e0d5360ac9ac 100644
+index 157107d85b801ca45b35ac6fb53450231e596c83..bf9776e9c4ccd150fa7236e5a8e26dbaadbb42f6 100644
 --- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownImageBlock.kt
 @@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
@@ -681,7 +703,7 @@ index 157107d85b801ca45b35ac6fb53450231e596c83..220cfd05d617f742623b34564376e0d5
      Column(Modifier.fillMaxWidth()) {
          if (imageContent == null || imageContent.loadState == MarkdownImageLoadState.Error) {
              val fallbackImageText = @Composable {
-@@ -176,16 +176,24 @@ fun DefaultMarkdownImageBlock(
+@@ -176,16 +176,32 @@ fun DefaultMarkdownImageBlock(
                  } else {
                      null
                  }
@@ -698,10 +720,20 @@ index 157107d85b801ca45b35ac6fb53450231e596c83..220cfd05d617f742623b34564376e0d5
 +                val captionWidth = maxOf(naturalWidth, style.figureCaptionMinimumWidthDp())
                      .coerceAtMost(maxWidth)
                  val imageShape = RoundedCornerShape(style.imageCornerRadius)
-                 val imageModifier = Modifier
+-                val imageModifier = Modifier
++                val imageBounds = Modifier
                      .width(imageWidth)
+-                    .then(if (ratio != null && ratio > 0f) Modifier.aspectRatio(ratio) else Modifier)
 +                    .then(if (maxImageHeight != Dp.Infinity) Modifier.heightIn(max = maxImageHeight) else Modifier)
-                     .then(if (ratio != null && ratio > 0f) Modifier.aspectRatio(ratio) else Modifier)
++                val imageModifier = when {
++                    ratio == null || ratio <= 0f -> imageBounds
++                    // aspectRatio falls back to an unconstrained size when no positive pixel size fits.
++                    with(LocalDensity.current) {
++                        minOf(maxHeight, maxImageHeight).roundToPx() == 0 ||
++                            (imageWidth.roundToPx() / ratio).roundToInt() == 0
++                    } -> Modifier.size(0.dp)
++                    else -> imageBounds.aspectRatio(ratio)
++                }
                      .border(style.imageOutlineWidth, style.imageOutlineColor, imageShape)
                      .clip(imageShape)
 -                    .openMarkdownImageOnClick(viewerState, block, imageGallery)
@@ -805,7 +837,7 @@ index c807abbfd5e772d4b496330898bb81cb9376c573..65a3fd4280306935fa90cdcc13c33d39
 -internal fun currentMarkdownImageGallery(): List<MarkdownImageBlock> =
 -    LocalMarkdownImageGallery.current
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
-index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4e212cd78 100644
+index d87666c9b802a632984ee36b767b00ffbe00f7c9..047fa05de297bcb21b20cb797035061dc50756c8 100644
 --- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownInlineRendering.kt
 @@ -4,14 +4,22 @@ import org.tiqian.markdown.MarkdownText
@@ -1067,7 +1099,12 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
      val annotated = AnnotatedString.Builder(base).apply {
          fun addRendererOwnedInlineCode(start: Int, end: Int) {
              addStyle(style.inlineCode.copy(background = Color.Unspecified), start, end)
-@@ -454,6 +550,7 @@ private fun buildResolvedMarkdownText(
+@@ -450,10 +546,12 @@ private fun buildResolvedMarkdownText(
+         }
+ 
+         text.spans.forEachIndexed { index, span ->
++            if (span.range.start == span.range.endExclusive) return@forEachIndexed
+             val start = mapOffset(span.range.start, nonOverlappingReplacements, end = false).coerceIn(0, length)
              val end = mapOffset(span.range.endExclusive, nonOverlappingReplacements, end = true).coerceIn(start, length)
              if (start == end) return@forEachIndexed
              when (val mark = span.mark) {
@@ -1075,7 +1112,7 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
                  MarkdownTextMark.Strong -> addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, end)
                  MarkdownTextMark.Emphasis -> addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, end)
                  MarkdownTextMark.Strikethrough -> addStyle(
-@@ -559,6 +656,28 @@ private fun buildResolvedMarkdownText(
+@@ -559,6 +657,28 @@ private fun buildResolvedMarkdownText(
                      )
                  }
  
@@ -1104,7 +1141,7 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
                  is MarkdownTextMark.Ruby -> Unit
                  is MarkdownTextMark.InlineMath -> if (index !in replacementIndexes) {
                      addRendererOwnedInlineCode(start, end)
-@@ -604,10 +723,24 @@ private fun buildResolvedMarkdownText(
+@@ -604,10 +724,24 @@ private fun buildResolvedMarkdownText(
                      presentation.decoration?.let { decoration ->
                          decorations += ResolvedInlineDecoration(start, end, decoration)
                      }
@@ -1129,7 +1166,7 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
  
      return ResolvedMarkdownText(
          annotated = annotated,
-@@ -628,14 +761,20 @@ private fun buildResolvedMarkdownText(
+@@ -628,14 +762,20 @@ private fun buildResolvedMarkdownText(
                  ResolvedTiqianInlineObject(
                      start = start,
                      endExclusive = endExclusive,
@@ -1152,7 +1189,7 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
  }
  
  private fun MarkdownText.buildInlineBase(replacements: List<InlineReplacement>): AnnotatedString {
-@@ -688,6 +827,7 @@ private fun mapOffset(
+@@ -688,6 +828,7 @@ private fun mapOffset(
      return originalOffset + delta
  }
  
@@ -1160,7 +1197,7 @@ index d87666c9b802a632984ee36b767b00ffbe00f7c9..67f94754d3fc2ae17fb3550effcdd6d4
  /**
   * Compose does not expose its underline metric. On the capability fallback path, custom dashed
   * underlines therefore become native solid underlines instead of maintaining a second guessed
-@@ -710,14 +850,116 @@ internal fun ResolvedMarkdownText.composeFallbackAnnotatedString(): AnnotatedStr
+@@ -710,14 +851,116 @@ internal fun ResolvedMarkdownText.composeFallbackAnnotatedString(): AnnotatedStr
  
  internal fun Modifier.markdownInlineInteractionSemantics(
      interactions: List<ResolvedInlineInteraction>,
@@ -1800,10 +1837,27 @@ index 2dcdc3ef25f028278f08b8d6ced1d930694c4f7a..46da839272dca23b4c76033165cac7d4
      val headingScales: MarkdownHeadingScales = MarkdownHeadingScales(),
      val headingSpacing: MarkdownHeadingSpacing = MarkdownHeadingSpacing(),
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
-index ada8faba186b5c1bb0f61f7b250253db555449ef..eb43e873e122723f23eda2008bc557bed2f73324 100644
+index ada8faba186b5c1bb0f61f7b250253db555449ef..e1ad9e701556c996deebf036ee35e692ef9006a6 100644
 --- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTableBlock.kt
-@@ -99,7 +99,7 @@ import org.tiqian.core.LastLineAlignment
+@@ -32,6 +32,8 @@ import androidx.compose.animation.core.tween
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
++import androidx.compose.foundation.gestures.BringIntoViewSpec
++import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+ import androidx.compose.foundation.horizontalScroll
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.BoxWithConstraints
+@@ -56,6 +58,7 @@ import androidx.compose.foundation.text.BasicText
+ import androidx.compose.material3.Icon
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.CompositionLocalProvider
+ import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+@@ -99,7 +102,7 @@ import org.tiqian.core.LastLineAlignment
  import org.tiqian.core.LineLengthGrid
  import org.tiqian.core.ParagraphStyle
  import org.tiqian.core.TextStyle as CoreTextStyle
@@ -1812,7 +1866,7 @@ index ada8faba186b5c1bb0f61f7b250253db555449ef..eb43e873e122723f23eda2008bc557be
  import org.jetbrains.compose.resources.painterResource
  import org.jetbrains.compose.resources.stringResource
  import org.tiqian.markdown.compose.generated.resources.Res
-@@ -120,7 +120,7 @@ import kotlin.math.roundToInt
+@@ -120,7 +123,7 @@ import kotlin.math.roundToInt
  // recorded rationale. Width negotiation keeps columns on the em grid so the quantized
  // measure never leaves per-line slack.
  internal val markdownTableParagraphStyle = ParagraphStyle(
@@ -1821,8 +1875,41 @@ index ada8faba186b5c1bb0f61f7b250253db555449ef..eb43e873e122723f23eda2008bc557be
      lastLineAlignment = LastLineAlignment.Start,
  )
  
+@@ -271,7 +274,7 @@ fun DefaultMarkdownTable(
+             with(density) { width.toDp() }
+         }
+         val centeringWidth = maxOf(maxWidth, tableWidth)
+-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
++        HorizontallyScrollableTable {
+             Box(Modifier.width(centeringWidth)) {
+                 Column(
+                     Modifier
+@@ -365,3 +368,23 @@ fun DefaultMarkdownTable(
+     }
+ }
+ 
++@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
++@Composable
++private fun HorizontallyScrollableTable(content: @Composable () -> Unit) {
++    val parent = LocalBringIntoViewSpec.current
++    val state = LocalMarkdownTextSearchDocument.current?.state
++    val horizontal = remember(parent, state) {
++        if (state == null) parent else object : BringIntoViewSpec {
++            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
++                if (state.activeRelocation() != null) {
++                    // Search insets and the persistent centering decision belong to the vertical ancestor.
++                    super.calculateScrollDistance(offset, size, containerSize)
++                } else {
++                    parent.calculateScrollDistance(offset, size, containerSize)
++                }
++        }
++    }
++    CompositionLocalProvider(LocalBringIntoViewSpec provides horizontal) {
++        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) { content() }
++    }
++}
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
-index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f9af23090 100644
+index 23266e2cacf4352f8443391dd63db5820b9b9623..10c5e45ff098ce4036c9ae3c0ac96b03a1b07fcd 100644
 --- a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextBlocks.kt
 @@ -2,11 +2,24 @@ package org.tiqian.markdown.compose
@@ -1866,7 +1953,7 @@ index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f
      val footnoteNavigationState = LocalMarkdownFootnoteNavigationState.current
      val currentLinkClick = rememberUpdatedState(onLinkClick)
      val currentFootnoteClick = rememberUpdatedState(onFootnoteClick)
-@@ -88,7 +103,7 @@ internal fun MarkdownTextBlock(
+@@ -88,16 +103,31 @@ internal fun MarkdownTextBlock(
          preparedInlineMath = precomputed?.preparedInlineMath.orEmpty(),
      )
      val density = LocalDensity.current
@@ -1875,11 +1962,19 @@ index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f
          resolved.toCjkInlineObjects(density)
      }
      val inlineDecorations = remember(resolved.decorations) {
-@@ -97,7 +112,16 @@ internal fun MarkdownTextBlock(
-     val inlineBackgrounds = remember(resolved.backgrounds) {
+         resolved.decorations.toCjkInlineDecorations()
+     }
+-    val inlineBackgrounds = remember(resolved.backgrounds) {
++    val authoredBackgrounds = remember(resolved.backgrounds) {
          resolved.backgrounds.toCjkInlineBackgrounds()
      }
 -    val textModifier = modifier.markdownInlineInteractionSemantics(resolved.interactions)
++    val searchBackgrounds = searchTarget?.highlightBackgrounds(resolved).orEmpty()
++    // Spoiler masks are the last authored backgrounds and must also cover search highlights.
++    val inlineBackgrounds = if (searchBackgrounds.isEmpty()) authoredBackgrounds else authoredBackgrounds.toMutableList().apply {
++        addAll(size - resolved.hiddenSpoilers.size, searchBackgrounds)
++    }
++    val precomputedLayout = precomputed?.layout?.takeIf { resolved.endMarkers.isEmpty() && searchBackgrounds.isEmpty() }
 +    val textModifier = modifier
 +        .then(searchTarget?.modifier ?: Modifier)
 +        .markdownInlineInteractionSemantics(resolved.interactions, resolved.semanticsText)
@@ -1893,22 +1988,22 @@ index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f
      val effectiveParagraph = if (markdownStyle.insetProse) insetProseParagraphStyle(paragraphStyle ?: ParagraphStyle(firstLineIndent = org.tiqian.core.Ic.Zero)) else paragraphStyle
      if (effectiveParagraph == null) {
          CjkText(
-@@ -108,7 +132,8 @@ internal fun MarkdownTextBlock(
+@@ -108,7 +138,8 @@ internal fun MarkdownTextBlock(
              inlineBackgrounds = inlineBackgrounds,
              inlineDecorations = inlineDecorations,
              measurer = paragraphMeasurer,
 -            precomputedLayout = precomputed?.layout,
-+            precomputedLayout = precomputed?.layout?.takeIf { resolved.endMarkers.isEmpty() },
++            precomputedLayout = precomputedLayout,
 +            onTextLayout = onTextLayout,
          )
      } else {
          CjkText(
-@@ -120,14 +145,15 @@ internal fun MarkdownTextBlock(
+@@ -120,14 +151,15 @@ internal fun MarkdownTextBlock(
              inlineBackgrounds = inlineBackgrounds,
              inlineDecorations = inlineDecorations,
              measurer = paragraphMeasurer,
 -            precomputedLayout = precomputed?.layout,
-+            precomputedLayout = precomputed?.layout?.takeIf { resolved.endMarkers.isEmpty() },
++            precomputedLayout = precomputedLayout,
 +            onTextLayout = onTextLayout,
          )
      }
@@ -1921,7 +2016,7 @@ index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f
      val metrics = requireNotNull(resolvedObject.content.metrics)
      CjkInlineObject(
                  range = TextRange(resolvedObject.start, resolvedObject.endExclusive),
-@@ -185,7 +211,34 @@ internal fun ResolvedMarkdownText.toCjkInlineObjects(
+@@ -185,7 +217,34 @@ internal fun ResolvedMarkdownText.toCjkInlineObjects(
                      preventsLineBreak = resolvedObject.content.trailingBoundary.preventsLineBreak,
                  ),
                  content = {
@@ -1960,10 +2055,10 @@ index 23266e2cacf4352f8443391dd63db5820b9b9623..4b2553a5c06cd450241af3d536331c5f
 +        }).sortedBy { it.range.start }
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e19016035
+index 0000000000000000000000000000000000000000..b26807e6d0b9952b3109b9e5feee6df90bd50852
 --- /dev/null
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearch.kt
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,373 @@
 +package org.tiqian.markdown.compose
 +
 +import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -1981,13 +2076,12 @@ index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e
 +import androidx.compose.runtime.setValue
 +import androidx.compose.runtime.snapshotFlow
 +import androidx.compose.ui.Modifier
-+import androidx.compose.ui.draw.drawBehind
-+import androidx.compose.ui.geometry.Offset
 +import androidx.compose.ui.geometry.Rect
-+import androidx.compose.ui.geometry.Size
 +import androidx.compose.ui.graphics.Color
 +import androidx.compose.ui.layout.LayoutCoordinates
 +import androidx.compose.ui.layout.onGloballyPositioned
++import androidx.compose.ui.text.TextRange
++import androidx.compose.ui.unit.dp
 +import kotlinx.coroutines.CancellationException
 +import kotlinx.coroutines.CoroutineStart
 +import kotlinx.coroutines.Deferred
@@ -1999,6 +2093,7 @@ index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e
 +import kotlinx.coroutines.flow.first
 +import kotlinx.coroutines.withTimeoutOrNull
 +import kotlinx.coroutines.job
++import org.tiqian.compose.CjkInlineBackground
 +import org.tiqian.compose.CjkSelectionState
 +import org.tiqian.core.LayoutResult
 +import org.tiqian.core.getBoundingBoxes
@@ -2052,7 +2147,7 @@ index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e
 +
 +    internal var requestedOwnerKey: Any? by mutableStateOf(null)
 +        private set
-+    internal var document: MarkdownTextSearchDocument? = null
++    internal var document: MarkdownTextSearchDocument? by mutableStateOf(null)
 +        private set
 +    private var documentRevision = 0L
 +    private var revealRequest: Deferred<Boolean>? = null
@@ -2290,31 +2385,30 @@ index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e
 +            coordinates = it
 +            placedLayout = layout
 +        }
-+        .drawBehind {
-+            val state = document.state
-+            if (state.document !== document) return@drawBehind
-+            val text = resolvedText ?: return@drawBehind
-+            val layout = layout ?: return@drawBehind
-+            val active = state.activeMatch.takeIf { state.highlightActiveMatch }
-+            val matches = if (state.highlightAllMatches) {
-+                state.matchesByFragment[fragmentKey].orEmpty()
-+            } else {
-+                listOfNotNull(active?.takeIf { it.fragmentKey == fragmentKey })
-+            }
-+            for (match in matches) {
-+                val color = if (match === active) state.highlightColor else state.allMatchHighlightColor
-+                for (box in layout.getBoundingBoxes(
++
++    fun highlightBackgrounds(text: ResolvedMarkdownText): List<CjkInlineBackground> {
++        val state = document.state
++        if (state.document !== document) return emptyList()
++        val active = state.activeMatch?.takeIf { state.highlightActiveMatch && it.fragmentKey == fragmentKey }
++        val matches = if (state.highlightAllMatches) {
++            state.matchesByFragment[fragmentKey].orEmpty()
++        } else {
++            listOfNotNull(active)
++        }
++        if (matches.isEmpty()) return emptyList()
++        return matches.map { match ->
++            CjkInlineBackground(
++                range = TextRange(
 +                    text.sourceToRenderedOffset(match.startInFragment, false),
 +                    text.sourceToRenderedOffset(match.endInFragment, true),
-+                )) {
-+                    drawRect(
-+                        color = color,
-+                        topLeft = Offset(box.left, box.top),
-+                        size = Size(box.right - box.left, box.bottom - box.top),
-+                    )
-+                }
-+            }
++                ),
++                color = if (match === active) state.highlightColor else state.allMatchHighlightColor,
++                verticalPadding = 0.dp,
++                cornerRadius = 0.dp,
++                adjacentSameStyleClearance = 0.dp,
++            )
 +        }
++    }
 +
 +    fun firstLineRect(match: MarkdownTextSearchMatch): Rect? {
 +        val layout = layout ?: return null
@@ -2340,10 +2434,10 @@ index 0000000000000000000000000000000000000000..71f0b808611f270f3b5eed46b280f16e
 +}
 diff --git a/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..1a6e26362125a683b8826ce3b912b8046192ed0d
+index 0000000000000000000000000000000000000000..4c621392e9fe7b15259339169e152b5d371f2743
 --- /dev/null
 +++ b/src/commonMain/kotlin/org/tiqian/markdown/compose/MarkdownTextSearchScroll.kt
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,65 @@
 +package org.tiqian.markdown.compose
 +
 +import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -2356,8 +2450,8 @@ index 0000000000000000000000000000000000000000..1a6e26362125a683b8826ce3b912b804
 +import kotlin.math.abs
 +
 +/**
-+ * Centers fully offscreen search lines, leaves visible lines still and uses the nearest edge
-+ * for partially visible lines. Owned scrolling installs this automatically; an external host
++ * Centers fully offscreen lines vertically, leaves visible lines still and uses the nearest
++ * edge for partially visible lines. Owned scrolling installs this automatically; an external host
 + * provides it before creating its scroll container, with its actual occlusion in pixels.
 + * Non-search relocation is delegated unchanged to [fallback].
 + */
@@ -2378,9 +2472,8 @@ index 0000000000000000000000000000000000000000..1a6e26362125a683b8826ce3b912b804
 +            private var centerMatch = false
 +
 +            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-+                val current = state.relocation
-+                if (current == null || !current.job.isActive || state.selectionInProgress) {
-+                    if (state.selectionInProgress) current?.job?.cancel()
++                val current = state.activeRelocation()
++                if (current == null) {
 +                    request = null
 +                    return fallbackSpec.calculateScrollDistance(offset, size, containerSize)
 +                }
@@ -2402,6 +2495,11 @@ index 0000000000000000000000000000000000000000..1a6e26362125a683b8826ce3b912b804
 +            }
 +        }
 +    }
++}
++
++internal fun MarkdownTextSearchState.activeRelocation(): MarkdownTextSearchRelocation? = relocation?.takeIf {
++    if (selectionInProgress) it.job.cancel()
++    it.job.isActive
 +}
 +
 +internal class MarkdownTextSearchRelocation(val job: Job)
@@ -2753,10 +2851,10 @@ index a7b99b6266d3fe8fa3b5b70b6894883b6c6eec03..fa2a344ae49f591ad54356a7f94c89d2
      private fun metadata(key: Int) = MarkdownNodeMetadata(
 diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..07a3aaf1843e3d8d629524220e7d0191fc2f52f3
+index 0000000000000000000000000000000000000000..bd540a0c068443827f6c5150a7ef17e3ccae5703
 --- /dev/null
 +++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownImageDisplayBoundsTest.kt
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,105 @@
 +package org.tiqian.markdown.compose
 +
 +import androidx.compose.foundation.background
@@ -2770,6 +2868,7 @@ index 0000000000000000000000000000000000000000..07a3aaf1843e3d8d629524220e7d0191
 +import androidx.compose.ui.Modifier
 +import androidx.compose.ui.graphics.Color
 +import androidx.compose.ui.layout.onSizeChanged
++import androidx.compose.ui.unit.Density
 +import androidx.compose.ui.unit.Dp
 +import androidx.compose.ui.unit.IntSize
 +import androidx.compose.ui.unit.dp
@@ -2783,35 +2882,48 @@ index 0000000000000000000000000000000000000000..07a3aaf1843e3d8d629524220e7d0191
 +import kotlin.math.abs
 +import kotlin.test.Test
 +import kotlin.test.assertEquals
++import kotlin.test.assertNotNull
 +import kotlin.test.assertSame
 +import kotlin.test.assertTrue
 +
 +@OptIn(ExperimentalComposeUiApi::class)
 +class MarkdownImageDisplayBoundsTest {
 +    @Test
-+    fun imageFitsBothBoundsWithoutChangingItsAspectRatio() = runBlocking {
++    fun imageFitsBothBoundsWithoutChangingItsAspectRatio() {
 +        for (intrinsic in listOf(IntSize(1200, 800), IntSize(800, 5000))) {
-+            var displayed = IntSize.Zero
-+            val block = MarkdownImageBlock("test:image", "Image", null, intrinsic.width, intrinsic.height,
-+                MarkdownNodeMetadata(MarkdownNodeKey(1, listOf(0)), MarkdownSourceSpan(0, 0, 0, 0, 0, 0)))
-+            ImageComposeScene(width = 720, height = 800, coroutineContext = coroutineContext) {
-+                MaterialTheme {
-+                    CompositionLocalProvider(LocalMarkdownImageProvider provides {
-+                        MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success,
-+                            maxDisplayWidth = 480.dp, maxDisplayHeight = 240.dp) { modifier ->
-+                            Box(modifier.onSizeChanged { displayed = it }.background(Color.Blue))
-+                        }
-+                    }) {
-+                        DefaultMarkdownImageBlock(block, MarkdownStyle())
-+                    }
-+                }
-+            }.use { scene ->
-+                repeat(8) { frame -> scene.render(frame * 16_000_000L); yield() }
-+                assertTrue(displayed.width in 1..480 && displayed.height in 1..240, "$intrinsic -> $displayed")
-+                assertTrue(abs(displayed.width - displayed.height * intrinsic.width.toDouble() / intrinsic.height) <= 1.0,
-+                    "Image ratio changed: $intrinsic -> $displayed")
-+            }
++            val displayed = displayedSize(intrinsic, 480.dp, 240.dp)
++            assertTrue(displayed.width in 1..480 && displayed.height in 1..240, "$intrinsic -> $displayed")
++            assertTrue(abs(displayed.width - displayed.height * intrinsic.width.toDouble() / intrinsic.height) <= 1.0,
++                "Image ratio changed: $intrinsic -> $displayed")
 +        }
++    }
++
++    @Test
++    fun zeroPixelBudgetCollapsesBothImageDimensions() {
++        for ((width, height) in listOf(0.dp to 240.dp, 0.25.dp to 240.dp, 480.dp to 0.dp, 480.dp to 0.25.dp)) {
++            assertEquals(IntSize.Zero, displayedSize(IntSize(400, 200), width, height), "$width x $height")
++        }
++    }
++
++    private fun displayedSize(intrinsic: IntSize, width: Dp, height: Dp): IntSize = runBlocking {
++        var displayed: IntSize? = null
++        val block = MarkdownImageBlock("test:image", "Image", null, intrinsic.width, intrinsic.height,
++            MarkdownNodeMetadata(MarkdownNodeKey(1, listOf(0)), MarkdownSourceSpan(0, 0, 0, 0, 0, 0)))
++        ImageComposeScene(width = 720, height = 800, density = Density(1f), coroutineContext = coroutineContext) {
++            MaterialTheme {
++                CompositionLocalProvider(LocalMarkdownImageProvider provides {
++                    MarkdownImageContent(intrinsic, MarkdownImageLoadState.Success,
++                        maxDisplayWidth = width, maxDisplayHeight = height) { modifier ->
++                        Box(modifier.onSizeChanged { displayed = it }.background(Color.Blue))
++                    }
++                }) {
++                    DefaultMarkdownImageBlock(block, MarkdownStyle())
++                }
++            }
++        }.use { scene ->
++            repeat(8) { frame -> scene.render(frame * 16_000_000L).close(); yield() }
++        }
++        assertNotNull(displayed)
 +    }
 +
 +    @Test
@@ -2849,10 +2961,10 @@ index 0000000000000000000000000000000000000000..07a3aaf1843e3d8d629524220e7d0191
 +    }
 +}
 diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
-index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d958b46e5 100644
+index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..de15657e1941d1a2e622e3ff4fe0f7e22572b785 100644
 --- a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
 +++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownInlineRenderingTest.kt
-@@ -5,18 +5,35 @@ import org.tiqian.markdown.*
+@@ -5,18 +5,36 @@ import org.tiqian.markdown.*
  import androidx.compose.foundation.background
  import androidx.compose.foundation.layout.Box
  import androidx.compose.foundation.layout.fillMaxSize
@@ -2863,6 +2975,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
  import androidx.compose.runtime.Composable
 +import androidx.compose.runtime.CompositionLocalProvider
  import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.snapshots.Snapshot
  import androidx.compose.ui.ExperimentalComposeUiApi
  import androidx.compose.ui.ImageComposeScene
  import androidx.compose.ui.Modifier
@@ -2888,7 +3001,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
  import androidx.compose.ui.text.LinkAnnotation
  import androidx.compose.ui.text.Placeholder
  import androidx.compose.ui.text.PlaceholderVerticalAlign
-@@ -27,6 +44,8 @@ import androidx.compose.ui.text.font.FontFamily
+@@ -27,6 +45,8 @@ import androidx.compose.ui.text.font.FontFamily
  import androidx.compose.ui.text.font.FontWeight
  import androidx.compose.ui.text.style.TextDecoration
  import androidx.compose.ui.unit.Density
@@ -2897,7 +3010,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
  import androidx.compose.ui.unit.dp
  import androidx.compose.ui.unit.em
  import androidx.compose.ui.unit.sp
-@@ -34,12 +53,28 @@ import androidx.compose.ui.use
+@@ -34,12 +54,28 @@ import androidx.compose.ui.use
  import org.tiqian.compose.CjkText
  import org.tiqian.compose.CjkInlineBackgroundDrawStyle
  import org.tiqian.compose.CjkInlineBackgroundMetricPolicy
@@ -2926,17 +3039,19 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
  import kotlin.test.Test
  import kotlin.test.assertEquals
  import kotlin.test.assertNotNull
-@@ -587,6 +622,353 @@ class MarkdownInlineRenderingTest {
+@@ -587,6 +623,399 @@ class MarkdownInlineRenderingTest {
          }
      }
  
 +    @Test
 +    fun customEndMarkerPaintsPainterAtMappedEndpoint() {
 +        val fixture = EndMarkerFixture()
++        val offset = mutableStateOf(endMarker.offset)
 +        val text = MarkdownText("a[image]b", listOf(
 +            MarkdownTextSpan(MarkdownTextRange(1, 8), MarkdownTextMark.InlineImage("inline:test", "image")),
 +            MarkdownTextSpan(MarkdownTextRange(8, 9), MarkdownTextMark.Custom("note")),
 +            MarkdownTextSpan(MarkdownTextRange(0, 0), MarkdownTextMark.Custom("note")),
++            MarkdownTextSpan(MarkdownTextRange(4, 4), MarkdownTextMark.Custom("note")),
 +        ))
 +        val slots = MarkdownInlineSlots(
 +            image = { _, _, _ ->
@@ -2946,7 +3061,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +                    metrics = MarkdownInlineMetrics(24f, 24f, 24f),
 +                ) {}
 +            },
-+            custom = { _, _, _ -> MarkdownCustomInlinePresentation(endMarker = endMarker) },
++            custom = { _, _, _ -> MarkdownCustomInlinePresentation(endMarker = endMarker.copy(offset = offset.value)) },
 +        )
 +        ImageComposeScene(width = 240, height = 96, density = Density(1f)) {
 +            fixture.Content(text, slots)
@@ -2961,7 +3076,48 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +            val y = ceil(box.top).toInt()
 +            assertEquals(Color.Red, pixels[x + 1, y + 1], "the host Painter must receive the tint")
 +            assertEquals(Color.White, pixels[x + 6, y + 6], "the Painter's L-shaped path must be retained")
++
++            val fullCount = pixels.markerPixels().size
++            listOf(0.dp, (-4).dp, (-8).dp).forEachIndexed { index, value ->
++                Snapshot.withMutableSnapshot { offset.value = value }
++                val points = scene.render((index + 1) * 16_000_000L).toComposeImageBitmap().toPixelMap().markerPixels()
++                val shifted = fixture.layouts.last()
++                val range = TextRange(3, 4)
++                assertEquals(8f + value.value, shifted.input.inlineObjects.single { it.range == range }.ascent)
++                assertSingleEndMarker(points, shifted.inlineObjectBox(range))
++                assertEquals(fullCount, points.size, "baseline offset $value must not crop the painter")
++            }
 +        }
++    }
++
++    @Test
++    fun coincidentEndMarkersKeepCrossingRubyLinkAndStyleWhole() {
++        val base = MarkdownTextRange(2, 4)
++        val first = MarkdownTextRange(2, 3)
++        val text = MarkdownText("𠮷東京", listOf(
++            MarkdownTextSpan(base, MarkdownTextMark.Ruby("toukyou")),
++            MarkdownTextSpan(base, MarkdownTextMark.Link("test:tokyo")),
++            MarkdownTextSpan(base, MarkdownTextMark.Strong),
++            MarkdownTextSpan(base, MarkdownTextMark.Custom("note")),
++            MarkdownTextSpan(first, MarkdownTextMark.Custom("note")),
++            MarkdownTextSpan(first, MarkdownTextMark.Custom("other")),
++        ))
++        val other = endMarker.copy(color = Color.Blue)
++        val slots = MarkdownInlineSlots(custom = { mark, _, _ ->
++            MarkdownCustomInlinePresentation(endMarker = if (mark.kind == "other") other else endMarker)
++        })
++        lateinit var resolved: ResolvedMarkdownText
++        ImageComposeScene(width = 240, height = 96) {
++            resolved = resolveMarkdownText(text, endMarkerStyle, endMarkerStyle.body, slots, null, null)
++        }.use { it.render(0L) }
++
++        val annotated = resolved.annotated
++        assertEquals("𠮷東\uFFFC\uFFFC京\uFFFC", annotated.text)
++        assertEquals(listOf(endMarker, other, endMarker), resolved.endMarkers.map { it.marker })
++        val ruby = annotated.getStringAnnotations(0, annotated.length).single { it.item == "toukyou" }
++        val link = annotated.getLinkAnnotations(0, annotated.length).single()
++        val bold = annotated.spanStyles.single { it.item.fontWeight == FontWeight.Bold }
++        for (range in listOf(ruby, link, bold)) assertEquals(2 to 6, range.start to range.end)
 +    }
 +
 +    @Test
@@ -2996,7 +3152,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +                fixture.Content(text, slots)
 +            }.use { scene ->
 +                for ((frame, markerEnabled) in listOf(false, true, false).withIndex()) {
-+                    enabled.value = markerEnabled
++                    Snapshot.withMutableSnapshot { enabled.value = markerEnabled }
 +                    scene.render(frame * 16_000_000L)
 +                    val model = assertNotNull(resolved)
 +                    val layout = fixture.layouts.last()
@@ -3005,6 +3161,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +                    } else {
 +                        if (markerEnabled) "a\uFFFCb" else "ab"
 +                    }
++                    assertEquals(expected, model.annotated.text, "the slot provider must update the resolved text in this frame")
 +                    assertEquals(expected, layout.input.content.text, "LayoutResult uses internal projection offsets")
 +                    val sourceStart = source.lastIndexOf('b')
 +                    val mappedStart = model.sourceToRenderedOffset(sourceStart, false)
@@ -3047,7 +3204,9 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +            assertEquals(0, before.redPixelCount())
 +            val layout = fixture.layouts.last()
 +            val layoutCount = fixture.layouts.size
-+            style.value = endMarkerStyle.copy(body = endMarkerStyle.body.copy(color = Color.Blue))
++            Snapshot.withMutableSnapshot {
++                style.value = endMarkerStyle.copy(body = endMarkerStyle.body.copy(color = Color.Blue))
++            }
 +            val enabled = scene.render(16_000_000L).toComposeImageBitmap().toPixelMap()
 +            assertSingleEndMarker(enabled.markerPixels(), fixture.layouts.last().inlineObjectBox(TextRange(6, 7)))
 +            assertTrue((0 until enabled.height).any { y -> (0 until enabled.width).any { x ->
@@ -3056,7 +3215,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +            } }, "the changed text style must also be painted")
 +            assertTrue(fixture.layouts.size > layoutCount, "adding a measured marker must invalidate layout")
 +            assertEquals("toggle￼", fixture.layouts.last().input.content.text)
-+            style.value = endMarkerStyle
++            Snapshot.withMutableSnapshot { style.value = endMarkerStyle }
 +            val disabled = scene.render(32_000_000L).toComposeImageBitmap().toPixelMap()
 +            assertEquals(0, disabled.redPixelCount(), "the marker must disappear in the same style update")
 +            assertEquals("toggle", fixture.layouts.last().input.content.text)
@@ -3181,7 +3340,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
 +            scene.render(0L)
 +            val naturalEnd = fixture.layouts.last().getBoundingBoxes(3, 4).single().right
 +            // The real glyph width plus 10px leaves less than the required 3px gap + 8px marker.
-+            columnWidth.value = ceil(naturalEnd + 10f).toInt().dp
++            Snapshot.withMutableSnapshot { columnWidth.value = ceil(naturalEnd + 10f).toInt().dp }
 +            val pixels = scene.render(16_000_000L).toComposeImageBitmap().toPixelMap()
 +            val layout = fixture.layouts.last()
 +            val bounds = assertNotNull(fixture.textBounds)
@@ -3280,7 +3439,7 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
      @Composable
      private fun resolveSegmentHighlight(onClick: () -> Unit): ResolvedMarkdownText =
          resolveMarkdownText(
-@@ -627,6 +1009,11 @@ class MarkdownInlineRenderingTest {
+@@ -627,6 +1056,11 @@ class MarkdownInlineRenderingTest {
      }
  
      private companion object {
@@ -3294,10 +3453,10 @@ index e6de39fcd07e41747f385c6ee5d22b32d98aaf6e..a015ec426dd19335498422a83ef5e08d
              sourceSpan = MarkdownSourceSpan(0, 0, 0, 0, 0, 0),
 diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..8d6b5b1844b577a5aa0d60fe222f3e2769a5441e
+index 0000000000000000000000000000000000000000..9db125f8fcb91ec7d6c25e41d5881476923f1cf1
 --- /dev/null
 +++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownSemanticNavigationTest.kt
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,242 @@
 +@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 +@file:Suppress("DEPRECATION")
 +
@@ -3440,6 +3599,38 @@ index 0000000000000000000000000000000000000000..8d6b5b1844b577a5aa0d60fe222f3e27
 +    }
 +
 +    @Test
++    fun firstTocClickScrollsHiddenTabHeadingIntoViewInMarkdownAndSurface() {
++        val heading = MarkdownHeading(2, "target", MarkdownText("target heading"), metadata(listOf(1, 1, 1), "Heading"))
++        val tabs = MarkdownContainerBlock(MarkdownContainerKind.Tabs, listOf(
++            MarkdownContainerBlock(MarkdownContainerKind.Tab, emptyList(), metadata(listOf(1, 0), "TabItem"), MarkdownText("First")),
++            MarkdownContainerBlock(MarkdownContainerKind.Tab, listOf(
++                paragraph(listOf(1, 1, 0), "before heading\n".repeat(40)), heading,
++            ), metadata(listOf(1, 1), "TabItem"), MarkdownText("Second")),
++        ), metadata(listOf(1), "TabBlock"))
++        val document = MarkdownRenderDocument(listOf(MarkdownTocBlock(metadata(listOf(0), "TocPlaceholder")), tabs))
++        val viewportHeight = 540
++        for (surface in listOf(false, true)) {
++            val scroll = ScrollState(0)
++            ImageComposeScene(width = 640, height = viewportHeight, density = Density(1f)) {
++                if (surface) TiqianMarkdownSurface(document, Modifier.fillMaxSize(), scrollState = scroll, selectable = false, style = MarkdownStyle())
++                else TiqianMarkdown(document, Modifier.fillMaxSize().verticalScroll(scroll), style = MarkdownStyle())
++            }.use { scene ->
++                scene.settle(0L)
++                assertEquals(0, scroll.value)
++                val toc = scene.control(heading.text.value, tab = false)
++                assertTrue(assertNotNull(toc.config[SemanticsActions.OnClick].action).invoke())
++                scene.settle(100_000_000L, frames = 40)
++                assertTrue(scene.control("Second").config[SemanticsProperties.Selected])
++                assertTrue(scroll.value > 0, "first click must scroll, surface=$surface")
++                val target = scene.nodes(true).single { it.hasText(heading.text.value) && it.config.getOrNull(SemanticsProperties.Role) != Role.Button }
++                val bounds = target.boundsInRoot
++                assertTrue(bounds.height > 0f && bounds.height == target.size.height.toFloat() && bounds.top >= 0f && bounds.bottom <= viewportHeight,
++                    "body heading must be fully visible: $bounds, scroll=${scroll.value}, surface=$surface")
++            }
++        }
++    }
++
++    @Test
 +    fun tocAndTabLabelsConcealSpoilersWithoutBlockingBodyReveal() {
 +        val source = "public secret"
 +        val concealed = MarkdownText(source, listOf(
@@ -3492,8 +3683,8 @@ index 0000000000000000000000000000000000000000..8d6b5b1844b577a5aa0d60fe222f3e27
 +    private fun ImageComposeScene.control(label: String, tab: Boolean = true) = nodes(true)
 +        .single { it.hasText(label) && SemanticsActions.OnClick in it.config && (!tab || SemanticsProperties.Selected in it.config) }
 +
-+    private fun ImageComposeScene.settle(startTimeNanos: Long) {
-+        repeat(6) { frame ->
++    private fun ImageComposeScene.settle(startTimeNanos: Long, frames: Int = 6) {
++        repeat(frames) { frame ->
 +            Snapshot.sendApplyNotifications()
 +            render(startTimeNanos + frame * 16_000_000L).close()
 +        }
@@ -3508,3 +3699,113 @@ index 0000000000000000000000000000000000000000..8d6b5b1844b577a5aa0d60fe222f3e27
 +        children = children, hasSourceSpan = false,
 +    )
 +}
+diff --git a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownTableRenderingTest.kt b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownTableRenderingTest.kt
+index 63846a6e0adf136a69d52d2086f2a514408f958a..6cb0d1200bea0a96bf3df423e4a2f8b8fd86916a 100644
+--- a/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownTableRenderingTest.kt
++++ b/src/jvmTest/kotlin/org/tiqian/markdown/compose/MarkdownTableRenderingTest.kt
+@@ -2,19 +2,31 @@ package org.tiqian.markdown.compose
+ 
+ import org.tiqian.markdown.*
+ 
++import androidx.compose.foundation.ScrollState
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.height
++import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.snapshots.Snapshot
+ import androidx.compose.ui.ExperimentalComposeUiApi
+ import androidx.compose.ui.ImageComposeScene
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.toComposeImageBitmap
+ import androidx.compose.ui.graphics.toPixelMap
++import androidx.compose.ui.text.SpanStyle
+ import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.font.FontFamily
++import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import androidx.compose.ui.use
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.async
++import kotlinx.coroutines.runBlocking
++import kotlinx.coroutines.yield
+ import kotlin.test.Test
++import kotlin.test.assertEquals
+ import kotlin.test.assertTrue
+ 
+ @OptIn(ExperimentalComposeUiApi::class)
+@@ -84,6 +96,73 @@ class MarkdownTableRenderingTest {
+         assertTrue(rendered.second >= 3, "not all three table alignments remained visible")
+     }
+ 
++    @Test
++    fun revealInWideTableKeepsVerticalPositionAndPaintsBetweenMarkAndGlyphs() = runBlocking {
++        val state = MarkdownTextSearchState().apply {
++            setQuery("needle")
++            highlightColor = Color.Red.copy(alpha = 0.5f)
++        }
++        val scroll = ScrollState(0)
++        val marked = MarkdownText("needle", listOf(
++            MarkdownTextSpan(MarkdownTextRange(0, 6), MarkdownTextMark.Highlight),
++            MarkdownTextSpan(MarkdownTextRange(3, 6), MarkdownTextMark.Spoiler),
++        ))
++        val alignment = MarkdownTableAlignment.Start
++        val cells = List(8) { i ->
++            MarkdownTableCell(if (i == 7) marked else MarkdownText("widecolumn"), alignment, false, metadata(i + 2))
++        }
++        val table = MarkdownTable(
++            columnAlignments = List(cells.size) { alignment },
++            rows = listOf(MarkdownTableRow(cells, false, metadata(1))),
++            metadata = metadata(0),
++        )
++        val article = MarkdownRenderDocument(listOf(table))
++        val body = TextStyle(color = Color.Black, fontFamily = FontFamily.Serif, fontSize = 18.sp, lineHeight = 28.sp)
++        val style = MarkdownStyle(body = body, tableText = body, highlight = SpanStyle(color = Color.Blue, background = Color.Green))
++        lateinit var scope: CoroutineScope
++        ImageComposeScene(width = 320, height = 240, coroutineContext = coroutineContext) {
++            scope = rememberCoroutineScope()
++            TiqianMarkdownSurface(
++                document = article, scrollState = scroll, searchState = state, style = style,
++                modifier = Modifier.fillMaxSize().background(Color.White), selectable = false,
++                header = { Box(Modifier.height(120.dp)) }, footer = { Box(Modifier.height(800.dp)) },
++            )
++        }.use { scene ->
++            var frame = 0L
++            suspend fun advance() {
++                Snapshot.sendApplyNotifications()
++                scene.render(frame).close()
++                frame += 16_000_000L
++                yield()
++            }
++            repeat(4) { advance() }
++            assertEquals(0, countPixels(scene) { it == Color.Green }, "The marked last cell must start offscreen")
++            val before = scroll.value
++            val revealing = scope.async { state.reveal(state.matches.single()) }
++            repeat(180) { if (!revealing.isCompleted) advance() }
++            assertTrue(revealing.isCompleted && revealing.await())
++            advance()
++            assertEquals(before, scroll.value, "Only the horizontal axis needed scrolling")
++            // Half-red over solid green is olive. Neither layer alone, nor a fringe on white, is olive.
++            val highlighted = countPixels(scene) {
++                it.red in 0.48f..0.52f && it.green in 0.48f..0.52f && it.blue < 0.02f
++            }
++            assertTrue(highlighted > 20, "Search must paint inside the original mark")
++            assertTrue(countPixels(scene) { it == Color.Blue } > 0, "Search must leave the marked glyph ink on top")
++            assertEquals(0, countPixels(scene) { it.red in 0.48f..0.52f && it.green < 0.02f && it.blue < 0.02f },
++                "Search must not tint the black mask and expose the concealed glyphs")
++        }
++    }
++
++    private inline fun countPixels(scene: ImageComposeScene, matches: (Color) -> Boolean): Int {
++        val pixels = scene.render().use { it.toComposeImageBitmap().toPixelMap() }
++        var count = 0
++        for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
++            if (matches(pixels[x, y])) count++
++        }
++        return count
++    }
++
+     private fun metadata(key: Int) = MarkdownNodeMetadata(
+         key = MarkdownNodeKey(key, listOf(key)),
+         sourceSpan = MarkdownSourceSpan(0, 0, 0, 0, 0, 0),

@@ -74,6 +74,13 @@ java {
     }
 }
 
+configurations.named("runtimeClasspath") {
+    // FontBox 的 JCL 调用走桌面已有的 SLF4J API，不打包 Servlet、LogKit 等可选适配器。
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("commons-logging:commons-logging")).using(module("org.slf4j:jcl-over-slf4j:2.0.20"))
+    }
+}
+
 dependencies {
     implementation(projects.shared)
     implementation(project(":shared-feature-settings"))

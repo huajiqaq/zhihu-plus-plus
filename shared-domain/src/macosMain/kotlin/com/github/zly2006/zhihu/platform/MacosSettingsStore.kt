@@ -36,7 +36,7 @@ private const val STRING_SET_SEPARATOR = '\u001F'
 internal actual fun nativeSettingsStore(relativePath: String): SettingsStore {
     val filePath = NSURL
         .fileURLWithPath("${nativeAppPrivateDirectoryPath()}/$relativePath")
-        .standardizedURL.path ?: error("macOS 设置路径无效")
+        .standardizedURL?.path ?: error("macOS 设置路径无效")
     macosSettingsStoreLock.lock()
     try {
         return macosSettingsStores.getOrPut(filePath) {

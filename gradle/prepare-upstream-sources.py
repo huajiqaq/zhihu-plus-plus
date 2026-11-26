@@ -133,10 +133,11 @@ def directory_digest(directory):
     for path in sorted(directory.rglob('*')):
         relative = relative_path(path.relative_to(directory).as_posix())
         if path.is_symlink():
-            if not path.resolve().is_relative_to(directory.resolve()):
-                raise ValueError('工具输入链接越界：' + relative)
-            files[relative] = 'link:' + path.readlink().as_posix()
-        elif path.is_file():
+            target = path.resolve()
+            if not target.is_relative_to(directory.resolve()) or not target.is_file():
+                raise ValueError('工具链接必须指向源码树内的文件：' + relative)
+            path = target
+        if path.is_file():
             files[relative] = file_digest(path)
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode('utf-8')).hexdigest()
 
@@ -194,10 +195,10 @@ def prepare_tiqian_engine(source, mirror, tree, commit, generation):
                 raise SystemExit('官方生成输出缺失或为空：' + relative)
             generated_files = path / '_GeneratedFiles.txt'
             if generated_files.is_file():
-                # reflaxe 的清理索引记录绝对路径；只搬迁索引，不改生成的 Kotlin 源码。
+                # reflaxe 的相对索引以输出目录为基准，跨输出目录的项可以是绝对路径。
                 names = []
                 for line in generated_files.read_text(encoding='utf-8').splitlines():
-                    item = Path(line).resolve().relative_to(project.resolve())
+                    item = (path / line).resolve().relative_to(project.resolve())
                     if not (project / item).is_file():
                         raise SystemExit('官方生成索引包含缺失文件')
                     names.append((target / 'sources' / source.name / item).as_posix())
@@ -289,14 +290,15 @@ def replay_patches(directory, commit, spec):
     return tree, records
 
 
-def align_source_build(directory, tree, spec, host_version):
+def align_source_build(directory, tree, spec, host_versions):
     filename = spec.get('androidPluginCatalog') or spec.get('androidPluginScript')
     if not filename:
         return tree, None
     relative_path(filename)
     data = run_git(directory, ['show', tree + ':' + filename]).stdout.decode('utf-8')
-    if not re.fullmatch(r'[A-Za-z0-9_.+-]+', host_version):
-        raise SystemExit('宿主 AGP 版本无效')
+    if any(not re.fullmatch(r'[A-Za-z0-9_.+-]+', version) for version in host_versions.values()):
+        raise SystemExit('宿主构建版本无效')
+    host_version = host_versions['agp']
     if spec.get('androidPluginCatalog'):
         before = tomllib.loads(data)['versions']['agp']
         pattern = re.compile(r'^(\s*agp\s*=\s*")([^"]+)(".*)$', re.MULTILINE)
@@ -323,13 +325,48 @@ def align_source_build(directory, tree, spec, host_version):
         data += '\nallprojects { group = "' + group + '" }\n'
         build_info['sourceGroup'] = group
         changed = True
-    if not changed:
+    updates = {filename: data} if changed else {}
+    # 组合构建各自解析依赖；只改 Skiko 会留下旧 Compose 字节码，必须连同插件和直接声明一起对齐。
+    # 只处理宿主替换模块；生成的 boring engine 无版本插件声明，继承根构建的 Kotlin/AGP。
+    scripts = {filename} | {path.strip(':').replace(':', '/') + '/build.gradle.kts' for path in spec['modules'].values() if path != ':'}
+    existing = set(run_git(directory, ['ls-tree', '-r', '--name-only', tree]).stdout.decode().splitlines())
+    generated = {'boring-kotlin-f32/build.gradle.kts'} if spec.get('generation') else set()
+    if missing := scripts - existing - generated:
+        raise SystemExit('宿主消费模块的构建脚本缺失：' + ', '.join(sorted(missing)))
+    for script in sorted(scripts & existing):
+        original = run_git(directory, ['show', tree + ':' + script]).stdout.decode('utf-8')
+        text = updates.get(script, original)
+        if script == 'build.gradle.kts':
+            for pattern, key in (
+                (r'^(\s*(?:kotlin\("[^"\n]+"\)|id\("org\.jetbrains\.kotlin\.[^"\n]+"\))\s+version\s+")([^"\n]+)(".*)$', 'kotlin'),
+                (r'^(\s*id\("org\.jetbrains\.compose"\)\s+version\s+")([^"\n]+)(".*)$', 'composeMultiplatform'),
+            ):
+                text, count = re.subn(pattern, lambda match: match[1] + host_versions[key] + match[3], text, flags=re.MULTILINE)
+                if not count:
+                    raise SystemExit('上游插件声明缺失，拒绝猜测对齐：' + key)
+        # shortcut: 所选上游使用字面坐标；改用版本目录或变量时需审查并更新此适配。
+        def compose_version(match):
+            group, module = match[1], match[2]
+            key = 'material3' if group == 'material3' else 'uiBackhandler' if module == 'ui-backhandler' else 'composeMultiplatform'
+            return 'org.jetbrains.compose.' + group + ':' + module + ':' + host_versions[key]
+        text = re.sub(r'org\.jetbrains\.compose\.(runtime|foundation|ui|animation|material|material3|components):([A-Za-z0-9_.-]+):[A-Za-z0-9_.+-]+', compose_version, text)
+        text = re.sub(r'(?<=\()compose\.material3(?=\))', '"org.jetbrains.compose.material3:material3:' + host_versions['material3'] + '"', text)
+        text = re.sub(
+            r'(org\.jetbrains\.skiko:skiko-awt(?:-runtime-" \+ skikoRuntimeClassifier\(\) \+ ")?:)[A-Za-z0-9_.+-]+',
+            lambda match: match[1] + host_versions['skiko'], text,
+        )
+        if text != original:
+            updates[script] = text
+    build_info['buildVersions'] = host_versions
+    build_info['buildFiles'] = sorted(updates)
+    if not updates:
         return tree, build_info
-    oid = run_git(directory, ['hash-object', '-w', '--stdin'], data=data.encode('utf-8')).stdout.decode().strip()
-    with tempfile.TemporaryDirectory(prefix='android-plugin-index-', dir=parent) as temporary:
+    with tempfile.TemporaryDirectory(prefix='build-alignment-index-', dir=parent) as temporary:
         environment = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / 'index'), GIT_OPTIONAL_LOCKS='0')
         run_git(directory, ['read-tree', tree], environment=environment)
-        run_git(directory, ['update-index', '--cacheinfo', '100644,' + oid + ',' + filename], environment=environment)
+        for script, text in updates.items():
+            oid = run_git(directory, ['hash-object', '-w', '--stdin'], data=text.encode('utf-8')).stdout.decode().strip()
+            run_git(directory, ['update-index', '--cacheinfo', '100644,' + oid + ',' + script], environment=environment)
         aligned = run_git(directory, ['write-tree'], environment=environment).stdout.decode().strip()
     return aligned, build_info
 
@@ -425,6 +462,7 @@ if recipe.get('schema') != 3 or not recipe.get('sources'):
     raise SystemExit('源码补丁清单为空或格式不支持')
 catalog = tomllib.loads((root / 'gradle/libs.versions.toml').read_text(encoding='utf-8'))['versions']
 versions = {name: catalog[spec['versionKey']] for name, spec in recipe['sources'].items()}
+host_versions = {key: catalog[key] for key in ('agp', 'kotlin', 'composeMultiplatform', 'material3', 'uiBackhandler', 'skiko')}
 parent = root / '.gradle/upstream-inputs'
 if (root / '.gradle').is_symlink() or parent.is_symlink():
     raise SystemExit('输入缓存不能是符号链接')
@@ -433,7 +471,7 @@ for child in ('references', 'git'):
     directory = parent / child
     if directory.is_symlink() or not directory.resolve().is_relative_to(parent.resolve()):
         raise SystemExit('输入缓存子目录不能链接到外部：' + child)
-input_identity = hashlib.sha256(json.dumps({'recipe': hashlib.sha256(content).hexdigest(), 'implementation': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'versions': versions, 'androidPlugin': catalog.get('agp'), 'package': args.package}, sort_keys=True).encode()).hexdigest()
+input_identity = hashlib.sha256(json.dumps({'recipe': hashlib.sha256(content).hexdigest(), 'implementation': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'versions': versions, 'buildVersions': host_versions, 'package': args.package}, sort_keys=True).encode()).hexdigest()
 reference = parent / 'references' / (input_identity + '.json')
 resolved = {}
 mirrors = {}
@@ -504,7 +542,7 @@ if args.package:
         run_git(mirror, ['update-ref', '--no-deref', 'HEAD', commit])
         run_git(mirror, ['fsck', '--no-reflogs', '--no-dangling'])
         tree, patches = replay_patches(mirror, commit, spec)
-        tree, build_info = align_source_build(mirror, tree, spec, catalog.get('agp', ''))
+        tree, build_info = align_source_build(mirror, tree, spec, host_versions)
         math = recipe.get('math')
         if math and math['source'] == name:
             tree = configure_math_inputs(mirror, tree, math, target / 'sources' / name)

@@ -18,13 +18,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import shutil
 import subprocess
 import tarfile
 import urllib.parse
 import urllib.request
-import zipfile
 
 
 def digest_directory(directory):
@@ -32,30 +31,18 @@ def digest_directory(directory):
     for path in sorted(directory.rglob('*')):
         name = path.relative_to(directory).as_posix()
         if path.is_symlink():
-            if not path.resolve().is_relative_to(directory.resolve()):
-                raise ValueError('工具链接越界：' + name)
-            files[name] = 'link:' + path.readlink().as_posix()
-        elif path.is_file():
+            target = path.resolve()
+            if not target.is_relative_to(directory.resolve()) or not target.is_file():
+                raise ValueError('工具链接必须指向源码树内的文件：' + name)
+            path = target
+        if path.is_file():
             files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode('utf-8')).hexdigest()
 
 
-def download(url, path, expected=None):
+def download(url, path):
     with urllib.request.urlopen(url, timeout=60) as response, path.open('xb') as output:
         shutil.copyfileobj(response, output)
-    if expected and hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-        raise ValueError('工具下载摘要不符：' + path.name)
-
-
-def unpack_zip(archive, destination):
-    with zipfile.ZipFile(archive) as contents:
-        for entry in contents.infolist():
-            name = PurePosixPath(entry.filename)
-            if name.is_absolute() or '..' in name.parts or '\\' in entry.filename or ':' in entry.filename:
-                raise ValueError('压缩包路径越界：' + entry.filename)
-            if (entry.external_attr >> 16) & 0o170000 == 0o120000:
-                raise ValueError('工具 ZIP 不接受链接：' + entry.filename)
-        contents.extractall(destination)
 
 
 def prepare(lock, output):
@@ -80,26 +67,20 @@ def prepare(lock, output):
         item.mkdir()
         extracted = item / 'source'
         extracted.mkdir()
-        if 'commit' in spec:
-            repository = urllib.parse.urlparse(spec['repository'])
-            if repository.scheme != 'https' or repository.netloc != 'github.com':
-                raise ValueError('工具源码必须来自官方 GitHub 仓库')
-            path = repository.path.removesuffix('.git').strip('/')
-            if len(path.split('/')) != 2:
-                raise ValueError('工具仓库路径无效')
-            archive = item / 'source.tar.gz'
-            download(f"https://codeload.github.com/{path}/tar.gz/{spec['commit']}", archive)
-            with tarfile.open(archive) as contents:
-                contents.extractall(extracted, filter='data')
-            roots = list(extracted.iterdir())
-            if len(roots) != 1 or not roots[0].is_dir():
-                raise ValueError('工具源码根目录不唯一：' + name)
-            directory = roots[0]
-        else:
-            archive = item / 'source.zip'
-            download(spec['url'], archive, spec['archiveSha256'])
-            unpack_zip(archive, extracted)
-            directory = extracted / 'release' if name == 'format' else extracted
+        repository = urllib.parse.urlparse(spec['repository'])
+        if repository.scheme != 'https' or repository.netloc != 'github.com':
+            raise ValueError('工具源码必须来自官方 GitHub 仓库')
+        path = repository.path.removesuffix('.git').strip('/')
+        if len(path.split('/')) != 2:
+            raise ValueError('工具仓库路径无效')
+        archive = item / 'source.tar.gz'
+        download(f"https://codeload.github.com/{path}/tar.gz/{spec['commit']}", archive)
+        with tarfile.open(archive) as contents:
+            contents.extractall(extracted, filter='data')
+        roots = list(extracted.iterdir())
+        if len(roots) != 1 or not roots[0].is_dir():
+            raise ValueError('工具源码根目录不唯一：' + name)
+        directory = roots[0]
         if digest_directory(directory) != spec['sha256']:
             raise ValueError('工具源码摘要不符：' + name)
         tools[name] = str(directory.resolve())

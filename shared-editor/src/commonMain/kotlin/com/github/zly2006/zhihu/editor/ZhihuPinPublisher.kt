@@ -19,7 +19,6 @@ package com.github.zly2006.zhihu.editor
 
 import com.fleeksoft.ksoup.Ksoup
 import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -92,16 +91,12 @@ data class PinContentPayload(
     @SerialName("extra_info")
     val extraInfo: PinContentExtraInfo = PinContentExtraInfo(),
     val draft: PinContentDraft = PinContentDraft(),
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val title: PinContentTitle? = null,
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val hybrid: PinContentHybrid? = null,
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val media: PinContentMedia? = null,
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val topic: PinContentTopic? = null,
 )
@@ -145,10 +140,8 @@ data class PinContentImage(
     val width: Int,
     val url: String,
     val originalUrl: String,
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val watermark: String? = null,
-    @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val watermarkUrl: String? = null,
 )

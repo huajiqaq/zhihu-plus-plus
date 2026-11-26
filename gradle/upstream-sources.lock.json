@@ -24,15 +24,15 @@
           },
           "format": {
             "version": "3.8.0",
-            "url": "https://lib.haxe.org/files/3.0/format-3,8,0.zip",
-            "archiveSha256": "ea3a6725ee707d54965550d5331c8b1eab5c548c35b3680622fb0ffa15b509fd",
-            "sha256": "ca62d1c5269002657f6ec413789eae318eeca735b4aa02484fcc143c03c49572"
+            "repository": "https://github.com/HaxeFoundation/format.git",
+            "commit": "acde8a595c456ecaad8b11ed034c12983b73ab1a",
+            "sha256": "ea61a164917c7de4a8f45909b19e6566a037b12735d1b772939f3ca441b4f8e7"
           },
           "formatter": {
             "version": "1.18.0",
-            "url": "https://lib.haxe.org/files/3.0/formatter-1,18,0.zip",
-            "archiveSha256": "2d29c9b56e54b2643e07ee64003c3fc30a5bc133bdcb4cc15c48f09acda7a047",
-            "sha256": "fff1e6130e4f6919c2114b4f0d3f5acf66445f7246c620b2c0273c52e47e4b00"
+            "repository": "https://github.com/HaxeCheckstyle/haxe-formatter.git",
+            "commit": "93ba289893d515614298f4ce7cee8619c31b420c",
+            "sha256": "3676d2c0f84aa898e826ebba63ebcb3b0dda95f3a0537d6f94fbe49692ff4c97"
           }
         },
         "patches": {
@@ -51,8 +51,8 @@
       "patches": {
         "upstream-patches/tiqian-core-build.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "78d7649bfb12dd30c8ef9d236842916f244aeb0ca8673eb8a9a85dc3bc379a53",
-          "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的选区/行内占位几何及 /pull/38 的点线半径避墨；当所选源码具备相同实现且相关原测试通过时移除"
+          "sha256": "590cc9a22f34bcd1f255b742153c5c4cbf192cbdc2b8f50b80013a0354a97c59",
+          "reason": "https://github.com/tiqian-cjk/tiqian/pull/37 的原文选区、行内占位几何与点线避墨；所选上游覆盖实现且相关原测试通过后移除"
         },
         "upstream-patches/tiqian-core-android-selection-locale.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
@@ -61,7 +61,7 @@
         },
         "upstream-patches/tiqian-core-performance.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "9566a4d243183ef581bb9ff297b90b7797f714aa562a55f17c4ce9be312b2f5a",
+          "sha256": "c7bdb84aa052c094024a7cd95876c81b204f924aae230640c55217fcf0dcf220",
           "reason": "https://github.com/tiqian-cjk/tiqian/pull/61 减少重复字形扫描，在文档与字体来源内复用精确段落布局并保留正确重绘；所选上游包含实现且相关回归通过后移除"
         },
         "upstream-patches/tiqian-windows-fonts.patch": {
@@ -71,13 +71,18 @@
         },
         "upstream-patches/tiqian-core-build-configuration.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "86a44993f6e5143326e96bf31aa6b4f9be55a1dd5694cae332102356678385c5",
-          "reason": "组合构建禁止回落到未替换的 Tiqian Maven；保留官方完整模块与测试"
+          "sha256": "2c63257bc6775da5d07513751ae652ad019430cc294a03165541f640aa24db7d",
+          "reason": "组合构建禁止回落到未替换的 Tiqian Maven；boring-kotlin-f32 的源码集仅包含 .kt，避免 Kotlin 2.4 将生成目录的 build.gradle.kts 当引擎源码，保留发布工程与原测试。固定上游 LegacyFontConfigParserTest 的文件名比较统一 Windows 路径分隔符，字体链与顺序断言不变；所选上游含等价修正后移除"
+        },
+        "upstream-patches/tiqian-core-apple-italic-ink.patch": {
+          "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
+          "sha256": "7218a5b895b01cf6e637d2b1f391eb56a16e55d3e64741f954bd35d5f7030bfc",
+          "reason": "CoreText 斜体验证按固定基线逐行比较字形剪切；全字最右墨列不能表示笔画倾角。上游覆盖相同字形契约后移除"
         },
         "upstream-patches/tiqian-core-skiko-alignment.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "dee031e763c2337f37060e9c2ec188eff2bc8292a79382efb9255ac98970a15e",
-          "reason": "宿主的 Compose Multiplatform 运行在 Skiko 0.156.1，其 FontStyle 改为 value class、三参构造改收 FontWeight/FontWidth，按 0.144.6 编译的桌面类会 NoSuchMethodError；JVM 类路径按宿主 Skiko 解析，FontStyle 构造改用两代 Skiko 通用的 withWeight/withSlant。跑上游自带桌面测试加 -PtiqianUpstreamSkiko=true；宿主 Skiko 变更时同步补丁内版本号，所选上游自身使用同代 Skiko 后移除"
+          "sha256": "bd8b3fb22f5772ad338ac0488e7776be0a85fb1cdc856f93775cd20f4774ba71",
+          "reason": "Skiko 0.156 的 FontStyle 改为 value class、三参构造改收 FontWeight/FontWidth；构造改用两代通用的 withWeight/withSlant。编译器、Compose 与 Skiko 直接声明由准备程序按宿主版本目录整体对齐，不使用类路径强制规则；所选上游包含同等源码适配后移除"
         }
       },
       "modules": {
@@ -107,12 +112,12 @@
       "patches": {
         "upstream-patches/tiqian-markdown-build.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
-          "sha256": "ad0a38d9adf2fe79fb0905ac417627428cc1b9e2b7e08d720f69d544cf3d22f0",
-          "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/3 至 /pull/7 的搜索、选区键、图片预算/兼容、范围末标记和递归 AST 默认导航；划线点击走官方 custom.onClick，正式源码覆盖对应能力时分项移除"
+          "sha256": "8a31f7bd243eacb533534f47cba374a08231298b3592a8ae73d181c608ca9dda",
+          "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/7 的搜索、选区键、图片预算、末端标记和递归默认导航；划线点击走官方 custom.onClick，所选上游覆盖能力且相关回归通过后移除"
         },
         "upstream-patches/tiqian-markdown-visible-block-layers.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
-          "sha256": "a50ad004717b8c22f011e085abdae655e1540057634f0f4db548b774c08c1579",
+          "sha256": "2468e4fb73accabcfb11f9474e79e4461c849f0eaae4323f6ea003b014cb31f0",
           "reason": "https://github.com/tiqian-cjk/tiqian-markdown/pull/9 为已物化正文块保留独立绘制层，滚动时未变化的相邻段落不再重新塑造字形；所选上游包含修复且邻块绘制与越界像素回归通过后移除"
         },
         "upstream-patches/tiqian-markdown-build-configuration.patch": {
@@ -122,8 +127,8 @@
         },
         "upstream-patches/tiqian-markdown-skiko-alignment.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
-          "sha256": "7935c0368161a3632d839552e3b45d475fc51a31e61f0322b16a80be68232486",
-          "reason": "同 tiqian-core-skiko-alignment 的 JVM 类路径对齐；数学宿主文字的 FontStyle 构造与字重读取改用两代 Skiko 通用写法。所选上游自身使用同代 Skiko 后移除"
+          "sha256": "1e025e8c4c0add9276ee12d3d8f3fcae5486f0406650fca9e82ff27b97397578",
+          "reason": "数学宿主文字的 FontStyle 构造与字重读取改用两代 Skiko 通用写法；构建版本由准备程序按宿主目录整体对齐。所选上游包含同等源码适配后移除"
         }
       },
       "modules": {
@@ -141,15 +146,20 @@
       "releaseRef": "refs/tags/v{version}",
       "snapshotRef": "refs/heads/main",
       "patches": {
+        "upstream-patches/tiqian-math-font-metrics.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "d0494ed97a19fea40334443df6f9e8dbfa1cd5af8fcb5974f83f85200e4f1064",
+          "reason": "JVM Skia 使用 CFF 设计单位轮廓和字距，保留独立的像素边界；XeTeX 伸展构件的偏移量避免逐项累计舍入。上游包含同等修复后移除"
+        },
+        "upstream-patches/tiqian-math-geometry-measurements.patch": {
+          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
+          "sha256": "01bdef73adf5921cd8507b598dc4a70a42913fb59d93e444ffce5d31583fb5e8",
+          "reason": "几何快照按原容差分别比较带符号的区间端点，源码整数范围与版本仍须精确相等；上游比较器覆盖相同行为后移除"
+        },
         "upstream-patches/tiqian-math-build-configuration.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
-          "sha256": "3ae585c6d9a3ca066c426a3b7b02d680174eeb1640109c6568cffda520147541",
+          "sha256": "17e1db8e07ae5a3bf2b644ae9d9633f7c39b095ea13d7ffebcfd751e278a2bc5",
           "reason": "组合构建配置；字体路径使用官方 Gradle 属性，不修改上游路径解析"
-        },
-        "upstream-patches/tiqian-math-skiko-alignment.patch": {
-          "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
-          "sha256": "0089087692b2f78efff5678b5ca1e1eced1a159dd9ed497cc71cd1538eac1657",
-          "reason": "同 tiqian-core-skiko-alignment 的 JVM 类路径对齐，无源码改动；所选上游自身使用同代 Skiko 后移除"
         }
       },
       "modules": {
@@ -167,49 +177,6 @@
         "org.tiqian:math-font-stix-jvm": ":font:stix",
         "org.tiqian:math-jvm-skia-jvm": ":platforms:jvm:skia"
       }
-    }
-  },
-  "math": {
-    "source": "tiqian-math",
-    "output": "build/upstream-font-inputs",
-    "compiler": {
-      "path": "font/metadata-generator/tools/compile_runtime_font.py",
-      "sha256": "541e7bf3b791f02c3abb9723e1bbb15b897e969ecb072ee3b2e25ca2b0064fc8"
-    },
-    "fonts": [
-      {
-        "name": "lete-regular",
-        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Regular.otf",
-        "sha256": "ead643895be03f42f6fa201fb1176323f60dd330d4109387bac90bdf980fcf3e",
-        "property": "tiqianLeteRegular"
-      },
-      {
-        "name": "lete-bold",
-        "path": "engine/src/jvmMain/resources/org/tiqian/math/fonts/LeteSansMath-Bold.otf",
-        "sha256": "a521f128db0821a9943e4f703103204d8982aeb39c933e12344c43e9d3b0907a",
-        "property": "tiqianLeteBold"
-      },
-      {
-        "name": "stix-regular",
-        "path": "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/regular.otf",
-        "sha256": "95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b",
-        "property": "tiqianStix"
-      }
-    ],
-    "resources": {
-      "build/upstream-font-inputs/lete-regular-runtime.otf": "2ce41922dcfd6c98ffcd882f17bf7458e94574d83b5af04441cad0628f9ea1a8",
-      "build/upstream-font-inputs/lete-bold-runtime.otf": "20f690463874b6615638a398187a7029766167fcb371a32a5a0a3a48092ab670",
-      "build/upstream-font-inputs/stix-regular-runtime.otf": "1d565c9537e2c5938711426e3be6f2bb4224541706e3195be42255299f553b2f",
-      "build/generated/leteRuntimeMetadata/LeteSansMath-Regular.tqmath": "d0bbca52bc3d179824731f0f4cdf1c6f9c2429c4d6f1bc3d326d2b44fe7be53f",
-      "build/generated/leteRuntimeMetadata/LeteSansMath-Bold.tqmath": "ebd8a71d4e2cbe5b443b0b19b848738f3bb5147ec4c8f7460d3f4558ce786cbd",
-      "build/generated/stixRuntimeMetadata/regular.tqmath": "3332d022a4a8b99d54051d1777b046c598ecdbe9e7f261fbf99d133b3f13a028",
-      "build/generated/stixRuntimeMetadata/manifest.tqfont": "361a163b12bc36a4406685ae4872264df030821ec293f82766a27f7a03dc9d65",
-      "engine/src/jvmMain/resources/org/tiqian/math/fonts/OFL.txt": "81b36224f7e45447419a4d88b957b2d7a37acc3fd7052746cf32365ae99cc8af",
-      "font/stix/src/commonMain/resources/org/tiqian/math/host-fonts/stix/STIX-OFL.txt": "ccee2172d0b1deb40e216efb0b7adec41573a14e813f3b17c143063607e54ec6"
-    },
-    "wheel": {
-      "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl",
-      "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d"
     }
   }
 }

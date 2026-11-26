@@ -1,3 +1,19 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -220,6 +220,12 @@ subprojects {
+     // with -PbuildRoot on a pack run.
+     if (path == ":boring-kotlin-f32") {
+         layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("build/boring-kotlin-f32"))
++        plugins.withId("org.jetbrains.kotlin.multiplatform") {
++            extensions.configure<KotlinMultiplatformExtension>("kotlin") {
++                // 生成目录还含独立发布脚本；引擎与原测试只编译 .kt，不把 Gradle 脚本当源码。
++                sourceSets.configureEach { kotlin.include("**/*.kt") }
++            }
++        }
+     }
+ 
+     plugins.withId("org.jetbrains.kotlin.multiplatform") {
 diff --git a/settings.gradle.kts b/settings.gradle.kts
 --- a/settings.gradle.kts
 +++ b/settings.gradle.kts
@@ -12,3 +28,14 @@ diff --git a/settings.gradle.kts b/settings.gradle.kts
          // Kotlin/JS downloads a Node toolchain for webpack; under
          // FAIL_ON_PROJECT_REPOS the download source must be declared here. These
          // exclusive-content ivy repos serve ONLY org.nodejs:node / com.yarnpkg:yarn.
+diff --git a/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt b/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
+--- a/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
++++ b/platforms/android/native-font/src/test/kotlin/org/tiqian/shaping/android/nativefont/LegacyFontConfigParserTest.kt
+@@ -75,6 +75,6 @@
+             listOf("MiSansVF.ttf", "MiSansL3.otf"),
+             catalog.faceSpecs
+                 .filter { it.familyKey in catalog.fallbackChains.getValue(FontRole.CjkText) }
+-                .map { it.source.label.substringAfterLast('/') },
++                .map { it.source.label.replace('\\', '/').substringAfterLast('/') },
+         )
+     }

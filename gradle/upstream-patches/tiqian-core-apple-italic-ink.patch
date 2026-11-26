@@ -1,0 +1,123 @@
+diff --git a/platforms/apple/frontend/coretext-render/src/appleTest/kotlin/org/tiqian/apple/coretext/CoreTextLayoutRendererTest.kt b/platforms/apple/frontend/coretext-render/src/appleTest/kotlin/org/tiqian/apple/coretext/CoreTextLayoutRendererTest.kt
+index 62b2352b92844bb3526b086f470fcdbf2d4b74ae..4092a467a144e80b2f2218c7320edbcb8b58de2f 100644
+--- a/platforms/apple/frontend/coretext-render/src/appleTest/kotlin/org/tiqian/apple/coretext/CoreTextLayoutRendererTest.kt
++++ b/platforms/apple/frontend/coretext-render/src/appleTest/kotlin/org/tiqian/apple/coretext/CoreTextLayoutRendererTest.kt
+@@ -3,6 +3,7 @@ package org.tiqian.apple.coretext
+ import kotlinx.cinterop.convert
+ import kotlinx.cinterop.get
+ import kotlinx.cinterop.reinterpret
++import kotlinx.cinterop.UByteVar
+ import org.tiqian.core.BopomofoGlyphRole
+ import org.tiqian.core.ColorSpan
+ import org.tiqian.core.DecorationKind
+@@ -18,6 +19,7 @@ import org.tiqian.core.TextRange
+ import org.tiqian.core.TextSpan
+ import org.tiqian.core.TextStyle
+ import org.tiqian.core.TiqianTextContent
++import org.tiqian.core.positionedClusters
+ import platform.CoreGraphics.CGBitmapContextCreate
+ import platform.CoreGraphics.CGBitmapContextGetData
+ import platform.CoreGraphics.CGColorSpaceCreateDeviceRGB
+@@ -27,7 +29,7 @@ import platform.CoreGraphics.CGContextRelease
+ import platform.CoreGraphics.CGContextSetRGBFillColor
+ import platform.CoreGraphics.CGImageAlphaInfo
+ import platform.CoreGraphics.CGRectMake
+-import kotlinx.cinterop.UByteVar
++import kotlin.math.roundToInt
+ import kotlin.test.Test
+ import kotlin.test.assertEquals
+ import kotlin.test.assertTrue
+@@ -392,9 +394,7 @@ class CoreTextLayoutRendererTest {
+ 
+     @Test
+     fun italicShearsGlyphInk() {
+-        // Synthetic-oblique italic (ADR 0030 B 档) must actually slant CJK glyphs — PingFang has no
+-        // italic face, so it's a shear carried by TextStyle.italic. The shear pushes the top of the
+-        // ink rightward, so the italic glyph's ink reaches a further-right column than upright.
++        // The rightmost stroke of 永 can be near the baseline, where even a correct oblique barely moves it.
+         val engine = appleParagraphEngine()
+         val style = TextStyle(fontSize = 64f)
+         val constraints = LayoutConstraints(maxWidth = 400f)
+@@ -410,9 +410,16 @@ class CoreTextLayoutRendererTest {
+                 constraints = constraints,
+             ),
+         )
+-        val plainRight = rightmostInkColumn(plain)
+-        val italicRight = rightmostInkColumn(italic)
+-        assertTrue(italicRight > plainRight + 4, "italic should shear ink rightward: plain=$plainRight italic=$italicRight")
++        val width = 200
++        val height = maxOf(96, maxOf(plain.size.height, italic.size.height).toInt() + 16)
++        fun baseline(result: LayoutResult) =
++            result.positionedClusters().single().baseline + result.clusters.single().baselineShift
++
++        val baselineY = baseline(plain)
++        val upright = renderGlyphPixels(plain, width, height)
++        val oblique = renderGlyphPixels(italic, width, height)
++        assertEquals(baselineY, baseline(italic), "synthetic oblique must preserve the baseline")
++        assertShearedInk(upright, oblique, width, baselineY)
+     }
+ 
+     @Test
+@@ -455,10 +462,40 @@ class CoreTextLayoutRendererTest {
+         )
+     }
+ 
+-    /** Renders [result] (replaying its own spans) and returns the rightmost column holding glyph ink. */
+-    private fun rightmostInkColumn(result: LayoutResult): Int {
+-        val width = 200
+-        val height = maxOf(96, result.size.height.toInt() + 16)
++    // ADR 0030: x' = x + 0.105 * height above the baseline; image rows increase downwards.
++    private fun obliqueOffset(row: Int, baseline: Float) = (0.105 * (baseline - row - 0.5)).roundToInt()
++
++    private fun assertShearedInk(upright: ByteArray, oblique: ByteArray, width: Int, baseline: Float) {
++        fun Byte.isInk() = toUByte() < 128u
++        val top = upright.indexOfFirst { it.isInk() } / width
++        val bottom = upright.indexOfLast { it.isInk() } / width
++        assertTrue(obliqueOffset(top, baseline) - obliqueOffset(bottom, baseline) > 2, "need ink at distinct heights")
++        val middle = (top + bottom) / 2
++        for (rows in listOf(0..middle, middle + 1 until upright.size / width)) {
++            var runs = 0
++            var differences = 0
++            for (row in rows) {
++                val dx = obliqueOffset(row, baseline)
++                fun ink(x: Int) = x in 0 until width && upright[row * width + x].isInk()
++                for (x in 0 until width) {
++                    val src = x - dx
++                    val expected = ink(src)
++                    if (expected && !ink(src - 1)) runs++
++                    if (oblique[row * width + x].isInk() != expected) {
++                        assertTrue(
++                            ink(src - 1) != expected || ink(src + 1) != expected,
++                            "non-edge difference at ($x,$row), dx=$dx",
++                        )
++                        differences++
++                    }
++                }
++            }
++            // A whole extra pixel per horizontal stroke would already be one-sided bold, not subpixel rounding.
++            assertTrue(differences < runs, "rows $rows: $differences differing pixels for $runs ink runs")
++        }
++    }
++
++    private fun renderGlyphPixels(result: LayoutResult, width: Int, height: Int): ByteArray {
+         val bytesPerRow = width * 4
+         val colorSpace = CGColorSpaceCreateDeviceRGB()
+         val ctx = CGBitmapContextCreate(
+@@ -471,15 +508,10 @@ class CoreTextLayoutRendererTest {
+         CoreTextLayoutRenderer().draw(result, ctx, height.toDouble(), spans = result.input.content.spans)
+ 
+         val data = CGBitmapContextGetData(ctx)?.reinterpret<UByteVar>() ?: error("no bitmap data")
+-        var maxCol = -1
+-        for (row in 0 until height) {
+-            for (col in 0 until width) {
+-                if (data[(row * bytesPerRow) + (col * 4)] < 128u && col > maxCol) maxCol = col
+-            }
+-        }
++        val pixels = ByteArray(width * height) { data[it * 4].toByte() }
+         CGContextRelease(ctx)
+         CGColorSpaceRelease(colorSpace)
+-        return maxCol
++        return pixels
+     }
+ 
+     /** Renders [result] and returns the inclusive horizontal pixel range containing ink. */

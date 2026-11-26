@@ -24,17 +24,17 @@ index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb805
          }
          exclusiveContent {
              forRepository {
-@@ -50,21 +43,9 @@ rootProject.name = "tiqian-math"
+@@ -50,21 +43,11 @@ rootProject.name = "tiqian-math"
  include(
      ":engine",
      ":font:tooling",
--    ":font:gradle-plugin",
+     ":font:gradle-plugin",
      ":font:metadata-generator",
      ":font:stix",
      ":platforms:android:font",
      ":platforms:jvm:skia",
      ":platforms:compose:compose",
--    ":scanner",
+     ":scanner",
 -    ":preview",
 -    ":demo:android-app",
  )

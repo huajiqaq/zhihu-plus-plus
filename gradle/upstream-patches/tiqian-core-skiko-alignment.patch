@@ -1,29 +1,3 @@
-diff --git a/build.gradle.kts b/build.gradle.kts
-index 15dad1435b4ccdcfe9c1ae5f67b30686fd47ae82..cc8d6efff061fe14f1da68114b5b04ee60a381d3 100644
---- a/build.gradle.kts
-+++ b/build.gradle.kts
-@@ -264,3 +264,21 @@ tasks.register("runComposeDemo") {
-     description = "Opens the shared Tiqian Compose demo on Desktop."
-     dependsOn(":demo:runComposeDemo")
- }
-+
-+// The host application runs on the Skiko that ships with its Compose Multiplatform release.
-+// Skiko 0.156 turned FontStyle into a value class, so JVM classes compiled against 0.144.6
-+// fail there with NoSuchMethodError. Resolve Skiko at the host version on JVM classpaths.
-+// -PtiqianUpstreamSkiko=true keeps the Skiko this build declares, for running its own tests.
-+if (providers.gradleProperty("tiqianUpstreamSkiko").orNull != "true") {
-+    allprojects {
-+        configurations.configureEach {
-+            val attributes = attributes
-+            resolutionStrategy.eachDependency {
-+                val jvm = attributes.keySet().any {
-+                    it.name == "org.jetbrains.kotlin.platform.type" && attributes.getAttribute(it).toString() == "jvm"
-+                }
-+                if (jvm && requested.group == "org.jetbrains.skiko") useVersion("0.156.1")
-+            }
-+        }
-+    }
-+}
 diff --git a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt b/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
 index 56073f0bcc30a81f6cbae86d1f19049c413065dc..462a0567fd34277100c8a2d659e137503e0218a9 100644
 --- a/platforms/compose/compose/src/jvmMain/kotlin/org/tiqian/compose/SkiaLayoutRenderer.kt
