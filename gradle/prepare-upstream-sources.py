@@ -298,6 +298,9 @@ def align_source_build(directory, tree, spec, host_versions):
     data = run_git(directory, ['show', tree + ':' + filename]).stdout.decode('utf-8')
     if any(not re.fullmatch(r'[A-Za-z0-9_.+-]+', version) for version in host_versions.values()):
         raise SystemExit('宿主构建版本无效')
+    if not re.fullmatch(r'[1-9][0-9]*', host_versions['compileSdk']) or not re.fullmatch(r'0|[1-9][0-9]*', host_versions['compileSdkMinor']):
+        raise SystemExit('宿主 compileSdk 主次版本必须为非负整数，主版本不能为零')
+    compile_sdk = 'compileSdk { version = release(' + host_versions['compileSdk'] + ') { minorApiLevel = ' + host_versions['compileSdkMinor'] + ' } }'
     host_version = host_versions['agp']
     if spec.get('androidPluginCatalog'):
         before = tomllib.loads(data)['versions']['agp']
@@ -344,6 +347,24 @@ def align_source_build(directory, tree, spec, host_versions):
                 text, count = re.subn(pattern, lambda match: match[1] + host_versions[key] + match[3], text, flags=re.MULTILINE)
                 if not count:
                     raise SystemExit('上游插件声明缺失，拒绝猜测对齐：' + key)
+            if spec.get('generation'):
+                # boring 的发布脚本由生成器原样提供；在 DSL 完成后覆盖其 SDK，避免被模块内的 36 再覆盖。
+                anchor = '        layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("build/boring-kotlin-f32"))\n'
+                if text.count(anchor) != 1:
+                    raise SystemExit('生成引擎的根配置接点已变，拒绝猜测对齐 compileSdk')
+                text = text.replace(anchor, anchor + '\n'.join((
+                    '        plugins.withId("com.android.kotlin.multiplatform.library") {',
+                    '            extensions.configure<com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension> {',
+                    '                finalizeDsl { android -> android.' + compile_sdk + ' }',
+                    '            }',
+                    '        }',
+                    '',
+                )))
+        if re.search(r'^[ \t]*id\("com\.android\.(?:library|kotlin\.multiplatform\.library)"\)(?: version "[^"\n]+")?[ \t]*$', text, re.MULTILINE):
+            # 当前消费模块只有一个整数字面 compileSdk；不猜测 preview、extension 或新版 DSL。
+            text, count = re.subn(r'^([ \t]*)compileSdk = (?:36|37)[ \t]*$', lambda match: match[1] + compile_sdk, text, flags=re.MULTILINE)
+            if count != 1 or re.search(r'\bcompileSdk(?:Preview|Extension)\b', text):
+                raise SystemExit('上游 Android compileSdk 声明结构已变：' + script)
         # shortcut: 所选上游使用字面坐标；改用版本目录或变量时需审查并更新此适配。
         def compose_version(match):
             group, module = match[1], match[2]
@@ -462,7 +483,7 @@ if recipe.get('schema') != 3 or not recipe.get('sources'):
     raise SystemExit('源码补丁清单为空或格式不支持')
 catalog = tomllib.loads((root / 'gradle/libs.versions.toml').read_text(encoding='utf-8'))['versions']
 versions = {name: catalog[spec['versionKey']] for name, spec in recipe['sources'].items()}
-host_versions = {key: catalog[key] for key in ('agp', 'kotlin', 'composeMultiplatform', 'material3', 'uiBackhandler', 'skiko')}
+host_versions = {key: catalog[key] for key in ('agp', 'kotlin', 'composeMultiplatform', 'material3', 'uiBackhandler', 'skiko', 'compileSdk', 'compileSdkMinor')}
 parent = root / '.gradle/upstream-inputs'
 if (root / '.gradle').is_symlink() or parent.is_symlink():
     raise SystemExit('输入缓存不能是符号链接')

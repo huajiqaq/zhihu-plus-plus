@@ -2,6 +2,8 @@
 jvm = "21"
 kotlin = "2.4.21"
 agp = "9.5.3"
+compileSdk = "37"
+compileSdkMinor = "2"
 composeMultiplatform = "1.13.0-rc01"
 skiko = "0.156.1"
 material3 = "1.13.0-rc01"

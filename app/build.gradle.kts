@@ -48,7 +48,9 @@ val signingKey = providers.environmentVariable("signingKey").orNull?.takeIf { it
 android {
     namespace = "com.github.zly2006.zhihu"
     compileSdk {
-        version = release(37) { minorApiLevel = 2 }
+        version = release(libs.versions.compileSdk.get().toInt()) {
+            minorApiLevel = libs.versions.compileSdkMinor.get().toInt()
+        }
     }
     if (rootProject.extensions.extraProperties.has("zhihuUpstreamInputs")) {
         val upstreamInputs = rootProject.extensions.extraProperties["zhihuUpstreamInputs"] as String

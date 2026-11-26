@@ -23,6 +23,7 @@ import platform
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
@@ -218,12 +219,17 @@ def run_acceptance(root, output):
             return subprocess.check_output(list(map(str, args)), cwd=root, text=True, timeout=timeout)
         subprocess.run(list(map(str, args)), cwd=root, check=True, timeout=timeout)
 
+    # Run Script phases only receive exported build settings, not the entire setup-actions environment.
+    build_tools = [f'ZHIHU_PYTHON_BIN_DIR={Path(sys.executable).parent}']
+    for name in ('ZHIHU_TIQIAN_TOOLCHAIN', 'JAVA_HOME', 'ANDROID_HOME'):
+        build_tools.append(f'{name}={Path(os.environ[name]).resolve(strict=True)}')
+
     def xcode(log, *args):
         started = time.monotonic()
         print(f'Starting {log}', flush=True)
         with (output / log).open('w', encoding='utf-8') as stream:
             try:
-                subprocess.run(['xcodebuild', *map(str, args)], cwd=root, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=5400)
+                subprocess.run(['xcodebuild', *build_tools, *map(str, args)], cwd=root, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=5400)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 print(f'Xcode failed; inspect the isolated artifact {log}', flush=True)
                 raise

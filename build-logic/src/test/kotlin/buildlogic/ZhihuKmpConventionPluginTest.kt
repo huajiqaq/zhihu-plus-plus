@@ -77,7 +77,11 @@ class ZhihuKmpConventionPluginTest {
             ${subprojects.joinToString("\n") { "include ':$it'" }}
             dependencyResolutionManagement {
                 versionCatalogs {
-                    libs { version('jvm', '21') }
+                    libs {
+                        version('jvm', '21')
+                        version('compileSdk', '37')
+                        version('compileSdkMinor', '2')
+                    }
                 }
             }
             """.trimIndent(),

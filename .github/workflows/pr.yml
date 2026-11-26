@@ -4,6 +4,12 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      checks:
+        description: '验收范围：all 保留完整检查，ios 仅重验 iOS UI 与 unsigned Release'
+        type: choice
+        required: false
+        default: all
+        options: [all, ios]
       apple_release:
         description: '验收 Apple Release 与隔离 iOS Simulator UI（仅 Actions artifacts，不发布）'
         type: boolean
@@ -14,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pull-request-check-${{ github.event.pull_request.number || github.ref }}
+  group: pull-request-check-${{ github.event.pull_request.number || github.ref }}-${{ inputs.checks || 'all' }}
   cancel-in-progress: true
 
 jobs:
@@ -35,6 +41,7 @@ jobs:
         id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
+          MANUAL_CHECKS: ${{ inputs.checks || 'all' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -43,7 +50,12 @@ jobs:
           desktop=true
           macos=true
           rust=true
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$MANUAL_CHECKS" == ios ]]; then
+            scope=ios
+            desktop=false
+            macos=false
+            rust=false
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
             [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
             git diff --no-renames --name-only -z "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/pr-changed-paths"
             desktop=false
@@ -101,7 +113,7 @@ jobs:
   build_pr:
     name: Build PR
     needs: changes
-    if: needs.changes.outputs.scope != 'docs'
+    if: needs.changes.outputs.scope == 'full' || needs.changes.outputs.scope == 'android-tests'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -404,7 +416,7 @@ jobs:
 
   ios-acceptance:
     name: iOS Simulator UI and Unsigned Release Acceptance
-    if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+    if: github.event_name == 'workflow_dispatch' && (inputs.apple_release || inputs.checks == 'ios')
     runs-on: macos-26
     timeout-minutes: 120
     steps:
@@ -440,7 +452,7 @@ jobs:
     needs:
       - changes
       - build_pr
-    if: needs.changes.outputs.scope != 'docs'
+    if: needs.changes.outputs.scope == 'full' || needs.changes.outputs.scope == 'android-tests'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -533,7 +545,8 @@ jobs:
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
           RUST_RESULT: ${{ needs.rust-verification.result }}
           MACOS_RESULT: ${{ needs.macos-native.result }}
-          RUN_APPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release == true }}
+          RUN_APPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release == true && inputs.checks != 'ios' }}
+          RUN_IOS: ${{ github.event_name == 'workflow_dispatch' && (inputs.apple_release == true || inputs.checks == 'ios') }}
           IOS_RESULT: ${{ needs.ios-acceptance.result }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
@@ -546,7 +559,7 @@ jobs:
             android-tests)
               android_result=success
               cross_platform_result=skipped ;;
-            docs)
+            docs|ios)
               android_result=skipped
               cross_platform_result=skipped ;;
             *) exit 1 ;;
@@ -565,11 +578,20 @@ jobs:
           if [[ "$RUN_MACOS" == true ]]; then macos_result=success; fi
           test "$RUST_RESULT" = "$rust_result"
           test "$MACOS_RESULT" = "$macos_result"
+          case "$RUN_IOS" in
+            true)
+              [[ "$CHECK_SCOPE" == full || "$CHECK_SCOPE" == ios ]]
+              test "$IOS_RESULT" = success ;;
+            false)
+              test "$CHECK_SCOPE" != ios
+              test "$IOS_RESULT" = skipped ;;
+            *) exit 1 ;;
+          esac
           case "$RUN_APPLE_RELEASE" in
             true)
               test "$CHECK_SCOPE" = full
               test "$MACOS_RESULT" = success
-              test "$IOS_RESULT" = success ;;
-            false) test "$IOS_RESULT" = skipped ;;
+              test "$RUN_IOS" = true ;;
+            false) [[ "$CHECK_SCOPE" != full || "$RUN_IOS" == false ]] ;;
             *) exit 1 ;;
           esac

@@ -17,6 +17,13 @@
 set -eu
 cd "$SRCROOT/.."
 
+# Xcode puts its own Python ahead of the host tools in a Run Script phase.
+if [ -n "${ZHIHU_PYTHON_BIN_DIR:-}" ]; then
+    export PATH="$ZHIHU_PYTHON_BIN_DIR:$PATH"
+    [ -x "$ZHIHU_PYTHON_BIN_DIR/python3" ] || { printf '%s\n' 'ZHIHU_PYTHON_BIN_DIR must contain an executable python3' >&2; exit 1; }
+    python3 -I -c 'import tomllib'
+fi
+
 ./gradlew -PzhihuUpstreamPatches=true :shared:embedAndSignAppleFrameworkForXcode :app:prepareLibraryDefinitionsLiteDebug
 
 # Xcode processes this plist after the build phase; use the same version as the shared app.

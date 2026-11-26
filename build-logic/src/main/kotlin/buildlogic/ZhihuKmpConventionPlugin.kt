@@ -44,12 +44,10 @@ fun KotlinMultiplatformExtension.configureAppleTargets(frameworkBaseName: String
 @Suppress("UnstableApiUsage")
 class ZhihuKmpConventionPlugin : Plugin<Project> {
     override fun apply(project: Project) {
-        val jvmVersion = project.extensions
-            .getByType(VersionCatalogsExtension::class.java)
-            .named("libs")
-            .findVersion("jvm")
-            .get()
-            .requiredVersion
+        val versions = project.extensions.getByType(VersionCatalogsExtension::class.java).named("libs")
+        val jvmVersion = versions.findVersion("jvm").get().requiredVersion
+        val compileSdk = versions.findVersion("compileSdk").get().requiredVersion.toInt()
+        val compileSdkMinor = versions.findVersion("compileSdkMinor").get().requiredVersion.toInt()
 
         project.plugins.withId("org.jetbrains.kotlin.multiplatform") {
             project.extensions.configure(KotlinMultiplatformExtension::class.java) { kmp ->
@@ -87,7 +85,7 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
                 project.plugins.withId("com.android.kotlin.multiplatform.library") {
                     kmp.targets.withType(KotlinMultiplatformAndroidLibraryTarget::class.java).configureEach { target ->
                         target.compileSdk {
-                            version = release(37) { minorApiLevel = 2 }
+                            version = release(compileSdk) { minorApiLevel = compileSdkMinor }
                         }
                         target.minSdk = 27
                         target.compilerOptions.jvmTarget.set(JvmTarget.fromTarget(jvmVersion))
