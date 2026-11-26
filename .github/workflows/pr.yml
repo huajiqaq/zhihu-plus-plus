@@ -10,6 +10,12 @@ on:
         required: false
         default: all
         options: [all, ios]
+      ios_stage:
+        description: 'iOS 阶段：all 完整验收；单项仅用于定向重验'
+        type: choice
+        required: false
+        default: all
+        options: [all, release, simulator]
       apple_release:
         description: '验收 Apple Release 与隔离 iOS Simulator UI（仅 Actions artifacts，不发布）'
         type: boolean
@@ -20,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pull-request-check-${{ github.event.pull_request.number || github.ref }}-${{ inputs.checks || 'all' }}
+  group: pull-request-check-${{ github.event.pull_request.number || github.ref }}-${{ inputs.checks || 'all' }}-${{ inputs.ios_stage || 'all' }}
   cancel-in-progress: true
 
 jobs:
@@ -421,16 +427,12 @@ jobs:
   ios-acceptance:
     name: iOS Acceptance (${{ matrix.stage }})
     if: github.event_name == 'workflow_dispatch' && (inputs.apple_release || inputs.checks == 'ios')
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.stage == 'release' && 'macos-26-intel' || 'macos-26' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - stage: release
-            runner: macos-26-intel
-          - stage: simulator
-            runner: macos-26
+        stage: ${{ fromJSON(inputs.ios_stage == 'release' && '["release"]' || inputs.ios_stage == 'simulator' && '["simulator"]' || '["release","simulator"]') }}
     steps:
       - uses: actions/checkout@v7
 

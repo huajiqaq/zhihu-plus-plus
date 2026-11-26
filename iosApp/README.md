@@ -20,7 +20,7 @@ xcodebuild -project iosApp/ZhihuPlusPlus.xcodeproj -scheme ZhihuPlusPlus \
 
 ## 手动 CI 验收
 
-现有 `Pull Request Check` 工作流默认不运行 iOS。手动选择 `checks=ios` 可只重验 iOS；`checks=all` 并开启 `apple_release` 则一并验收 Apple Release。两项 iOS 验收独立运行，任一失败都会使聚合门禁失败：
+现有 `Pull Request Check` 工作流默认不运行 iOS。手动选择 `checks=ios` 可只重验 iOS；`checks=all` 并开启 `apple_release` 则一并验收 Apple Release。`ios_stage=all` 默认运行两项，任一失败都会使聚合门禁失败；仅重验失败阶段时可选 `release` 或 `simulator`，单项成功不代表完整 iOS 验收。两项职责分别为：
 
 - `release`：使用内存较大的 Intel 宿主交叉链接优化的 `Release` / `iosArm64`。检查应用身份、arm64、资源与调试协议隔离后生成 `Payload/ZhihuPlusPlus.app` 结构的 unsigned IPA，并校验归档结构、CRC 和内容。它未签名，不代表真机可安装、已通过运行验收或可提交 App Store。
 - `simulator`：使用 Apple Silicon 宿主直接构建 Debug。在临时工程副本生成 XCTest target，并使用本任务创建的 Simulator 检查登录说明展开/收起、游客进入外观及返回；不依赖 Release 构建，不注入生产调试协议，不使用真实账号。结束后删除本任务 Simulator。

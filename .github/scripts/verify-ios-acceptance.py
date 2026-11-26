@@ -164,9 +164,13 @@ def add_test_target(project, source):
     return target
 
 
-def add_test_action(scheme, target):
+def add_test_action(scheme, target, project_path):
+    # SRCROOT points at production sources; scheme buildables must still resolve to the temporary project.
+    container = 'container:' + project_path.as_posix()
+    for buildable in scheme.iter('BuildableReference'):
+        buildable.set('ReferencedContainer', container)
     reference = dict(BuildableIdentifier='primary', BlueprintIdentifier=target, BuildableName=TEST_TARGET + '.xctest',
-                     BlueprintName=TEST_TARGET, ReferencedContainer='container:ZhihuPlusPlus.xcodeproj')
+                     BlueprintName=TEST_TARGET, ReferencedContainer=container)
     entries = scheme.find('BuildAction/BuildActionEntries')
     if entries is None or scheme.find('TestAction') is not None:
         raise RuntimeError('Unexpected production scheme; refuse to replace existing tests')
@@ -231,9 +235,19 @@ def self_check():
     assert project['objects']['app'] == original
     assert project['objects'][project['rootObject']]['targets'] == ['app', target]
     assert plistlib.loads(plistlib.dumps(project)) == project
-    scheme = ET.fromstring('<Scheme><BuildAction><BuildActionEntries/></BuildAction></Scheme>')
-    add_test_action(scheme, target)
+    scheme = ET.fromstring('<Scheme><BuildAction><BuildActionEntries><BuildActionEntry><BuildableReference BlueprintIdentifier="app" ReferencedContainer="container:ZhihuPlusPlus.xcodeproj"/></BuildActionEntry></BuildActionEntries></BuildAction><LaunchAction><BuildableProductRunnable><BuildableReference BlueprintIdentifier="app" ReferencedContainer="container:ZhihuPlusPlus.xcodeproj"/></BuildableProductRunnable></LaunchAction></Scheme>')
+    temporary_project = Path('/tmp/acceptance/ZhihuPlusPlus.xcodeproj')
+    add_test_action(scheme, target, temporary_project)
     assert scheme.find('TestAction/Testables/TestableReference/BuildableReference').get('BlueprintIdentifier') == target
+    for reference in scheme.iter('BuildableReference'):
+        assert reference.get('ReferencedContainer') == 'container:' + temporary_project.as_posix()
+        assert reference.get('BlueprintIdentifier') in project['objects']['project']['targets']
+    test_target = project['objects'][target]
+    configurations = project['objects'][test_target['buildConfigurationList']]['buildConfigurations']
+    settings = project['objects'][configurations[0]]['buildSettings']
+    assert settings['SUPPORTED_PLATFORMS'] == 'iphonesimulator' and settings['ARCHS'] == 'arm64'
+    assert settings['TEST_TARGET_NAME'] == project['objects']['app']['name']
+    assert project['objects'][test_target['dependencies'][0]]['target'] == 'app'
     summary = dict(totalTestCount=1, passedTests=1, failedTests=0, skippedTests=0)
     verify_summary(summary)
     for bad in ({}, {**summary, 'totalTestCount': 0}, {**summary, 'skippedTests': 1}, {**summary, 'failedTests': 1}):
@@ -376,7 +390,7 @@ def run_acceptance(root, output, stage):
             (project / 'project.pbxproj').write_bytes(plistlib.dumps(document))
             scheme_path = project / 'xcshareddata/xcschemes/ZhihuPlusPlus.xcscheme'
             scheme = ET.parse(scheme_path)
-            add_test_action(scheme.getroot(), target)
+            add_test_action(scheme.getroot(), target, project)
             scheme.write(scheme_path, encoding='utf-8', xml_declaration=True)
 
             devices = json.loads(command('xcrun', 'simctl', 'list', '-j', 'devices', 'available', capture=True))['devices']
