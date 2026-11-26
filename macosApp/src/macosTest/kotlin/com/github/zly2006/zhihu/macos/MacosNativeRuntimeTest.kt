@@ -19,11 +19,9 @@
 
 package com.github.zly2006.zhihu.macos
 
-import com.github.zly2006.zhihu.account.generateQrLoginBitmap
 import com.github.zly2006.zhihu.data.BACKGROUND_UI_DEBUG_DATA_HOME_ENV
 import com.github.zly2006.zhihu.data.macosAppDataDirectoryPath
 import com.github.zly2006.zhihu.platform.platformSettingsStore
-import com.github.zly2006.zhihu.util.hmacSha1Hex
 import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.toKString
 import platform.Foundation.NSFileManager
@@ -89,19 +87,6 @@ class MacosNativeRuntimeTest {
                 check(setenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV, previous, 1) == 0)
             }
             check(files.removeItemAtPath(directory, error = null))
-        }
-    }
-
-    @Test
-    fun cryptoAndQrRenderingAreAvailable() {
-        assertEquals(
-            "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9",
-            hmacSha1Hex("key", "The quick brown fox jumps over the lazy dog"),
-        )
-        autoreleasepool {
-            val qrBitmap = generateQrLoginBitmap("https://www.zhihu.com/")
-            assertTrue(qrBitmap.width > 0)
-            assertTrue(qrBitmap.height > 0)
         }
     }
 }

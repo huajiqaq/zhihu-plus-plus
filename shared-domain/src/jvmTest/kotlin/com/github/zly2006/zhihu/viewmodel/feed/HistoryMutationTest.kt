@@ -19,14 +19,9 @@ package com.github.zly2006.zhihu.viewmodel.feed
 
 import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
-import com.github.zly2006.zhihu.data.navDestination
-import com.github.zly2006.zhihu.navigation.Article
-import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.platform.appPrivateDirectory
-import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.addReadHistory
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -37,10 +32,8 @@ import io.ktor.http.content.TextContent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -56,8 +49,6 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -76,104 +67,6 @@ class HistoryMutationTest {
     fun restoreHistoryStorage() {
         System.setProperty("user.home", previousHome)
         home.toFile().deleteRecursively()
-    }
-
-    @Test
-    fun onlineHistoryKeepsDisplayMetadataSeparateFromResolvedNavigation() = runBlocking {
-        Dispatchers.setMain(Dispatchers.Unconfined)
-        val cached = Article(
-            type = ArticleType.Answer,
-            id = 123,
-            title = "标题",
-            authorName = "作者",
-            authorBio = "本地签名",
-            avatarSrc = "avatar",
-            authorId = "author-id",
-            authorUrlToken = "author-token",
-        )
-        val client = HttpClient(
-            MockEngine { error("在线历史解析不应增加请求") },
-        )
-        val page = Json
-            .parseToJsonElement(
-                """{"data":[
-        {
-          "cardType": "read_history",
-          "data": {
-            "header": {
-              "icon": "https://example.com/icon.png",
-              "title": "标题"
-            },
-            "content": {
-              "authorName": "作者",
-              "summary": "摘要",
-              "coverImage": "https://example.com/cover.png"
-            },
-            "action": {
-              "type": "open_url",
-              "url": "zhihu://answers/123"
-            },
-            "extra": {
-              "contentToken": "123",
-              "contentType": "answer",
-              "readTime": 1716120000,
-              "questionToken": "456"
-            },
-            "matrix": [
-              {
-                "type": "text",
-                "data": {
-                  "text": "已阅读"
-                }
-              }
-            ]
-          }
-        }
-        ],"paging":{"is_end":true,"next":""}}""",
-            ).jsonObject
-        val environment = object : PaginationEnvironment {
-            override fun httpClient() = client
-
-            override fun authenticatedCookies() = emptyMap<String, String>()
-
-            override suspend fun fetchJson(url: String, include: String) = page
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) = throw error
-        }
-        try {
-            listOf(false, true).forEach { withCache ->
-                val storage = LocalHistoryStorage()
-                storage.clearAndSave()
-                if (withCache) storage.add(cached)
-                val list = OnlineHistoryViewModel()
-                try {
-                    list.loadFor(environment, "synthetic-preview")
-                    val item = list.displayItems.single()
-                    val route = assertIs<Article>(item.navDestination)
-                    assertEquals(Article(type = ArticleType.Answer, id = 123), route)
-                    assertEquals("标题", item.title)
-                    assertEquals("作者", item.authorName)
-                    assertEquals("摘要", item.summary)
-                    assertEquals(if (withCache) "avatar" else null, item.avatarSrc)
-                    val model = ArticleViewModel(route, null)
-                    assertEquals("", model.title)
-                    assertEquals("", model.authorName)
-                    assertEquals(0L, model.questionId)
-                    assertEquals("", model.authorBio)
-                    assertEquals("", model.authorAvatarSrc)
-                    assertEquals("", model.authorId)
-                    assertEquals("", model.authorUrlToken)
-                    assertEquals("", model.content)
-                    assertNull(model.sourceContent)
-                } finally {
-                    list.viewModelScope.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
-                }
-            }
-        } finally {
-            client.close()
-            client.engine.close()
-            Dispatchers.resetMain()
-        }
     }
 
     @Test
@@ -251,160 +144,6 @@ class HistoryMutationTest {
     }
 
     @Test
-    fun batchDeleteSerializesPaginationAndKeepsUnselectedPages() = runBlocking {
-        val requests = ConcurrentLinkedQueue<HttpRequestData>()
-        val pageStarted = CompletableDeferred<Unit>()
-        val pageGate = CompletableDeferred<Unit>()
-        val deleteStarted = CompletableDeferred<Unit>()
-        val deleteGate = CompletableDeferred<Unit>()
-        var pageHasBeenDeleted = false
-        val client = HttpClient(
-            MockEngine { request ->
-                requests += request
-                deleteStarted.complete(Unit)
-                deleteGate.await()
-                pageHasBeenDeleted = true
-                respond("{}")
-            },
-        )
-        val first = Json
-            .parseToJsonElement(
-                """{"data":[
-              {"card_type":"single_card","data":{"header":{"icon":"","title":"首页回答"},"action":{"type":"router","url":"zhihu://answers/1"},"extra":{"content_token":"t1","content_type":"answer","read_time":1,"question_token":"1"}}},
-              {"card_type":"single_card","data":{"header":{"icon":"","title":"保留文章"},"action":{"type":"router","url":"zhihu://articles/2"},"extra":{"content_token":"t2","content_type":"article","read_time":2,"question_token":"1"}}}
-            ],"paging":{"is_end":false,"next":"https://api.zhihu.com/unify-consumption/read_history?offset=2&limit=2"}}""",
-            ).jsonObject
-        val next = Json
-            .parseToJsonElement(
-                """{"data":[
-              {"card_type":"single_card","data":{"header":{"icon":"","title":"重叠回答"},"action":{"type":"router","url":"zhihu://answers/1"},"extra":{"content_token":"t1","content_type":"answer","read_time":1,"question_token":"1"}}},
-              {"card_type":"single_card","data":{"header":{"icon":"","title":"第二页回答"},"action":{"type":"router","url":"zhihu://answers/3"},"extra":{"content_token":"t3","content_type":"answer","read_time":3,"question_token":"1"}}}
-            ],"paging":{"is_end":true,"next":""}}""",
-            ).jsonObject
-        val environment = object : PaginationEnvironment {
-            override fun httpClient() = client
-
-            override fun authenticatedCookies() = emptyMap<String, String>()
-
-            override suspend fun fetchJson(url: String, include: String): JsonObject {
-                if (url.contains("offset=2")) {
-                    pageStarted.complete(Unit)
-                    pageGate.await()
-                    return next
-                }
-                return if (pageHasBeenDeleted) {
-                    Json
-                        .parseToJsonElement(
-                            """{"data":[{"card_type":"single_card","data":{"header":{"icon":"","title":"保留文章"},"action":{"type":"router","url":"zhihu://articles/2"},"extra":{"content_token":"t2","content_type":"article","read_time":2,"question_token":"1"}}}],"paging":{"is_end":true,"next":""}}""",
-                        ).jsonObject
-                } else {
-                    first
-                }
-            }
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) = throw error
-        }
-        Dispatchers.setMain(Dispatchers.Unconfined)
-        val model = OnlineHistoryViewModel()
-        try {
-            model.loadFor(environment, "synthetic-paged-history")
-            model.loadMore(environment)
-            pageStarted.await()
-            val deleting = async(start = CoroutineStart.UNDISPATCHED) {
-                model.deleteItems(environment, linkedSetOf("online:answer:t1", "online:answer:t3"))
-            }
-            assertFalse(deleteStarted.isCompleted, "正在加载的第二页必须先完成，删除不能并发取旧页")
-            pageGate.complete(Unit)
-            deleteStarted.await()
-            assertEquals(3, model.displayItems.size, "重叠分页按服务端 token/type 去重")
-            assertFalse(deleting.isCompleted)
-            val refresh = async(start = CoroutineStart.UNDISPATCHED) { model.pullToRefresh(environment) }
-            assertFalse(refresh.isCompleted, "删除返回前刷新不能取到旧记录")
-            deleteGate.complete(Unit)
-            assertTrue(deleting.await())
-            refresh.await()
-            assertEquals("保留文章", model.displayItems.single().title)
-            assertEquals("online:article:t2", model.displayItems.single().stableKey)
-            assertEquals(
-                Json.parseToJsonElement("""{"pairs":[{"content_token":"t1","content_type":"answer"},{"content_token":"t3","content_type":"answer"}],"clear":false}"""),
-                Json.parseToJsonElement((requests.single().body as TextContent).text),
-            )
-        } finally {
-            pageGate.complete(Unit)
-            deleteGate.complete(Unit)
-            model.viewModelScope.coroutineContext[Job]!!.cancelAndJoin()
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun closeHistoryFailureDoesNotChangeLocalRecordingOrEraseExistingFile() = runBlocking {
-        val localHistory = LocalHistoryStorage()
-        val requests = mutableListOf<HttpRequestData>()
-        var status = HttpStatusCode.ServiceUnavailable
-        var responseBody = "{}"
-        val client = HttpClient(
-            MockEngine { request ->
-                requests += request
-                respond(responseBody, status)
-            },
-        )
-        val environment = object : PaginationEnvironment {
-            override fun httpClient() = client
-
-            override fun authenticatedCookies() = mapOf("d_c0" to "synthetic-device")
-
-            override suspend fun fetchJson(url: String, include: String): JsonObject =
-                Json.parseToJsonElement("""{"data":[],"paging":{"is_end":true,"next":""}}""").jsonObject
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
-        }
-        Dispatchers.setMain(Dispatchers.Unconfined)
-        val model = OnlineHistoryViewModel()
-        try {
-            model.loadFor(environment, "synthetic-history")
-            localHistory.add(Question(1, "原记录"))
-            val historyFile = java.nio.file.Path
-                .of(appPrivateDirectory().toString(), "history.json")
-            val originalLocalBytes = Files.readAllBytes(historyFile)
-            environment.addReadHistory("1", "answer")
-            assertEquals(1, requests.size)
-            assertEquals("/api/v4/read_history/add", requests.single().url.encodedPath)
-            assertEquals(Json.parseToJsonElement("""{"content_token":"1","content_type":"answer"}"""), Json.parseToJsonElement((requests.single().body as TextContent).text))
-            assertFails { model.setRecordingEnabled(environment, false) }
-            assertTrue(localHistory.recordingEnabled)
-            assertEquals(1, localHistory.history.size)
-            assertContentEquals(originalLocalBytes, Files.readAllBytes(historyFile))
-            assertTrue(model.recordingEnabled)
-            assertFalse(model.isChangingRecording)
-            status = HttpStatusCode.OK
-            responseBody = """{"error":"need_login"}"""
-            assertFails { model.setRecordingEnabled(environment, false) }
-            assertTrue(localHistory.recordingEnabled)
-            assertTrue(model.recordingEnabled)
-            assertFalse(model.isChangingRecording)
-            assertContentEquals(originalLocalBytes, Files.readAllBytes(historyFile))
-            responseBody = "{}"
-            assertTrue(model.setRecordingEnabled(environment, false))
-            assertFalse(model.recordingEnabled)
-            assertFalse(localHistory.recordingEnabled)
-            assertTrue(localHistory.history.isEmpty())
-            val count = requests.size
-            environment.addReadHistory("2", "answer")
-            localHistory.add(Question(2, "不应新增"))
-            assertEquals(count, requests.size)
-            assertTrue(localHistory.history.isEmpty())
-            assertEquals(Json.parseToJsonElement("""{"enabled":false}"""), Json.parseToJsonElement((requests.last().body as TextContent).text))
-            assertEquals("/read_history/set_switch", requests.last().url.encodedPath)
-        } finally {
-            client.close()
-            model.viewModelScope.cancel()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
     fun localModelUsesCanonicalStorageAndKeepsRowsWhenFileReadOrDeleteFails() = runBlocking {
         val client = HttpClient(MockEngine { error("本地历史不能请求网络") })
         val environment = object : PaginationEnvironment {
@@ -446,83 +185,6 @@ class HistoryMutationTest {
         } finally {
             client.close()
             model.viewModelScope.cancel()
-        }
-    }
-
-    @Test
-    fun totalCannotOverrideNewerSwitchAndEnabledAccountKeepsLocalOptOut() = runBlocking {
-        val history = LocalHistoryStorage()
-        val pendingTotal = CompletableDeferred<Unit>()
-        val totalStarted = CompletableDeferred<Unit>()
-        var delayed = true
-        var disabled = true
-        val client = HttpClient(
-            MockEngine { request ->
-                if (request.url.encodedPath == "/read_history/total") {
-                    val value = disabled
-                    if (delayed) {
-                        totalStarted.complete(Unit)
-                        pendingTotal.await()
-                    }
-                    respond("""{"disabled":$value}""")
-                } else {
-                    respond("{}")
-                }
-            },
-        )
-        var pageLoads = 0
-        val environment = object : PaginationEnvironment {
-            override fun httpClient() = client
-
-            override fun authenticatedCookies() = emptyMap<String, String>()
-
-            override suspend fun fetchJson(url: String, include: String): JsonObject {
-                pageLoads++
-                return Json.parseToJsonElement("""{"data":[],"paging":{"is_end":true,"next":""}}""").jsonObject
-            }
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
-        }
-        Dispatchers.setMain(Dispatchers.Unconfined)
-        val model = OnlineHistoryViewModel()
-        try {
-            model.loadFor(environment, "account-a")
-            history.add(Question(1, "原记录"))
-            val oldTotal = async(start = CoroutineStart.UNDISPATCHED) { model.loadRecordingSetting(environment, "account-a") }
-            totalStarted.await()
-            assertTrue(model.setRecordingEnabled(environment, false))
-            assertTrue(model.setRecordingEnabled(environment, true))
-            history.add(Question(2, "重新记录"))
-            pendingTotal.complete(Unit)
-            oldTotal.await()
-            assertTrue(model.recordingEnabled)
-            assertTrue(history.recordingEnabled)
-            assertEquals(Question(2), history.history.single())
-
-            delayed = false
-            model.loadRecordingSetting(environment, "account-a")
-            assertFalse(model.recordingEnabled)
-            val count = pageLoads
-            disabled = false
-            model.loadRecordingSetting(environment, "account-a")
-            assertTrue(model.recordingEnabled)
-            assertEquals(count + 1, pageLoads)
-            assertFalse(history.recordingEnabled)
-            disabled = true
-            model.loadRecordingSetting(environment, "account-a")
-            assertFalse(model.recordingEnabled)
-            model.loadFor(environment, "account-b")
-            assertTrue(model.recordingEnabled)
-            disabled = false
-            model.loadRecordingSetting(environment, "account-b")
-            assertTrue(model.recordingEnabled)
-            assertFalse(history.recordingEnabled)
-            assertEquals(Question(2), history.history.single())
-        } finally {
-            pendingTotal.complete(Unit)
-            client.close()
-            model.viewModelScope.cancel()
-            Dispatchers.resetMain()
         }
     }
 

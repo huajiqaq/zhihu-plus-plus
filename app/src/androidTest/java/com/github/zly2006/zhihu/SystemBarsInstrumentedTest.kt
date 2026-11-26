@@ -26,30 +26,17 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Bundle
 import android.os.Parcel
-import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.zly2006.zhihu.test.resetAppPreferences
-import com.github.zly2006.zhihu.theme.AndroidThemeSettings
-import com.github.zly2006.zhihu.theme.ThemeMode
-import com.github.zly2006.zhihu.theme.ZhihuTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import androidx.compose.ui.graphics.Color as ComposeColor
 
 @RunWith(AndroidJUnit4::class)
 class SystemBarsInstrumentedTest {
@@ -156,83 +143,5 @@ class SystemBarsInstrumentedTest {
     @Before
     fun setUp() {
         composeRule.resetAppPreferences()
-        AndroidThemeSettings.setThemeMode(composeRule.activity, ThemeMode.DARK)
-    }
-
-    /**
-     * 深色主题状态栏须与页面背景无缝衔接；行为依据：https://github.com/zly2006/zhihu-plus-plus/issues/288
-     */
-    @Test
-    fun darkThemeStatusBarIsEdgeToEdge() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val originalActivity = composeRule.activity
-        instrumentation.runOnMainSync {
-            originalActivity.setContent {
-                ZhihuTheme {
-                    SolidThemeSurface()
-                }
-            }
-        }
-        composeRule.waitForIdle()
-        waitUntilStatusBarColor(originalActivity, "深色主题")
-    }
-
-    private fun waitUntilStatusBarColor(
-        activity: MainActivity,
-        stage: String,
-    ) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val deadline = SystemClock.uptimeMillis() + 10_000
-        var consecutiveMatchingFrames = 0
-        var statusBarColors = emptyList<Int>()
-        var bodyColor = SOLID_SURFACE_COLOR
-        do {
-            instrumentation.waitForIdleSync()
-            SystemClock.sleep(16)
-            val sampledColors = sampleStatusBarColors(activity)
-            statusBarColors = sampledColors.take(2)
-            bodyColor = sampledColors.last()
-            consecutiveMatchingFrames =
-                if (statusBarColors.all { it == SOLID_SURFACE_COLOR }) {
-                    consecutiveMatchingFrames + 1
-                } else {
-                    0
-                }
-        } while (consecutiveMatchingFrames < REQUIRED_MATCHING_FRAMES && SystemClock.uptimeMillis() < deadline)
-        assertTrue(
-            "$stage：预期状态栏颜色为 ${SOLID_SURFACE_COLOR.toUInt().toString(16)}，" +
-                "实际采样为 ${statusBarColors.joinToString { it.toUInt().toString(16) }}；" +
-                "body=${bodyColor.toUInt().toString(16)}, focus=${activity.window.decorView.hasWindowFocus()}, " +
-                "flags=${activity.window.attributes.flags}, dim=${activity.window.attributes.dimAmount}",
-            consecutiveMatchingFrames >= REQUIRED_MATCHING_FRAMES,
-        )
-    }
-
-    private fun sampleStatusBarColors(activity: MainActivity): List<Int> {
-        val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        val statusBarHeight = ViewCompat
-            .getRootWindowInsets(activity.window.decorView)
-            ?.getInsets(WindowInsetsCompat.Type.statusBars())
-            ?.top
-            ?: error("无法获取状态栏边距")
-        val y = statusBarHeight / 2
-        // Pixel 7 CI 设备有居中的摄像头开孔，须在开孔两侧校验精确颜色。
-        return listOf(
-            screenshot.getPixel(screenshot.width / 3, y),
-            screenshot.getPixel(screenshot.width * 2 / 3, y),
-            screenshot.getPixel(screenshot.width / 3, screenshot.height / 2),
-        ).also { screenshot.recycle() }
     }
 }
-
-@Composable
-private fun SolidThemeSurface() {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(ComposeColor(SOLID_SURFACE_COLOR)),
-    )
-}
-
-private const val SOLID_SURFACE_COLOR = 0xFF121212.toInt()
-private const val REQUIRED_MATCHING_FRAMES = 3

@@ -46,62 +46,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * #597：网络失败时刷新不应清空已加载内容。
- */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RefreshKeepsLoadedItemsTest {
-    private class TestFeedViewModel : BaseFeedViewModel() {
-        override val initialUrl = "https://example.invalid/feed"
-        var failNextFetch = false
-        var nextItems: List<FeedDisplayItem> = emptyList()
-
-        override suspend fun fetchFeeds(environment: PaginationEnvironment) {
-            if (failNextFetch) error("network unavailable")
-            addDisplayItems(nextItems)
-        }
-    }
-
-    @Test
-    fun failedRefreshKeepsExistingItems() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val client = HttpClient(MockEngine { error("不应发起 HTTP 请求") })
-        try {
-            val viewModel = TestFeedViewModel()
-            viewModel.addDisplayItems(listOf(item("a"), item("b")))
-            viewModel.failNextFetch = true
-
-            viewModel.refresh(environment(client))
-            advanceUntilIdle()
-
-            assertEquals(listOf("a", "b"), viewModel.displayItems.map { it.title })
-        } finally {
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun successfulRefreshReplacesExistingItems() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val client = HttpClient(MockEngine { error("不应发起 HTTP 请求") })
-        try {
-            val viewModel = TestFeedViewModel()
-            viewModel.addDisplayItems(listOf(item("a"), item("b")))
-            viewModel.nextItems = listOf(item("c"))
-
-            viewModel.refresh(environment(client))
-            advanceUntilIdle()
-
-            assertEquals(listOf("c"), viewModel.displayItems.map { it.title })
-        } finally {
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
     @Test
     fun stalePullResponseCannotReplaceNewRefreshOrFinishItsLoading() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)

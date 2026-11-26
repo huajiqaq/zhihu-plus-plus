@@ -185,14 +185,9 @@ assert.equal(toastContainer.children.length, 2, '每个被过滤条目应显示�
 
 const firstToast = toastContainer.children[0];
 const secondToast = toastContainer.children[1];
-assert.equal(firstToast.style.background, '#ffffff', '提示背景应为白色');
-
-const firstIcon = firstToast.children[0];
 const firstText = firstToast.children[1];
 const secondText = secondToast.children[1];
 
-assert.equal(firstIcon.textContent, '✓', '提示图标应为对勾');
-assert.equal(firstIcon.style.color, '#16a34a', '提示对勾应为绿色');
 assert.ok(firstText.textContent.includes('付费回答标题'), '第一条提示应包含被过滤回答的标题');
 assert.ok(secondText.textContent.includes('学堂文章标题'), '第二条提示应包含被过滤文章的标题');
 

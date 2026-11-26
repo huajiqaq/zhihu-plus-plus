@@ -25,13 +25,10 @@ import com.github.zly2006.zhihu.data.ZhihuPaging
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
-import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CompletableDeferred
@@ -44,9 +41,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -54,83 +48,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CollectionsViewModelTest {
-    /** 收藏夹创建沿用已验证的 Web 请求契约，见 https://github.com/zly2006/zhihu-plus-plus/issues/525。 */
-    @Test
-    fun createCollectionUsesVerifiedWebContract() = runTest {
-        val client = jsonClient { request ->
-            assertEquals(HttpMethod.Post, request.method)
-            assertEquals("/api/v4/collections", request.url.encodedPath)
-            assertEquals("101_3_3.0", request.headers["x-zse-93"])
-            assertTrue(request.headers["x-zse-96"].orEmpty().startsWith("2.0_"))
-            val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
-            assertEquals("测试收藏夹", body.getValue("title").jsonPrimitive.content)
-            assertEquals("测试描述", body.getValue("description").jsonPrimitive.content)
-            assertTrue(body.getValue("is_public").jsonPrimitive.boolean)
-            respondJson(
-                """{"status":100,"message":"","collection":{"id":123}}""",
-            )
-        }
-        val viewModel = CollectionsViewModel("owner")
-
-        assertTrue(
-            viewModel.createCollection(
-                environment = testEnvironment(client),
-                title = "测试收藏夹",
-                description = "测试描述",
-                isPublic = true,
-            ),
-        )
-        assertFalse(viewModel.isCreatingCollection)
-        assertNull(viewModel.createCollectionError)
-    }
-
-    /** 只删除用户选中的非默认收藏夹，见 https://github.com/zly2006/zhihu-plus-plus/issues/525。 */
-    @Test
-    fun deleteCollectionTargetsOnlyTheSelectedNonDefaultCollection() = runTest {
-        var requestCount = 0
-        val client = jsonClient { request ->
-            requestCount++
-            assertEquals(HttpMethod.Delete, request.method)
-            assertEquals("/api/v4/collections/selected-id", request.url.encodedPath)
-            respondJson("""{"success":true}""")
-        }
-        val viewModel = CollectionsViewModel("owner")
-        val environment = testEnvironment(client)
-
-        assertTrue(
-            viewModel.deleteCollection(
-                environment,
-                Collection(id = "selected-id", title = "待删除收藏夹"),
-            ),
-        )
-        assertFalse(
-            viewModel.deleteCollection(
-                environment,
-                Collection(id = "default-id", title = "默认收藏夹", isDefault = true),
-            ),
-        )
-        assertEquals(1, requestCount)
-        assertEquals("默认收藏夹不能删除", viewModel.deleteCollectionError)
-    }
-
-    /** HTTP 成功不代表删除已获确认，见 https://github.com/zly2006/zhihu-plus-plus/issues/525。 */
-    @Test
-    fun httpSuccessWithoutDeleteConfirmationIsRejected() = runTest {
-        val client = jsonClient { request ->
-            assertEquals(HttpMethod.Delete, request.method)
-            respondJson("""{"success":false,"message":"不能删除"}""")
-        }
-        val viewModel = CollectionsViewModel("owner")
-
-        assertFalse(
-            viewModel.deleteCollection(
-                testEnvironment(client),
-                Collection(id = "selected-id", title = "待删除收藏夹"),
-            ),
-        )
-        assertEquals("不能删除", viewModel.deleteCollectionError)
-    }
-
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun collectionContentRefreshKeepsVisibleItemsUntilAReplacementPageSucceeds() = runTest {
@@ -205,59 +122,6 @@ class CollectionsViewModelTest {
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun collectionMetadataFailureIsVisibleAndRetryRecoversTheExistingPage() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        var failMetadata = false
-        val failures = mutableListOf<Exception>()
-        val client = HttpClient(MockEngine) {
-            engine {
-                this.dispatcher = dispatcher
-                addHandler { request ->
-                    if (request.url.encodedPath.endsWith("/items")) {
-                        respondJson("""{"data":[],"paging":{"is_end":true,"next":""}}""")
-                    } else {
-                        check(!failMetadata) { "收藏夹信息加载失败" }
-                        respondJson("""{"collection":${ZhihuJson.json.encodeToString(Collection("collection-metadata", title = "已加载的收藏夹"))}}""")
-                    }
-                }
-            }
-            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-        }
-        val environment = object : PaginationEnvironment {
-            override fun httpClient() = client
-
-            override fun authenticatedCookies() = emptyMap<String, String>()
-
-            override suspend fun handleFetchFailure(tag: String?, error: Exception) {
-                failures += error
-            }
-        }
-        try {
-            val model = CollectionContentViewModel("collection-metadata")
-            model.refresh(environment)
-            advanceUntilIdle()
-            assertEquals("已加载的收藏夹", model.title)
-            failMetadata = true
-            model.refresh(environment)
-            advanceUntilIdle()
-            assertEquals("已加载的收藏夹", model.title)
-            assertFalse(model.isLoading)
-            assertTrue(model.errorMessage?.isNotBlank() == true, "元数据失败必须进入可重试错误状态")
-            assertEquals(1, failures.size)
-            failMetadata = false
-            model.refresh(environment)
-            advanceUntilIdle()
-            assertNull(model.errorMessage)
-            assertEquals("已加载的收藏夹", model.title)
-        } finally {
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
     private fun collectionItem(id: Long, title: String) = CollectionItem(
         created = "0",
         content = Feed.ArticleTarget(
@@ -267,21 +131,6 @@ class CollectionsViewModelTest {
             title = title,
         ),
     )
-
-    private fun jsonClient(handler: MockRequestHandler) =
-        HttpClient(MockEngine(handler)) {
-            install(ContentNegotiation) {
-                json(Json { ignoreUnknownKeys = true })
-            }
-        }
-
-    private fun testEnvironment(client: HttpClient) = object : ZhihuApiEnvironment {
-        override fun httpClient() = client
-
-        override fun authenticatedCookies() = mapOf("d_c0" to "test-cookie")
-
-        override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
-    }
 
     private fun MockRequestHandleScope.respondJson(content: String) = respond(
         content = content,

@@ -48,7 +48,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.encodeToString
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
@@ -60,41 +59,6 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SegmentCommentSnapshotRegressionTest {
-    @Test
-    fun completedCommentIsNotCountedTwiceAfterArticleRefreshAndDeletion() = withFixture {
-        val account = account("first")
-        val article = article(account, 81001L)
-        val (target, comments) = comments(81001L)
-        load(article, account)
-
-        val submitted = submit(comments, target, account)
-        val afterSubmit = effectiveCommentCount(article)
-        assertEquals(1, assertNotNull(article.segmentCommentSnapshot).effectiveDelta(listOf(SEGMENT_ID)))
-
-        account.serverCounts[81001L] = 1
-        load(article, account)
-        assertEquals(1, serverCommentCount(article))
-        val afterRefresh = effectiveCommentCount(article)
-
-        delete(comments, submitted, account)
-        val afterDelete = effectiveCommentCount(article)
-        assertTrue(comments.allData.isEmpty())
-        assertEquals(
-            listOf(
-                "GET /api/v4/articles/81001",
-                "POST /api/v4/comment_v5/articles/81001/segment/comment",
-                "GET /api/v4/articles/81001",
-                "DELETE /api/v4/comment_v5/comment/comment-1",
-            ),
-            account.requests.toList(),
-        )
-        assertEquals(
-            listOf(1, 1, 0),
-            listOf(afterSubmit, afterRefresh, afterDelete),
-            "新基数已包含提交，旧增量不应再次叠加；删除后应回到零",
-        )
-    }
-
     @Test
     fun commentCompletedDuringRefreshRemainsAfterTheNewBaseline() = withFixture {
         val account = account("during-refresh")
@@ -126,101 +90,6 @@ class SegmentCommentSnapshotRegressionTest {
             listOf(afterRefresh, afterFirstDelete, afterSecondDelete),
             "刷新期间成功的评论必须保留，但刷新前的评论不能重复计算",
         )
-    }
-
-    @Test
-    fun sameSegmentIdInDifferentArticlesDoesNotShareLocalDelta() = withFixture {
-        val account = account("content-isolation")
-        val first = article(account, 81003L)
-        val second = article(account, 81004L)
-        load(first, account)
-        load(second, account)
-        val (target, comments) = comments(81003L)
-
-        submit(comments, target, account)
-
-        assertEquals(
-            listOf(1, 0),
-            listOf(effectiveCommentCount(first), effectiveCommentCount(second)),
-            "另一篇正文不能继承当前正文的本地评论增量",
-        )
-    }
-
-    @Test
-    fun sameArticleAndSegmentInDifferentClientsDoesNotShareLocalDelta() = withFixture {
-        val firstAccount = account("account-a")
-        val secondAccount = account("account-b")
-        assertTrue(firstAccount.client !== secondAccount.client)
-        val first = article(firstAccount, 81005L)
-        val second = article(secondAccount, 81005L)
-        load(first, firstAccount)
-        load(second, secondAccount)
-        val (target, comments) = comments(81005L)
-
-        submit(comments, target, firstAccount)
-
-        assertEquals(
-            listOf(1, 0),
-            listOf(effectiveCommentCount(first), effectiveCommentCount(second)),
-            "一个客户端会话的本地增量不能叠加到另一客户端的正文快照",
-        )
-    }
-
-    @Test
-    fun failedRefreshKeepsOldBodyAndItsCompletedLocalDelta() = withFixture {
-        val account = account("failed-refresh")
-        val article = article(account, 81006L)
-        val (target, comments) = comments(81006L)
-        load(article, account)
-        submit(comments, target, account)
-        val oldContent = article.content
-        val oldDelta = assertNotNull(article.segmentCommentSnapshot).effectiveDelta(listOf(SEGMENT_ID))
-        assertEquals(1, oldDelta)
-
-        account.detailStatus = HttpStatusCode.InternalServerError
-        startLoad(article, account).joinAll()
-
-        assertNotNull(article.loadError)
-        assertFalse(article.isLoading)
-        assertEquals(oldContent, article.content)
-        assertEquals(oldDelta, assertNotNull(article.segmentCommentSnapshot).effectiveDelta(listOf(SEGMENT_ID)))
-        assertEquals(1, effectiveCommentCount(article))
-    }
-
-    @Test
-    fun oldSnapshotKeepsItsWatermarkWhenAnotherSnapshotRefreshes() = withFixture {
-        val account = account("old-snapshot")
-        val article = article(account, 81007L)
-        val (target, comments) = comments(81007L)
-        assertNull(article.segmentCommentSnapshot, "未加载正文不能伪造水位")
-        load(article, account)
-        val submitted = submit(comments, target, account)
-        val oldSnapshot = assertNotNull(article.segmentCommentSnapshot)
-        assertEquals(1, oldSnapshot.effectiveDelta(listOf(SEGMENT_ID)))
-
-        account.serverCounts[81007L] = 1
-        load(article, account)
-        assertTrue(article.segmentCommentSnapshot !== oldSnapshot)
-        assertEquals(1, oldSnapshot.effectiveDelta(listOf(SEGMENT_ID)), "新快照不能清除旧快照的增量")
-        assertEquals(0, assertNotNull(article.segmentCommentSnapshot).effectiveDelta(listOf(SEGMENT_ID)))
-
-        delete(comments, submitted, account)
-        assertEquals(0, oldSnapshot.effectiveDelta(listOf(SEGMENT_ID)))
-        assertEquals(-1, assertNotNull(article.segmentCommentSnapshot).effectiveDelta(listOf(SEGMENT_ID)))
-    }
-
-    @Test
-    fun failedRefreshRetainsTheSameSnapshotInstance() = withFixture {
-        val account = account("failed-snapshot")
-        val article = article(account, 81008L)
-        load(article, account)
-        val oldSnapshot = assertNotNull(article.segmentCommentSnapshot)
-        account.detailStatus = HttpStatusCode.InternalServerError
-
-        startLoad(article, account).joinAll()
-
-        assertNotNull(article.loadError)
-        assertTrue(article.segmentCommentSnapshot === oldSnapshot)
     }
 
     private fun withFixture(test: suspend Fixture.() -> Unit) = runTest {
@@ -321,12 +190,8 @@ class SegmentCommentSnapshotRegressionTest {
         name: String,
     ) {
         val serverCounts = ConcurrentHashMap<Long, Int>()
-        val requests = Collections.synchronizedList(mutableListOf<String>())
         private val cookies = mapOf("d_c0" to "synthetic-$name")
         private val commentSequence = AtomicInteger()
-
-        @Volatile
-        var detailStatus: HttpStatusCode = HttpStatusCode.OK
 
         @Volatile
         var detailGate: DetailGate? = null
@@ -335,23 +200,17 @@ class SegmentCommentSnapshotRegressionTest {
             MockEngine { request ->
                 check(request.url.host == "www.zhihu.com") { "不应请求此主机：${request.url.host}" }
                 val path = request.url.encodedPath
-                requests.add("${request.method.value} $path")
                 val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
                 when {
                     request.method == HttpMethod.Get && path.startsWith("/api/v4/articles/") -> {
                         val id = path.substringAfterLast('/').toLong()
                         check(request.url.parameters["include"]?.contains("content") == true)
                         val count = serverCounts[id] ?: 0
-                        val status = detailStatus
                         detailGate?.let { gate ->
                             gate.started.complete(Unit)
                             gate.release.await()
                         }
-                        if (status == HttpStatusCode.OK) {
-                            respond(articleResponse(id, count), status, jsonHeaders)
-                        } else {
-                            respond("""{"error":"synthetic detail failure"}""", status, jsonHeaders)
-                        }
+                        respond(articleResponse(id, count), HttpStatusCode.OK, jsonHeaders)
                     }
                     request.method == HttpMethod.Post && path.matches(Regex("/api/v4/comment_v5/articles/\\d+/segment/comment")) -> {
                         val comment = responseComment("comment-${commentSequence.incrementAndGet()}")

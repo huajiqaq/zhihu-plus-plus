@@ -146,7 +146,8 @@ tasks.register<Exec>("verifyMacosReleaseIsolation") {
         "-c",
         """
         test -f "${'$'}1"
-        if /usr/bin/strings "${'$'}1" | /usr/bin/grep -Eq 'ZHPP_BACKGROUND_UI_DEBUG_V1|--smoke-test|MacosAppSmokeTest|native-unhandled-exception-(smoke-)?test'; then
+        contents="${'$'}(/usr/bin/strings "${'$'}1")"
+        if /usr/bin/grep -E 'ZHPP_BACKGROUND_UI_DEBUG_V1|--smoke-test|MacosAppSmokeTest|native-unhandled-exception-(smoke-)?test' <<< "${'$'}contents" > /dev/null; then
           echo "macOS release binary contains debug or smoke-test controls" >&2
           exit 1
         fi

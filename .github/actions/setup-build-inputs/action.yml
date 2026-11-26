@@ -1,8 +1,20 @@
 name: Prepare build inputs
-description: Install the host SDK and the locked Tiqian generation tools
+description: Configure Gradle and install the host SDK and locked Tiqian generation tools
 runs:
   using: composite
   steps:
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    - name: Cache Kotlin Native
+      if: runner.os == 'macOS'
+      uses: actions/cache@v4
+      with:
+        path: ~/.konan
+        key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/upstream-sources.lock.json', 'gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+        restore-keys: |
+          konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/upstream-sources.lock.json', 'gradle/wrapper/gradle-wrapper.properties') }}-
     - name: Set up Python
       uses: actions/setup-python@v5
       with:

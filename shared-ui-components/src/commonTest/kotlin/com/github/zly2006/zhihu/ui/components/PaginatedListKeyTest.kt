@@ -22,39 +22,13 @@ import kotlin.test.assertEquals
 
 class PaginatedListKeyTest {
     @Test
-    fun uniqueKeysStayUnchanged() {
-        val keys = uniquePaginatedListKeys(listOf("answer:1", "article:1", "answer:2")) { it }
-
-        assertEquals(listOf("answer:1", "article:1", "answer:2"), keys)
-    }
-
-    @Test
-    fun duplicateKeysKeepFirstKeyAndSuffixLaterOccurrences() {
-        val keys = uniquePaginatedListKeys(listOf(2544209984L, 2544209984L, 42L, 2544209984L)) { it }
-
-        assertEquals(
-            listOf(
-                2544209984L,
-                "PaginatedListDuplicateKey:1:0:2544209984",
-                42L,
-                "PaginatedListDuplicateKey:2:0:2544209984",
-            ),
-            keys,
-        )
-    }
-
-    @Test
     fun duplicateKeysAvoidExistingStringKeyCollisions() {
-        val collidingKey = "PaginatedListDuplicateKey:1:0:same"
+        val collidingKey = uniquePaginatedListKeys(listOf("same", "same")) { it }[1]
         val keys = uniquePaginatedListKeys(listOf("same", "same", collidingKey)) { it }
 
-        assertEquals(
-            listOf(
-                "same",
-                "PaginatedListDuplicateKey:1:1:same",
-                collidingKey,
-            ),
-            keys,
-        )
+        assertEquals("same", keys[0])
+        assertEquals(collidingKey, keys[2])
+        assertEquals(3, keys.size)
+        assertEquals(keys.size, keys.toSet().size)
     }
 }

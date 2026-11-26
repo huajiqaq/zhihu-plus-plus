@@ -50,7 +50,8 @@ class ZhihuInstrumentedTestRunner : AndroidJUnitRunner() {
     }
 
     override fun onStart() {
-        InstrumentedTestEnvironment.reseed(targetContext)
+        // 父类 onStart 才等待主线程空闲，mock 只在 callApplicationOnCreate 中播种。
+        if (!InstrumentedTestEnvironment.isMockMode()) InstrumentedTestEnvironment.reseed(targetContext)
         super.onStart()
     }
 

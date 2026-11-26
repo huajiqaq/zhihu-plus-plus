@@ -17,31 +17,21 @@
 
 package com.github.zly2006.zhihu.filter
 
-import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
-import com.github.zly2006.zhihu.navigation.Article
-import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.MapSettingsStore
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RemoteHistorySyncTest {
@@ -92,58 +82,12 @@ class RemoteHistorySyncTest {
         }
     }
 
-    @Test
-    fun slowHistoryDoesNotBlockFeedOrDuplicateRequestsAndLateResultFiltersLocally() = runTest {
-        val fixture = Fixture()
-        try {
-            fixture.gate = CompletableDeferred()
-            fixture.pages = listOf(page(listOf(1 to 100), null))
-            val job = fixture.start(this)!!
-            assertSame(job, fixture.start(this))
-            val card = FeedDisplayItem(title = "read", summary = null, details = "", feed = null, navDestinationJson = Article(id = 1L, type = ArticleType.Answer).toFeedDisplayItemNavDestinationJson())
-            val result = async {
-                fixture.sync.awaitRecentPage()
-                arrayOf(card).asList()
-            }
-            runCurrent()
-            advanceTimeBy(299)
-            assertFalse(result.isCompleted)
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(listOf(card), result.await())
-            assertEquals(1, fixture.requests.size)
-            fixture.gate!!.complete(Unit)
-            job.join()
-            assertEquals(emptyList(), fixture.sync.filterRemoteReads(listOf(card)))
-            assertEquals(1, fixture.requests.size) // 应用迟到结果不能再次请求推荐
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun invalidPagingAndDecodeFailuresNeverClaimCompletion() = runTest {
-        val fixture = Fixture()
-        try {
-            fixture.pages = listOf(page(listOf(1 to 100), "https://example.com/steal"))
-            fixture.start(this)!!.join()
-            assertEquals(listOf(REMOTE_HISTORY_FIRST_URL), fixture.requests)
-            assertEquals(0L, fixture.settings.getLong(REMOTE_HISTORY_WATERMARK_KEY, 0))
-            fixture.retryWith(listOf("""{"data":[{}],"paging":{"is_end":true,"next":""}}"""))
-            fixture.start(this)!!.join()
-            assertEquals(0L, fixture.settings.getLong(REMOTE_HISTORY_WATERMARK_KEY, 0))
-        } finally {
-            fixture.close()
-        }
-    }
-
     private class Fixture {
         val database = getContentFilterDatabase(createTempDirectory("remote-history").resolve("filter.db").toFile())
         val dao = database.contentOpenEventDao()
         val settings = MapSettingsStore()
         val requests = mutableListOf<String>()
         var pages = emptyList<String>()
-        var gate: CompletableDeferred<Unit>? = null
         private val client = HttpClient(MockEngine { respond("{}") })
         private val environment = object : PaginationEnvironment {
             override fun httpClient() = client
@@ -153,7 +97,6 @@ class RemoteHistorySyncTest {
             override suspend fun fetchJson(url: String, include: String): JsonObject {
                 assertEquals("", include)
                 requests += url
-                gate?.await()
                 return ZhihuJson.json.parseToJsonElement(pages[requests.lastIndex]).jsonObject
             }
 

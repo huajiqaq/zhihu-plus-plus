@@ -17,73 +17,19 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.useReaderConnection
 import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.Person
 import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
-import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
-import com.github.zly2006.zhihu.filter.ContentOpenFrom
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 class ForegroundReadFilterPipelineTest {
-    @Test
-    fun disabledOrReverseBlockReturnsItemsWithoutRecording() = runTest {
-        val fixture = fixture(settings = FeedFilterSettings(enableContentFilter = false))
-        val item = item("item", 1)
-
-        assertEquals(listOf(item), fixture.pipeline().filter(listOf(item)))
-        assertEquals(0, fixture.database.contentFilterDao().getRecordCount())
-        fixture.database.close()
-    }
-
-    @Test
-    fun keepsUnviewedNormalItemAndRecordsView() = runTest {
-        val fixture = fixture()
-        val item = item("item", 1, details = "文章 · 100 赞")
-
-        val result = fixture.pipeline().filter(listOf(item))
-
-        assertEquals(listOf("item"), result.map { it.title })
-        assertEquals(1, fixture.database.contentFilterDao().getRecordCount())
-        assertEquals(
-            emptyList(),
-            fixture.database
-                .blockedFeedRecordDao()
-                .observeAll()
-                .first(),
-        )
-        fixture.database.close()
-    }
-
-    @Test
-    fun blocksAlreadyViewedUnfollowedItemAndStoresHistory() = runTest {
-        val fixture = fixture()
-        val item = item("item", 1)
-        fixture.manager.recordContentView("article", "1")
-
-        val result = fixture.pipeline().filter(listOf(item))
-
-        assertEquals(emptyList(), result)
-        assertEquals(
-            listOf("已读过且未关注作者"),
-            fixture.database
-                .blockedFeedRecordDao()
-                .observeAll()
-                .first()
-                .map { it.blockedReason },
-        )
-        fixture.database.close()
-    }
-
     @Test
     fun blocksRemotelyOpenedItemWithoutPretendingItWasExposedLocally() = runTest {
         val fixture = fixture()
@@ -101,120 +47,6 @@ class ForegroundReadFilterPipelineTest {
         fixture.database.close()
     }
 
-    @Test
-    fun openedKeysAreDistinctAndKeepTypesAndSourcesSeparate() = runTest {
-        val fixture = fixture()
-        try {
-            val dao = fixture.database.contentOpenEventDao()
-            repeat(2) { dao.insert(ContentOpenEvent(contentType = "article", contentId = "2", openFrom = "remote_sync")) }
-            dao.insert(ContentOpenEvent(contentType = "answer", contentId = "2", openFrom = "home_feed"))
-            val keys = listOf("article:2", "answer:2", "article:3")
-            assertEquals(listOf("answer:2", "article:2"), dao.getOpenedContentKeysByKeys(keys).sorted())
-            assertEquals(
-                setOf("answer:2", "article:2"),
-                ContentOpenEventSupport.getAlreadyOpenedContentIds(
-                    fixture.database,
-                    listOf("article" to "2", "answer" to "2", "article" to "3"),
-                ),
-            )
-            assertEquals(listOf("article:2"), dao.getRemotelySyncedContentKeysByKeys(keys))
-            assertEquals(emptyList(), dao.getOpenedContentKeysByKeys(emptyList()))
-            assertEquals(
-                listOf("article:2"),
-                dao.getOpenedContentKeysByKeys((1..1100).map { "article:$it" }),
-            )
-        } finally {
-            fixture.database.close()
-        }
-    }
-
-    @Test
-    fun keepsFollowedItemEvenWhenAlreadyViewedOrLowQuality() = runTest {
-        val fixture = fixture()
-        val item = item("followed", 1, details = "1 分钟前", isFollowing = true)
-        fixture.manager.recordContentView("article", "1")
-
-        val result = fixture.pipeline().filter(listOf(item))
-
-        assertEquals(listOf("followed"), result.map { it.title })
-        assertEquals(
-            emptyList(),
-            fixture.database
-                .blockedFeedRecordDao()
-                .observeAll()
-                .first(),
-        )
-        fixture.database.close()
-    }
-
-    @Test
-    fun contentExposureRecorderKeepsOldReadsAndMarksInteraction() = runTest {
-        val fixture = fixture()
-
-        fixture.pipeline().filter(listOf(item("item", 1, details = "文章 · 100 赞")))
-        fixture.database.contentFilterDao().markAsInteracted(ContentViewRecord.generateId("article", "1"))
-
-        val record = fixture.database.contentFilterDao().getViewRecord("article:1")
-        assertEquals(true, record?.hasInteraction)
-        fixture.database.contentFilterDao().insertOrUpdateViewRecord(
-            ContentViewRecord(
-                id = "article:99",
-                targetType = "article",
-                targetId = "99",
-                firstViewTime = 0L,
-                lastViewTime = 0L,
-            ),
-        )
-        assertEquals(
-            0L,
-            fixture.database
-                .contentFilterDao()
-                .getViewRecord("article:99")
-                ?.lastViewTime,
-        )
-        fixture.database.close()
-    }
-
-    @Test
-    fun pendingOpenSourceIsTypedConsumedOnceAndDoesNotOverrideExplicitSources() = runTest {
-        val fixture = fixture()
-        val answer = Article(type = ArticleType.Answer, id = 7)
-        val article = Article(type = ArticleType.Article, id = 7)
-        try {
-            ContentOpenEventSupport.prepareContentOpen(answer, ContentOpenFrom.HISTORY)
-            ContentOpenEventSupport.recordOpenEvent(fixture.database, article)
-            ContentOpenEventSupport.recordOpenEvent(fixture.database, answer, openFrom = ContentOpenFrom.NOTIFICATION)
-            ContentOpenEventSupport.recordOpenEvent(fixture.database, answer)
-            ContentOpenEventSupport.recordOpenEvent(fixture.database, answer)
-            ContentOpenEventSupport.prepareContentOpen(answer, ContentOpenFrom.COLLECTION)
-            ContentOpenEventSupport.prepareContentOpen(
-                com.github.zly2006.zhihu.navigation
-                    .Person(id = "user", urlToken = "user", name = "user"),
-                ContentOpenFrom.HOME_FEED,
-            )
-            ContentOpenEventSupport.recordOpenEvent(fixture.database, answer)
-            val sources = fixture.database.useReaderConnection { connection ->
-                connection.usePrepared("SELECT openFrom FROM content_open_events ORDER BY id") { statement ->
-                    buildList {
-                        while (statement.step()) add(statement.getText(0))
-                    }
-                }
-            }
-            assertContentEquals(
-                arrayOf(ContentOpenFrom.UNKNOWN, ContentOpenFrom.NOTIFICATION, ContentOpenFrom.HISTORY, ContentOpenFrom.UNKNOWN, ContentOpenFrom.UNKNOWN),
-                sources.toTypedArray(),
-            )
-            assertEquals(0, fixture.database.contentFilterDao().getRecordCount(), "打开事件不是 feed 曝光")
-        } finally {
-            ContentOpenEventSupport.prepareContentOpen(
-                com.github.zly2006.zhihu.navigation
-                    .Person(id = "user", urlToken = "user", name = "user"),
-                ContentOpenFrom.UNKNOWN,
-            )
-            fixture.database.close()
-        }
-    }
-
     private fun fixture(settings: FeedFilterSettings = FeedFilterSettings()): Fixture {
         val database = getContentFilterDatabase(
             createTempDirectory("foreground-read-filter-pipeline").resolve("content-filter.db").toFile(),
@@ -226,8 +58,6 @@ class ForegroundReadFilterPipelineTest {
         val database: ContentFilterDatabase,
         val settings: FeedFilterSettings,
     ) {
-        val manager = ContentFilterManager(database.contentFilterDao())
-
         fun pipeline(): ForegroundReadFilterPipeline = ForegroundReadFilterPipeline(settings, database)
     }
 

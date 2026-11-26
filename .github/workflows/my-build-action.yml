@@ -7,9 +7,6 @@ on:
       args:
         required: false
         type: string
-      minify:
-        required: false
-        type: boolean
       release:
         required: false
         type: boolean
@@ -45,7 +42,6 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
-          cache: 'gradle'
 
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
@@ -193,7 +189,6 @@ jobs:
         with:
           distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
           java-version: '21'
-          cache: 'gradle'
       - name: Setup rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -223,16 +218,6 @@ jobs:
           key: rust-cache-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
             rust-cache-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.m2/repository
-            ./.gradle
-            ./**/.gradle
-          key: gradle-cache-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties', 'gradle/upstream-sources.lock.json') }}
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
 
@@ -240,8 +225,6 @@ jobs:
         run: |
           echo "y" | sdkmanager --install "ndk;29.0.14206865"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> $GITHUB_ENV
-      - name: Run KtLint
-        run: ./gradlew ktlintCheck
       - name: Build App
         run: |
           if [[ "$PUBLISH_RELEASE" == "true" && -z "${signingKey//[[:space:]]/}" ]]; then
@@ -262,7 +245,6 @@ jobs:
           mv app/build/outputs/apk/full/release/app-full-release*.apk app/build/upload/zhihu++-full.apk
           mv app/build/outputs/apk/lite/release/app-lite-release*.apk app/build/upload/zhihu++-lite.apk
       - name: Compress lite mapping file
-        if: ${{ inputs.minify }}
         run: |
           mkdir -p app/build/upload
           zip app/build/upload/mapping-lite.zip app/build/outputs/mapping/liteRelease/mapping.txt
@@ -307,7 +289,7 @@ jobs:
 
       # 删除现有 nightly 发布。
       - name: Delete existing nightly release
-        if: ${{ inputs.minify && inputs.nightly_release }}
+        if: ${{ inputs.nightly_release }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -347,7 +329,7 @@ jobs:
 
       # 生成 nightly 更新记录。
       - name: Generate nightly changelog
-        if: ${{ inputs.minify && inputs.nightly_release }}
+        if: ${{ inputs.nightly_release }}
         id: nightly_changelog
         uses: actions/github-script@v7
         with:
@@ -400,7 +382,7 @@ jobs:
 
       # 创建新的 nightly 发布。
       - name: Create Nightly Release
-        if: ${{ inputs.minify && inputs.nightly_release }}
+        if: ${{ inputs.nightly_release }}
         id: nightly_release
         uses: softprops/action-gh-release@v2
         with:

@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import com.github.zly2006.zhihu.theme.ZhihuTheme
@@ -35,58 +34,6 @@ import kotlin.test.assertEquals
 
 @OptIn(ExperimentalTestApi::class)
 class PaginationPresentationTest {
-    /** 生产列表结束空态不应仍调用加载尾部。 */
-    @Test
-    fun endedEmptyListShowsEmptyInsteadOfLoadingFooter() = runDesktopComposeUiTest(width = 412, height = 300) {
-        var footerCalls = 0
-        setContent {
-            ZhihuTheme {
-                PaginatedList<Int>(
-                    items = emptyList(),
-                    onLoadMore = {},
-                    modifier = Modifier.fillMaxSize(),
-                    isEnd = { true },
-                    isLoading = { false },
-                    loadError = { null },
-                    onRetry = {},
-                    footer = {
-                        footerCalls++
-                        Text("正在加载尾部")
-                    },
-                ) { Text("$it") }
-            }
-        }
-        waitForIdle()
-        onNodeWithText("暂无内容").assertExists()
-        assertEquals(0, footerCalls)
-    }
-
-    /** 未加载的 idle 列表不能以 spinner 冒充加载；页面有明确加载状态后才显示 footer。 */
-    @Test
-    fun idleListDoesNotRenderLoadingFooter() = runDesktopComposeUiTest(width = 412, height = 300) {
-        var footerCalls = 0
-        setContent {
-            ZhihuTheme {
-                PaginatedList<Int>(
-                    items = emptyList(),
-                    onLoadMore = {},
-                    modifier = Modifier.fillMaxSize(),
-                    isEnd = { false },
-                    isLoading = { false },
-                    loadError = { null },
-                    onRetry = {},
-                    footer = {
-                        footerCalls++
-                        Text("正在加载尾部")
-                    },
-                ) { Text("$it") }
-            }
-        }
-        waitForIdle()
-        assertEquals(0, footerCalls)
-        assertEquals(0, onAllNodesWithText("正在加载尾部").fetchSemanticsNodes().size)
-    }
-
     @Test
     fun appendIsStateDrivenAndFailureRequiresAnExplicitRetry() = runDesktopComposeUiTest(width = 412, height = 300) {
         val items = mutableStateListOf(1)

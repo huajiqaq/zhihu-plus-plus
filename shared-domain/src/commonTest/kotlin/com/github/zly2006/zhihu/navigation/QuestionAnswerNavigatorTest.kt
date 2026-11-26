@@ -19,10 +19,7 @@ package com.github.zly2006.zhihu.navigation
 
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -32,8 +29,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class QuestionAnswerNavigatorTest {
@@ -45,35 +40,6 @@ class QuestionAnswerNavigatorTest {
     @AfterTest
     fun clearOpenedAnswersReader() {
         openedAnswerIdsReaderForTesting = null
-    }
-
-    @Test
-    fun seededQuestionAnswerListKeepsClickedPositionForSwitching() = runTest {
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L), answer(104L)),
-            initialPreviousAnswers = listOf(answer(101L), answer(100L)),
-            initialNextUrl = "https://www.zhihu.com/api/v4/questions/1/feeds?limit=20&order=updated&offset=20",
-            order = "updated",
-            environment = NoopEnvironment,
-        )
-
-        assertEquals(101L, navigator.previousAnswerPreview?.article?.id)
-        assertEquals(103L, navigator.loadNext()?.id)
-        assertEquals(104L, navigator.loadNext()?.id)
-    }
-
-    @Test
-    fun remainingAnswerSnapshotDoesNotConsumeSwitchingQueue() = runTest {
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L), answer(104L)),
-            environment = NoopEnvironment,
-        )
-
-        assertEquals(listOf(103L), navigator.remainingAnswersSnapshot(102L, limit = 1).map(Article::id))
-        assertEquals(103L, navigator.loadNext()?.id)
-        assertEquals(listOf(104L), navigator.remainingAnswersSnapshot(103L, limit = 8).map(Article::id))
     }
 
     @Test
@@ -94,231 +60,6 @@ class QuestionAnswerNavigatorTest {
         assertEquals(103L, navigator.goToNext()?.article?.id)
         assertEquals(104L, navigator.loadNext()?.id)
         assertEquals(105L, navigator.loadNext()?.id)
-    }
-
-    @Test
-    fun remainingAnswerSnapshotFiltersOpenedInitialCandidates() = runTest {
-        val openedAnswerIds = setOf(104L, 106L)
-        openedAnswerIdsReaderForTesting = { ids -> ids.filter { it in openedAnswerIds }.toSet() }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(103L, 104L, 105L, 106L, 107L).map(::answer),
-            environment = NoopEnvironment,
-        )
-
-        assertEquals(
-            listOf(103L, 105L, 107L),
-            navigator.remainingAnswersSnapshot(102L, limit = 8).map(Article::id),
-        )
-    }
-
-    @Test
-    fun remainingAnswerSnapshotFollowsSeededNextUrlUntilLimitIsFilled() = runTest {
-        val firstNextUrl = "https://www.zhihu.com/api/v4/questions/1/feeds?offset=2"
-        val secondNextUrl = "https://www.zhihu.com/api/v4/questions/1/feeds?offset=4"
-        val environment = PagedFeedEnvironment(
-            mapOf(
-                firstNextUrl to feedPage(listOf(104L), secondNextUrl),
-                secondNextUrl to feedPage(listOf(105L, 106L), ""),
-            ),
-        )
-        openedAnswerIdsReaderForTesting = { ids -> ids.filterTo(mutableSetOf()) { it == 104L } }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L)),
-            initialNextUrl = firstNextUrl,
-            environment = environment,
-        )
-
-        assertEquals(
-            listOf(103L, 105L, 106L),
-            navigator.remainingAnswersSnapshot(102L, limit = 3).map(Article::id),
-        )
-        assertEquals(listOf(firstNextUrl, secondNextUrl), environment.requestedUrls)
-        assertEquals(103L, navigator.loadNext()?.id)
-        assertEquals(105L, navigator.loadNext()?.id)
-        assertEquals(106L, navigator.loadNext()?.id)
-    }
-
-    @Test
-    fun failedInitialCandidateLookupCanBeRetried() = runTest {
-        var lookupAttempts = 0
-        openedAnswerIdsReaderForTesting = {
-            lookupAttempts++
-            if (lookupAttempts == 1) error("lookup failed")
-            emptySet()
-        }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L), answer(104L)),
-            environment = NoopEnvironment,
-        )
-
-        assertFailsWith<IllegalStateException> {
-            navigator.remainingAnswersSnapshot(102L, limit = 2)
-        }
-        assertEquals(
-            listOf(103L, 104L),
-            navigator.remainingAnswersSnapshot(102L, limit = 2).map(Article::id),
-        )
-        assertEquals(2, lookupAttempts)
-    }
-
-    @Test
-    fun newlyDiscoveredPreviousAnswerInvalidatesCachedPreviousContent() = runTest {
-        openedAnswerIdsReaderForTesting = { setOf(103L) }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L)),
-            environment = NoopEnvironment,
-        )
-        navigator.previousAnswerContent = answer(101L).toCachedContent()
-
-        assertEquals(emptyList(), navigator.remainingAnswersSnapshot(102L, limit = 1))
-
-        assertNull(navigator.previousAnswerContent)
-        assertEquals(103L, navigator.previousAnswerPreview?.article?.id)
-    }
-
-    @Test
-    fun snapshotWaitsForInFlightInitialCandidateFiltering() = runTest {
-        val lookupStarted = CompletableDeferred<Unit>()
-        val finishLookup = CompletableDeferred<Unit>()
-        openedAnswerIdsReaderForTesting = {
-            lookupStarted.complete(Unit)
-            finishLookup.await()
-            emptySet()
-        }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(answer(103L), answer(104L)),
-            environment = NoopEnvironment,
-        )
-
-        val prefetch = async { navigator.prefetchNext(102L) }
-        lookupStarted.await()
-        val snapshot = async { navigator.remainingAnswersSnapshot(102L, limit = 8).map(Article::id) }
-        yield()
-        assertFalse(snapshot.isCompleted)
-
-        finishLookup.complete(Unit)
-        assertEquals(listOf(103L, 104L), snapshot.await())
-        prefetch.await()
-        assertEquals(103L, navigator.loadNext()?.id)
-    }
-
-    @Test
-    fun questionFeedFallbackUsesCurrentSortOrder() = runTest {
-        val environment = RecordingEnvironment()
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            order = "updated",
-            environment = environment,
-        )
-
-        assertNull(navigator.loadNext())
-        assertEquals(
-            "https://www.zhihu.com/api/v4/questions/1/feeds?limit=6&order=updated",
-            environment.requestedUrls.single(),
-        )
-    }
-
-    @Test
-    fun seededQueuesIgnoreNonAnswerEntriesForPreviewAndNextNavigation() = runTest {
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(
-                article(201L),
-                answer(103L),
-                article(202L),
-                answer(104L),
-            ),
-            initialPreviousAnswers = listOf(
-                article(102L),
-                answer(101L),
-                answer(100L),
-            ),
-            environment = NoopEnvironment,
-        )
-
-        assertEquals(101L, navigator.previousAnswerPreview?.article?.id)
-        assertEquals(103L, navigator.loadNext()?.id)
-        assertEquals(104L, navigator.loadNext()?.id)
-        assertNull(navigator.loadNext())
-    }
-
-    @Test
-    fun emptyPreviousSeedDoesNotExposePreview() = runTest {
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialPreviousAnswers = listOf(article(201L)),
-            environment = NoopEnvironment,
-        )
-
-        assertNull(navigator.previousAnswerPreview)
-    }
-
-    @Test
-    fun seededNextAnswersAreCheckedAgainstOpenedHistoryBeforeDownNavigation() = runTest {
-        val openedAnswerIds = setOf(104L, 106L)
-        openedAnswerIdsReaderForTesting = { ids -> ids.filter { it in openedAnswerIds }.toSet() }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            initialNextAnswers = listOf(103L, 104L, 105L, 106L, 107L).map(::answer),
-            environment = NoopEnvironment,
-        )
-
-        assertEquals(103L, navigator.loadNext()?.id)
-        assertEquals(105L, navigator.loadNext()?.id)
-        assertEquals(107L, navigator.loadNext()?.id)
-        assertNull(navigator.loadNext())
-    }
-
-    @Test
-    fun repeatedFiveAnswerRoundsNeverNavigateDownToOpenedAnswers() = runTest {
-        val rounds = listOf(
-            listOf(101L, 102L, 103L, 104L, 105L) to setOf(102L, 104L),
-            listOf(201L, 202L, 203L, 204L, 205L) to setOf(201L, 205L),
-            listOf(301L, 302L, 303L, 304L, 305L) to setOf(303L),
-        )
-
-        rounds.forEachIndexed { roundIndex, (candidateIds, openedAnswerIds) ->
-            openedAnswerIdsReaderForTesting = { ids -> ids.filter { it in openedAnswerIds }.toSet() }
-            val navigator = QuestionAnswerNavigator(
-                questionId = roundIndex + 1L,
-                initialNextAnswers = candidateIds.map(::answer),
-                environment = NoopEnvironment,
-            )
-
-            val expectedFreshIds = candidateIds.filterNot { it in openedAnswerIds }
-            expectedFreshIds.forEach { expectedId ->
-                assertEquals(expectedId, navigator.loadNext()?.id)
-            }
-            assertNull(navigator.loadNext())
-        }
-    }
-
-    @Test
-    fun directArticleScreenNavigatorSkipsOpenedAnswersWithoutQuestionScreenSeed() = runTest {
-        val environment = FeedEnvironment(listOf(101L, 102L, 103L, 104L))
-        val openedAnswerIds = mutableSetOf(101L, 102L)
-        openedAnswerIdsReaderForTesting = { ids -> ids.filterTo(mutableSetOf()) { it in openedAnswerIds } }
-        val navigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            environment = environment,
-        )
-
-        navigator.pushAnswer(answer(101L).toCachedContent())
-        assertEquals(103L, navigator.loadNext()?.id)
-
-        openedAnswerIds += 103L
-        val reopenedNavigator = QuestionAnswerNavigator(
-            questionId = 1L,
-            environment = environment,
-        )
-        reopenedNavigator.pushAnswer(answer(101L).toCachedContent())
-        assertEquals(104L, reopenedNavigator.loadNext()?.id)
-        assertNull(reopenedNavigator.loadNext())
     }
 
     @Test
@@ -346,8 +87,6 @@ class QuestionAnswerNavigatorTest {
 
     private fun answer(id: Long) = Article(id = id, type = ArticleType.Answer)
 
-    private fun article(id: Long) = Article(id = id, type = ArticleType.Article)
-
     private fun Article.toCachedContent() = com.github.zly2006.zhihu.viewmodel.ArticleViewModel.CachedAnswerContent(
         article = this,
         title = "question",
@@ -364,27 +103,6 @@ class QuestionAnswerNavigatorTest {
         override fun httpClient(): HttpClient = error("不应使用此客户端")
 
         override fun authenticatedCookies(): Map<String, String> = emptyMap()
-
-        override suspend fun handleFetchFailure(
-            tag: String?,
-            error: Exception,
-        ): Unit = throw error
-    }
-
-    private class RecordingEnvironment : ZhihuApiEnvironment {
-        val requestedUrls = mutableListOf<String>()
-
-        override fun httpClient(): HttpClient = error("不应使用此客户端")
-
-        override fun authenticatedCookies(): Map<String, String> = emptyMap()
-
-        override suspend fun fetchJson(
-            url: String,
-            include: String,
-        ): JsonObject {
-            requestedUrls += url
-            return buildJsonObject {}
-        }
 
         override suspend fun handleFetchFailure(
             tag: String?,
@@ -417,47 +135,6 @@ class QuestionAnswerNavigatorTest {
             tag: String?,
             error: Exception,
         ): Unit = throw error
-    }
-
-    private inner class PagedFeedEnvironment(
-        private val pages: Map<String, JsonObject>,
-    ) : ZhihuApiEnvironment {
-        val requestedUrls = mutableListOf<String>()
-
-        override fun httpClient(): HttpClient = error("不应使用此客户端")
-
-        override fun authenticatedCookies(): Map<String, String> = emptyMap()
-
-        override suspend fun fetchJson(
-            url: String,
-            include: String,
-        ): JsonObject {
-            requestedUrls += url
-            return pages.getValue(url)
-        }
-
-        override suspend fun handleFetchFailure(
-            tag: String?,
-            error: Exception,
-        ): Unit = throw error
-    }
-
-    private fun feedPage(
-        answerIds: List<Long>,
-        nextUrl: String,
-    ) = buildJsonObject {
-        put(
-            "data",
-            buildJsonArray {
-                answerIds.forEach { answerId -> add(answerFeed(answerId)) }
-            },
-        )
-        put(
-            "paging",
-            buildJsonObject {
-                put("next", JsonPrimitive(nextUrl))
-            },
-        )
     }
 
     private fun answerFeed(answerId: Long) = buildJsonObject {

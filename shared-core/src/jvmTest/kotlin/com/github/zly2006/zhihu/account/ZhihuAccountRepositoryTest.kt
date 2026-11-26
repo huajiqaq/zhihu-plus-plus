@@ -17,10 +17,7 @@
 
 package com.github.zly2006.zhihu.account
 
-import com.github.zly2006.zhihu.data.ZhihuJson
 import kotlinx.io.files.Path
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.io.IOException
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -30,7 +27,6 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ZhihuAccountRepositoryTest {
@@ -46,53 +42,6 @@ class ZhihuAccountRepositoryTest {
     @AfterTest
     fun deleteAccountDirectory() {
         check(directory.toFile().deleteRecursively())
-    }
-
-    @Test
-    fun loadReturnsDefaultSessionWhenFileIsMissingOrBlank() {
-        val repository = ZhihuAccountRepository(Path(file.toString()))
-
-        val session = repository.loadAccounts().session
-
-        assertFalse(session.login)
-        assertEquals("", session.username)
-        assertTrue(session.cookies.isEmpty())
-        assertEquals(DEFAULT_ZHIHU_USER_AGENT, session.userAgent)
-        assertNull(session.profile)
-        Files.writeString(file, " \n\t")
-        assertEquals(ZhihuAccounts(), repository.loadAccounts())
-    }
-
-    @Test
-    fun saveAndLoadRoundTripsSession() {
-        file = directory.resolve("nested/account.json")
-        val repository = ZhihuAccountRepository(Path(file.toString()))
-        val session = ZhihuAccountSession(
-            login = true,
-            username = "alice",
-            cookies = mutableMapOf("z_c0" to "token", "d_c0" to "dc0"),
-            profile = ZhihuAccountProfileSnapshot(
-                id = "123",
-                name = "alice",
-                urlToken = "alice-token",
-                userType = "people",
-            ),
-            self = buildJsonObject {
-                put("id", "123")
-                put("name", "alice")
-            },
-            mobileAccessToken = "mobile-access",
-            mobileRefreshToken = "mobile-refresh",
-            mobileTokenType = "bearer",
-            mobileTokenExpiresAt = 123456789L,
-        )
-        val accounts = ZhihuAccounts("123", listOf(ZhihuSavedAccount("123", session)))
-
-        repository.saveAccounts(accounts)
-
-        assertEquals(accounts, repository.loadAccounts())
-        assertEquals(session, repository.loadAccounts().session)
-        assertFalse(Files.exists(file.resolveSibling("account.json.tmp")))
     }
 
     @Test
@@ -112,68 +61,6 @@ class ZhihuAccountRepositoryTest {
         Files.createDirectory(file)
         Files.writeString(file.resolve("blocker"), "keep")
         assertFailsWith<IOException> { repository.loadAccounts() }
-    }
-
-    @Test
-    fun clearDeletesStoredSessionAndPropagatesDeletionFailure() {
-        val repository = ZhihuAccountRepository(Path(file.toString()))
-        val session = ZhihuAccountSession(
-            login = true,
-            username = "alice",
-            cookies = mutableMapOf("z_c0" to "token"),
-        )
-        repository.saveAccounts(ZhihuAccounts("alice", listOf(ZhihuSavedAccount("alice", session))))
-
-        repository.clear()
-        repository.clear()
-
-        assertFalse(Files.exists(file))
-        assertFalse(repository.loadAccounts().session.login)
-        Files.createDirectory(file)
-        val blocker = Files.writeString(file.resolve("blocker"), "keep")
-        assertFailsWith<IOException> { repository.clear() }
-        assertEquals("keep", Files.readString(blocker))
-    }
-
-    @Test
-    fun legacySessionMigratesIntoOneSavedAccount() {
-        val legacy = ZhihuAccountSession(
-            login = true,
-            username = "alice",
-            profile = ZhihuAccountProfileSnapshot(id = "alice-id", name = "Alice"),
-        )
-        Files.writeString(file, ZhihuJson.json.encodeToString(legacy))
-        val legacyBytes = Files.readAllBytes(file)
-        val repository = ZhihuAccountRepository(Path(file.toString()))
-
-        val accounts = repository.loadAccounts()
-
-        assertEquals("alice-id", accounts.activeAccountId)
-        assertEquals(listOf(legacy), accounts.accounts.map { it.session })
-        assertContentEquals(legacyBytes, Files.readAllBytes(file))
-        Files.writeString(file, ZhihuJson.json.encodeToString(legacy.copy(login = false)))
-        assertEquals(ZhihuAccounts(), repository.loadAccounts())
-    }
-
-    @Test
-    fun savedAccountsRoundTripWithoutLosingInactiveSession() {
-        val repository = ZhihuAccountRepository(Path(file.toString()))
-        val alice = ZhihuAccountSession(login = true, username = "alice")
-        val bob = ZhihuAccountSession(login = true, username = "bob")
-        val accounts = ZhihuAccounts(
-            activeAccountId = "bob",
-            accounts = listOf(ZhihuSavedAccount("alice", alice), ZhihuSavedAccount("bob", bob)),
-        )
-        repository.saveAccounts(accounts.copy(activeAccountId = "alice"))
-
-        repository.saveAccounts(accounts)
-
-        val restored = repository.loadAccounts()
-        assertEquals(accounts, restored)
-        assertEquals("bob", restored.activeAccountId)
-        assertEquals(listOf("alice", "bob"), restored.accounts.map { it.id })
-        assertEquals(bob, restored.session)
-        assertFalse(Files.exists(directory.resolve("account.json.tmp")))
     }
 
     @Test

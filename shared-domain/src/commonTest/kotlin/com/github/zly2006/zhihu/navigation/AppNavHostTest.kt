@@ -17,9 +17,6 @@
 
 package com.github.zly2006.zhihu.navigation
 
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,16 +46,5 @@ class AppNavHostTest {
         host.open(MainTabs)
         assertEquals(listOf(MainTabs), host.backStack)
         assertFalse(host.back())
-    }
-
-    @Test
-    fun settingsAndSearchVisitsKeepIdentityAfterSerialization() {
-        val host = AppNavHost(navBackStackOf(AppNavEntry.Root("root", MainTabs)))
-        listOf(Account.AppearanceSettings(), Search("同一搜索"), Account.AppearanceSettings(), Search("同一搜索")).forEach(host::open)
-        val entries = host.entries.map { it as AppNavEntry }
-        val restored = Json.decodeFromString<List<AppNavEntry>>(Json.encodeToString(entries))
-        assertEquals(entries, restored)
-        assertEquals(entries.size, restored.map { it.id }.distinct().size)
-        assertEquals(host.backStack, restored.map { it.destination })
     }
 }

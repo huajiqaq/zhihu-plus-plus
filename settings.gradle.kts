@@ -32,12 +32,6 @@ pluginManagement {
     }
 }
 
-buildCache {
-    local {
-        isEnabled = true
-        directory = File(rootDir, ".gradle/build-cache")
-    }
-}
 val patchProperty = providers.gradleProperty("zhihuUpstreamPatches").orNull
 require(patchProperty == null || patchProperty == "true" || patchProperty == "false") {
     "zhihuUpstreamPatches must be true or false"

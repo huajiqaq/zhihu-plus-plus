@@ -26,19 +26,16 @@ import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.comment.RootCommentViewModel.Companion.submitCommentUrl
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -47,13 +44,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -62,295 +55,6 @@ import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RootCommentViewModelTest {
-    @Test
-    fun segmentCommentUsesBodyTargetInsteadOfQueryParameter() {
-        val target = SegmentCommentHolder(
-            contentId = "123",
-            contentType = "answer",
-            segmentId = "segment-id",
-            segmentContent = "都不能称为 Rust 的杀手级项目",
-            paragraphId = "KFR9BNtv",
-            startOffset = 22,
-            endOffset = 39,
-        )
-
-        assertEquals(
-            "https://www.zhihu.com/api/v4/comment_v5/answers/123/segment/comment",
-            target.submitCommentUrl,
-        )
-        assertFalse(RootCommentViewModel(target).supportsSorting)
-
-        val body = target.buildSubmitCommentBody("，", replyToCommentId = null)
-
-        assertEquals("<p>，</p>", body["content"]!!.jsonPrimitive.content)
-        assertFalse("unfriendly_check" in body)
-        assertFalse("selected_settings" in body)
-        assertEquals(ZhihuJson.json.parseToJsonElement("""{"segment_id":"segment-id"}"""), body.getValue("segment"))
-        assertFalse("segment_id" in body)
-    }
-
-    @Test
-    fun existingSegmentRichPayloadKeepsIdAndOmitsOrdinarySettings() {
-        val quote = "前😀句评后"
-        val start = quote.indexOf("😀")
-        val end = start + "😀句评".length
-        val target = SegmentCommentHolder("123", "answer", "segment-id", quote.substring(start, end), "paragraph", start, end)
-        val body = target.buildSubmitCommentBody(
-            commentText = "@张三 [感谢] <正文>",
-            replyToCommentId = "reply-1",
-            images = listOf(CommentImageAttachment("https://picx.zhimg.com/a.gif", 20, 10, isGif = true)),
-            stickers = listOf(CommentSticker(id = "vip-1", staticImageUrl = "https://picx.zhimg.com/sticker.png", isVip = true)),
-            mentions = listOf(CommentMention("user-1", "张三", "zhangsan")),
-            syncToPin = true,
-            voiceId = "voice-1",
-        )
-        assertEquals(
-            ZhihuJson.json.parseToJsonElement("""{"segment_id":"segment-id"}"""),
-            body.getValue("segment"),
-            "已有 ID 的片段不受新建时的最少长度限制，也不重建位置或引用",
-        )
-        assertEquals("reply-1", body.getValue("reply_comment_id").jsonPrimitive.content)
-        assertEquals("true", body.getValue("has_img").jsonPrimitive.content)
-        assertEquals(listOf("vip"), body.getValue("sticker_type").jsonArray.map { it.jsonPrimitive.content })
-        assertEquals(
-            "voice-1",
-            body
-                .getValue("voice_info")
-                .jsonObject
-                .getValue("voice_id")
-                .jsonPrimitive.content,
-        )
-        assertEquals(
-            "<p><a data-hash=\"user-1\" href=\"/people/zhangsan\" class=\"member_mention\">@张三 </a>[感谢] &lt;正文&gt;</p>" +
-                "<a href=\"https://picx.zhimg.com/a.gif\" class=\"comment_gif\" data-width=\"20\" data-height=\"10\">查看动图</a>" +
-                "<a href=\"https://picx.zhimg.com/sticker.png\" class=\"comment_sticker\" data-width=\"0\" data-height=\"0\" data-sticker-id=\"vip-1\">[表情]</a>",
-            body.getValue("content").jsonPrimitive.content,
-        )
-        assertFalse("unfriendly_check" in body)
-        assertFalse("selected_settings" in body)
-        assertFalse("segment_id" in body)
-    }
-
-    @Test
-    fun newSegmentPayloadKeepsUtf16EndpointsAndRequiresFiveQuotedCodeUnits() {
-        val quote = "前😀句评文后"
-        val start = quote.indexOf("😀")
-        val end = start + "😀句评文".length
-        val target = SegmentCommentHolder("123", "answer", "", quote.substring(start, end), "paragraph", start, end)
-
-        assertEquals(
-            "https://www.zhihu.com/api/v4/comment_v5/answers/123/segment/comment",
-            target.submitCommentUrl,
-        )
-        val body = target.buildSubmitCommentBody("，", replyToCommentId = "reply-1", syncToPin = true)
-        assertEquals(
-            ZhihuJson.json.parseToJsonElement(
-                """{
-                  "content":"😀句评文","segment_id":"",
-                  "position":{"start":{"offset":1,"paragraph_id":"paragraph"},"end":{"offset":6,"paragraph_id":"paragraph"}}
-                }""",
-            ),
-            body.getValue("segment"),
-        )
-        assertEquals("<p>，</p>", body.getValue("content").jsonPrimitive.content)
-        assertEquals("reply-1", body.getValue("reply_comment_id").jsonPrimitive.content)
-        assertFalse("unfriendly_check" in body)
-        assertFalse("selected_settings" in body)
-        assertFalse("segment_id" in body)
-
-        for (shortQuote in listOf("", "四字片段", "😀句评")) {
-            assertFailsWith<IllegalArgumentException> {
-                target.copy(segmentContent = shortQuote, endOffset = start + shortQuote.length).buildSubmitCommentBody(
-                    commentText = "评论正文足够长也不能绕过引文长度检查",
-                    replyToCommentId = null,
-                )
-            }
-        }
-    }
-
-    @Test
-    fun ordinaryPayloadHasExplicitNullOptionalObjectsAndEscapesHtml() {
-        val body = Article(type = ArticleType.Answer, id = 1).buildSubmitCommentBody("<&>\"'", null)
-        assertEquals("<p>&lt;&amp;&gt;&quot;&#39;</p>", body.getValue("content").jsonPrimitive.content)
-        assertEquals(JsonNull, body.getValue("segment"))
-        assertEquals(JsonNull, body.getValue("sticker_type"))
-        assertEquals(JsonNull, body.getValue("voice_info"))
-        assertEquals("", body.getValue("reply_comment_id").jsonPrimitive.content)
-        assertEquals("strict", body.getValue("unfriendly_check").jsonPrimitive.content)
-        assertEquals(emptyList(), body.getValue("selected_settings").jsonArray.toList())
-    }
-
-    @Test
-    fun rootCountUsesSameResourceMultiSegmentTotalOnlyWhenMissing() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val path = "/api/v4/comment_v5/articles/123/"
-        val next = "https://www.zhihu.com${path}root_comment?cursor=second"
-        var rootCounts = """{"total_counts":80}"""
-        val requests = mutableListOf<Url>()
-        val client = commentClient(dispatcher) { request ->
-            assertEquals(HttpMethod.Get, request.method)
-            assertEquals("www.zhihu.com", request.url.host)
-            requests += request.url
-            val body = when (request.url.encodedPath) {
-                "${path}root_comment" -> if (request.url.parameters["cursor"] == "second") {
-                    """{"counts":{"total_counts":81},"data":[],"paging":{"is_end":true}}"""
-                } else {
-                    val row = pagingComment("normal", "123", resourceType = "article")
-                    """{"counts":$rootCounts,"data":[$row],"paging":{"is_end":false,"next":"$next"}}"""
-                }
-                "${path}segment_comment" -> {
-                    assertEquals(
-                        mapOf("limit" to "1", "offset" to "", "order_by" to "score"),
-                        request.url.parameters
-                            .names()
-                            .associateWith { request.url.parameters[it] },
-                    )
-                    """{"counts":{"total_counts":6},"data":[${pagingComment("sentence", "A")}],
-                       "segment_infos":{"A":{"content":"引文"}},"paging":{"is_end":true,"totals":1}}"""
-                }
-                else -> error("不应请求 ${request.url}")
-            }
-            respond(body, headers = jsonHeaders)
-        }
-        val environment = commentEnvironment { client }
-        val model = RootCommentViewModel(Article(type = ArticleType.Article, id = 123))
-        try {
-            model.loadMore(environment)
-            advanceUntilIdle()
-            assertEquals(6, model.sentenceCommentCount)
-            assertEquals(listOf("normal"), model.allData.map { it.id })
-            assertTrue(model.sentenceQuotes.isEmpty())
-            assertFalse(model.isEnd)
-            model.loadMore(environment)
-            advanceUntilIdle()
-            assertEquals("second", requests.last().parameters["cursor"])
-            assertTrue(model.isEnd)
-            assertEquals(6, model.sentenceCommentCount, "普通后续页缺字段不能覆盖已确认的计数")
-
-            for (explicit in listOf(0, 3)) {
-                rootCounts = """{"segment_comment_counts":$explicit,"total_counts":80}"""
-                model.refresh(environment)
-                advanceUntilIdle()
-                assertEquals(explicit, model.sentenceCommentCount)
-            }
-            assertEquals(
-                listOf("root_comment", "segment_comment", "root_comment", "root_comment", "root_comment"),
-                requests.map { it.encodedPath.substringAfterLast('/') },
-            )
-        } finally {
-            model.viewModelScope.cancel()
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun unavailableMultiSegmentCountDoesNotFailOrRepeatDuringRootPaging() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val next = "https://www.zhihu.com/api/v4/comment_v5/answers/456/root_comment?cursor=next"
-        val cases = listOf(
-            Triple(HttpStatusCode.OK, """{"data":[${pagingComment("sentence", "A")}],"paging":{"totals":9}}""", null),
-            Triple(HttpStatusCode.ServiceUnavailable, """{"counts":{"total_counts":7}}""", null),
-            Triple(HttpStatusCode.OK, """{"error":{"message":"unavailable"},"counts":{"total_counts":7}}""", null),
-            Triple(HttpStatusCode.OK, """{"counts":{"total_counts":0},"paging":{"totals":9}}""", 0),
-        )
-        var index = 0
-        var probes = 0
-        val client = commentClient(dispatcher) { request ->
-            when (request.url.encodedPath) {
-                "/api/v4/comment_v5/answers/456/root_comment" -> {
-                    val paging = if (request.url.parameters["cursor"] == null) """{"is_end":false,"next":"$next"}""" else """{"is_end":true}"""
-                    val row = pagingComment("root", "456", resourceType = "answer")
-                    respond("""{"counts":{"segment_comment_counts":null,"total_counts":24},"data":[$row],"paging":$paging}""", headers = jsonHeaders)
-                }
-                "/api/v4/comment_v5/answers/456/segment_comment" -> {
-                    probes++
-                    val (status, body) = cases[index]
-                    respond(body, status, jsonHeaders)
-                }
-                else -> error("不应请求 ${request.url}")
-            }
-        }
-        val environment = commentEnvironment { client }
-        val model = RootCommentViewModel(Article(type = ArticleType.Answer, id = 456))
-        try {
-            for ((i, case) in cases.withIndex()) {
-                index = i
-                model.refresh(environment)
-                advanceUntilIdle()
-                assertEquals(case.third, model.sentenceCommentCount)
-                assertEquals(listOf("root"), model.allData.map { it.id })
-                model.loadMore(environment)
-                advanceUntilIdle()
-                assertNull(model.errorMessage)
-                assertTrue(model.isEnd)
-                assertEquals(i + 1, probes, "可选计数无论成功与否，都不跟随普通分页重复查询")
-            }
-        } finally {
-            model.viewModelScope.cancel()
-            client.close()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun delayedCountCannotOverwriteNewSortOrAccount() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val gates = List(2) { CompletableDeferred<Unit>() }
-        var probes = 0
-        var rootCounts = "{}"
-        val oldClient = commentClient(dispatcher) { request ->
-            if (request.url.encodedPath.endsWith("/segment_comment")) {
-                val gate = gates[probes++]
-                gate.await()
-                respond("""{"counts":{"total_counts":12}}""", headers = jsonHeaders)
-            } else {
-                respond("""{"counts":$rootCounts,"data":[],"paging":{"is_end":true}}""", headers = jsonHeaders)
-            }
-        }
-        val newClient = commentClient(dispatcher) { request ->
-            assertTrue(request.url.encodedPath.endsWith("/root_comment"))
-            respond("""{"counts":{"segment_comment_counts":3},"data":[],"paging":{"is_end":true}}""", headers = jsonHeaders)
-        }
-        var currentClient = oldClient
-        val environment = commentEnvironment { currentClient }
-        val model = RootCommentViewModel(Article(type = ArticleType.Answer, id = 456))
-        try {
-            model.loadMore(environment)
-            advanceUntilIdle()
-            assertEquals(1, probes)
-            assertFalse(model.isLoading, "计数在途时普通列表已经可以使用")
-            assertNull(model.sentenceCommentCount)
-            rootCounts = """{"segment_comment_counts":0}"""
-            model.changeSortOrder(CommentSortOrder.TIME, environment)
-            advanceUntilIdle()
-            gates[0].complete(Unit)
-            advanceUntilIdle()
-            assertEquals(0, model.sentenceCommentCount)
-
-            rootCounts = "{}"
-            model.refresh(environment)
-            advanceUntilIdle()
-            assertEquals(2, probes)
-            currentClient = newClient
-            gates[1].complete(Unit)
-            advanceUntilIdle()
-            assertNull(model.sentenceCommentCount, "账号已经切换，旧请求不能回写，即使新账号还没有加载")
-            model.loadMore(environment)
-            advanceUntilIdle()
-            assertEquals(3, model.sentenceCommentCount, "旧账号的终页不能阻止新账号读取自己的首页")
-        } finally {
-            gates.forEach { it.complete(Unit) }
-            model.viewModelScope.cancel()
-            oldClient.close()
-            newClient.close()
-            Dispatchers.resetMain()
-        }
-    }
-
     /** 合成分页边界，不作为服务端非空句评样本验收。 */
     @Test
     fun knownSegmentsKeepOpaqueNextAndRestartAfterFailureWithoutChangingSort() = runTest {

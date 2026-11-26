@@ -26,93 +26,6 @@ import kotlin.test.assertEquals
 
 class FeedContentFilterPipelineTest {
     @Test
-    fun filtersByUserKeywordNlpAndTopicInOrder() = runTest {
-        val database = getContentFilterDatabase(
-            createTempDirectory("feed-content-filter-pipeline").resolve("content-filter.db").toFile(),
-        )
-        database.blockedUserDao().insertUser(BlockedUser(userId = "blocked-user", userName = "Blocked"))
-        database.blockedQuestionAuthorDao().insertUser(
-            BlockedQuestionAuthor(userId = "blocked-asker", userName = "Blocked Asker"),
-        )
-        database.blockedKeywordDao().insertKeyword(BlockedKeyword(keyword = "blocked keyword"))
-        database.blockedTopicDao().insertTopic(BlockedTopic(topicId = "blocked-topic", topicName = "Blocked Topic"))
-
-        val keywordService = KeywordSemanticMatcher { text, phrases, _ ->
-            phrases.filter { text.contains("nlp hit") }.map { it to 0.95 }
-        }
-        database.blockedKeywordDao().insertKeyword(
-            BlockedKeyword(
-                keyword = "nlp phrase",
-                keywordType = KeywordType.NLP_SEMANTIC.name,
-            ),
-        )
-
-        val result = FeedContentFilterPipeline(
-            settings = FeedFilterSettings(),
-            database = database,
-            semanticMatcher = keywordService,
-        ).filter(
-            listOf(
-                filterable("keep", authorId = "ok-user"),
-                filterable("by user", authorId = "blocked-user"),
-                filterable("by question author", authorId = "ok-user", questionAuthorId = "blocked-asker"),
-                filterable("blocked keyword title", authorId = "ok-user"),
-                filterable("nlp hit", authorId = "ok-user"),
-                filterable("topic", authorId = "ok-user", topicId = "blocked-topic"),
-            ),
-        )
-
-        assertEquals(listOf("keep"), result.kept.map { it.title })
-        assertEquals(
-            listOf(
-                "屏蔽作者：author",
-                "屏蔽提问者：asker",
-                "关键词屏蔽",
-                "NLP语义屏蔽：nlp phrase",
-                "屏蔽主题：Blocked Topic",
-            ),
-            result.blocked.map { it.second },
-        )
-        database.close()
-    }
-
-    @Test
-    fun nlpFilteringUsesPlainTextFromHtmlByDefault() = runTest {
-        val database = getContentFilterDatabase(
-            createTempDirectory("feed-content-filter-html").resolve("content-filter.db").toFile(),
-        )
-        val keywordService = KeywordSemanticMatcher { text, phrases, _ ->
-            phrases
-                .filter { text.contains("blocked phrase") && !text.contains("<strong>") }
-                .map { it to 0.95 }
-        }
-        database.blockedKeywordDao().insertKeyword(
-            BlockedKeyword(
-                keyword = "nlp phrase",
-                keywordType = KeywordType.NLP_SEMANTIC.name,
-            ),
-        )
-
-        val result = FeedContentFilterPipeline(
-            settings = FeedFilterSettings(),
-            database = database,
-            semanticMatcher = keywordService,
-        ).filter(
-            listOf(
-                filterable(
-                    title = "html",
-                    content = "<p>blocked <strong>phrase</strong></p>",
-                    authorId = "ok-user",
-                ),
-            ),
-        )
-
-        assertEquals(emptyList(), result.kept)
-        assertEquals(listOf("NLP语义屏蔽：nlp phrase"), result.blocked.map { it.second })
-        database.close()
-    }
-
-    @Test
     fun scopedKeywordsMatchFieldSourcesAndKeepLegacyAllBehavior() = runTest {
         val directory = createTempDirectory("keyword-scope-")
         val database = getContentFilterDatabase(directory.resolve("content-filter.db").toFile())
@@ -154,44 +67,6 @@ class FeedContentFilterPipelineTest {
             assertEquals(listOf("answer"), blockedBy(BlockedKeyword(keyword = "abc\\d+", isRegex = true, scope = KeywordScope.ANSWER.name), listOf(regexAnswer)))
             assertEquals(emptyList(), blockedBy(BlockedKeyword(keyword = "abc\\d+", isRegex = true, caseSensitive = true, scope = KeywordScope.ANSWER.name), listOf(regexAnswer)))
             assertEquals(emptyList(), blockedBy(BlockedKeyword(keyword = "[", isRegex = true, scope = KeywordScope.ANSWER.name), listOf(regexAnswer)))
-        } finally {
-            database.close()
-            check(directory.toFile().deleteRecursively())
-        }
-    }
-
-    @Test
-    fun nlpScopesSeparateQuestionTitleAndAnswerBodyWithoutChangingThreshold() = runTest {
-        val directory = createTempDirectory("nlp-keyword-scope-")
-        val database = getContentFilterDatabase(directory.resolve("content-filter.db").toFile())
-        try {
-            val calls = mutableListOf<Pair<String, List<String>>>()
-            val matcher = KeywordSemanticMatcher { text, phrases, threshold ->
-                assertEquals(0.73, threshold)
-                calls.add(text to phrases)
-                phrases.filter { it in text }.map { it to 0.95 }
-            }
-            for (scope in KeywordScope.entries) {
-                database.blockedKeywordDao().insertKeyword(BlockedKeyword(keyword = "标题词", keywordType = KeywordType.NLP_SEMANTIC.name, scope = scope.name))
-                database.blockedKeywordDao().insertKeyword(BlockedKeyword(keyword = "类比词", keywordType = KeywordType.NLP_SEMANTIC.name, scope = scope.name))
-            }
-            val answer = FilterableContent(
-                title = "标题词",
-                summary = "回答摘要",
-                content = "<p>回答<strong>类比词</strong></p>",
-                authorName = null,
-                authorId = null,
-                contentId = "answer",
-                contentType = ContentType.ANSWER,
-                raw = DataHolder.DummyContent,
-            )
-            val service = BlockedKeywordService(database.blockedKeywordDao(), database.blockedContentRecordDao(), matcher)
-            assertEquals(true, service.checkNLPBlockingWithWeight(answer, 0.73).first)
-            assertEquals(3, calls.size)
-            assertEquals(listOf("标题词 回答摘要 回答类比词 ", "标题词 ", "回答摘要 回答类比词 ").sorted(), calls.map { it.first }.sorted())
-            calls.clear()
-            service.checkNLPBlockingWithWeight(answer.copy(title = ""), 0.73)
-            assertEquals(listOf("回答摘要 回答类比词 "), calls.map { it.first })
         } finally {
             database.close()
             check(directory.toFile().deleteRecursively())

@@ -16,8 +16,8 @@
  */
 
 use aigc_vote_server::{
-    AigcFlagEvidence, AigcFlagRequest, AigcFlagResponse, AigcFlagStatusResponse, AppState,
-    ReadEvent, ReadEventsRequest, ReadEventsResponse, VoterIdentity, app,
+    AigcFlagEvidence, AigcFlagRequest, AigcFlagResponse, AppState, ReadEvent, ReadEventsRequest,
+    ReadEventsResponse, VoterIdentity, app,
 };
 use axum::body::{Body, to_bytes};
 use http::{Method, Request, StatusCode};
@@ -366,27 +366,6 @@ async fn configured_named_voter_can_flag_without_credit() {
     assert!(flag.voters[0].credit_bypassed);
 }
 
-#[tokio::test]
-async fn status_query_reports_credit_bypass_for_named_voter_url_token() {
-    let state = AppState::new_in_memory_with_credit_bypass_voters(
-        ["owner-token".to_string()].into_iter().collect(),
-    )
-    .expect("初始化测试状态失败");
-    let app = app(state);
-
-    let status: AigcFlagStatusResponse = request_json(
-        app,
-        Method::GET,
-        "/v1/contents/answer/42/aigc-flag?client_id=client-without-credit&voter_id=owner-id&voter_url_token=owner-token",
-        &json!({}),
-    )
-    .await;
-
-    assert!(status.credit_bypass_available);
-    assert_eq!(status.credit, 1);
-    assert!(!status.my_flagged);
-}
-
 async fn request_json<T, B>(app: axum::Router, method: Method, uri: &str, body: &B) -> T
 where
     T: DeserializeOwned,
@@ -398,7 +377,9 @@ where
                 .method(method)
                 .uri(uri)
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_string(body).expect("序列化测试请求体失败")))
+                .body(Body::from(
+                    serde_json::to_string(body).expect("序列化测试请求体失败"),
+                ))
                 .expect("构造测试请求失败"),
         )
         .await

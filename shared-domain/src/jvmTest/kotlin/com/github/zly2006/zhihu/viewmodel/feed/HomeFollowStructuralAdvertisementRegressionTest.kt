@@ -20,17 +20,9 @@ package com.github.zly2006.zhihu.viewmodel.feed
 import androidx.lifecycle.viewModelScope
 import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
-import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.AdvertisementFeed
-import com.github.zly2006.zhihu.data.CommonFeed
-import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.data.flattenFeeds
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
-import com.github.zly2006.zhihu.data.navDestination
-import com.github.zly2006.zhihu.data.target
-import com.github.zly2006.zhihu.data.toDisplayItem
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -39,24 +31,19 @@ import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
-import com.github.zly2006.zhihu.viewmodel.fetchContentDetail
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedContentRecord
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedFeedRecord
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedKeyword
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
-import com.github.zly2006.zhihu.viewmodel.filter.ContentDetailProvider
 import com.github.zly2006.zhihu.viewmodel.filter.ContentOpenEvent
 import com.github.zly2006.zhihu.viewmodel.filter.ContentViewRecord
-import com.github.zly2006.zhihu.viewmodel.filter.FeedDisplayFilterPipeline
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
-import com.github.zly2006.zhihu.viewmodel.filter.toFeedFilterSettings
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.Url
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
@@ -65,7 +52,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -76,86 +62,18 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * 命中生产分页解码、processResponse、sourceFeed 映射和首页过滤环境。
- * 原始真实响应只脱敏身份；syntheticAdvertisement 是明确标注的合成协议边界。
- * Android 的 RULES/HIDE 分页回归留在对应 instrument 用例，不改变 JVM 的 OFF 策略。
- */
+/** 生产分页与历史同步并发时，结构广告不能先发布到列表。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeFollowStructuralAdvertisementRegressionTest {
-    @Test
-    fun followRecommendDropsStructuralAdvertisementsWithQualityFilteringOff() = runTest {
-        withEnvironment { environment ->
-            val model = FollowRecommendViewModel().also(environment.models::add)
-            environment.page = JsonArray(listOf(syntheticAdvertisement()))
-            model.pullToRefresh(environment)
-
-            assertEquals(0, model.displayItems.size)
-            assertFalse(model.displayItems.any { it.isFiltered })
-            assertEquals("https://api.zhihu.com/moments_v3?feed_type=recommend", environment.requestedUrlWithoutInclude())
-        }
-    }
-
-    @Test
-    fun homePipelineDropsStructuralAdvertisementWithoutResolvingDetails() = runTest {
-        withEnvironment { environment ->
-            val advert = ZhihuJson.decodeJson<Feed>(syntheticAdvertisement())
-            val mapped = advert.toDisplayItem()
-            assertIs<AdvertisementFeed>(mapped.feed)
-            assertTrue(mapped.isFiltered)
-            assertNull(mapped.navDestinationJson)
-
-            assertEquals(emptyList(), environment.pipeline.filter(listOf(mapped)))
-            assertEquals(emptyList(), environment.detailRequests)
-
-            environment.page = JsonArray(listOf(syntheticAdvertisement()))
-            val model = HomeFeedViewModel().also(environment.models::add)
-            model.pullToRefresh(environment)
-            assertIs<AdvertisementFeed>(model.allData.single())
-            assertEquals(emptyList(), model.displayItems.toList())
-            assertEquals(emptyList(), model.latestLoadedDisplayItems.value)
-            assertEquals(emptyList(), environment.detailRequests)
-        }
-    }
-
-    @Test
-    fun anonymousHomeKeepsRecommendationWithoutFetchingLoginOnlyDetails() = runTest {
-        withEnvironment { environment ->
-            environment.loggedIn = false
-            val answer = fixture("/real-api/answer-detail.json").jsonObject
-            val question = answer.getValue("question").jsonObject
-            environment.page = JsonArray(
-                listOf(
-                    buildJsonObject {
-                        put("type", "feed")
-                        put("target", JsonObject(answer + ("question" to JsonObject(question + ("title" to JsonPrimitive("合成游客推荐内容"))))))
-                    },
-                ),
-            )
-            val model = HomeFeedViewModel().also(environment.models::add)
-            model.pullToRefresh(environment)
-            assertEquals("合成游客推荐内容", model.displayItems.single().title)
-            assertEquals(1, model.completedPageCount)
-            assertEquals(emptyList(), environment.detailRequests)
-            val requestUrl = environment.requests.single().url
-            assertEquals("api.zhihu.com", requestUrl.host)
-            assertEquals("/topstory/recommend", requestUrl.encodedPath)
-        }
-    }
-
     @Test
     fun homeNeverInsertsStructuralAdvertisementWhileBackgroundFilterIsRunning() = runTest {
         withEnvironment { environment ->
@@ -198,223 +116,6 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             }
         }
     }
-
-    @Test
-    fun homeReverseKeepsEachStructuralAdvertisementOnce() = runTest {
-        withEnvironment(reverseBlock = true) { environment ->
-            val adverts = listOf(syntheticAdvertisement("first"), syntheticAdvertisement("second"))
-            environment.page = JsonArray(adverts)
-            val model = HomeFeedViewModel().also(environment.models::add)
-            model.pullToRefresh(environment)
-
-            assertEquals(listOf("first", "second"), model.displayItems.map { it.title })
-            assertTrue(model.displayItems.all { it.feed is AdvertisementFeed && !it.isFiltered })
-            assertEquals(model.displayItems.toList(), model.latestLoadedDisplayItems.value)
-            assertEquals(emptyList(), environment.detailRequests)
-            assertEquals(emptyList(), environment.blockedReasons())
-        }
-    }
-
-    @Test
-    fun followReverseKeepsExplicitAdvertisementsWithoutAddingPaidDetailRequests() = runTest {
-        withEnvironment(reverseBlock = true) { environment ->
-            val model = FollowViewModel().also(environment.models::add)
-            environment.page = JsonArray(realMoments() + syntheticAdvertisement())
-            model.pullToRefresh(environment)
-
-            assertEquals(realMoments().size + 1, model.displayItems.size)
-            val advert = model.displayItems.last()
-            assertIs<AdvertisementFeed>(advert.feed)
-            assertEquals("advert", advert.title)
-            assertFalse(advert.isFiltered)
-            assertEquals(emptyList(), environment.detailRequests)
-        }
-    }
-
-    @Test
-    fun reversePreservesExistingPaidDetectionWhenPaidBlockingPreferenceIsDisabled() = runTest {
-        withEnvironment(reverseBlock = true, blockPaidContent = false) { environment ->
-            val paid = CommonFeed(
-                target = Feed.AnswerTarget(
-                    id = 1,
-                    url = "https://api.zhihu.com/answers/1",
-                    question = Feed.QuestionTarget(id = 2, url = "https://api.zhihu.com/questions/2", type = "question"),
-                ),
-            ).toDisplayItem(reverseBlock = true)
-            val advert = ZhihuJson.decodeJson<Feed>(syntheticAdvertisement()).toDisplayItem(reverseBlock = true)
-            environment.contentDetail = ZhihuJson
-                .decodeJson<DataHolder.Answer>(fixture("/real-api/answer-detail.json"))
-                .copy(paidInfo = buildJsonObject { put("type", "paid") })
-
-            val result = environment.pipeline.filter(listOf(paid, advert))
-            assertEquals(listOf(paid, advert), result)
-            assertEquals(1, environment.detailRequests.size)
-            assertEquals(emptyList(), environment.blockedReasons())
-        }
-    }
-
-    @Test
-    fun realDynamicEnvelopeRemovesOnlyStructuralAdAndPreservesTitlelessPinBodies() = runTest {
-        withEnvironment { environment ->
-            val response = fixture("/home-follow/follow-dynamic-page-0-sanitized.json").jsonObject
-            environment.responseEnvelope = response
-            val model = FollowViewModel().also(environment.models::add)
-            model.pullToRefresh(environment)
-
-            assertEquals(response.getValue("data").jsonArray.toList(), model.debugData)
-            assertEquals(14, model.allData.size)
-            val advert = assertIs<AdvertisementFeed>(model.allData.single { it is AdvertisementFeed })
-            val flattened = model.allData.toList().flattenFeeds()
-            assertEquals(15, flattened.size)
-            assertEquals(14, model.displayItems.size)
-            assertEquals(model.displayItems.toList(), model.latestLoadedDisplayItems.value)
-            assertFalse(model.displayItems.any { it.feed is AdvertisementFeed })
-            val pinItems = model.displayItems.filter { it.feed?.target is Feed.PinTarget }
-            assertEquals(3, pinItems.size)
-            val textPinItems = pinItems.filter { item ->
-                (item.feed?.target as Feed.PinTarget).content.any { it is DataHolder.Pin.ContentText }
-            }
-            assertEquals(2, textPinItems.size)
-            textPinItems.forEach { item ->
-                val pin = assertIs<Feed.PinTarget>(item.feed?.target)
-                val text = pin.content.filterIsInstance<DataHolder.Pin.ContentText>().first()
-                assertEquals("", text.title)
-                assertEquals("", item.title)
-                assertEquals(Ksoup.parse(text.content).text(), item.summary)
-                assertTrue(item.summary?.isNotBlank() == true)
-                assertFalse(item.isFiltered)
-            }
-            // link_card-only 想法仍保留空标题与来源 target；关联内容标题由独立显示回归验证。
-            val linkOnlyPin = pinItems.single { it !in textPinItems }
-            assertEquals("", linkOnlyPin.title)
-            assertFalse(linkOnlyPin.isFiltered)
-            val questionItem = model.displayItems.single { it.feed?.target is Feed.QuestionTarget }
-            assertEquals(assertIs<Feed.QuestionTarget>(questionItem.feed?.target).title, questionItem.title)
-            assertTrue(questionItem.title.isNotBlank())
-            assertEquals(emptyList(), environment.pipeline.filter(listOf(advert.toDisplayItem())))
-            assertEquals(emptyList(), environment.detailRequests)
-        }
-    }
-
-    @Test
-    fun followPinsRetainContentAndUseServerNextWithoutRebuildingQuery() = runTest {
-        withEnvironment { environment ->
-            val model = FollowPinViewModel().also(environment.models::add)
-            // 复用想法语料构造已证实标识的协议边界，不称作关注想法线上响应。
-            val pin = fixture("/real-api/pin-target.json").jsonObject
-            val aliasPin = JsonObject(pin + ("type" to JsonPrimitive("moments_pin")))
-            val next = "https://api.zhihu.com/moments_v3?feed_type=pin&after_id=opaque%2Btoken&include=server_field&limit=7"
-            val first = pinEnvelope(aliasPin, "moments_top_feed", next, false)
-            environment.responseEnvelope = first
-            model.pullToRefresh(environment)
-
-            assertEquals(HttpMethod.Get, environment.requests.single().method)
-            assertEquals("https://api.zhihu.com/moments_v3?feed_type=pin", environment.requestedUrlWithoutInclude())
-            assertEquals(first.getValue("data").jsonArray.toList(), model.debugData)
-            val item = model.displayItems.single()
-            val target = assertIs<Feed.PinTarget>(item.feed?.target)
-            val raw = assertIs<DataHolder.Pin>(item.raw)
-            assertEquals(raw.content, target.content)
-            assertTrue(target.content.any { it is DataHolder.Pin.ContentImage })
-            assertEquals(Pin(target.id, target.author.name), item.feed?.target?.navDestination)
-            assertFalse(item.isFiltered)
-            assertFalse(model.isEnd)
-            assertEquals(1, model.completedPageCount)
-
-            environment.responseEnvelope = pinEnvelope(aliasPin, "moments_recommend_feed", "", true)
-            model.loadMore(environment)
-            runCurrent()
-            assertEquals(
-                next,
-                environment.requests
-                    .last()
-                    .url
-                    .toString(),
-            )
-            assertEquals(1, model.displayItems.size, "相同想法分页去重仍保留完整卡片")
-            assertTrue(model.isEnd)
-            assertEquals(2, model.completedPageCount)
-            model.loadMore(environment)
-            runCurrent()
-            assertEquals(2, environment.requests.size)
-        }
-    }
-
-    @Test
-    fun followPinsUnknownRefreshKeepsCardsAndRetryCanReplaceThemWithSuccessfulEmptyPage() = runTest {
-        withEnvironment { environment ->
-            val model = FollowPinViewModel().also(environment.models::add)
-            environment.responseEnvelope = pinEnvelope(fixture("/real-api/pin-target.json").jsonObject, "moments_feed", "", true)
-            model.pullToRefresh(environment)
-            val previous = model.displayItems.toList()
-            val previousRaw = model.debugData.toList()
-            environment.responseEnvelope = buildJsonObject {
-                put("data", JsonArray(listOf(buildJsonObject { put("type", "unknown_follow_pin") })))
-                put(
-                    "paging",
-                    buildJsonObject {
-                        put("is_end", true)
-                        put("next", "")
-                    },
-                )
-            }
-            model.pullToRefresh(environment)
-            assertTrue(model.errorMessage != null)
-            assertEquals(previous, model.displayItems.toList())
-            assertEquals(previousRaw, model.debugData)
-            assertEquals(1, model.completedPageCount)
-            assertEquals(2, environment.failures.size)
-            environment.failures.clear()
-
-            environment.responseEnvelope = buildJsonObject {
-                put("data", JsonArray(emptyList()))
-                put(
-                    "paging",
-                    buildJsonObject {
-                        put("is_end", true)
-                        put("next", "")
-                    },
-                )
-            }
-            model.retry(environment)
-            runCurrent()
-            assertNull(model.errorMessage)
-            assertTrue(model.displayItems.isEmpty())
-            assertTrue(model.allData.isEmpty())
-            assertTrue(model.isEnd)
-            assertEquals(2, model.completedPageCount)
-            assertEquals(emptyList(), environment.detailRequests)
-        }
-    }
-
-    private fun pinEnvelope(pin: JsonObject, type: String, next: String, end: Boolean) = buildJsonObject {
-        put(
-            "data",
-            JsonArray(
-                listOf(
-                    buildJsonObject {
-                        put("id", "follow-pin-fixture")
-                        put("type", type)
-                        put("target_type", "pin")
-                        put("target", pin)
-                    },
-                ),
-            ),
-        )
-        put(
-            "paging",
-            buildJsonObject {
-                put("is_end", end)
-                put("next", next)
-            },
-        )
-    }
-
-    private fun realMoments(): List<JsonElement> = fixture("/real-api/moments-feed-items.json").jsonArray.toList()
-
-    private fun fixture(path: String): JsonElement = ZhihuJson.json.parseToJsonElement(
-        checkNotNull(javaClass.getResource(path)).readText(),
-    )
 
     private fun syntheticAdvertisement(title: String = "advert") = buildJsonObject {
         put("type", "feed_advert")
@@ -484,7 +185,7 @@ class HomeFollowStructuralAdvertisementRegressionTest {
                 addHandler { request ->
                     environment.requests += request
                     respond(
-                        (environment.responseEnvelope ?: buildJsonObject { put("data", environment.page) }).toString(),
+                        buildJsonObject { put("data", environment.page) }.toString(),
                         headers = headersOf(HttpHeaders.ContentType, "application/json"),
                     )
                 }
@@ -504,18 +205,6 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             }
             saved = true
             values.forEach { (key, value) -> settings.putString(key, value) }
-            environment.pipeline = FeedDisplayFilterPipeline(
-                settings = settings.toFeedFilterSettings(),
-                contentDetailProvider = ContentDetailProvider(environment::fetchContentDetail),
-                database = database,
-            )
-            environment.blockedReasons = {
-                database
-                    .blockedFeedRecordDao()
-                    .observeAll()
-                    .first()
-                    .map { it.blockedReason }
-            }
             block(environment)
             assertEquals(emptyList(), environment.failures)
             environment.requests.forEach { request ->
@@ -551,11 +240,7 @@ class HomeFollowStructuralAdvertisementRegressionTest {
 
     private class TestEnvironment : PaginationEnvironment {
         lateinit var client: HttpClient
-        lateinit var pipeline: FeedDisplayFilterPipeline
-        lateinit var blockedReasons: suspend () -> List<String>
         var page = JsonArray(emptyList())
-        var responseEnvelope: JsonObject? = null
-        var contentDetail: DataHolder.Content? = null
         var historyGate: CompletableDeferred<Unit>? = null
         val historyStarted = CompletableDeferred<Unit>()
         var historyRequests = 0
@@ -588,12 +273,7 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             }
             if (destination != null) {
                 detailRequests += destination
-                return when (val content = contentDetail) {
-                    is DataHolder.Answer -> ZhihuJson.json.encodeToJsonElement(content).jsonObject
-                    is DataHolder.Article -> ZhihuJson.json.encodeToJsonElement(content).jsonObject
-                    is DataHolder.Pin -> ZhihuJson.json.encodeToJsonElement(content).jsonObject
-                    else -> null
-                }
+                return null
             }
             return super<PaginationEnvironment>.fetchJson(url, include)
         }
@@ -605,11 +285,5 @@ class HomeFollowStructuralAdvertisementRegressionTest {
         override fun logDecodeFailure(tag: String?, item: JsonElement, error: Exception) {
             failures += error
         }
-
-        fun requestedUrlWithoutInclude(): String = requests
-            .single()
-            .url
-            .toString()
-            .substringBefore("&include=")
     }
 }

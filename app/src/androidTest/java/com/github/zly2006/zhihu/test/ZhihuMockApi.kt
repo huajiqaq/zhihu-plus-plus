@@ -46,16 +46,12 @@ object ZhihuMockApi {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     private var enabled = true
 
-    fun isEnabled(): Boolean = enabled
-
     fun reset(enabled: Boolean = this.enabled) {
         this.enabled = enabled
         routes.clear()
         requests.clear()
         if (enabled) installDefaultRoutes()
     }
-
-    fun recordedRequests(): List<RecordedRequest> = requests.toList()
 
     fun requestCount(method: HttpMethod? = null, urlSubstring: String? = null): Int = requests.count { request ->
         (method == null || request.method == method) &&

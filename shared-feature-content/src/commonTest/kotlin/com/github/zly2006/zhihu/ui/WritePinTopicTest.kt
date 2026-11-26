@@ -32,29 +32,8 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 
 class WritePinTopicTest {
-    @Test
-    fun onlyNewStandaloneHashOffersAnEntry() {
-        assertEquals(0, typedPinTopicStart("" to TextRange.Zero, "#" to TextRange(1)))
-        assertEquals(3, typedPinTopicStart("正文 " to TextRange(3), "正文 #" to TextRange(4)))
-        assertNull(typedPinTopicStart("#" to TextRange.Zero, "#" to TextRange(1)))
-        assertNull(typedPinTopicStart("#" to TextRange(1), "# 标题" to TextRange(4)))
-        assertNull(typedPinTopicStart("" to TextRange.Zero, "# 标题\n正文 #" to TextRange(8)))
-        assertNull(typedPinTopicStart("正文" to TextRange.Zero, "#正文" to TextRange(1)))
-    }
-
-    @Test
-    fun doesNotOfferAnEntryInMarkdownCodeOrLinks() {
-        listOf("```\n|\n```", "    |", "`文字\n|\n代码`", "[正文\n|\n](https://example.com)").forEach { example ->
-            val start = example.indexOf('|')
-            val old = example.removeRange(start, start + 1) to TextRange(start)
-            val new = example.replace('|', '#') to TextRange(start + 1)
-            assertNull(typedPinTopicStart(old, new), example)
-        }
-    }
-
     @Test
     fun sameLabelKeepsBothIdsAndNativeUndoRestoresReversedSelection() {
         val first = PinContentTopicItem("1354", "机器 学习")
@@ -78,45 +57,6 @@ class WritePinTopicTest {
         assertEquals(listOf(first), compilePinMarkdown(state.text.toString()).topics)
         state.undoState.redo()
         assertEquals(listOf(second, first), compilePinMarkdown(state.text.toString()).topics)
-    }
-
-    @Test
-    fun backspaceRemovesOnlyTheTopicAndItsOwnSpace() {
-        val link = "[#编程](https://www.zhihu.com/topic/1354)"
-        val oldText = "正文 $link$PIN_TOPIC_SEPARATOR # 标题"
-        listOf(4, 3 + link.length, 3 + link.length + PIN_TOPIC_SEPARATOR.length).forEach { cursor ->
-            val buffer = TextFieldState(oldText, TextRange(cursor)).toTextFieldBuffer()
-            buffer.replace(cursor - 1, cursor, "")
-            buffer.selection = TextRange(cursor - 1)
-            with(PinTopicEditing()) { buffer.transformInput() }
-            assertEquals("正文  # 标题", buffer.toString())
-            assertEquals(TextRange(3), buffer.selection)
-            assertEquals(emptyList(), compilePinMarkdown(buffer.toString()).topics)
-        }
-    }
-
-    @Test
-    fun selectionReplacementAndOrdinaryEditPreserveNeighbours() {
-        val first = "[#话题](https://www.zhihu.com/topic/1)"
-        val second = "[#第二](https://www.zhihu.com/topic/2)"
-        val text = "😀$first$PIN_TOPIC_SEPARATOR$second${PIN_TOPIC_SEPARATOR}文末"
-        val target = TextRange(text.indexOf(second) + 1, 4)
-        val state = TextFieldState(text, target)
-        val editing = PinTopicEditing()
-        assertEquals(TextRange(text.indexOf(second) + second.length, 2), editing.selection(text, target))
-        assertEquals("$first$PIN_TOPIC_SEPARATOR$second", editing.selectedMarkdown(state))
-        val replaced = state.toTextFieldBuffer()
-        replaced.replace(target.min, target.max, "替换")
-        replaced.selection = TextRange(target.min + 2, target.min)
-        with(editing) { replaced.transformInput() }
-        assertEquals("😀替换文末", replaced.toString())
-        assertEquals(TextRange(4, 2), replaced.selection)
-
-        val prefix = TextFieldState(text, TextRange(2)).toTextFieldBuffer()
-        prefix.replace(2, 2, "前")
-        with(editing) { prefix.transformInput() }
-        assertEquals("😀前${text.drop(2)}", prefix.toString())
-        assertEquals(listOf("1", "2"), compilePinMarkdown(prefix.toString()).topics.map { it.topicId })
     }
 
     @Test

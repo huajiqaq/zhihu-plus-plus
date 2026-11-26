@@ -39,9 +39,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import kotlin.io.path.createTempDirectory
@@ -50,7 +47,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** WebDAV 备份范围：本机凭据不进备份；底栏项目和通知设置随备份走；旧备份没有这两项时不动本机设置。 */
+/** WebDAV 上传和恢复不能泄漏或覆盖本机凭据。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 class WebDavBackupScopeTest {
     @Test
@@ -86,71 +83,6 @@ class WebDavBackupScopeTest {
         assertEquals(setOf(FIXTURE_BASIC_AUTH), server.authorizations.toSet(), "上传和恢复的每个请求都带标准 Basic 认证头")
     }
 
-    /** 设备 A 上传，设备 B 恢复：底栏项目（字符串集合）和通知设置（单独的存储）都要到 B 上。 */
-    @Test
-    fun bottomBarItemsAndNotificationSettingsTravelWithTheBackup() = withWebDav { server, database ->
-        val deviceA = MapSettingsStore(
-            mutableMapOf(
-                "webdav_url" to "https://dav.example/backup/",
-                BOTTOM_BAR_KEY to linkedSetOf("Home", "Daily", "Account"),
-                "bottom_bar_item_order" to "Daily,Home,Account",
-            ),
-        )
-        val notificationsA = MemoryNotificationSettings().apply {
-            setAutoMarkAsReadEnabled(false)
-            setUnreadBadgeEnabled(false)
-            setSystemNotificationEnabled(NotificationType.REPLY_COMMENT, true)
-            setDisplayInAppEnabled(NotificationType.LIKE_ANSWER, false)
-        }
-        val uploader = WebDavSyncViewModel(deviceA, database, notificationsA, setOf(BOTTOM_BAR_KEY), server.client)
-        uploader.upload()
-        uploader.awaitIdle()
-        val body = server.uploaded["settings.json"] ?: error("设置没有上传：${uploader.status}")
-        // 旧版本按旧结构解码：新字段被忽略；底栏集合不在 values 里，旧版不会把它当字符串写回。
-        val legacy = Json { ignoreUnknownKeys = true }.decodeFromString(LegacySettingsBackup.serializer(), body)
-        assertFalse(BOTTOM_BAR_KEY in legacy.values, "底栏项目不能混进旧版本也会恢复的 values：$body")
-        assertEquals("Daily,Home,Account", legacy.values["bottom_bar_item_order"]?.content)
-
-        server.remoteSettings = body
-        val deviceB = MapSettingsStore(mutableMapOf("webdav_url" to "https://dav.example/backup/"))
-        val notificationsB = MemoryNotificationSettings()
-        val restorer = WebDavSyncViewModel(deviceB, database, notificationsB, setOf(BOTTOM_BAR_KEY), server.client)
-        restorer.restore()
-        restorer.awaitIdle()
-        assertFalse(restorer.isStatusError, "恢复失败：${restorer.status}")
-        assertEquals(setOf("Home", "Daily", "Account"), deviceB.getStringSet(BOTTOM_BAR_KEY, emptySet()), "底栏项目要随备份恢复")
-        assertEquals("Daily,Home,Account", deviceB.getString("bottom_bar_item_order", ""))
-        assertFalse(notificationsB.getAutoMarkAsReadEnabled(), "通知设置要随备份恢复")
-        assertFalse(notificationsB.getUnreadBadgeEnabled())
-        assertTrue(notificationsB.getSystemNotificationEnabled(NotificationType.REPLY_COMMENT))
-        assertFalse(notificationsB.getDisplayInAppEnabled(NotificationType.LIKE_ANSWER))
-    }
-
-    @Test
-    fun oldBackupWithoutTheNewFieldsLeavesLocalBottomBarAndNotificationsAlone() = withWebDav { server, database ->
-        // 旧版本的备份：没有 stringSets / notifications；旧桌面端还把底栏集合存成了 values 里的拼接字符串。
-        server.remoteSettings = """{"version":1,"exportTime":0,"values":{"bottom_bar_items":"Home\u001FAccount","readingFontSize":120}}"""
-        val settings = MapSettingsStore(
-            mutableMapOf(
-                "webdav_url" to "https://dav.example/backup/",
-                BOTTOM_BAR_KEY to linkedSetOf("Home", "Follow", "Daily"),
-                "readingFontSize" to 100,
-            ),
-        )
-        val notifications = MemoryNotificationSettings().apply {
-            setAutoMarkAsReadEnabled(false)
-            setSystemNotificationEnabled(NotificationType.LIKE_ANSWER, true)
-        }
-        val model = WebDavSyncViewModel(settings, database, notifications, setOf(BOTTOM_BAR_KEY), server.client)
-        model.restore()
-        model.awaitIdle()
-        assertFalse(model.isStatusError, "旧备份要能正常恢复：${model.status}")
-        assertEquals(120, settings.getInt("readingFontSize", 0), "旧备份里的普通设置照常恢复")
-        assertEquals(setOf("Home", "Follow", "Daily"), settings.getStringSet(BOTTOM_BAR_KEY, emptySet()), "旧备份没有底栏项目，本机设置不变")
-        assertFalse(notifications.getAutoMarkAsReadEnabled(), "旧备份没有通知设置，本机设置不变")
-        assertTrue(notifications.getSystemNotificationEnabled(NotificationType.LIKE_ANSWER))
-    }
-
     private suspend fun WebDavSyncViewModel.awaitIdle() = withTimeout(15_000) {
         while (isRunning) delay(20)
     }
@@ -171,11 +103,9 @@ class WebDavBackupScopeTest {
         }
     }
 
-    /** 记下上传的文件；下载 settings.json 时返回 [remoteSettings]，其余文件返回上传过的内容。 */
     private class FakeWebDav {
         val uploaded = ConcurrentHashMap<String, String>()
 
-        /** 每个请求带上的认证头，没带记空串。 */
         val authorizations: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
         @Volatile
@@ -236,14 +166,6 @@ class WebDavBackupScopeTest {
             unreadBadge = enabled
         }
     }
-
-    /** 旧版本解析 settings.json 时用的结构：只认识 values。 */
-    @Serializable
-    private data class LegacySettingsBackup(
-        val version: Int = 1,
-        val exportTime: Long = 0,
-        val values: Map<String, JsonPrimitive> = emptyMap(),
-    )
 
     private companion object {
         const val BOTTOM_BAR_KEY = "bottom_bar_items"

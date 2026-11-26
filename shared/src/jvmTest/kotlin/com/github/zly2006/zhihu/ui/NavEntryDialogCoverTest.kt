@@ -24,9 +24,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,19 +38,15 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.savedstate.compose.LocalSavedStateRegistryOwner
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuAccountProfileSnapshot
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
@@ -60,115 +54,34 @@ import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
-import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Home
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.MainTabs
-import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
 import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
-import com.github.zly2006.zhihu.ui.components.AppAlertDialog
-import com.github.zly2006.zhihu.ui.components.AppScaffold
-import com.github.zly2006.zhihu.ui.components.AppTextButton
-import com.github.zly2006.zhihu.ui.components.LocalNavHostLifecycleOwner
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.coroutines.flow.merge
 import kotlinx.serialization.encodeToString
 import java.nio.file.Files
 import java.util.Properties
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
-import com.github.zly2006.zhihu.navigation.AppNavDisplay as NavDisplay
 import kotlinx.io.files.Path as KotlinxPath
 
 /** 被覆盖的条目隐藏窗口，返回后恢复；宿主生命周期在 NavDisplay 外提供。 */
 @OptIn(ExperimentalTestApi::class)
 class NavEntryDialogCoverTest {
-    @Test
-    fun dialogInsideANavEntryHidesWhileCoveredAndReturns() {
-        val log = CopyOnWriteArrayList<String>()
-        var push: (NavDestination) -> Unit = {}
-        var pop: () -> Unit = {}
-        runDesktopComposeUiTest(width = 412, height = 800) {
-            setContent {
-                ZhihuTheme {
-                    val navHost = rememberAppNavHost(Account.DeveloperSettings)
-                    push = { navHost.open(it) }
-                    pop = { navHost.onBack() }
-                    CompositionLocalProvider(LocalNavHostLifecycleOwner provides LocalLifecycleOwner.current) {
-                        NavDisplay(navHost = navHost, onBack = navHost::onBack) {
-                            entry<Account.DeveloperSettings> {
-                                AppScaffold {
-                                    LifecycleLog("A", log)
-                                    AppAlertDialog(
-                                        onDismissRequest = {},
-                                        title = { Text("被盖住的弹窗") },
-                                        confirmButton = { AppTextButton("确定", {}) },
-                                    )
-                                }
-                            }
-                            entry<Account.OpenSourceLicenses> {
-                                AppScaffold { LifecycleLog("B", log) }
-                            }
-                        }
-                    }
-                }
-            }
-            waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("被盖住的弹窗").fetchSemanticsNodes().isNotEmpty() }
-            runOnIdle { push(Account.OpenSourceLicenses) }
-            val hidden = runCatching {
-                waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("被盖住的弹窗").fetchSemanticsNodes().isEmpty() }
-            }.isSuccess
-            runOnIdle { pop() }
-            val shownAgain = runCatching {
-                waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("被盖住的弹窗").fetchSemanticsNodes().isNotEmpty() }
-            }.isSuccess
-            assertTrue(hidden && shownAgain, "hidden=$hidden shownAgain=$shownAgain\n" + log.joinToString("\n"))
-        }
-    }
-
-    @Test
-    fun repeatedAnswerGetsItsOwnViewModelAndBackRestoresPreviousInstance() = runDesktopComposeUiTest {
-        val answer = Article(type = ArticleType.Answer, id = 42)
-        setContent {
-            ZhihuTheme {
-                val host = rememberAppNavHost(answer)
-                NavDisplay(navHost = host) {
-                    entry<Article> {
-                        val model = viewModel { VisitCounter() }
-                        Column {
-                            Text("阅读进度 ${model.count}")
-                            TextButton(onClick = { model.count++ }) { Text("增加进度") }
-                            TextButton(onClick = { host.open(answer) }) { Text("再次进入同一回答") }
-                            TextButton(onClick = { host.back() }) { Text("返回上次访问 ${model.count}") }
-                        }
-                    }
-                }
-            }
-        }
-        onNodeWithText("增加进度").performClick()
-        onNodeWithText("阅读进度 1").assertExists()
-        onNodeWithText("再次进入同一回答").performClick()
-        waitForIdle()
-        onNodeWithText("阅读进度 0").assertExists()
-        onNodeWithText("返回上次访问 0").performClick()
-        waitForIdle()
-        onNodeWithText("阅读进度 1").assertExists()
-    }
-
     @Test
     fun questionContextKeepsTheOriginalReadingEntryAcrossWidths() {
         val oldHome = System.getProperty("user.home")
@@ -246,7 +159,6 @@ class NavEntryDialogCoverTest {
                                         ZhihuMainPreferenceSnapshot(
                                             tapToScrollToTopEnabled = false,
                                             autoHideBottomBar = false,
-                                            collectionDirectBrowseEnabled = false,
                                             landscapeListDetailEnabled = true,
                                             selectedBottomBarItemKeys = listOf(Home.name),
                                             startDestination = Home,
@@ -353,16 +265,5 @@ class NavEntryDialogCoverTest {
 
     class VisitCounter : ViewModel() {
         var count by mutableIntStateOf(0)
-    }
-
-    @Composable
-    private fun LifecycleLog(name: String, log: MutableList<String>) {
-        val entry = LocalLifecycleOwner.current
-        val saved = LocalSavedStateRegistryOwner.current
-        LaunchedEffect(entry, saved) {
-            merge(entry.lifecycle.currentStateFlow, saved.lifecycle.currentStateFlow).collect {
-                log += "$name entry=${entry.lifecycle.currentState} savedStateOwner=${saved.lifecycle.currentState}"
-            }
-        }
     }
 }

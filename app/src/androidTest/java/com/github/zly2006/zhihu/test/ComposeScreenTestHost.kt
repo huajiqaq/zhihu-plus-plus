@@ -17,17 +17,16 @@
 
 package com.github.zly2006.zhihu.test
 
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
-import androidx.compose.ui.test.swipeLeft
-import androidx.compose.ui.test.swipeRight
-import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.DpSize
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import com.github.zly2006.zhihu.MainActivity
@@ -54,17 +53,8 @@ class RecordingNavigator {
     val destinations: List<NavDestination>
         get() = navigateEvents.toList()
 
-    val topLevelDestinations: List<TopLevelDestination>
-        get() = topLevelNavigateEvents.toList()
-
     val backCount: Int
         get() = backEvents.get()
-
-    fun reset() {
-        navigateEvents.clear()
-        topLevelNavigateEvents.clear()
-        backEvents.set(0)
-    }
 
     fun asNavigator(): Navigator = Navigator(
         onNavigate = { destination -> navigateEvents += destination },
@@ -109,7 +99,9 @@ fun MainActivityComposeRule.setScreenContent(
     return recordingNavigator
 }
 
+@OptIn(ExperimentalTestApi::class)
 fun MainActivityComposeRule.setZhihuMainContent(
+    windowSize: DpSize? = null,
     onNavHostReady: (AppNavHost) -> Unit = {},
 ) {
     activity.setContent { }
@@ -121,18 +113,16 @@ fun MainActivityComposeRule.setZhihuMainContent(
                 activity.navHost = navHost
                 onNavHostReady(navHost)
             }
-            AndroidZhihuMain(navHost = navHost)
+            if (windowSize == null) {
+                AndroidZhihuMain(navHost = navHost)
+            } else {
+                DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(windowSize)) {
+                    CompositionLocalProvider(LocalActivity provides activity) {
+                        AndroidZhihuMain(navHost = navHost)
+                    }
+                }
+            }
         }
     }
     waitForIdle()
-}
-
-fun SemanticsNodeInteraction.performVerticalSwipeCycle() {
-    performTouchInput { swipeUp() }
-    performTouchInput { swipeDown() }
-}
-
-fun SemanticsNodeInteraction.performHorizontalSwipeCycle() {
-    performTouchInput { swipeLeft() }
-    performTouchInput { swipeRight() }
 }

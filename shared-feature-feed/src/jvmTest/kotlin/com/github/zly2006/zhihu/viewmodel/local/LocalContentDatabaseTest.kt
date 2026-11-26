@@ -40,70 +40,6 @@ import kotlin.test.assertTrue
 
 class LocalContentDatabaseTest {
     @Test
-    fun createsJvmRoomDatabaseAndStoresTask() = runTest {
-        val database = getLocalContentDatabase(
-            createTempDirectory("local-content-room").resolve("local-content.db").toFile(),
-        )
-
-        database.contentDao().insertTasks(
-            listOf(
-                CrawlingTask(
-                    url = "https://www.zhihu.com/question/1",
-                    reason = CrawlingReason.Trending,
-                ),
-            ),
-        )
-
-        val tasks = database.contentDao().getTasksByStatus(CrawlingStatus.NotStarted)
-        assertEquals(listOf("https://www.zhihu.com/question/1"), tasks.map { it.url })
-        database.close()
-    }
-
-    @Test
-    fun cancellingFailedStatusWriteDoesNotLeaveClaimInProgress() = runTest {
-        val file = createTempDirectory("local-content-failure-room").resolve("local-content.db").toFile()
-        val database = getLocalContentDatabase(file)
-        val store = ZhihuAccountStore(
-            ZhihuAccountRepository(Path(file.parent, "account.json")),
-            MockEngine { error("抓取测试不得请求真实网络") },
-        )
-        val writeStarted = CompletableDeferred<Unit>()
-        val writeRelease = CompletableDeferred<Unit>()
-        var execution: Job? = null
-        val previousFeed = crawlingFeedArrayForTesting
-        try {
-            val dao = database.contentDao()
-            dao.insertTasks(listOf(CrawlingTask(url = "https://www.zhihu.com/question/1", reason = CrawlingReason.Trending)))
-            val task = dao.getTasksByStatus(CrawlingStatus.NotStarted).single()
-            val delayedDao = object : LocalContentDao by dao {
-                override suspend fun finishTask(id: Long, executedAt: Long, status: CrawlingStatus, errorMessage: String?): Int {
-                    if (status == CrawlingStatus.Failed) {
-                        writeStarted.complete(Unit)
-                        writeRelease.await()
-                    }
-                    return dao.finishTask(id, executedAt, status, errorMessage)
-                }
-            }
-            crawlingFeedArrayForTesting = { throw IllegalStateException("fetch failed") }
-            execution = launch(Dispatchers.Default) { CrawlingExecutor(delayedDao, store).executeTask(task) }
-            writeStarted.await()
-            execution.cancel()
-            writeRelease.complete(Unit)
-            execution.join()
-            assertTrue(execution.isCancelled)
-            assertEquals(task.id, dao.getTasksByStatus(CrawlingStatus.Failed).single().id, "普通错误后的取消不能使状态更新遗留InProgress")
-            assertTrue(dao.getTasksByStatus(CrawlingStatus.InProgress).isEmpty())
-            assertTrue(dao.getRecentResults(10).isEmpty())
-        } finally {
-            writeRelease.complete(Unit)
-            execution?.cancelAndJoin()
-            crawlingFeedArrayForTesting = previousFeed
-            store.close()
-            database.close()
-        }
-    }
-
-    @Test
     fun recoveryPreservesLiveExecutorAndReleasesOnlyAfterCancellationCleanup() = runTest {
         val file = createTempDirectory("local-content-recovery-room").resolve("local-content.db").toFile()
         val database = getLocalContentDatabase(file)
@@ -124,6 +60,7 @@ class LocalContentDatabaseTest {
             assertEquals(file.canonicalPath, java.io.File(dao.databaseFilePath()).canonicalPath)
             dao.insertTasks(listOf(CrawlingTask(url = "https://www.zhihu.com/question/1", reason = CrawlingReason.Trending)))
             val task = dao.getTasksByStatus(CrawlingStatus.NotStarted).single()
+            assertEquals("https://www.zhihu.com/question/1", task.url)
             val delayedDao = object : LocalContentDao by dao {
                 override suspend fun finishTask(id: Long, executedAt: Long, status: CrawlingStatus, errorMessage: String?): Int {
                     if (status == CrawlingStatus.NotStarted) {

@@ -14,16 +14,9 @@ permissions:
 jobs:
   build:
     uses: ./.github/workflows/my-build-action.yml
-    if: startsWith(github.ref, 'refs/heads')
-    with:
-      name: 'Nightly Builds'
-    secrets: inherit
-  build_minified_release:
-    uses: ./.github/workflows/my-build-action.yml
     if: startsWith(github.ref, 'refs/heads/')
     with:
-      name: 'Minified Builds'
-      minify: true
+      name: 'Nightly Builds'
       nightly_release: true
     secrets: inherit
   release:
@@ -32,5 +25,4 @@ jobs:
     with:
       name: 'Release'
       release: true
-      minify: true
     secrets: inherit

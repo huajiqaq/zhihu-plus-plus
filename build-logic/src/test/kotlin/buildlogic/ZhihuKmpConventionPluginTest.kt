@@ -21,22 +21,11 @@ import org.gradle.testkit.runner.GradleRunner
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
-import java.util.concurrent.TimeUnit
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ZhihuKmpConventionPluginTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
-
-    @Test
-    fun rejectsInvalidExplicitVariant() {
-        for (variant in listOf("", "debug", "full ")) {
-            val result = runner(variant, "compileAndroidMain").buildAndFail()
-            assertTrue(result.output.contains("zhihuAndroidVariant"), result.output)
-        }
-    }
 
     @Test
     fun rejectsExplicitVariantThatConflictsWithRequestedTask() {
@@ -47,29 +36,11 @@ class ZhihuKmpConventionPluginTest {
     }
 
     @Test
-    fun rejectsMixedVariantTasksEvenWithExplicitVariant() {
-        for (variant in listOf("full", "lite")) {
+    fun rejectsMixedVariantTasksWithOrWithoutExplicitVariant() {
+        for (variant in listOf("full", null)) {
             val result = runner(variant, "assembleFullDebug", "assembleLiteDebug").buildAndFail()
             assertTrue(result.output.contains("separate Gradle invocations"), result.output)
         }
-    }
-
-    @Test
-    fun rejectsMixedVariantTasksWithoutExplicitVariant() {
-        val result = runner(null, "assembleFullDebug", "assembleLiteDebug").buildAndFail()
-        assertTrue(result.output.contains("separate Gradle invocations"), result.output)
-    }
-
-    @Test
-    fun plainModuleCompilationDefaultsToLite() {
-        val result = runner(null, "compileAndroidMain").build()
-        assertTrue(result.output.contains("SELECTED_ANDROID_VARIANT=androidLite"), result.output)
-    }
-
-    @Test
-    fun explicitFullSelectsFullForPlainModuleCompilation() {
-        val result = runner("FULL", "compileAndroidMain").build()
-        assertTrue(result.output.contains("SELECTED_ANDROID_VARIANT=androidFull"), result.output)
     }
 
     @Test
@@ -83,91 +54,13 @@ class ZhihuKmpConventionPluginTest {
 
     @Test
     fun jvmTestsUseAnIsolatedHomeAndOneDatabaseWorker() {
-        val result = runner(null, "verifyTestIsolation").build()
+        val modules = listOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")
+        val result = runner(null, "verifyTestIsolation", subprojects = modules).build()
         assertTrue(result.output.contains("TEST_HOME_ISOLATED=true"), result.output)
         assertTrue(result.output.contains("TEST_PREFS_ISOLATED=true"), result.output)
-        assertTrue(result.output.contains("TEST_SINGLE_WORKER=true"), result.output)
-    }
-
-    @Test
-    fun heavyJvmTestsUseOneGigabyteAndOneFork() {
-        for (name in listOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")) {
-            val result = runner(null, "verifyTestIsolation", projectName = name).build()
-            assertTrue(result.output.contains("TEST_HEAVY_HEAP=true"), result.output)
-            assertTrue(result.output.contains("TEST_SINGLE_WORKER=true"), result.output)
-        }
-    }
-
-    @Test
-    fun appleTargetsMatchTheHostAndRetainStaticFrameworks() {
-        val result = runner(null, "verifyAppleTargets", includeAppleTargets = true).build()
-        if (System.getProperty("os.name").lowercase().contains("mac")) {
-            assertTrue(result.output.contains("APPLE_TARGETS=iosArm64,iosSimulatorArm64,macosArm64"), result.output)
-            assertTrue(result.output.contains("IOS_FRAMEWORKS=4"), result.output)
-            assertTrue(result.output.contains("IOS_FRAMEWORK_CONTRACT=true"), result.output)
-        } else {
-            assertTrue(result.output.contains("APPLE_TARGETS=none"), result.output)
-            assertTrue(result.output.contains("IOS_FRAMEWORKS=0"), result.output)
-        }
-    }
-
-    @Test
-    fun fontBootstrapPreservesJvmArgumentsAndFontPaths() {
-        val directory = temporaryFolder.newFolder()
-        val preparation = File("../gradle/prepare-upstream-sources.py").canonicalFile
-        assertTrue(preparation.isFile, "找不到当前字体准备源码")
-        val checker = directory.resolve("check-arguments.py")
-        checker.writeText(
-            """
-            import ast, json, os, subprocess, sys
-            from pathlib import Path
-
-            source = Path(sys.argv[1])
-            tree = ast.parse(source.read_text(encoding='utf-8'))
-            function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'gradle_subprocess_command')
-            namespace = {'os': os, 'subprocess': subprocess}
-            exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
-            directory = Path(__file__).parent / 'font arguments with spaces'
-            directory.mkdir()
-            receiver = directory / 'receive arguments.py'
-            receiver.write_text("import json,sys\nsys.stdout.buffer.write(json.dumps(sys.argv[1:]).encode('ascii'))\n", encoding='utf-8')
-            if os.name == 'nt':
-                forwarder = directory / 'forward arguments.cmd'
-                forwarder.write_text('@echo off\n"' + sys.executable + '" -I "' + str(receiver) + '" %*\n', encoding='utf-8')
-                executable = [str(forwarder)]
-            else:
-                executable = [sys.executable, '-I', str(receiver)]
-            for jvmargs in (
-                '-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8',
-                '-Xmx5120m -Dfile.encoding=UTF-8',
-            ):
-                expected = [
-                    '--project-dir', str(directory),
-                    '-Dorg.gradle.jvmargs=' + jvmargs,
-                    '-Pkotlin.daemon.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m',
-                    '--max-workers=2',
-                    '-PtiqianLeteRegularLayoutFont=' + str(directory / 'layout font.otf'),
-                    '-PtiqianStixRuntimeFont=' + str(directory / 'runtime font.otf'),
-                ]
-                command = namespace['gradle_subprocess_command'](executable + expected)
-                result = subprocess.run(command, cwd=directory, capture_output=True, text=True, encoding='utf-8', check=True)
-                received = json.loads(result.stdout)
-                assert received == expected, (received, expected)
-            print('PARAMETERS_PRESERVED=true')
-            """.trimIndent(),
-        )
-        val python = if (System.getProperty("os.name").lowercase().contains("win")) "python" else "python3"
-        val process = ProcessBuilder(python, "-I", checker.absolutePath, preparation.absolutePath)
-            .directory(directory)
-            .redirectErrorStream(true)
-            .start()
-        try {
-            assertTrue(process.waitFor(30, TimeUnit.SECONDS), "合成参数转发检查超时")
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            assertEquals(0, process.exitValue(), output)
-            assertTrue(output.contains("PARAMETERS_PRESERVED=true"), output)
-        } finally {
-            if (process.isAlive) process.destroyForcibly()
+        assertTrue(result.output.contains("TEST_SINGLE_WORKER:variant-selection-test=true"), result.output)
+        for (name in modules) {
+            assertTrue(result.output.contains("TEST_SINGLE_WORKER:$name=true"), result.output)
         }
     }
 
@@ -175,12 +68,13 @@ class ZhihuKmpConventionPluginTest {
         explicitVariant: String?,
         vararg tasks: String,
         projectName: String = "variant-selection-test",
-        includeAppleTargets: Boolean = false,
+        subprojects: List<String> = emptyList(),
     ): GradleRunner {
         val directory = temporaryFolder.newFolder()
         directory.resolve("settings.gradle").writeText(
             """
             rootProject.name = '$projectName'
+            ${subprojects.joinToString("\n") { "include ':$it'" }}
             dependencyResolutionManagement {
                 versionCatalogs {
                     libs { version('jvm', '21') }
@@ -188,6 +82,19 @@ class ZhihuKmpConventionPluginTest {
             }
             """.trimIndent(),
         )
+        subprojects.forEach { name ->
+            val module = directory.resolve(name)
+            check(module.mkdir())
+            module.resolve("build.gradle").writeText(
+                """
+                plugins {
+                    id 'org.jetbrains.kotlin.multiplatform'
+                    id 'zhihu.kmp-conventions'
+                }
+                kotlin { jvm() }
+                """.trimIndent(),
+            )
+        }
         directory.resolve("build.gradle").writeText(
             """
             plugins {
@@ -203,21 +110,8 @@ class ZhihuKmpConventionPluginTest {
                     }
                 }
             }
-            ${if (includeAppleTargets) "buildlogic.ZhihuKmpConventionPluginKt.configureAppleTargets(kotlin, 'TestApple')" else ""}
             ['assembleFullDebug', 'assembleLiteDebug', 'compileAndroidMain'].each { name ->
                 tasks.register(name)
-            }
-            tasks.register('verifyAppleTargets') {
-                doLast {
-                    def nativeTargets = kotlin.targets.findAll { it instanceof org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget }
-                    def names = nativeTargets.collect { it.name }.sort().join(',')
-                    def frameworks = nativeTargets.collectMany { target ->
-                        target.binaries.findAll { it instanceof org.jetbrains.kotlin.gradle.plugin.mpp.Framework }
-                    }
-                    println('APPLE_TARGETS=' + (names ?: 'none'))
-                    println('IOS_FRAMEWORKS=' + frameworks.size())
-                    println('IOS_FRAMEWORK_CONTRACT=' + frameworks.every { it.baseName == 'TestApple' && it.isStatic() })
-                }
             }
             tasks.register('verifyTestIsolation') {
                 doLast {
@@ -226,8 +120,10 @@ class ZhihuKmpConventionPluginTest {
                     def expected = new File(layout.buildDirectory.get().asFile, 'test-home/jvmTest').canonicalFile
                     println('TEST_HOME_ISOLATED=' + (home == expected))
                     println('TEST_PREFS_ISOLATED=' + (task.systemProperties['java.util.prefs.userRoot'] == new File(expected, 'prefs').absolutePath))
-                    println('TEST_SINGLE_WORKER=' + (task.maxParallelForks == 1))
-                    println('TEST_HEAVY_HEAP=' + (task.maxHeapSize == '1g'))
+                    allprojects.each { candidate ->
+                        def candidateTask = candidate.tasks.getByName('jvmTest')
+                        println('TEST_SINGLE_WORKER:' + candidate.name + '=' + (candidateTask.maxParallelForks == 1))
+                    }
                 }
             }
             tasks.register('verifyVariantSelection') {

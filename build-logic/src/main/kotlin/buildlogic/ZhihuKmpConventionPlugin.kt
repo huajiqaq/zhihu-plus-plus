@@ -25,6 +25,7 @@ import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 /** Apple 编译与资源任务只在 Mac 注册；framework 名称沿用各模块的公开契约。 */
 fun KotlinMultiplatformExtension.configureAppleTargets(frameworkBaseName: String? = null) {
@@ -69,6 +70,18 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
                     task.maxParallelForks = 1
                     if (project.name in setOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")) {
                         task.maxHeapSize = "1g"
+                    }
+                }
+                if (project.name in setOf("shared-ui-base", "shared-feature-settings")) {
+                    val resourcePath = "misc/emoji_mapping.json"
+                    val emojiMapping = project.rootProject.file(resourcePath)
+                    project.tasks.withType(KotlinNativeTest::class.java).matching { it.name == "macosArm64Test" }.configureEach { test ->
+                        test.inputs.file(emojiMapping)
+                        // 未打包的 test.kexe 以自身所在目录作为 NSBundle 的资源根。
+                        test.doFirst { task ->
+                            val resourceRoot = (task as KotlinNativeTest).executable.parentFile
+                            emojiMapping.copyTo(resourceRoot.resolve(resourcePath), overwrite = true)
+                        }
                     }
                 }
                 project.plugins.withId("com.android.kotlin.multiplatform.library") {

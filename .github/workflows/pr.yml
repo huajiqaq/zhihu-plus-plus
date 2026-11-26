@@ -3,6 +3,12 @@ name: Pull Request Check
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      apple_release:
+        description: '验收 Apple Release 与隔离 iOS Simulator UI（仅 Actions artifacts，不发布）'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -12,60 +18,99 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ktlint:
-    name: KtLint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: "21"
-          cache: gradle
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
-
-      - name: Run KtLint
-        run: ./gradlew ktlintCheck
-
-  build_pr:
-    name: Build PR
+  changes:
+    name: Select required checks
     runs-on: ubuntu-latest
     outputs:
-      run_instrumented_tests: ${{ steps.instrumented_changes.outputs.required }}
+      scope: ${{ steps.scope.outputs.scope }}
+      desktop: ${{ steps.scope.outputs.desktop }}
+      macos: ${{ steps.scope.outputs.macos }}
+      rust: ${{ steps.scope.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Check whether instrumented tests are required
-        id: instrumented_changes
+      - name: Classify pull request changes
+        id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            echo "required=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          set -euo pipefail
+          scope=full
+          desktop=true
+          macos=true
+          rust=true
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git diff --no-renames --name-only -z "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/pr-changed-paths"
+            desktop=false
+            macos=false
+            rust=false
+            docs_only=true
+            android_tests_only=true
+            changed=false
+            while IFS= read -r -d '' path; do
+              changed=true
+              if [[ "$path" == *$'\n'* || "$path" == *$'\r'* ]]; then
+                docs_only=false; android_tests_only=false
+                desktop=true; macos=true; rust=true
+                continue
+              fi
+              case "$path" in
+                README.md|CONTRIBUTING.md|CHANGELOG.md|docs/*.md|.github/PULL_REQUEST_TEMPLATE.md)
+                  android_tests_only=false ;;
+                app/src/androidTest/*)
+                  docs_only=false ;;
+                *)
+                  docs_only=false
+                  android_tests_only=false
+                  case "$path" in
+                    app/src/full/*|rs-hf-tokenizer/*|sentence_embeddings/*)
+                      rust=true ;;
+                    app/src/*|shared*/src/android*)
+                      : ;;
+                    desktopApp/*|shared*/src/jvm*)
+                      desktop=true ;;
+                    macosApp/*|macosUiDebug/*|shared*/src/macos*|shared*/src/native*|shared*/src/apple*|shared*/src/ios*)
+                      macos=true ;;
+                    shared*/src/*)
+                      desktop=true; macos=true ;;
+                    *)
+                      desktop=true; macos=true; rust=true ;;
+                  esac ;;
+              esac
+              case "$path" in
+                shared-domain/src/*/nlp/*|shared-feature-feed/src/*/viewmodel/local/*)
+                  rust=true ;;
+              esac
+            done < "$RUNNER_TEMP/pr-changed-paths"
+            if [[ "$changed" == false ]]; then
+              desktop=true; macos=true; rust=true
+            elif [[ "$docs_only" == true ]]; then
+              scope=docs
+            elif [[ "$android_tests_only" == true ]]; then
+              scope=android-tests
+            fi
           fi
+          printf 'scope=%s\ndesktop=%s\nmacos=%s\nrust=%s\n' "$scope" "$desktop" "$macos" "$rust" >> "$GITHUB_OUTPUT"
+          printf 'Required checks: %s; desktop=%s, macOS=%s, Rust/JNI=%s\n' "$scope" "$desktop" "$macos" "$rust" >> "$GITHUB_STEP_SUMMARY"
 
-          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -Eq '^(app/|shared(-[^/]+)?/|build-logic/|buildSrc/|\.github/scripts/run-instrumented-shard\.sh$|\.github/workflows/(instrument-test|pr)\.yml$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/)' <<< "$changed_files"; then
-            echo "required=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "required=false" >> "$GITHUB_OUTPUT"
-          fi
+  build_pr:
+    name: Build PR
+    needs: changes
+    if: needs.changes.outputs.scope != 'docs'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set Up JDK
         uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -73,23 +118,8 @@ jobs:
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
 
-      - name: Build Lite APKs
-        env:
-          RUN_INSTRUMENTED_TESTS: ${{ steps.instrumented_changes.outputs.required }}
-        run: |
-          tasks=(assembleLiteDebug)
-          if [[ "$RUN_INSTRUMENTED_TESTS" == "true" ]]; then
-            tasks+=(:app:assembleLiteDebugAndroidTest)
-          fi
-          ./gradlew "${tasks[@]}" --max-workers=2
-
-      - name: Upload Gradle build cache
-        uses: actions/upload-artifact@v4
-        with:
-          name: PR Gradle build cache
-          path: .gradle/build-cache/
-          include-hidden-files: true
-          retention-days: 1
+      - name: Check formatting and build Lite APKs
+        run: ./gradlew ktlintCheck :app:assembleLiteDebug :app:assembleLiteDebugAndroidTest --continue --max-workers=2
 
       - name: Prepare Lite debug APK
         run: |
@@ -103,45 +133,24 @@ jobs:
           path: app/build/upload/
 
       - name: Prepare instrumented test APKs
-        if: steps.instrumented_changes.outputs.required == 'true'
         run: |
           mkdir -p app/build/instrument-apks
           cp app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/instrument-apks/app.apk
           cp app/build/outputs/apk/androidTest/lite/debug/app-lite-debug-androidTest.apk app/build/instrument-apks/test.apk
 
       - name: Upload instrumented test APKs
-        if: steps.instrumented_changes.outputs.required == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Instrumented test APKs
           path: app/build/instrument-apks/
           retention-days: 1
 
-  desktop-jar:
-    name: Desktop Release Package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: "21"
-          cache: gradle
-
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
-
-      - name: Prepare build inputs
-        uses: ./.github/actions/setup-build-inputs
-
-      - name: Build Desktop Release Package
-        run: ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS --max-workers=2
-
   unit-tests:
-    name: Unit Tests
+    name: Application JVM regressions
+    needs: changes
+    if: needs.changes.outputs.scope == 'full'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -150,7 +159,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -158,15 +166,34 @@ jobs:
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
 
-      - name: Run unit tests
+      - name: Install CJK fonts for text shaping tests
         run: |
-          tasks=(:app:testLiteDebugUnitTest)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-match -f '%{family}\n' ':lang=zh-cn'
+
+      - name: Run application regressions and compile selected desktop host
+        env:
+          RUN_DESKTOP: ${{ needs.changes.outputs.desktop }}
+        run: |
+          set -euo pipefail
+          tasks=(:app:testLiteDebugUnitTest :build-logic:test)
+          if [[ "$RUN_DESKTOP" == true ]]; then
+            tasks+=(:desktopApp:classes)
+          fi
+          reports=(app/build/test-results/testLiteDebugUnitTest build-logic/build/test-results/test)
           for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
             [[ -f "$build_script" ]] || continue
             module="${build_script%%/*}"
-            tasks+=(":$module:jvmTest")
+            if [[ -n "$(find "$module/src" -type f \( -path '*/commonTest/*' -o -path '*/jvmTest/*' \) \( -name '*.kt' -o -name '*.java' \) -print -quit)" ]]; then
+              tasks+=(":$module:jvmTest")
+              reports+=("$module/build/test-results/jvmTest")
+            else
+              printf '%s\n' "$module:jvmTest: NO-SOURCE，不计为测试通过" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
-          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
 
       - name: Upload test reports
         if: always()
@@ -175,11 +202,19 @@ jobs:
           name: PR Test Reports
           path: |
             app/build/reports
+            app/build/test-results
+            build-logic/build/reports
+            build-logic/build/test-results
             shared*/build/reports
             shared*/build/test-results
+            .gradle/upstream-inputs/*/provenance.json
+          include-hidden-files: true
+          if-no-files-found: error
 
   rust-verification:
     name: Rust and Android JNI Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -190,7 +225,6 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
@@ -220,22 +254,33 @@ jobs:
         working-directory: rs-hf-tokenizer
         shell: bash
         run: |
+          set -euo pipefail
           cargo fmt --all -- --check
-          cargo check --locked --all-targets
           cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked --all-targets -- --color never | tee "$RUNNER_TEMP/rust-tests.log"
+          cargo test --locked --all-targets -- --color never 2>&1 | tee "$RUNNER_TEMP/rust-tests.log"
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/rust-tests.log"
 
+      - name: Run Full app JVM tests
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          ./gradlew :app:testFullDebugUnitTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --continue --max-workers=2
+          python3 -I .github/scripts/verify-test-results.py app/build/test-results/testFullDebugUnitTest
+
       - name: Build tokenizer AAR and test APK
+        if: ${{ !cancelled() }}
+        id: tokenizer_apks
         run: ./gradlew :sentence_embeddings:assembleDebug :sentence_embeddings:assembleDebugAndroidTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
 
       - name: Enable KVM
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Test HFTokenizer JNI on emulator
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -247,6 +292,7 @@ jobs:
           script: ./gradlew :sentence_embeddings:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
 
       - name: Verify JNI tests ran
+        if: ${{ !cancelled() && steps.tokenizer_apks.outcome == 'success' }}
         run: python3 -I .github/scripts/verify-test-results.py sentence_embeddings/build/outputs/androidTest-results --class-name com.ml.shubham0204.sentence_embeddings.HFTokenizerInstrumentedTest
 
       - name: Upload JNI test reports
@@ -255,14 +301,19 @@ jobs:
         with:
           name: HFTokenizer JNI Test Reports
           path: |
+            app/build/reports/tests/testFullDebugUnitTest/**
+            app/build/test-results/testFullDebugUnitTest/**
             sentence_embeddings/build/reports/androidTests/**
             sentence_embeddings/build/outputs/androidTest-results/**
-          if-no-files-found: warn
+            ${{ runner.temp }}/rust-tests.log
+          if-no-files-found: error
 
   macos-native:
     name: macOS Native Compile and Tests
-    runs-on: macos-15
-    timeout-minutes: 60
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -271,19 +322,70 @@ jobs:
         with:
           distribution: zulu
           java-version: "21"
-          cache: gradle
 
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
 
       - name: Prepare build inputs
+        id: native_inputs
         uses: ./.github/actions/setup-build-inputs
 
-      - name: Compile macOS executable and run shared native tests
-        run: ./gradlew :macosApp:linkDebugExecutableMacosArm64 :shared-core:macosArm64Test :shared-domain:macosArm64Test -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
+      - name: Compile offscreen host and run native-specific regressions
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          tasks=(:macosApp:macosArm64Test :macosUiDebug:packageDebugMacosUiDebug)
+          reports=(macosApp/build/test-results/macosArm64Test)
+          for build_script in shared/build.gradle.kts shared-*/build.gradle.kts; do
+            [[ -f "$build_script" ]] || continue
+            module="${build_script%%/*}"
+            if [[ -n "$(find "$module/src" -type f \( -path '*/macosTest/*' -o -path '*/nativeTest/*' -o -path '*/appleTest/*' \) -name '*.kt' -print -quit)" ]]; then
+              tasks+=(":$module:macosArm64Test")
+              reports+=("$module/build/test-results/macosArm64Test")
+            fi
+          done
+          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
+          echo 'Native-specific suites and isolated offscreen application run here; common-only suites run on JVM. Manual apple_release additionally checks Release packaging and isolation without opening a Mac window.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify native tests ran
-        run: python3 -I .github/scripts/verify-test-results.py shared-core/build/test-results/macosArm64Test shared-domain/build/test-results/macosArm64Test
+      - name: Run isolated offscreen native smoke without a window
+        if: ${{ !cancelled() && steps.native_inputs.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 -I .github/scripts/verify-test-results.py \
+            --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
+            --smoke-output "$RUNNER_TEMP/macos-native-smoke/login"
+          python3 -I .github/scripts/verify-test-results.py \
+            --smoke-binary 'macosUiDebug/build/bin/macosArm64/debugApp/ZhihuPlusPlusUiDebug.app/Contents/MacOS/ZhihuPlusPlusUiDebug' \
+            --smoke-root main --smoke-output "$RUNNER_TEMP/macos-native-smoke/main"
+
+      - name: Verify macOS Release package without launching a window
+        if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+        run: |
+          set -euo pipefail
+          ./gradlew :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation \
+            -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --no-daemon --max-workers=1 \
+            -Dorg.gradle.jvmargs="-Xmx5120m -Dfile.encoding=UTF-8"
+          app_bundle='macosApp/build/bin/macosArm64/releaseApp/Zhihu++.app'
+          output="$RUNNER_TEMP/macos-release-acceptance"
+          mkdir -p "$output"
+          extracted="$(mktemp -d "$RUNNER_TEMP/zhihu-release-unpack.XXXXXX")"
+          /usr/bin/file "$app_bundle/Contents/MacOS/ZhihuPlusPlus" | tee "$output/binary.txt" | grep -q 'Mach-O 64-bit executable arm64'
+          /usr/bin/codesign --verify --deep --strict "$app_bundle"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$output/zhihu++-macos-arm64.app.zip"
+          /usr/bin/ditto -x -k "$output/zhihu++-macos-arm64.app.zip" "$extracted"
+          /usr/bin/codesign --verify --deep --strict "$extracted/Zhihu++.app"
+          cmp "$app_bundle/Contents/MacOS/ZhihuPlusPlus" "$extracted/Zhihu++.app/Contents/MacOS/ZhihuPlusPlus"
+          shasum -a 256 "$output/zhihu++-macos-arm64.app.zip" > "$output/SHA256SUMS"
+          printf '%s\n' 'macOS: isolated debug UI smoke + Release resources, ad-hoc signature, archive round-trip and protocol isolation verified. Release GUI was not launched; no notarization or public release.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload macOS Release acceptance package
+        if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS Release Acceptance
+          path: ${{ runner.temp }}/macos-release-acceptance/
+          if-no-files-found: error
 
       - name: Upload native test reports
         if: always()
@@ -291,33 +393,65 @@ jobs:
         with:
           name: macOS Native Test Reports
           path: |
-            shared-core/build/reports/tests/macosArm64Test/**
-            shared-core/build/test-results/macosArm64Test/**
-            shared-domain/build/reports/tests/macosArm64Test/**
-            shared-domain/build/test-results/macosArm64Test/**
-          if-no-files-found: warn
+            shared*/build/reports/tests/macosArm64Test/**
+            shared*/build/test-results/macosArm64Test/**
+            macosApp/build/reports/tests/macosArm64Test/**
+            macosApp/build/test-results/macosArm64Test/**
+            .gradle/upstream-inputs/*/provenance.json
+            ${{ runner.temp }}/macos-native-smoke/**
+          include-hidden-files: true
+          if-no-files-found: error
+
+  ios-acceptance:
+    name: iOS Simulator UI and Unsigned Release Acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+
+      - name: Prepare build inputs
+        uses: ./.github/actions/setup-build-inputs
+
+      - name: Run isolated iOS acceptance on an ephemeral simulator
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          chmod +x ./gradlew
+          python3 -I .github/scripts/verify-ios-acceptance.py \
+            --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance"
+
+      - name: Upload isolated iOS acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS Acceptance
+          path: ${{ runner.temp }}/ios-acceptance/
+          if-no-files-found: error
 
   mock-instrumented-shards:
-    name: Mock Instrumented Shard (${{ matrix.shard_label }}/5)
-    if: needs.build_pr.outputs.run_instrumented_tests == 'true'
-    needs: build_pr
+    name: Mock Instrumented Shard (${{ matrix.shard_label }}/2)
+    needs:
+      - changes
+      - build_pr
+    if: needs.changes.outputs.scope != 'docs'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      max-parallel: 5
+      max-parallel: 2
       matrix:
         include:
           - shard_index: 0
             shard_label: 1
           - shard_index: 1
             shard_label: 2
-          - shard_index: 2
-            shard_label: 3
-          - shard_index: 3
-            shard_label: 4
-          - shard_index: 4
-            shard_label: 5
 
     steps:
       - name: Checkout
@@ -350,9 +484,21 @@ jobs:
           arch: x86_64
           target: default
           profile: pixel_7
+          cores: 4
+          ram-size: 4096M
+          avd-name: zhihu-pr
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash .github/scripts/run-instrumented-shard.sh 5 ${{ matrix.shard_index }}
+          # 分栏与字形手柄用例使用启动时确定的平板视口。
+          pre-emulator-launch-script: >-
+            sed -i
+            -e 's/^hw\.lcd\.width[[:space:]]*=.*/hw.lcd.width=900/'
+            -e 's/^hw\.lcd\.height[[:space:]]*=.*/hw.lcd.height=1600/'
+            -e 's/^hw\.lcd\.density[[:space:]]*=.*/hw.lcd.density=240/'
+            "$ANDROID_AVD_HOME/zhihu-pr.avd/config.ini"
+          script: |
+            adb -s "$ANDROID_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
+            bash .github/scripts/run-instrumented-shard.sh 2 ${{ matrix.shard_index }}
 
       - name: Upload shard test reports
         if: always()
@@ -366,35 +512,64 @@ jobs:
     name: Mock Instrumented Tests
     if: always()
     needs:
-      - ktlint
+      - changes
       - build_pr
       - unit-tests
-      - desktop-jar
       - rust-verification
       - macos-native
+      - ios-acceptance
       - mock-instrumented-shards
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Verify pull request checks
         env:
-          KTLINT_RESULT: ${{ needs.ktlint.result }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECK_SCOPE: ${{ needs.changes.outputs.scope }}
+          RUN_DESKTOP: ${{ needs.changes.outputs.desktop }}
+          RUN_RUST: ${{ needs.changes.outputs.rust }}
+          RUN_MACOS: ${{ needs.changes.outputs.macos }}
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
-          DESKTOP_RESULT: ${{ needs.desktop-jar.result }}
           RUST_RESULT: ${{ needs.rust-verification.result }}
           MACOS_RESULT: ${{ needs.macos-native.result }}
-          RUN_INSTRUMENTED_TESTS: ${{ needs.build_pr.outputs.run_instrumented_tests }}
+          RUN_APPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release == true }}
+          IOS_RESULT: ${{ needs.ios-acceptance.result }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
-          test "$KTLINT_RESULT" = "success"
-          test "$BUILD_RESULT" = "success"
-          test "$UNIT_TEST_RESULT" = "success"
-          test "$DESKTOP_RESULT" = "success"
-          test "$RUST_RESULT" = "success"
-          test "$MACOS_RESULT" = "success"
-          if [[ "$RUN_INSTRUMENTED_TESTS" == "true" ]]; then
-            test "$SHARD_RESULT" = "success"
-          else
-            test "$SHARD_RESULT" = "skipped"
-          fi
+          set -euo pipefail
+          test "$CHANGES_RESULT" = success
+          case "$CHECK_SCOPE" in
+            full)
+              android_result=success
+              cross_platform_result=success ;;
+            android-tests)
+              android_result=success
+              cross_platform_result=skipped ;;
+            docs)
+              android_result=skipped
+              cross_platform_result=skipped ;;
+            *) exit 1 ;;
+          esac
+          for result in "$BUILD_RESULT" "$SHARD_RESULT"; do
+            test "$result" = "$android_result"
+          done
+          test "$UNIT_TEST_RESULT" = "$cross_platform_result"
+          for selected in "$RUN_DESKTOP" "$RUN_RUST" "$RUN_MACOS"; do
+            [[ "$selected" == true || "$selected" == false ]]
+            if [[ "$CHECK_SCOPE" != full ]]; then test "$selected" = false; fi
+          done
+          rust_result=skipped
+          macos_result=skipped
+          if [[ "$RUN_RUST" == true ]]; then rust_result=success; fi
+          if [[ "$RUN_MACOS" == true ]]; then macos_result=success; fi
+          test "$RUST_RESULT" = "$rust_result"
+          test "$MACOS_RESULT" = "$macos_result"
+          case "$RUN_APPLE_RELEASE" in
+            true)
+              test "$CHECK_SCOPE" = full
+              test "$MACOS_RESULT" = success
+              test "$IOS_RESULT" = success ;;
+            false) test "$IOS_RESULT" = skipped ;;
+            *) exit 1 ;;
+          esac

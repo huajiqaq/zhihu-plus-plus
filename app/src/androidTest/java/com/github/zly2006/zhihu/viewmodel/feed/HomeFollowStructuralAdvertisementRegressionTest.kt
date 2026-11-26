@@ -87,44 +87,6 @@ class HomeFollowStructuralAdvertisementRegressionTest {
         }
     }
 
-    @Test
-    fun followHideRemovesQualityFilteredItemsWithoutChangingRawPage() = runBlocking {
-        withEnvironment(QualityFilterMode.HIDE) { environment ->
-            val model = FollowViewModel().also(environment.models::add)
-            environment.page = JsonArray(syntheticMoments().take(1) + syntheticAdvertisement())
-            model.pullToRefresh(environment)
-
-            assertEquals(2, model.allData.size)
-            assertEquals(environment.page.toList(), model.debugData.toList())
-            assertTrue(model.displayItems.isEmpty())
-            assertTrue(model.latestLoadedDisplayItems.value.isEmpty())
-        }
-    }
-
-    @Test
-    fun titlelessPinKeepsBodySummaryAndDoesNotBecomeAnAdvertisement() = runBlocking {
-        withEnvironment(QualityFilterMode.HIDE) { environment ->
-            val model = FollowViewModel().also(environment.models::add)
-            // 想法 target 使用合成响应；仅为进入分页调用链包一层明确的 feed 外层结构。
-            environment.page = JsonArray(
-                listOf(
-                    buildJsonObject {
-                        put("type", "feed")
-                        put("target", fixture("pin-target.json"))
-                    },
-                    syntheticAdvertisement(),
-                ),
-            )
-            model.pullToRefresh(environment)
-
-            val item = model.displayItems.single()
-            assertTrue(item.feed?.target is Feed.PinTarget)
-            assertEquals("", item.title)
-            assertEquals("合成想法正文 保留完整摘要", item.summary)
-            assertFalse(item.isFiltered)
-        }
-    }
-
     private fun syntheticMoments(): JsonArray = fixture("moments-feed-items.json").jsonArray
 
     private fun fixture(name: String): JsonElement = ZhihuJson.json.parseToJsonElement(

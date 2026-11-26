@@ -48,7 +48,7 @@ class CrawlingExecutor(
             withCrawlingLock(dao.databaseFilePath()) {
                 if (task.status != CrawlingStatus.NotStarted || task.executedAt == Long.MAX_VALUE) return@withCrawlingLock
                 /** 代次须严格递增，避免取消后同毫秒重领接受旧快照。 */
-                val executedAt = maxOf(crawlingNowMillisForTesting?.invoke() ?: Clock.System.now().toEpochMilliseconds(), (task.executedAt ?: 0L) + 1L)
+                val executedAt = maxOf(Clock.System.now().toEpochMilliseconds(), (task.executedAt ?: 0L) + 1L)
                 var claimed = false
                 try {
                     /** 领取提交与归属接收不可被取消打断；网络仍可取消。 */
@@ -142,8 +142,7 @@ class CrawlingExecutor(
     }
 
     private suspend fun executeCollaborativeFilteringTask(task: CrawlingTask): List<CrawlingResult> {
-        val nowMillis = crawlingNowMillisForTesting?.invoke()
-            ?: Clock.System.now().toEpochMilliseconds()
+        val nowMillis = Clock.System.now().toEpochMilliseconds()
         val recentLikes = dao.getBehaviorsByActionSince("like", nowMillis - 7 * 24 * 60 * 60 * 1000)
 
         if (recentLikes.isEmpty()) {
@@ -175,4 +174,3 @@ class CrawlingExecutor(
 }
 
 var crawlingFeedArrayForTesting: (suspend (String) -> JsonArray)? = null
-var crawlingNowMillisForTesting: (() -> Long)? = null

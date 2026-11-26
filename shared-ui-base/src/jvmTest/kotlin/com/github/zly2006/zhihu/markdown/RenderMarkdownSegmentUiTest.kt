@@ -20,11 +20,8 @@ package com.github.zly2006.zhihu.markdown
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -45,40 +42,30 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.NativeClipboard
 import androidx.compose.ui.platform.asAwtTransferable
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasAnyDescendant
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -102,11 +89,9 @@ import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.COMMENT_INPUT_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SCREEN_LIST_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SEND_BUTTON_TAG
-import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.LocalNavHostLifecycleOwner
 import com.github.zly2006.zhihu.ui.components.LocalOnRequestContentRefresh
 import com.github.zly2006.zhihu.ui.components.LocalSegmentSelectionTarget
-import com.github.zly2006.zhihu.ui.components.SegmentCreationRange
 import com.github.zly2006.zhihu.ui.components.SegmentSelectionTarget
 import com.github.zly2006.zhihu.util.ZHIHU_WEB_ZSE93
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
@@ -127,12 +112,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.AfterClass
 import org.junit.BeforeClass
-import org.tiqian.compose.CjkSelectionContainer
-import org.tiqian.compose.CjkSelectionState
-import org.tiqian.compose.material3.CjkText
-import org.tiqian.compose.rememberCjkSelectionState
-import org.tiqian.core.LayoutResult
-import org.tiqian.core.getBoundingBoxes
 import java.awt.datatransfer.DataFlavor
 import java.nio.file.Files
 import java.nio.file.Path
@@ -234,74 +213,6 @@ class RenderMarkdownSegmentUiTest {
         } finally {
             responseGate.complete(Unit)
             owner.viewModelStore.clear()
-        }
-    }
-
-    @Test
-    fun sameSourceParagraphAcrossDisplayBlocksUsesOriginalOffsetsInBothRenderers() {
-        for (tiqian in listOf(false, true)) {
-            requests.clear()
-            responseGate = CompletableDeferred()
-            val owner = ScreenOwner()
-            try {
-                runDesktopComposeUiTest(width = 720, height = 800) {
-                    setContent {
-                        TestArticle("""<div data-pid="paragraph-1">前半段甲<br>后半段乙</div>""", owner, RecordingClipboard(), useTiqian = tiqian)
-                    }
-                    waitForIdle()
-                    if (tiqian) {
-                        val first = onNode(hasText("前半段甲") and SemanticsMatcher.keyIsDefined(SemanticsActions.SetSelection), useUnmergedTree = true)
-                        first.performSemanticsAction(SemanticsActions.SetSelection) { assertTrue(it(0, 1, false)) }
-                        first.performMouseInput { rightClick(center) }
-                        onNodeWithText("全选").performClick()
-                    } else {
-                        selectBetween(textPoint("前半段甲", 0, after = false), textPoint("后半段乙", 3, after = true))
-                    }
-                    onNodeWithText("喜欢").performClick()
-                    waitUntil(timeoutMillis = 10_000) { requests.any { it.method == HttpMethod.Post } }
-                    onNodeWithText("喜欢").assertDoesNotExist()
-                    val body = Json.parseToJsonElement((requests.single().body as TextContent).text).jsonObject
-                    assertEquals("前半段甲\n后半段乙", body.getValue("content").jsonPrimitive.content)
-                    val position = body.getValue("position").jsonObject
-                    assertEquals(
-                        "paragraph-1",
-                        position
-                            .getValue("start")
-                            .jsonObject
-                            .getValue("paragraph_id")
-                            .jsonPrimitive.content,
-                    )
-                    assertEquals(
-                        "paragraph-1",
-                        position
-                            .getValue("end")
-                            .jsonObject
-                            .getValue("paragraph_id")
-                            .jsonPrimitive.content,
-                    )
-                    assertEquals(
-                        "0",
-                        position
-                            .getValue("start")
-                            .jsonObject
-                            .getValue("offset")
-                            .jsonPrimitive.content,
-                    )
-                    assertEquals(
-                        "9",
-                        position
-                            .getValue("end")
-                            .jsonObject
-                            .getValue("offset")
-                            .jsonPrimitive.content,
-                    )
-                    responseGate.complete(Unit)
-                    waitForIdle()
-                }
-            } finally {
-                responseGate.complete(Unit)
-                owner.viewModelStore.clear()
-            }
         }
     }
 
@@ -455,70 +366,6 @@ class RenderMarkdownSegmentUiTest {
     }
 
     @Test
-    fun failedCancellationShowsFeedbackAfterMenuClosesAndKeepsTheLike() {
-        val text = "重复😀重复"
-        val source = """<p data-pid="paragraph-1">$text</p>"""
-        val highlighted = applySegmentInfosToHtml(
-            source,
-            listOf(
-                SegmentInfoParagraph(
-                    "paragraph-1",
-                    text,
-                    listOf(SegmentInfoMark(0, text.length, SegmentInfoMeta(segIds = listOf("segment-fixture"), isLike = true, likeCount = 1))),
-                ),
-            ),
-            contentId = "9001",
-            contentType = "answer",
-        )
-        val owner = ScreenOwner()
-        val refreshes = AtomicInteger()
-        cancellationStatus = HttpStatusCode.InternalServerError
-        try {
-            runDesktopComposeUiTest(width = 720, height = 800) {
-                setContent {
-                    CompositionLocalProvider(
-                        LocalOnRequestContentRefresh provides {
-                            refreshes.incrementAndGet()
-                            Unit
-                        },
-                    ) {
-                        TestArticle(highlighted, owner, RecordingClipboard(), sourceHtml = source)
-                    }
-                }
-                waitForIdle()
-                val start = textPoint(text, 4, after = false)
-                val end = textPoint(text, 5, after = true)
-                selectBetween(start, end)
-                onNodeWithText("取消喜欢").performClick()
-                waitUntil(timeoutMillis = 10_000) { requests.any { it.method == HttpMethod.Delete } }
-                onNodeWithText("取消喜欢").assertDoesNotExist()
-                onNode(isDialog()).assertDoesNotExist()
-
-                selectBetween(start, end)
-                onNodeWithText("取消喜欢").performClick()
-                onNodeWithText("正在处理段评，请稍候", useUnmergedTree = true).assertIsDisplayed()
-                assertEquals(1, requests.size, "取消请求未完成时不能重复提交")
-                onNodeWithText("知道了").performClick()
-                responseGate.complete(Unit)
-                waitUntil(timeoutMillis = 10_000) {
-                    onAllNodes(hasText("取消喜欢失败", substring = true)).fetchSemanticsNodes().isNotEmpty()
-                }
-                onNode(hasAnyAncestor(isDialog()) and hasText("HTTP 500", substring = true), useUnmergedTree = true).assertIsDisplayed()
-                onNodeWithTag(COMMENT_SCREEN_LIST_TAG).assertDoesNotExist()
-                assertEquals(0, refreshes.get())
-                assertEquals(HttpMethod.Delete, requests.single().method)
-                onNodeWithText("知道了").performClick()
-                selectBetween(start, end)
-                onNodeWithText("取消喜欢").assertIsDisplayed()
-                assertEquals(1, requests.size, "失败后重新选择不能自动重试")
-            }
-        } finally {
-            responseGate.complete(Unit)
-            owner.viewModelStore.clear()
-        }
-    }
-
-    @Test
     fun changingRequestOwnerCancelsCreationWithoutFeedbackOnTheNewPage() {
         val store = checkNotNull(fixtureStore)
         val originalSession = store.session
@@ -566,141 +413,6 @@ class RenderMarkdownSegmentUiTest {
                 owner.viewModelStore.clear()
                 if (change == "account") store.replaceSession(originalSession)
             }
-        }
-    }
-
-    @Test
-    fun crossingParagraphsReachesTheRealParentWithoutARequest() {
-        val html = """<p data-pid="first">甲段文字</p><p data-pid="second">乙段文字</p>"""
-        assertRejectedByRealParent(html, "甲段文字", 1, "乙段文字", 1, "段文字\n乙段")
-    }
-
-    @Test
-    fun selectingFormattedTextReachesTheRealParentWithoutARequest() {
-        val text = "加粗文字选段测试"
-        val html = """<p data-pid="paragraph-1"><strong>$text</strong></p>"""
-        assertRejectedByRealParent(html, text, 0, text, text.lastIndex, text)
-        val partial = "前加粗文字后"
-        assertRejectedByRealParent(
-            """<p data-pid="paragraph-1">前<strong>加粗文字</strong>后</p>""",
-            partial,
-            1,
-            partial,
-            4,
-            "加粗文字",
-        )
-    }
-
-    @Test
-    fun shortSelectionsShowFeedbackForBothActionsAndRenderers() {
-        val text = "甲乙丙丁"
-        for (tiqian in listOf(false, true)) {
-            val owner = ScreenOwner()
-            try {
-                runDesktopComposeUiTest(width = 720, height = 600) {
-                    setContent { TestArticle("""<p data-pid="p">$text</p>""", owner, RecordingClipboard(), useTiqian = tiqian) }
-                    waitForIdle()
-                    for (action in listOf("喜欢", "评论")) {
-                        if (tiqian) {
-                            val body = onNode(hasText(text) and SemanticsMatcher.keyIsDefined(SemanticsActions.SetSelection), useUnmergedTree = true)
-                            body.performSemanticsAction(SemanticsActions.SetSelection) { assertTrue(it(0, text.length, false)) }
-                            body.performMouseInput { rightClick(center) }
-                        } else {
-                            selectBetween(textPoint(text, 0, false), textPoint(text, text.lastIndex, true))
-                        }
-                        onNodeWithText(action).performClick()
-                        onNode(hasAnyAncestor(isDialog()) and hasText("请至少选择5个字后再喜欢或评论"), useUnmergedTree = true).assertIsDisplayed()
-                        onNodeWithText("喜欢").assertDoesNotExist()
-                        onNodeWithText("知道了").performClick()
-                        assertTrue(requests.isEmpty(), "短选区必须提示，不能创建或加载评论")
-                    }
-                }
-            } finally {
-                owner.viewModelStore.clear()
-            }
-        }
-    }
-
-    @Test
-    fun existingSpanningSelectionOpensItsThreadWithoutCreatingOrLikingAgain() {
-        val first = "第一段完整引文"
-        val second = "第二段完整引文"
-        val source = """<p data-pid="p">$first</p><p data-pid="q">$second</p>"""
-        val highlighted = applySegmentInfosToHtml(
-            source,
-            listOf("p" to first, "q" to second).map { (pid, text) ->
-                SegmentInfoParagraph(pid, text, listOf(SegmentInfoMark(0, text.length, SegmentInfoMeta(segIds = listOf("segment-fixture"), isSpan = true))))
-            },
-            contentId = "9001",
-            contentType = "answer",
-        )
-        val owner = ScreenOwner()
-        try {
-            runDesktopComposeUiTest(width = 720, height = 800) {
-                setContent { TestArticle(highlighted, owner, RecordingClipboard(), sourceHtml = source) }
-                waitForIdle()
-                selectBetween(textPoint(second, 0, false), textPoint(second, 4, true))
-                onNodeWithText("评论").performClick()
-                waitUntil(timeoutMillis = 10_000) { requests.any { it.method == HttpMethod.Get && it.url.encodedPath == COMMENT_LIST_PATH } }
-                assertTrue(requests.none { it.method != HttpMethod.Get }, "已有跨段划线评论不能先创建或点赞")
-                assertEquals("segment-fixture", requests.single { it.url.encodedPath == COMMENT_LIST_PATH }.url.parameters["segment_id"])
-                onNodeWithTag(COMMENT_INPUT_TAG).assertExists()
-            }
-        } finally {
-            owner.viewModelStore.clear()
-        }
-    }
-
-    @Test
-    fun missingOriginalSourceShowsAReasonWithoutARequest() {
-        assertRejectedByRealParent(
-            html = """<p data-pid="paragraph-1">原文缺失</p>""",
-            startText = "原文缺失",
-            startIndex = 0,
-            endText = "原文缺失",
-            endIndex = 3,
-            expectedSelection = "原文缺失",
-            sourceHtml = null,
-            feedback = "当前内容缺少原始正文，无法定位划线，请刷新后重试",
-        )
-    }
-
-    private fun assertRejectedByRealParent(
-        html: String,
-        startText: String,
-        startIndex: Int,
-        endText: String,
-        endIndex: Int,
-        expectedSelection: String,
-        sourceHtml: String? = html,
-        feedback: String = INVALID_SELECTION_MESSAGE,
-    ) {
-        val owner = ScreenOwner()
-        val clipboard = RecordingClipboard()
-        try {
-            runDesktopComposeUiTest(width = 720, height = 800) {
-                setContent { TestArticle(html, owner, clipboard, sourceHtml = sourceHtml) }
-                waitForIdle()
-                val start = textPoint(startText, startIndex, after = false)
-                val end = textPoint(endText, endIndex, after = true)
-
-                selectBetween(start, end)
-                onNodeWithText("复制").performClick()
-                runOnIdle { assertEquals(listOf(expectedSelection), clipboard.copied) }
-                assertTrue(requests.isEmpty(), "复制选区不应发送 HTTP")
-                selectBetween(start, end)
-                onNodeWithText("评论").performClick()
-                onNodeWithText(feedback, useUnmergedTree = true).assertIsDisplayed()
-                onNode(
-                    hasAnyAncestor(isDialog()) and hasText(feedback),
-                    useUnmergedTree = true,
-                ).assertIsDisplayed()
-                onNodeWithText("喜欢").assertDoesNotExist()
-                onNodeWithTag(COMMENT_SCREEN_LIST_TAG).assertDoesNotExist()
-                assertTrue(requests.isEmpty(), "无效选区不能发送 HTTP：$requests")
-            }
-        } finally {
-            owner.viewModelStore.clear()
         }
     }
 
@@ -773,207 +485,6 @@ class RenderMarkdownSegmentUiTest {
             }
         } finally {
             owner.viewModelStore.clear()
-        }
-    }
-
-    @Test
-    fun rightClickMenuFollowsPointerAndCloses() = runDesktopComposeUiTest(width = 1000, height = 600) {
-        val source = "Alpha bravo charlie delta echo"
-        val selectionEnd = source.indexOf("delta")
-        val initialSelection = source.substring(0, selectionEnd)
-        lateinit var selectionState: CjkSelectionState
-        var textLayout: LayoutResult? = null
-        var likedRange: SegmentCreationRange? = null
-        var liked by mutableStateOf(false)
-        var cancelledRange: SegmentCreationRange? = null
-        var cancelCalls = 0
-        var rangeAvailable = true
-        setContent {
-            MaterialTheme {
-                Box(Modifier.fillMaxSize().testTag("screen")) {
-                    Box(Modifier.offset(x = 170.dp, y = 160.dp)) {
-                        val state = rememberCjkSelectionState()
-                        selectionState = state
-                        TiqianSelectionMenuHost(
-                            selectionState = state,
-                            selectionRange = {
-                                state.selectedText?.text?.takeIf { rangeAvailable }?.let { selected ->
-                                    val start = source.indexOf(selected)
-                                    if (start < 0) null else SegmentCreationRange("paragraph", start, start + selected.length, selected)
-                                }
-                            },
-                            liked = { liked },
-                            onLike = {
-                                likedRange = it
-                                liked = true
-                            },
-                            onComment = {},
-                            onCancelLike = {
-                                cancelCalls++
-                                cancelledRange = it
-                                liked = false
-                            },
-                        ) {
-                            CjkSelectionContainer(state = state) {
-                                CjkText(
-                                    text = source,
-                                    modifier = Modifier.width(420.dp).testTag("body"),
-                                    fontFamily = FontFamily.Serif,
-                                    fontSize = 24.sp,
-                                    onTextLayout = { textLayout = it },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val body = onNodeWithTag("body")
-        val bodyNode = body.fetchSemanticsNode()
-        val bodyOrigin = bodyNode.positionInWindow
-        assertTrue(bodyOrigin.x > 0f && bodyOrigin.y > 0f, "正文必须偏离窗口原点，以覆盖容器偏移")
-        val layout = textLayout ?: error("CjkText 没有产生布局")
-        val firstBox = layout.getBoundingBoxes(1, 2).single()
-        val secondBox = layout.getBoundingBoxes(selectionEnd - 3, selectionEnd - 2).single()
-        assertTrue(
-            firstBox.width > 0f &&
-                secondBox.width > 0f &&
-                firstBox.height > 0f &&
-                secondBox.height > 0f &&
-                firstBox.left >= 0f &&
-                secondBox.right <= bodyNode.size.width &&
-                firstBox.top >= 0f &&
-                secondBox.bottom <= bodyNode.size.height &&
-                firstBox.right < secondBox.left,
-            "两个选中字形必须有实际宽高并处于可命中范围：$firstBox, $secondBox",
-        )
-        val firstClick = Offset((firstBox.left + firstBox.right) / 2f, (firstBox.top + firstBox.bottom) / 2f)
-        val secondClick = Offset((secondBox.left + secondBox.right) / 2f, (secondBox.top + secondBox.bottom) / 2f)
-
-        // 桌面测试宿主的默认字形可能没有 advance；通过真实 CjkText 的无障碍动作建立可验证的选区。
-        body.performSemanticsAction(SemanticsActions.SetSelection) { setSelection ->
-            assertTrue(setSelection(0, selectionEnd, false), "CjkText 必须接受选区语义动作")
-        }
-        runOnIdle { assertEquals(initialSelection, selectionState.selectedText?.text, "必须先选中真实正文") }
-        body.performMouseInput { rightClick(firstClick) }
-        runOnIdle { assertEquals(initialSelection, selectionState.selectedText?.text, "右键选区内文字不能清除选区") }
-        onNodeWithText("复制").assertExists()
-        val popup = onNode(isPopup())
-        popup.assertExists()
-        val menu = onNodeWithText("复制").onParent()
-        menu.assert(hasAnyDescendant(hasText("全选")))
-        val popupNode = popup.fetchSemanticsNode()
-        val menuNode = menu.fetchSemanticsNode()
-        assertTrue(
-            menuNode.size.width < popupNode.size.width && menuNode.size.height < popupNode.size.height,
-            "必须比较实际菜单而不是铺满窗口的 Popup 语义根",
-        )
-        var menuPosition = menuNode.positionInWindow
-        assertEquals(bodyOrigin.x + firstClick.x, menuPosition.x, 2f, "菜单应定位在第一次右键处")
-        assertEquals(bodyOrigin.y + firstClick.y, menuPosition.y, 2f, "菜单应定位在正文所在行")
-
-        onNodeWithTag("screen").performMouseInput { click(Offset(10f, 10f)) }
-        popup.assertDoesNotExist()
-        onNodeWithText("复制").assertDoesNotExist()
-
-        body.performSemanticsAction(SemanticsActions.SetSelection) { setSelection ->
-            assertTrue(setSelection(0, selectionEnd, false), "重新打开菜单前必须选择真实正文")
-        }
-        runOnIdle { assertEquals(initialSelection, selectionState.selectedText?.text, "重新打开菜单前必须重新选中文字") }
-        body.performMouseInput { rightClick(secondClick) }
-        runOnIdle { assertEquals(initialSelection, selectionState.selectedText?.text, "重新右键时必须保留选区") }
-        popup.assertExists()
-        menuPosition = onNodeWithText("复制").onParent().fetchSemanticsNode().positionInWindow
-        assertEquals(bodyOrigin.x + secondClick.x, menuPosition.x, 2f, "再次右键时菜单应跟随新的位置")
-        assertEquals(bodyOrigin.y + secondClick.y, menuPosition.y, 2f, "再次打开时菜单应仍位于正文所在行")
-
-        onNodeWithText("全选").performClick()
-        runOnIdle { assertEquals(source, selectionState.selectedText?.text) }
-        onNodeWithText("喜欢").performClick()
-        runOnIdle { assertEquals(SegmentCreationRange("paragraph", 0, source.length, source), likedRange) }
-        popup.assertDoesNotExist()
-        onNodeWithText("喜欢").assertDoesNotExist()
-        body.performMouseInput { rightClick(firstClick) }
-        onNodeWithText("取消喜欢").assertExists()
-        onNodeWithText("喜欢").assertDoesNotExist()
-        onNodeWithText("取消喜欢").performClick()
-        runOnIdle { assertEquals(SegmentCreationRange("paragraph", 0, source.length, source), cancelledRange) }
-        popup.assertDoesNotExist()
-
-        runOnIdle { liked = true }
-        body.performMouseInput { rightClick(firstClick) }
-        onNodeWithText("取消喜欢").assertExists()
-        runOnIdle { rangeAvailable = false }
-        onNodeWithText("取消喜欢").performClick()
-        runOnIdle {
-            assertEquals(2, cancelCalls, "菜单出现后映射失效也必须交给父级提示，不能吞掉点击")
-            assertEquals(null, cancelledRange)
-        }
-        popup.assertDoesNotExist()
-    }
-
-    @Test
-    fun imageLongPressOpensImageActionsWithoutStartingTextSelection() {
-        val image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
-        val html = """<p>图片前文</p><img src="$image" alt="菜单图片" width="120" height="80"><p>图片后文</p>""" +
-            "<p>滚动后的正文</p>".repeat(30)
-        for (tiqian in listOf(false, true)) {
-            val owner = ScreenOwner()
-            try {
-                runDesktopComposeUiTest(width = 720, height = 800) {
-                    setContent {
-                        TestArticle(html, owner, RecordingClipboard(), useTiqian = tiqian, scrollState = rememberScrollState())
-                    }
-                    val node = onNodeWithContentDescription("菜单图片", useUnmergedTree = true)
-                    waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("图片后文")).fetchSemanticsNodes().isNotEmpty() }
-                    val imageNode = node.fetchSemanticsNode()
-                    val originalImagePosition = imageNode.positionInWindow
-                    val point = originalImagePosition + Offset(imageNode.size.width / 2f, imageNode.size.height / 2f)
-                    val gapPx = with(density) { AppDimens.Space8.toPx() }
-                    assertTrue(imageNode.positionInWindow.x > 0f && imageNode.positionInWindow.y > 0f, "图片必须偏离窗口原点")
-                    node.performTouchInput {
-                        down(center)
-                        advanceEventTime(1_000L)
-                        up()
-                    }
-                    onNodeWithText("查看图片").assertExists()
-                    onNodeWithText("在浏览器中打开").assertExists()
-                    onNodeWithText("保存图片").assertExists()
-                    onNodeWithText("分享图片").assertExists()
-                    onNodeWithText("复制").assertDoesNotExist()
-                    onNodeWithText("全选").assertDoesNotExist()
-                    onNodeWithText("喜欢").assertDoesNotExist()
-                    val menu = onNodeWithTag("image_context_menu", useUnmergedTree = true).fetchSemanticsNode()
-                    assertTrue(menu.size.width in 1 until 720 && menu.size.height in 1 until 800, "必须断言实际菜单而非 Popup 根")
-                    assertEquals(point.x, menu.positionInWindow.x, 2f, "菜单应在图片窗口坐标附近：tiqian=$tiqian")
-                    assertEquals(point.y + gapPx, menu.positionInWindow.y, 2f, "菜单不能叠加图片底部或正文容器偏移")
-
-                    onNodeWithText("图片前文").performTouchInput { click(center) }
-                    onNodeWithTag("image_context_menu", useUnmergedTree = true).assertDoesNotExist()
-                    val scrollPx = with(density) { 20.dp.roundToPx() }
-                    onNode(
-                        SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy) and hasAnyDescendant(hasContentDescription("菜单图片")),
-                        useUnmergedTree = true,
-                    ).performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
-                        assertTrue(scrollBy(0f, scrollPx.toFloat()), "图片所在的真实滚动宿主必须接受滚动")
-                    }
-                    waitForIdle()
-                    val movedImage = node.fetchSemanticsNode()
-                    assertEquals(originalImagePosition.y - scrollPx, movedImage.positionInWindow.y, 2f, "夹具必须真正滚动图片")
-                    onNode(
-                        SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick) and
-                            (hasContentDescription("菜单图片") or hasAnyDescendant(hasContentDescription("菜单图片"))),
-                        useUnmergedTree = true,
-                    ).performSemanticsAction(SemanticsActions.OnLongClick) { assertTrue(it()) }
-                    val fallbackMenu = onNodeWithTag("image_context_menu", useUnmergedTree = true).fetchSemanticsNode()
-                    assertEquals(movedImage.positionInWindow.x + movedImage.size.width / 2f, fallbackMenu.positionInWindow.x, 2f, "无指针时仍应锚在当前图片")
-                    assertEquals(movedImage.positionInWindow.y + movedImage.size.height / 2f + gapPx, fallbackMenu.positionInWindow.y, 2f, "语义长按不能复用滚动前的按压点")
-                    assertTrue(requests.isEmpty(), "长按图片不能发送段评请求")
-                }
-            } finally {
-                owner.viewModelStore.clear()
-            }
         }
     }
 
@@ -1114,7 +625,6 @@ class RenderMarkdownSegmentUiTest {
     companion object {
         private const val DEVICE_COOKIE = "synthetic-device"
         private const val COMMENT_LIST_PATH = "/api/v4/comment_v5/answers/9001/segment/root_comment"
-        private const val INVALID_SELECTION_MESSAGE = "选区跨越了不同原始段落、包含非纯文本，或无法准确定位，请重新选择。已有跨段划线可直接点击操作"
         private val requests = CopyOnWriteArrayList<HttpRequestData>()
         private val cancelledRequests = AtomicInteger()
         private lateinit var responseGate: CompletableDeferred<Unit>

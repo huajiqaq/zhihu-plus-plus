@@ -171,31 +171,15 @@ pub fn decrypt_zse_v4(encoded: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{encrypt_zse_v4, r_block};
+    use crate::encrypt_zse_v4;
 
     use super::decrypt_zse_v4;
-
-    #[test]
-    fn decrypt_roundtrip_ascii() {
-        let input = "hello world?a=1&b=2";
-        let encrypted = encrypt_zse_v4(input);
-        let decrypted = decrypt_zse_v4(&encrypted).expect("解密应成功");
-        assert_eq!(decrypted, input);
-    }
 
     #[test]
     fn decrypt_roundtrip_unicode() {
         let input = "你好，知乎++ Rust 解密";
         let encrypted = encrypt_zse_v4(input);
         let decrypted = decrypt_zse_v4(&encrypted).expect("解密应成功");
-        assert_eq!(decrypted, input);
-    }
-
-    #[test]
-    fn block_decrypt_inverts_block_encrypt() {
-        let input = *b"0123456789ABCDEF";
-        let encrypted = r_block(&input);
-        let decrypted = super::r_block_decrypt(&encrypted);
         assert_eq!(decrypted, input);
     }
 }

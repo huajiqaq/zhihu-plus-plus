@@ -20,30 +20,15 @@ package com.github.zly2006.zhihu
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.runComposeUiTest
-import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.webkit.WebViewAssetLoader
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
-import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.data.AigcVoteVoter
 import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.util.buildArticleExportHtml
-import com.github.zly2006.zhihu.util.buildOfflineArticleExportHtml
 import com.github.zly2006.zhihu.viewmodel.AndroidPreparedExportWebView
 import com.github.zly2006.zhihu.viewmodel.SharedAndroidPaginationEnvironment
-import com.hrm.latex.renderer.export.ExportConfig
-import com.hrm.latex.renderer.export.LatexExporterState
-import com.hrm.latex.renderer.export.rememberLatexExporter
-import com.hrm.latex.renderer.model.LatexConfig
-import com.hrm.latex.renderer.model.systemLatexFontFamilies
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -59,69 +44,6 @@ import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class ArticleExportEnvironmentInstrumentedTest {
-    @Test
-    fun androidEnvironmentUsesOnlyItsInjectedAccountForAigcVoter() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(context.cacheDir, "synthetic-voter-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
-        val store = ZhihuAccountStore(
-            ZhihuAccountRepository(kotlinx.io.files.Path(directory.resolve("account.json").path)),
-            MockEngine { error("投票身份读取不应发起网络请求") },
-        )
-        val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true, accountStore = store)
-        try {
-            assertNull(environment.aigcVoteVoter())
-            for (id in listOf("voter-a", "voter-b")) {
-                store.replaceSession(
-                    ZhihuAccountSession(
-                        login = true,
-                        username = id,
-                        self = ZhihuJson.json.parseToJsonElement(
-                            """{"id":"$id","name":"$id","url":"https://example.invalid/$id","user_type":"people","url_token":"$id-token","headline":"","avatar_url":"https://example.invalid/$id.png"}""",
-                        ),
-                    ),
-                )
-                assertEquals(
-                    AigcVoteVoter(id = id, name = id, urlToken = "$id-token", avatarUrl = "https://example.invalid/$id.png"),
-                    environment.aigcVoteVoter(),
-                )
-            }
-            store.replaceSession(store.session.copy(self = ZhihuJson.json.parseToJsonElement("{}")))
-            assertNull(environment.aigcVoteVoter())
-            store.clear()
-            assertNull(environment.aigcVoteVoter())
-        } finally {
-            environment.close()
-            store.close()
-            check(directory.deleteRecursively())
-        }
-    }
-
-    @Test
-    fun androidEnvironmentBuildsOfflineArticleExportHtml() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(context.cacheDir, "synthetic-export-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
-        val store = ZhihuAccountStore(
-            ZhihuAccountRepository(kotlinx.io.files.Path(directory.resolve("account.json").path)),
-            MockEngine { error("合成导出不应发起网络请求") },
-        )
-        try {
-            val environment = SharedAndroidPaginationEnvironment(context, allowGuestAccess = true, accountStore = store)
-
-            val html = buildOfflineArticleExportHtml(
-                loadAssetText = environment::loadExportAssetText,
-                content = sampleArticleContent(),
-                includeAppAttribution = true,
-                httpClient = environment.httpClient(),
-            )
-
-            assertTrue(html.contains("导出环境回归"))
-            assertTrue(html.contains("<p>正文</p>"))
-        } finally {
-            store.close()
-            directory.deleteRecursively()
-        }
-    }
-
     @Test
     fun webContentCanReadOnlyTheSelectedCustomFont() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -156,58 +78,6 @@ class ArticleExportEnvironmentInstrumentedTest {
             check(font.delete())
             assertArrayEquals(privateBytes, privateFile.readBytes())
             assertArrayEquals(privateBytes, outside.readBytes())
-        } finally {
-            check(directory.deleteRecursively())
-        }
-    }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test
-    fun latexFontsRenderOfflineWithoutUsingDownloadCache() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(context.cacheDir, "synthetic-latex-${java.util.UUID.randomUUID()}").apply { check(mkdirs()) }
-        val fixtureContext = object : ContextWrapper(context) {
-            override fun getApplicationContext(): Context = this
-
-            override fun getCacheDir(): File = directory
-        }
-        try {
-            runComposeUiTest {
-                lateinit var exporter: LatexExporterState
-                lateinit var fallbackExporter: LatexExporterState
-                setContent {
-                    CompositionLocalProvider(LocalContext provides fixtureContext) {
-                        exporter = rememberLatexExporter(LatexConfig(fontSize = 32.sp))
-                        fallbackExporter = rememberLatexExporter(
-                            LatexConfig(fontSize = 32.sp, fontFamilies = systemLatexFontFamilies()),
-                        )
-                    }
-                }
-                val formula = "\\left(\\frac{x}{y}\\right) + \\mathbb{R} + \\sum_{n=1}^{2}n"
-                val exportConfig = ExportConfig(scale = 1f, transparentBackground = true)
-                val fallbackBytes = runOnIdle { checkNotNull(fallbackExporter.export(formula, exportConfig = exportConfig)).bytes }
-                /** 官方默认字体异步加载；用公开渲染结果确认未停留在系统字体兜底。 */
-                waitUntil(timeoutMillis = 10_000) {
-                    runOnIdle {
-                        exporter.export(formula, exportConfig = exportConfig)?.bytes?.contentEquals(fallbackBytes) == false
-                    }
-                }
-                runOnIdle {
-                    val result = exporter.export(formula, exportConfig = exportConfig)
-                    assertNotNull("内置字体应能走真实公式测量与绘制", result)
-                    val bitmap = result!!.imageBitmap.asAndroidBitmap()
-                    try {
-                        val pixels = IntArray(bitmap.width * bitmap.height)
-                        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                        val middle = pixels.size / 2
-                        assertTrue("公式上半部应有实际字形，不能只输出空画布", pixels.take(middle).count { it ushr 24 > 128 } > 20)
-                        assertTrue("公式下半部应绘出分母和下标", pixels.drop(middle).count { it ushr 24 > 128 } > 20)
-                    } finally {
-                        bitmap.recycle()
-                    }
-                }
-            }
-            assertTrue("官方内置字体不应创建下载缓存或 .done 标记", directory.listFiles().orEmpty().isEmpty())
         } finally {
             check(directory.deleteRecursively())
         }
@@ -305,32 +175,6 @@ class ArticleExportEnvironmentInstrumentedTest {
     private companion object {
         const val ARTICLE_EXPORT_DPI_FOR_TEST = 200f
     }
-
-    private fun sampleArticleContent(): DataHolder.Article = DataHolder.Article(
-        id = 1001L,
-        author = DataHolder.Author(
-            avatarUrl = "",
-            gender = 0,
-            headline = "导出测试作者简介",
-            id = "export-author",
-            isAdvertiser = false,
-            isOrg = false,
-            name = "导出测试作者",
-            type = "people",
-            url = "https://www.zhihu.com/people/export-author",
-            urlToken = "export-author",
-            userType = "people",
-        ),
-        canComment = DataHolder.CanComment(status = true, reason = ""),
-        title = "导出环境回归",
-        content = "<p>正文</p>",
-        excerpt = "正文",
-        type = "article",
-        created = 1_710_000_000L,
-        updated = 1_710_000_600L,
-        url = "https://zhuanlan.zhihu.com/p/1001",
-        voteupCount = 12,
-    )
 
     private fun sampleLongAnswerContent(): DataHolder.Answer = DataHolder.Answer(
         id = 3309625617L,

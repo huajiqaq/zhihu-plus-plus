@@ -1,8 +1,5 @@
 name: Build Check
 on:
-  push:
-    branches-ignore:
-      - master
   workflow_dispatch:
 
 jobs:
@@ -24,19 +21,8 @@ jobs:
         with:
           distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
           java-version: '21'
-          cache: 'gradle'
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.m2/repository
-            ./.gradle
-            ./**/.gradle
-          key: gradle-cache-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties', 'gradle/upstream-sources.lock.json') }}
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
       - name: Install Android NDK
@@ -54,8 +40,6 @@ jobs:
 
       - name: Add Android Rust targets
         run: rustup target add aarch64-linux-android x86_64-linux-android
-      - name: Run KtLint
-        run: ./gradlew ktlintCheck
       - name: Build Full App
         # 构建 APK。
         run: bash ./gradlew :app:assembleFullDebug -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2

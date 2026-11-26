@@ -22,10 +22,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 
 inline fun <reified VM : ViewModel> MainActivityComposeRule.seedViewModel(
-    noinline create: () -> VM,
-): VM = seedViewModel(key = null, create = create)
-
-inline fun <reified VM : ViewModel> MainActivityComposeRule.seedViewModel(
     key: String?,
     noinline create: () -> VM,
 ): VM {
