@@ -7,7 +7,7 @@ jobs:
     name: Build PR
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 将当前日期写入环境变量。
       - name: Set current date as env variable
         run: echo "date_today=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
@@ -17,10 +17,11 @@ jobs:
         run: echo "repository_name=$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')" >> $GITHUB_ENV
 
       - name: Set Up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
           java-version: '21'
+          problem-matcher: true
       - name: Change wrapper permissions
         run: chmod +x ./gradlew
       - name: Prepare build inputs
@@ -53,12 +54,12 @@ jobs:
           cp app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/upload/zhihu++-lite-debug.apk
           mv app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/upload-lite/zhihu++-lite-debug.apk
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PR Debug artifacts
           path: app/build/upload/
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PR Debug artifacts (Lite)
           path: app/build/upload-lite/
