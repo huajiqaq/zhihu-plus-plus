@@ -1,10 +1,10 @@
 # iOS 宿主
 
-SwiftUI 只嵌入一个 `ComposeUIViewController`。启动页、主题、页面、账号、主栈和分栏均来自共享模块。工程在 Apple Silicon macOS 上构建，支持 arm64 iOS 与模拟器；运行状态须在对应平台核验。
+SwiftUI 只嵌入一个 `ComposeUIViewController`。启动页、主题、页面、账号、主栈和分栏均来自共享模块。工程支持 arm64 iOS 与模拟器；设备包可在 Intel 或 Apple Silicon Mac 上构建，arm64 模拟器验收使用 Apple Silicon。运行状态须在对应平台核验。
 
 ## 构建
 
-使用 Apple Silicon Mac、与仓库 Kotlin 版本兼容的 Xcode、JDK 21 和项目要求的 Android SDK。按[上游补丁维护](../docs/upstream-dependency-patches.md)准备工具链；Xcode 的 Run Script 必须能访问这些工具。直接打开 `ZhihuPlusPlus.xcodeproj`，无需生成工程或安装 CocoaPods。
+使用 macOS、与仓库 Kotlin 版本兼容的 Xcode、JDK 21 和项目要求的 Android SDK；运行 arm64 模拟器需要 Apple Silicon。按[上游补丁维护](../docs/upstream-dependency-patches.md)准备工具链；Xcode 的 Run Script 必须能访问这些工具。直接打开 `ZhihuPlusPlus.xcodeproj`，无需生成工程或安装 CocoaPods。
 
 在仓库根目录构建 ARM64 模拟器包（部署目标 iOS 16；不需要证书或设备）：
 
@@ -17,6 +17,15 @@ xcodebuild -project iosApp/ZhihuPlusPlus.xcodeproj -scheme ZhihuPlusPlus \
 要单独检查 `iosArm64` 链接，将 destination 换为 `generic/platform=iOS`；未签名产物不可当作真机验收。Xcode 在编译 Swift 前通过[官方直接集成](https://kotlinlang.org/docs/multiplatform/multiplatform-direct-integration.html)调用 `:shared:embedAndSignAppleFrameworkForXcode`，由 SDK/配置选择 `Shared.framework` 并同步 Compose 资源。该任务依赖 Xcode 环境，不要单独在 Windows 上调用。
 
 `.app` 应包含 `compose-resources/`、`misc/emoji_mapping.json`、`misc/emojis/`、`LICENSE` 和 `aboutlibraries.json`。在获准的已安装模拟器中核验启动和资源加载；「开源许可」使用 Android Lite 依赖清单（`:app:prepareLibraryDefinitionsLiteDebug`），不等于完整 iOS 依赖审计。应用本身使用[仓库 AGPL-3.0-only 许可证](../LICENSE)。
+
+## 手动 CI 验收
+
+现有 `Pull Request Check` 工作流默认不运行 iOS。手动选择 `checks=ios` 可只重验 iOS；`checks=all` 并开启 `apple_release` 则一并验收 Apple Release。两项 iOS 验收独立运行，任一失败都会使聚合门禁失败：
+
+- `release`：使用内存较大的 Intel 宿主交叉链接优化的 `Release` / `iosArm64`。检查应用身份、arm64、资源与调试协议隔离后生成 `Payload/ZhihuPlusPlus.app` 结构的 unsigned IPA，并校验归档结构、CRC 和内容。它未签名，不代表真机可安装、已通过运行验收或可提交 App Store。
+- `simulator`：使用 Apple Silicon 宿主直接构建 Debug。在临时工程副本生成 XCTest target，并使用本任务创建的 Simulator 检查登录说明展开/收起、游客进入外观及返回；不依赖 Release 构建，不注入生产调试协议，不使用真实账号。结束后删除本任务 Simulator。
+
+仅上传 Actions artifacts：`iOS Acceptance-release` 与 `iOS Acceptance-simulator`。证据包含当前 commit、阶段日志、耗时、`sysctl hw.memsize` 实际宿主容量和配置预算；预算记录不是 JVM 实测峰值。Release 附 IPA 和 `SHA256SUMS`，Simulator 附 XCTest 结果与清理记录；不会创建公开 Nightly/Release。对应脚本为 [verify-ios-acceptance.py](../.github/scripts/verify-ios-acceptance.py)，运行时必须指定 `--stage release|simulator`，`--self-check` 只做本地静态与合成归档校验。
 
 ## 输入与平台边界
 

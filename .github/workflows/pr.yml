@@ -419,10 +419,18 @@ jobs:
           if-no-files-found: error
 
   ios-acceptance:
-    name: iOS Simulator UI and Unsigned Release Acceptance
+    name: iOS Acceptance (${{ matrix.stage }})
     if: github.event_name == 'workflow_dispatch' && (inputs.apple_release || inputs.checks == 'ios')
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stage: release
+            runner: macos-26-intel
+          - stage: simulator
+            runner: macos-26
     steps:
       - uses: actions/checkout@v7
 
@@ -436,20 +444,21 @@ jobs:
       - name: Prepare build inputs
         uses: ./.github/actions/setup-build-inputs
 
-      - name: Run isolated iOS acceptance on an ephemeral simulator
+      - name: Run iOS ${{ matrix.stage }} acceptance
+        env:
+          IOS_STAGE: ${{ matrix.stage }}
         run: |
           set -euo pipefail
-          test "$(uname -m)" = arm64
           chmod +x ./gradlew
-          python3 -I .github/scripts/verify-ios-acceptance.py \
-            --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance"
+          python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" \
+            --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE"
 
       - name: Upload isolated iOS acceptance evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: iOS Acceptance
-          path: ${{ runner.temp }}/ios-acceptance/
+          name: iOS Acceptance-${{ matrix.stage }}
+          path: ${{ runner.temp }}/ios-acceptance-${{ matrix.stage }}/
           if-no-files-found: error
 
   mock-instrumented-shards:
