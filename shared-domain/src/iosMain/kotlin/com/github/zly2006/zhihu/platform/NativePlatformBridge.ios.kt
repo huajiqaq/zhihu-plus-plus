@@ -188,4 +188,4 @@ fun IosUserMessageHost(content: @Composable () -> Unit) {
     }
 }
 
-internal actual val platformBottomBarItemLimit: Int? = 5
+actual val platformBottomBarItemLimit: Int? = 5
