@@ -31,6 +31,9 @@ fi
 if [ -n "${ZHIHU_GRADLE_MAX_WORKERS:-}" ]; then
     set -- "$@" "--max-workers=$ZHIHU_GRADLE_MAX_WORKERS"
 fi
+if [ "${ZHIHU_GRADLE_PROFILE:-false}" = true ]; then
+    set -- "$@" --no-daemon --profile
+fi
 ./gradlew "$@" -PzhihuUpstreamPatches=true :shared:embedAndSignAppleFrameworkForXcode :app:prepareLibraryDefinitionsLiteDebug
 
 # Xcode processes this plist after the build phase; use the same version as the shared app.

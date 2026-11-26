@@ -1,5 +1,20 @@
 name: Prepare build inputs
 description: Configure Gradle and install the host SDK and locked Tiqian generation tools
+inputs:
+  native-cache-scope:
+    description: Native build stage used to select the closest compatible cache
+    required: false
+    default: default
+outputs:
+  native-cache-key:
+    description: Key for saving Kotlin Native state after a successful build
+    value: ${{ steps.native_cache.outputs.cache-primary-key }}
+  native-cache-hit:
+    description: Whether the exact Kotlin Native cache was restored
+    value: ${{ steps.native_cache.outputs.cache-hit }}
+  native-cache-writable:
+    description: Whether this job may save Kotlin Native state
+    value: ${{ runner.os == 'macOS' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
 runs:
   using: composite
   steps:
@@ -7,18 +22,38 @@ runs:
       uses: gradle/actions/setup-gradle@v5
       with:
         cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-    - name: Cache Kotlin Native
-      if: runner.os == 'macOS'
-      uses: actions/cache@v6
-      with:
-        path: ~/.konan
-        key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/upstream-sources.lock.json', 'gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
-        restore-keys: |
-          konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/upstream-sources.lock.json', 'gradle/wrapper/gradle-wrapper.properties') }}-
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
         python-version: '3.12'
+    - name: Identify compatible Kotlin Native cache
+      if: runner.os == 'macOS'
+      id: native_key
+      shell: bash
+      env:
+        NATIVE_CACHE_SCOPE: ${{ inputs.native-cache-scope }}
+      run: |
+        python -I - <<'PY'
+        import hashlib, os, subprocess, tomllib
+        from pathlib import Path
+        kotlin = tomllib.loads(Path('gradle/libs.versions.toml').read_text())['versions']['kotlin']
+        xcode = hashlib.sha256(subprocess.check_output(['xcodebuild', '-version'])).hexdigest()[:16]
+        compatible = f"konan-v2-{os.environ['RUNNER_OS']}-{os.environ['RUNNER_ARCH']}-{kotlin}-{xcode}-"
+        scope = f"{compatible}{os.environ['GITHUB_JOB']}-{os.environ['NATIVE_CACHE_SCOPE']}-"
+        key = scope + os.environ['GITHUB_SHA']
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'compatible={compatible}\nscope={scope}\nkey={key}\n')
+        PY
+    - name: Restore Kotlin Native
+      if: runner.os == 'macOS'
+      id: native_cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.konan
+        key: ${{ steps.native_key.outputs.key }}
+        restore-keys: |
+          ${{ steps.native_key.outputs.scope }}
+          ${{ steps.native_key.outputs.compatible }}
     - name: Set up Node
       uses: actions/setup-node@v7
       with:

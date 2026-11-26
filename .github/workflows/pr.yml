@@ -351,8 +351,11 @@ jobs:
       - name: Prepare build inputs
         id: native_inputs
         uses: ./.github/actions/setup-build-inputs
+        with:
+          native-cache-scope: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release && 'debug-release' || 'debug' }}
 
       - name: Compile offscreen host and run native-specific regressions
+        id: native_compile
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
@@ -366,7 +369,8 @@ jobs:
               reports+=("$module/build/test-results/macosArm64Test")
             fi
           done
-          ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          /usr/bin/time -lp ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --profile --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          printf '%s\n' 'native-build-succeeded=true' >> "$GITHUB_OUTPUT"
           python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
           echo 'Native-specific suites and isolated offscreen application run here; common-only suites run on JVM. Manual apple_release additionally checks Release packaging and isolation without opening a Mac window.' >> "$GITHUB_STEP_SUMMARY"
 
@@ -382,11 +386,12 @@ jobs:
             --smoke-root main --smoke-output "$RUNNER_TEMP/macos-native-smoke/main"
 
       - name: Verify macOS Release package without launching a window
+        id: native_release
         if: github.event_name == 'workflow_dispatch' && inputs.apple_release
         run: |
           set -euo pipefail
-          ./gradlew :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation \
-            -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --no-daemon --max-workers=1 \
+          /usr/bin/time -lp ./gradlew :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation \
+            -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --profile --no-daemon --max-workers=1 \
             -Dorg.gradle.jvmargs="-Xmx5120m -Dfile.encoding=UTF-8"
           app_bundle='macosApp/build/bin/macosArm64/releaseApp/Zhihu++.app'
           output="$RUNNER_TEMP/macos-release-acceptance"
@@ -409,6 +414,13 @@ jobs:
           path: ${{ runner.temp }}/macos-release-acceptance/
           if-no-files-found: error
 
+      - name: Save Kotlin Native after successful compilation
+        if: ${{ always() && !cancelled() && steps.native_inputs.outputs.native-cache-writable == 'true' && steps.native_inputs.outputs.native-cache-hit != 'true' && steps.native_compile.outputs.native-build-succeeded == 'true' && (steps.native_release.outcome == 'success' || steps.native_release.outcome == 'skipped') }}
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.native_inputs.outputs.native-cache-key }}
+
       - name: Upload native test reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -419,6 +431,7 @@ jobs:
             shared*/build/test-results/macosArm64Test/**
             macosApp/build/reports/tests/macosArm64Test/**
             macosApp/build/test-results/macosArm64Test/**
+            build/reports/profile/**
             .gradle/upstream-inputs/*/provenance.json
             ${{ runner.temp }}/macos-native-smoke/**
           include-hidden-files: true
@@ -444,9 +457,13 @@ jobs:
           problem-matcher: true
 
       - name: Prepare build inputs
+        id: ios_inputs
         uses: ./.github/actions/setup-build-inputs
+        with:
+          native-cache-scope: ${{ matrix.stage }}
 
       - name: Run iOS ${{ matrix.stage }} acceptance
+        id: ios_acceptance
         env:
           IOS_STAGE: ${{ matrix.stage }}
         run: |
@@ -454,6 +471,13 @@ jobs:
           chmod +x ./gradlew
           python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" \
             --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE"
+
+      - name: Save Kotlin Native after successful compilation
+        if: ${{ always() && !cancelled() && steps.ios_inputs.outputs.native-cache-writable == 'true' && steps.ios_inputs.outputs.native-cache-hit != 'true' && steps.ios_acceptance.outputs.native-build-succeeded == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.ios_inputs.outputs.native-cache-key }}
 
       - name: Upload isolated iOS acceptance evidence
         if: always()

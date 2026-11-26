@@ -45,7 +45,10 @@ jobs:
           problem-matcher: true
 
       - name: Prepare build inputs
+        id: desktop_inputs
         uses: ./.github/actions/setup-build-inputs
+        with:
+          native-cache-scope: release
 
       - name: Change wrapper permissions
         shell: bash
@@ -154,10 +157,11 @@ jobs:
           if-no-files-found: error
 
       - name: Build and package macOS Kotlin/Native app
+        id: macos_package
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          ./gradlew -Dorg.gradle.jvmargs="-Xmx5120m -Dfile.encoding=UTF-8" ${{ inputs.args }} :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation
+          /usr/bin/time -lp ./gradlew -Dorg.gradle.jvmargs="-Xmx5120m -Dfile.encoding=UTF-8" ${{ inputs.args }} --profile :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation
 
           app_bundle="macosApp/build/bin/macosArm64/releaseApp/Zhihu++.app"
           app_executable="$app_bundle/Contents/MacOS/ZhihuPlusPlus"
@@ -172,6 +176,21 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$app_archive"
           /usr/bin/ditto -x -k "$app_archive" "$extracted_dir"
           /usr/bin/codesign --verify --deep --strict "$extracted_dir/Zhihu++.app"
+
+      - name: Save Kotlin Native after successful packaging
+        if: ${{ always() && !cancelled() && runner.os == 'macOS' && steps.desktop_inputs.outputs.native-cache-writable == 'true' && steps.desktop_inputs.outputs.native-cache-hit != 'true' && steps.macos_package.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.desktop_inputs.outputs.native-cache-key }}
+
+      - name: Upload macOS build profile
+        if: ${{ always() && runner.os == 'macOS' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: macOS-build-profile-${{ inputs.name }}
+          path: build/reports/profile/
+          if-no-files-found: warn
 
       - name: Upload macOS Kotlin/Native app
         if: runner.os == 'macOS'

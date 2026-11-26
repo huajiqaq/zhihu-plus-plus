@@ -21,12 +21,16 @@ import json
 import os
 import platform
 import plistlib
+import re
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from contextlib import suppress
 from hashlib import file_digest
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
@@ -186,6 +190,42 @@ def verify_summary(summary):
         raise RuntimeError('XCTest must execute and pass the one guest-navigation test, with no skipped tests')
 
 
+def live_progress(line):
+    """Only diagnostics and progress, never Xcode's exported environment or command invocations."""
+    text = line.strip()
+    if re.fullmatch(r'> Task :[\w.:-]+(?: (?:UP-TO-DATE|FROM-CACHE|NO-SOURCE|SKIPPED|FAILED))?', text):
+        return text
+    if re.match(r'^(?:error:|e: |xcodebuild: error:|[^\s=]+:\d+(?::\d+)?: error:)', text):
+        if re.search(r'\b[A-Z_][A-Z_0-9]*\\?=|\b(?:export|xcodebuild|gradlew|swift-frontend)\s', text):
+            return 'Error (command or environment omitted; see stage log)'
+        return text[:800]
+    if re.match(r'^(?:\*\* (?:BUILD|TEST)|BUILD (?:SUCCESSFUL|FAILED)|FAILURE:|Test (?:Case|Suite) |Testing (?:started|failed))', text):
+        return text[:800]
+    phase = re.match(r'^(PhaseScriptExecution|SwiftCompile|SwiftEmitModule|CompileC|Ld|ProcessInfoPlistFile|CodeSign)\s', text)
+    return phase.group(1) if phase else None
+
+
+def publish_native_build(github_output):
+    with github_output.open('a', encoding='utf-8') as stream:
+        stream.write('native-build-succeeded=true\n')
+
+
+def simulator_build_and_test(xcode, command, common_args, udid, result, github_output):
+    xcode('simulator-build.log', *common_args, '-destination', 'generic/platform=iOS Simulator', 'ARCHS=arm64', 'build-for-testing')
+    publish_native_build(github_output)
+    command('xcrun', 'simctl', 'boot', udid)
+    try:
+        command('xcrun', 'simctl', 'bootstatus', udid, '-b')
+        xcode('simulator-ui.log', *common_args, '-destination', f'platform=iOS Simulator,id={udid}',
+              '-resultBundlePath', result, '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
+              '-maximum-test-execution-time-allowance', '180',
+              f'-only-testing:{TEST_TARGET}/{TEST_TARGET}/testGuestNavigation', 'test-without-building')
+    finally:
+        # The caller deletes and verifies this UDID even if shutdown fails.
+        with suppress(subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            command('xcrun', 'simctl', 'shutdown', udid, timeout=120)
+
+
 def stage_heap_gib(stage, machine):
     if stage == 'release' and machine in ('x86_64', 'arm64'):
         return 8
@@ -264,8 +304,54 @@ def self_check():
         except RuntimeError:
             continue
         raise AssertionError('Invalid stage/host accepted')
+    for line in ('export SECRET=value', '    export PATH=/private', 'Command line invocation:',
+                 '/usr/bin/xcodebuild TOKEN=secret', '    JAVA_HOME = /private', 'ZHIHU_GRADLE_JVMARGS=-Xmx8g'):
+        assert live_progress(line) is None
+    for line in ('> Task :shared:linkReleaseFrameworkIosArm64', '> Task :shared:compileKotlinIosArm64 FROM-CACHE',
+                 'error: Compilation failed', '/source/Test.swift:4:2: error: failed', '** TEST FAILED **'):
+        assert live_progress(line) == line
+    assert live_progress('PhaseScriptExecution Build Shared /private/build/script.sh') == 'PhaseScriptExecution'
     with tempfile.TemporaryDirectory(prefix='zhpp-ipa-self-check-') as temporary:
         work = Path(temporary)
+        common = ['-project', 'temporary.xcodeproj', '-scheme', 'ZhihuPlusPlus', '-configuration', 'Debug', '-derivedDataPath', 'debug']
+        build, test = 'build-for-testing', 'test-without-building'
+        result = work / 'ui.xcresult'
+        complete = [build, 'boot', 'bootstatus', test, 'shutdown']
+        for failure, expected in ((build, [build]), ('boot', [build, 'boot']), ('bootstatus', [build, 'boot', 'bootstatus', 'shutdown']),
+                                  (test, complete), (None, complete)):
+            marker = work / f'output-{failure}'
+            calls = []
+
+            def record(action):
+                calls.append(action)
+                if action == build:
+                    assert not marker.exists()
+                else:
+                    assert marker.read_text().strip() == 'native-build-succeeded=true'
+                if action == failure:
+                    raise subprocess.CalledProcessError(65, action)
+
+            def fake_xcode(log, *arguments):
+                if arguments[-1] == build:
+                    assert list(arguments) == [*common, '-destination', 'generic/platform=iOS Simulator', 'ARCHS=arm64', build]
+                else:
+                    assert list(arguments[:len(common) + 2]) == [*common, '-destination', 'platform=iOS Simulator,id=isolated']
+                    assert arguments.count('-destination') == 1 and arguments[arguments.index('-resultBundlePath') + 1] == result
+                    assert f'-only-testing:{TEST_TARGET}/{TEST_TARGET}/testGuestNavigation' in arguments
+                record(arguments[-1])
+
+            def fake_command(tool, cmd, action, device, *extra, **kwargs):
+                assert (tool, cmd, device) == ('xcrun', 'simctl', 'isolated')
+                assert extra == (('-b',) if action == 'bootstatus' else ())
+                record(action)
+
+            try:
+                simulator_build_and_test(fake_xcode, fake_command, common, 'isolated', result, marker)
+            except subprocess.CalledProcessError:
+                assert failure is not None
+            else:
+                assert failure is None
+            assert calls == expected and marker.exists() == (failure != build)
         app = work / 'ZhihuPlusPlus.app'
         app.mkdir()
         (app / 'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleIdentifier=BUNDLE_ID, CFBundleSupportedPlatforms=['iPhoneOS'], CFBundleExecutable='ZhihuPlusPlus')))
@@ -309,7 +395,9 @@ def run_acceptance(root, output, stage):
     if commit != os.environ['GITHUB_SHA']:
         raise RuntimeError('Checkout does not match the selected acceptance commit')
     memory_bytes = int(command('/usr/sbin/sysctl', '-n', 'hw.memsize', capture=True))
-    jvm_args = f'-Xmx{heap_gib}g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
+    gc_log = f'-Xlog:gc,gc+init,gc+cpu:file={output}/gradle-gc-%p.log:time,uptime,level,tags:filecount=2,filesize=2M'
+    # Gradle splits org.gradle.jvmargs again; keep a log path with spaces in one VM option.
+    jvm_args = f'-Xmx{heap_gib}g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 {shlex.quote(gc_log)}'
     (output / 'host-budget.json').write_text(json.dumps(dict(stage=stage, commit=commit, machine=platform.machine(),
         hostMemoryBytes=memory_bytes, configuredGradleJvmArgs=jvm_args, maxWorkers=1, heapMeasured=False), indent=2), encoding='utf-8')
     (output / 'COMMIT_SHA').write_text(commit + '\n', encoding='utf-8')
@@ -317,24 +405,79 @@ def run_acceptance(root, output, stage):
         raise RuntimeError('Runner memory cannot cover the configured heap, metaspace and host reserve')
     # Run Script phases only receive exported build settings, not the entire setup-actions environment.
     build_tools = [f'ZHIHU_PYTHON_BIN_DIR={Path(sys.executable).parent}',
-                   f'ZHIHU_GRADLE_JVMARGS={jvm_args}', 'ZHIHU_GRADLE_MAX_WORKERS=1']
+                   f'ZHIHU_GRADLE_JVMARGS={jvm_args}', 'ZHIHU_GRADLE_MAX_WORKERS=1', 'ZHIHU_GRADLE_PROFILE=true']
     for name in ('ZHIHU_TIQIAN_TOOLCHAIN', 'JAVA_HOME', 'ANDROID_HOME'):
         build_tools.append(f'{name}={Path(os.environ[name]).resolve(strict=True)}')
 
+    github_output = Path(os.environ['GITHUB_OUTPUT'])
+    profiles = root / 'build/reports/profile'
+
     def xcode(log, *args):
         started = time.monotonic()
-        print(f'Starting {log}', flush=True)
-        with (output / log).open('w', encoding='utf-8') as stream:
+        heartbeat = started + 30
+        action = args[-1]
+        before = {p: p.stat().st_mtime_ns for p in profiles.glob('profile-*.html')} if action != 'test-without-building' else None
+
+        def status(message):
+            print(f'[{stage}/{action} +{time.monotonic() - started:.1f}s] {message}', flush=True)
+
+        status(f'Starting; full output: {log}')
+        path = output / log
+        with path.open('wb') as stream, path.open('rb') as reader:
+            proc = subprocess.Popen(['xcodebuild', *build_tools, *map(str, args)], cwd=root, stdout=stream,
+                                    stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                subprocess.run(['xcodebuild', *build_tools, *map(str, args)], cwd=root, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=5400)
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                print(f'Xcode failed; inspect the isolated artifact {log}', flush=True)
+                while True:
+                    code = proc.poll()
+                    available = os.fstat(stream.fileno()).st_size
+                    while reader.tell() < available:
+                        position = reader.tell()
+                        line = reader.readline()
+                        if not line or (code is None and not line.endswith(b'\n')):
+                            reader.seek(position)
+                            break
+                        if message := live_progress(line.decode('utf-8', errors='replace')):
+                            status(message)
+                    if code is not None:
+                        if code != 0:
+                            raise subprocess.CalledProcessError(code, f'xcodebuild {action}; see {log}')
+                        break
+                    now = time.monotonic()
+                    if now - started >= 5400:
+                        raise subprocess.TimeoutExpired(f'xcodebuild {action}; see {log}', 5400)
+                    if now >= heartbeat:
+                        status(f'In progress; Xcode PID {proc.pid}, {reader.tell()} log bytes')
+                        heartbeat = now + 30
+                    with suppress(subprocess.TimeoutExpired):
+                        proc.wait(timeout=1)
+            except BaseException:
+                if proc.returncode is None:
+                    # Only this fresh session's process group; a detached Gradle daemon is not in it.
+                    status('Terminating this Xcode process group; full log retained')
+                    with suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGTERM)
+                    time.sleep(2)
+                    with suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait(timeout=10)
                 raise
             finally:
                 elapsed = f'{log}: {time.monotonic() - started:.1f}s\n'
-                print(elapsed, end='', flush=True)
+                status(elapsed.rstrip())
                 with (output / 'timings.txt').open('a', encoding='utf-8') as timing:
                     timing.write(elapsed)
+                if before is not None:
+                    changed = [p for p in profiles.glob('profile-*.html') if before.get(p) != p.stat().st_mtime_ns]
+                    if changed:
+                        target = output / 'gradle-profile' / f'{stage}-{action}'
+                        target.mkdir(parents=True)
+                        for report in changed:
+                            shutil.copy2(report, target)
+                        for assets in ('css', 'js'):
+                            if (profiles / assets).is_dir():
+                                shutil.copytree(profiles / assets, target / assets)
+                    else:
+                        status('No new Gradle profile report was produced')
 
     (output / 'xcode.txt').write_text(command('xcodebuild', '-version', capture=True), encoding='utf-8')
     with tempfile.TemporaryDirectory(prefix='zhpp-ios-acceptance-', dir=runner_temp) as temporary:
@@ -376,6 +519,8 @@ def run_acceptance(root, output, stage):
             command('/usr/bin/ditto', '-c', '-k', '--norsrc', '--keepParent', payload, archive)
             digest = verify_ipa(archive, app)
             (output / 'SHA256SUMS').write_text(f'{digest}  {archive.name}\n', encoding='utf-8')
+            # Release caches are eligible only after the built app and its IPA passed integrity checks.
+            publish_native_build(github_output)
 
         else:
             project = work / production.name
@@ -403,20 +548,14 @@ def run_acceptance(root, output, stage):
             udid = command('xcrun', 'simctl', 'create', work.name, device['deviceTypeIdentifier'], runtime, capture=True).strip()
             try:
                 (output / 'simulator.json').write_text(json.dumps(dict(udid=udid, runtime=runtime, deviceType=device['deviceTypeIdentifier'], dataMode='isolated', realAccount=False), indent=2), encoding='utf-8')
-                command('xcrun', 'simctl', 'boot', udid)
-                command('xcrun', 'simctl', 'bootstatus', udid, '-b')
                 result = output / 'guest-navigation.xcresult'
-                xcode('simulator-ui.log', '-project', project, '-scheme', 'ZhihuPlusPlus', '-configuration', 'Debug',
-                      '-destination', f'platform=iOS Simulator,id={udid}', '-derivedDataPath', work / 'debug',
-                      '-resultBundlePath', result, '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
-                      '-maximum-test-execution-time-allowance', '180',
-                      f'-only-testing:{TEST_TARGET}/{TEST_TARGET}/testGuestNavigation',
-                      'CODE_SIGNING_ALLOWED=NO', f'SRCROOT={root / "iosApp"}', 'test')
+                common_args = ['-project', project, '-scheme', 'ZhihuPlusPlus', '-configuration', 'Debug',
+                               '-derivedDataPath', work / 'debug', 'CODE_SIGNING_ALLOWED=NO', f'SRCROOT={root / "iosApp"}']
+                simulator_build_and_test(xcode, command, common_args, udid, result, github_output)
                 summary = json.loads(command('xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', result, capture=True))
                 (output / 'test-summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
                 verify_summary(summary)
             finally:
-                subprocess.run(['xcrun', 'simctl', 'shutdown', udid], cwd=root, check=False, timeout=120)
                 command('xcrun', 'simctl', 'delete', udid)
                 remaining = json.loads(command('xcrun', 'simctl', 'list', '-j', 'devices', capture=True))['devices']
                 if any(entry['udid'] == udid for entries in remaining.values() for entry in entries):
