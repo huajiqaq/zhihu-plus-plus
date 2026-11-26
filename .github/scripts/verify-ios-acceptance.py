@@ -110,7 +110,11 @@ final class IOSAcceptanceTests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         let back = app.descendants(matching: .any).matching(identifier: "appearance_settings_back_button").firstMatch
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: back)], timeout: 10), .completed)
-        _ = node("home_account_button")
+        // The home account sheet dismisses before opening Appearance; back restores its home entry.
+        let account = node("home_account_button")
+        let restored = NSPredicate { _, _ in account.exists && account.isHittable }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: restored, object: account)], timeout: 15), .completed,
+                       "Appearance back did not restore the hittable home account entry")
         evidence("guest-returned", screenshot: true)
     }
 }

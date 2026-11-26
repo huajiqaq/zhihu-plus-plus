@@ -71,8 +71,8 @@
         },
         "upstream-patches/tiqian-core-build-configuration.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
-          "sha256": "2c63257bc6775da5d07513751ae652ad019430cc294a03165541f640aa24db7d",
-          "reason": "组合构建禁止回落到未替换的 Tiqian Maven；boring-kotlin-f32 的源码集仅包含 .kt，避免 Kotlin 2.4 将生成目录的 build.gradle.kts 当引擎源码，保留发布工程与原测试。固定上游 LegacyFontConfigParserTest 的文件名比较统一 Windows 路径分隔符，字体链与顺序断言不变；所选上游含等价修正后移除"
+          "sha256": "5130306b785de820f0af13f1434c63e56967aca1b1dae2a9e145fdbbbc8119b8",
+          "reason": "组合构建禁止回落到未替换的 Tiqian Maven；boring-kotlin-f32 的源码集仅包含 .kt，避免 Kotlin 2.4 将生成目录的 build.gradle.kts 当引擎源码，保留发布工程与原测试。Android KMP 的 Lint/注解提取显式使用上游编译工具链 JDK 25，不改变字节码目标或 Gradle JVM。固定上游 LegacyFontConfigParserTest 的文件名比较统一 Windows 路径分隔符，字体链与顺序断言不变；所选上游含等价修正后移除"
         },
         "upstream-patches/tiqian-core-apple-italic-ink.patch": {
           "base": "8929bfc925c9bc3634f9a2ea3442dd32d9088318",
@@ -122,8 +122,8 @@
         },
         "upstream-patches/tiqian-markdown-build-configuration.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
-          "sha256": "d5a33a26af65f3452cfa25ae828038c3f92200ec25e2b1d6994bfe2575a30119",
-          "reason": "对齐组合构建配置"
+          "sha256": "dd8564256e1a23b101630abfda47f4323b3443504bbba9e26a853c935847fdee",
+          "reason": "组合构建配置；Android KMP 的 Lint/注解提取显式使用上游编译工具链 JDK 25，当前 included-build 独立注册官方 Foojay resolver，不依赖宿主或其他 build 先下载 JDK；不改变字节码目标或 Gradle JVM，所选上游含等价配置后移除"
         },
         "upstream-patches/tiqian-markdown-skiko-alignment.patch": {
           "base": "21a0c10a228d14545054f9af3a4cfa225e31bb9f",
@@ -158,8 +158,8 @@
         },
         "upstream-patches/tiqian-math-build-configuration.patch": {
           "base": "0e99269f1451908c0c153b73cbb159b9b0b89815",
-          "sha256": "17e1db8e07ae5a3bf2b644ae9d9633f7c39b095ea13d7ffebcfd751e278a2bc5",
-          "reason": "组合构建配置；字体路径使用官方 Gradle 属性，不修改上游路径解析"
+          "sha256": "c6fdb5befa473213eaf22c62e7e03c65709b1457430fd05e96326703592b6e29",
+          "reason": "组合构建配置；字体路径使用官方 Gradle 属性，不修改上游路径解析。Android KMP 的 Lint/注解提取显式使用上游编译工具链 JDK 25，当前 included-build 独立注册官方 Foojay resolver，不依赖宿主或其他 build 先下载 JDK；不改变字节码目标或 Gradle JVM，所选上游含等价配置后移除"
         }
       },
       "modules": {

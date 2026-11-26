@@ -1,3 +1,17 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -166,6 +166,10 @@ subprojects {
+     plugins.withId("org.jetbrains.kotlin.multiplatform") {
+         extensions.configure<KotlinMultiplatformExtension>("kotlin") {
+             jvmToolchain(25)
++            // Lint/注解提取使用同一 JDK，不要求启动 Gradle 的 JVM 也为 25。
++            targets.withType<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget>().configureEach {
++                lint.toolchain.languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(25))
++            }
+             jvm {
+                 compilerOptions {
+                     jvmTarget.set(JvmTarget.JVM_17)
 diff --git a/settings.gradle.kts b/settings.gradle.kts
 index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb80577876afb 100644
 --- a/settings.gradle.kts
@@ -8,7 +22,17 @@ index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb805
  pluginManagement {
      repositories {
          google()
-@@ -12,13 +10,8 @@ dependencyResolutionManagement {
+@@ -7,18 +5,18 @@ pluginManagement {
+         gradlePluginPortal()
+     }
+ }
++
++// included-build 不继承宿主的 JDK 下载仓库。
++plugins {
++    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
++}
+ 
+ dependencyResolutionManagement {
      repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
      repositories {
          google()
@@ -24,7 +48,7 @@ index bdbc69ae2e73424022fa79ee236364120ef7304a..0eacfdfe0bb997b5ac1e5071773cb805
          }
          exclusiveContent {
              forRepository {
-@@ -50,21 +43,11 @@ rootProject.name = "tiqian-math"
+@@ -50,21 +48,11 @@ rootProject.name = "tiqian-math"
  include(
      ":engine",
      ":font:tooling",

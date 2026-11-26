@@ -14,6 +14,17 @@ diff --git a/build.gradle.kts b/build.gradle.kts
      }
  
      plugins.withId("org.jetbrains.kotlin.multiplatform") {
+@@ -227,6 +233,10 @@ subprojects {
+             // Compile and test with the uniform provisioned JDK 25 toolchain, but emit Java 17
+             // bytecode so published JVM libraries do not impose the build JDK on consumers.
+             jvmToolchain(25)
++            // Lint/注解提取使用同一 JDK，不要求启动 Gradle 的 JVM 也为 25。
++            targets.withType<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget>().configureEach {
++                lint.toolchain.languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(25))
++            }
+             jvm {
+                 compilerOptions {
+                     jvmTarget.set(JvmTarget.JVM_17)
 diff --git a/settings.gradle.kts b/settings.gradle.kts
 --- a/settings.gradle.kts
 +++ b/settings.gradle.kts

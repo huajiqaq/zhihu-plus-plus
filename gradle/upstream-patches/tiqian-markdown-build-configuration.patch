@@ -1,3 +1,15 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -46,6 +46,8 @@ kotlin {
+     android {
++        // Lint/注解提取使用同一 JDK，不要求启动 Gradle 的 JVM 也为 25。
++        lint.toolchain.languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(25))
+         namespace = "org.tiqian.markdown.compose"
+         compileSdk = 37
+         minSdk = 27
+         androidResources.enable = true
+         optimization {
 diff --git a/settings.gradle.kts b/settings.gradle.kts
 index 9d5b9c9d887a17d99abe6d3c3f1a721d544510ff..85b2e73fdc61fadc1ee1de3f9bd4d1ca7104771b 100644
 --- a/settings.gradle.kts
@@ -8,10 +20,15 @@ index 9d5b9c9d887a17d99abe6d3c3f1a721d544510ff..85b2e73fdc61fadc1ee1de3f9bd4d1ca
  pluginManagement {
      repositories {
          google()
-@@ -8,52 +6,15 @@ pluginManagement {
+@@ -8,52 +6,20 @@ pluginManagement {
      }
  }
  
++// included-build 不继承宿主的 JDK 下载仓库。
++plugins {
++    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
++}
++
 -val tiqianRepository = providers.gradleProperty("tiqianRepository")
 -    .orElse(providers.environmentVariable("TIQIAN_REPOSITORY"))
 -    .orNull
