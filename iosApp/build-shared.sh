@@ -24,7 +24,14 @@ if [ -n "${ZHIHU_PYTHON_BIN_DIR:-}" ]; then
     python3 -I -c 'import tomllib'
 fi
 
-./gradlew -PzhihuUpstreamPatches=true :shared:embedAndSignAppleFrameworkForXcode :app:prepareLibraryDefinitionsLiteDebug
+set --
+if [ -n "${ZHIHU_GRADLE_JVMARGS:-}" ]; then
+    set -- "-Dorg.gradle.jvmargs=$ZHIHU_GRADLE_JVMARGS"
+fi
+if [ -n "${ZHIHU_GRADLE_MAX_WORKERS:-}" ]; then
+    set -- "$@" "--max-workers=$ZHIHU_GRADLE_MAX_WORKERS"
+fi
+./gradlew "$@" -PzhihuUpstreamPatches=true :shared:embedAndSignAppleFrameworkForXcode :app:prepareLibraryDefinitionsLiteDebug
 
 # Xcode processes this plist after the build phase; use the same version as the shared app.
 version_name=$(awk -F= '$1 == "app.versionName" { sub(/\r$/, "", $2); print $2; exit }' gradle.properties)

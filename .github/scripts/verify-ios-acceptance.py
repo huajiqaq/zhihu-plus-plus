@@ -220,7 +220,9 @@ def run_acceptance(root, output):
         subprocess.run(list(map(str, args)), cwd=root, check=True, timeout=timeout)
 
     # Run Script phases only receive exported build settings, not the entire setup-actions environment.
-    build_tools = [f'ZHIHU_PYTHON_BIN_DIR={Path(sys.executable).parent}']
+    # Native Release linking runs in the Gradle daemon; use the same budget as macOS Release acceptance.
+    build_tools = [f'ZHIHU_PYTHON_BIN_DIR={Path(sys.executable).parent}',
+                   'ZHIHU_GRADLE_JVMARGS=-Xmx5120m -Dfile.encoding=UTF-8', 'ZHIHU_GRADLE_MAX_WORKERS=1']
     for name in ('ZHIHU_TIQIAN_TOOLCHAIN', 'JAVA_HOME', 'ANDROID_HOME'):
         build_tools.append(f'{name}={Path(os.environ[name]).resolve(strict=True)}')
 
