@@ -84,8 +84,7 @@ fun AppSplashScreen(onFinished: () -> Unit) {
     var splashDrawn by remember { mutableStateOf(false) }
     val entrance = remember { Animatable(if (completed) 1f else 0f) }
     val finish by rememberUpdatedState(onFinished)
-    val settings = rememberSettingsStore()
-    LaunchedEffect(settings) { ThemeManager.loadFromSettings(settings) }
+    ThemeManager.ObserveSettings(rememberSettingsStore())
     val darkTheme = ThemeManager.isDarkTheme()
     val background = if (darkTheme) {
         if (ThemeManager.getAmoledTheme()) Color.Black else Color(0xFF121212)

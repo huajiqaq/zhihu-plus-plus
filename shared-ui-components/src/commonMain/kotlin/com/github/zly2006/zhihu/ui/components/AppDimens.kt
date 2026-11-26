@@ -161,7 +161,6 @@ object AppDimens {
     val GlassBlurRadius = 40.dp
     val GlassContainerAlpha = 0.55f
     val GlassBarBlurRadius = 25.dp
-    val FloatingBottomBarInnerInset = 4.dp
 
     val SettingsContentMaxWidth = 720.dp
 }

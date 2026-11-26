@@ -117,7 +117,6 @@ fun ZhihuMain(
     val layoutDirection = LocalLayoutDirection.current
     val bottomPadding = ScaffoldDefaults.contentWindowInsets.asPaddingValues().calculateBottomPadding()
     val autoHideBottomBar = preferenceState.autoHideBottomBar
-    val collectionDirectBrowseEnabled = preferenceState.collectionDirectBrowseEnabled
     val reloadBottomBarPreferences = preferenceState::reload
     val readingPlayer = rememberReadingPlayerController()
     val readingPlayerState by readingPlayer.state
@@ -292,7 +291,7 @@ fun ZhihuMain(
                                             val entryIndex = navHost.pageEntries.indexOfFirst { it.id == entry.id }
                                             val isRight = entry.destination != Login &&
                                                 (panes.showMainStackListDetail || panes.showMainReadingListContext) &&
-                                                (entryIndex < 0 || entryIndex >= panes.mainReadingStartIndex)
+                                                (entryIndex < 0 || entryIndex >= panes.mainDetailStartIndex)
                                             listDetailEntryTransition(
                                                 base = base,
                                                 isLeft = panes.showMainStackListDetail && entry.id == panes.mainListEntry?.id,
@@ -331,7 +330,6 @@ fun ZhihuMain(
                                             autoHideBottomBar = autoHideBottomBar,
                                             floatingBottomBar = floatingBottomBar,
                                             bottomPadding = bottomPadding,
-                                            collectionDirectBrowseEnabled = collectionDirectBrowseEnabled,
                                             showHomeTopActions = showHomeTopActions,
                                         )
                                     }
@@ -357,6 +355,7 @@ fun ZhihuMain(
                             if (!panes.showMainStackListDetail || panes.hasOpenSecondaryDetail) {
                                 ZhihuMainDetailPane(
                                     visible = !panes.showMainStackListDetail && (panes.showListDetail || panes.showDetailPane || panes.hasMainReadingListContext),
+                                    isDualPaneReading = panes.showListDetail,
                                     modifier = when {
                                         panes.showMainReadingListContext ->
                                             Modifier

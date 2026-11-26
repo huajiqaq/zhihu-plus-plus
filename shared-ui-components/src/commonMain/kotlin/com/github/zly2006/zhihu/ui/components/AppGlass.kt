@@ -41,6 +41,9 @@ import top.yukonga.miuix.kmp.material.edgeStroke
 import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 
 val LocalAppBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
+
+/** 仅由移到根 Scaffold 绘制的弹层读取。 */
+internal val LocalAppPopupBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 val LocalAppGlassEnabled = compositionLocalOf { false }
 
 fun appGlassRenderingSupported(): Boolean = isRuntimeShaderSupported()

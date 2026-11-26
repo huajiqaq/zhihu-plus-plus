@@ -36,23 +36,19 @@ object AndroidThemeSettings {
     }
 
     fun setUseDynamicColor(context: Context, useDynamic: Boolean) {
-        ThemeManager.setUseDynamicColor(useDynamic)
         context.settings.putBoolean("useDynamicColor", useDynamic)
     }
 
     fun setCustomColor(context: Context, color: Color) {
-        ThemeManager.setCustomColor(color)
         context.settings.putInt("customThemeColor", color.toArgb())
     }
 
     fun setBackgroundColor(context: Context, color: Color, isDark: Boolean) {
-        ThemeManager.setBackgroundColor(color, isDark)
         val key = if (isDark) "backgroundColorDark" else "backgroundColorLight"
         context.settings.putInt(key, color.toArgb())
     }
 
     fun setThemeMode(context: Context, mode: ThemeMode) {
-        ThemeManager.setThemeMode(mode)
         context.settings.putString("themeMode", mode.name)
     }
 

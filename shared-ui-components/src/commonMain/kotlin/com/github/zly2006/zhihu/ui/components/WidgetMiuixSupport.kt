@@ -17,16 +17,14 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 
 @Composable
 internal expect fun MiuixBottomBar(
     items: List<BottomBarItem>,
     modifier: Modifier,
+    floating: Boolean,
 )
 
 @Composable
@@ -42,13 +40,4 @@ internal expect fun MiuixDraggableRefreshButton(
     opacityFraction: Float,
     compact: Boolean,
     content: @Composable () -> Unit,
-)
-
-@Composable
-internal expect fun RowScope.MiuixFloatingNavigationItem(
-    item: BottomBarItem,
-    modifier: Modifier,
-    itemWidth: Dp,
-    highlightSelected: Boolean = true,
-    contentColor: Color? = null,
 )

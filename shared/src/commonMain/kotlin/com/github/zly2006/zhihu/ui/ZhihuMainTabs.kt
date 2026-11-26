@@ -121,7 +121,6 @@ internal fun MainTabsPager(
     isActive: Boolean,
     scrollToTopTrigger: Int,
     innerPadding: PaddingValues,
-    collectionDirectBrowseEnabled: Boolean,
     showHomeTopActions: Boolean,
 ) {
     HorizontalPager(
@@ -156,7 +155,6 @@ internal fun MainTabsPager(
             MainTabPage.MyCollectionsPage -> MyCollectionsTopLevelPage(
                 scrollToTopTrigger = scrollToTopTrigger,
                 innerPadding = innerPadding,
-                collectionDirectBrowseEnabled = collectionDirectBrowseEnabled,
                 isActive = isActive && pagerState.currentPage == pageIndex,
             )
             MainTabPage.AccountPage -> AccountSettingScreen(
@@ -171,26 +169,16 @@ internal fun MainTabsPager(
 private fun MyCollectionsTopLevelPage(
     scrollToTopTrigger: Int,
     innerPadding: PaddingValues,
-    collectionDirectBrowseEnabled: Boolean,
     isActive: Boolean,
 ) {
     val account = rememberAccountSettingsAccountState().value
-    if (collectionDirectBrowseEnabled) {
-        CollectionBrowseScreen(
-            urlToken = account.urlToken,
-            contentPadding = innerPadding,
-            showBackButton = false,
-            scrollToTopTrigger = scrollToTopTrigger,
-            isActive = isActive,
-        )
-    } else {
-        CollectionScreen(
-            urlToken = account.urlToken,
-            contentPadding = innerPadding,
-            showBackButton = false,
-            isActive = isActive,
-        )
-    }
+    CollectionBrowseScreen(
+        urlToken = account.urlToken,
+        contentPadding = innerPadding,
+        showBackButton = false,
+        scrollToTopTrigger = scrollToTopTrigger,
+        isActive = isActive,
+    )
 }
 
 /**

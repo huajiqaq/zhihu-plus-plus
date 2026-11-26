@@ -72,7 +72,6 @@ import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
-import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
@@ -82,6 +81,7 @@ import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
+import com.github.zly2006.zhihu.ui.components.FeedItemSurface
 import com.github.zly2006.zhihu.ui.components.SettingItem
 import com.github.zly2006.zhihu.ui.components.appPageTitleBarScroll
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
@@ -389,8 +389,8 @@ fun DailyScreen(
                                 .pageTurnViewportWithGuide(pageTurnTarget)
                                 .testTag(DAILY_SCREEN_LIST_TAG),
                             contentPadding = PaddingValues(
-                                top = scaffoldPadding.calculateTopPadding() + AppDimens.Space8,
-                                bottom = bottomInset + AppDimens.Space8,
+                                top = scaffoldPadding.calculateTopPadding(),
+                                bottom = bottomInset,
                             ),
                         ) {
                             viewModel.error?.let { error ->
@@ -420,10 +420,7 @@ fun DailyScreen(
                                 }
                                 /** 分页阈值与可见日期定位依赖每日一个 lazy item。 */
                                 item(key = "group_${section.date}") {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding),
-                                        verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
-                                    ) {
+                                    Column {
                                         section.stories.forEach { story ->
                                             DailyStoryCard(
                                                 story = story,
@@ -438,6 +435,7 @@ fun DailyScreen(
                                             )
                                             if (openingStory?.id == story.id || failedStory?.id == story.id) {
                                                 SettingItem(
+                                                    modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8),
                                                     title = {
                                                         Text(
                                                             if (openingStory?.id == story.id) "正在打开原文…" else "原文加载失败",
@@ -535,17 +533,12 @@ fun DailyStoryCard(
     onClick: () -> Unit,
 ) {
     val skin = LocalAppSkinTokens.current
-    AppCard(
-        modifier = modifier.fillMaxWidth(),
+    FeedItemSurface(
+        modifier = modifier,
         onClick = onClick,
     ) {
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = AppDimens.FeedCardContentHorizontalPadding,
-                    vertical = AppDimens.Space12,
-                ),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             val imageSize = minOf(AppDimens.Space64, maxWidth * 0.2f)
             Row(

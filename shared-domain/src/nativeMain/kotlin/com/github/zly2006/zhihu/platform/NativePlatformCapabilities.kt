@@ -17,11 +17,14 @@
 
 package com.github.zly2006.zhihu.platform
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.backhandler.BackHandler
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
@@ -39,6 +42,9 @@ import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.dataWithBytes
 import kotlin.time.Clock
+
+@Composable
+actual fun isSoftwareKeyboardVisible(): Boolean = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
 @Composable
 actual fun rememberSystemUrlOpener(): SystemUrlOpener = rememberExternalUrlOpener()

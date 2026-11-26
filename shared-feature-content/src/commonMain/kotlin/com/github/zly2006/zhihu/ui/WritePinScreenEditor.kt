@@ -23,11 +23,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
@@ -41,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +51,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.zly2006.zhihu.editor.UploadedZhihuImage
+import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -214,7 +212,7 @@ internal fun ColumnScope.WritePinMarkdownEditor(
                 topics.selectedMarkdown(state)?.let { copy("pin-markdown", it) }
             })
         }
-        if (WindowInsets.ime.getBottom(LocalDensity.current) == 0) {
+        if (!isSoftwareKeyboardVisible()) {
             MarkdownShortcutToolbar(
                 onApplyShortcut = { shortcut ->
                     if (shortcut == MarkdownShortcut.Topic) {

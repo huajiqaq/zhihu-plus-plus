@@ -53,6 +53,7 @@ import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AuthorBadge
+import com.github.zly2006.zhihu.ui.components.FeedItemSurface
 import com.github.zly2006.zhihu.util.formatCompactCount
 import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
@@ -62,19 +63,15 @@ internal fun CollectionListItem(
     itemTag: String? = null,
 ) {
     val navigator = LocalNavigator.current
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .then(if (itemTag != null) Modifier.testTag(itemTag) else Modifier),
         onClick = {
             navigator.onNavigate(CollectionContent(collection.id))
         },
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(AppDimens.Space16),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
                 text = collection.title,
@@ -96,19 +93,15 @@ internal fun QuestionListItem(
     itemTag: String? = null,
 ) {
     val navigator = LocalNavigator.current
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .then(if (itemTag != null) Modifier.testTag(itemTag) else Modifier),
         onClick = {
             navigator.onNavigate(Question(question.id, question.title))
         },
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(AppDimens.Space16),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
                 text = question.title,
@@ -131,10 +124,8 @@ internal fun PinListItem(
     readingQueueSourceId: String? = null,
 ) {
     val navigator = LocalNavigator.current
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .then(if (itemTag != null) Modifier.testTag(itemTag) else Modifier),
         onClick = {
             navigator.onNavigate(
@@ -147,9 +138,7 @@ internal fun PinListItem(
         },
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(AppDimens.Space16),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             val text = remember(pin.excerptTitle) { pin.excerptTitle.pinSummaryText() }
             Text(
@@ -174,19 +163,15 @@ internal fun ColumnListItem(
     itemTag: String? = null,
 ) {
     val openWebUrl = rememberWebViewUrlOpener()
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .then(if (itemTag != null) Modifier.testTag(itemTag) else Modifier),
         onClick = {
             openWebUrl(column.webUrl())
         },
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(AppDimens.Space16),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -223,10 +208,8 @@ internal fun ColumnListItem(
 @Composable
 internal fun FollowedQuestionListItem(question: FollowedQuestion) {
     val navigator = LocalNavigator.current
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .testTag("people_screen_followed_question_item_${question.id}"),
         onClick = {
             question.id.toLongOrNull()?.let {
@@ -237,7 +220,6 @@ internal fun FollowedQuestionListItem(question: FollowedQuestion) {
         Text(
             text = question.title,
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(AppDimens.Space16),
         )
     }
 }
@@ -245,10 +227,8 @@ internal fun FollowedQuestionListItem(question: FollowedQuestion) {
 @Composable
 internal fun FollowedTopicListItem(topic: FollowedTopic) {
     val navigator = LocalNavigator.current
-    AppCard(
+    FeedItemSurface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space4)
             .testTag("people_screen_followed_topic_item_${topic.displayId}"),
         onClick = {
             navigator.onNavigate(
@@ -258,9 +238,7 @@ internal fun FollowedTopicListItem(topic: FollowedTopic) {
         },
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(AppDimens.Space16),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AsyncImage(

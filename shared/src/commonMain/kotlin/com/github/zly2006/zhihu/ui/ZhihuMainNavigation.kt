@@ -19,16 +19,30 @@ package com.github.zly2006.zhihu.ui
 
 import com.github.zly2006.zhihu.navigation.AppNavEntry
 import com.github.zly2006.zhihu.navigation.AppNavHost
+import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.isDetailPaneDestination
 import com.github.zly2006.zhihu.navigation.isListPaneDestination
+import com.github.zly2006.zhihu.navigation.isSecondaryDetailDestination
+
+internal fun NavDestination.opensInDetailPane(): Boolean = isDetailPaneDestination() || isSecondaryDetailDestination()
 
 /**
- * 主栈第一个阅读条目之前的列表条目，即两栏布局里留在左侧的来源页。
- * 传入 [readingEntryId] 时，只有它正是那个阅读条目才返回。
+ * 主栈中连续详情条目的来源列表；传入 [detailEntryId] 时，只为首个详情登记退场来源。
+ * 阅读页保留原来源直到出栈；单栏中进入的设置等二级页也可在原栈就地展宽。
  */
-internal fun AppNavHost.listEntryBeforeFirstReading(readingEntryId: String? = null): AppNavEntry? {
-    val readingIndex = pageEntries.indexOfFirst { it.destination.isDetailPaneDestination() }
-    if (readingIndex <= 0) return null
-    if (readingEntryId != null && pageEntries.elementAt(readingIndex).id != readingEntryId) return null
-    return pageEntries.elementAt(readingIndex - 1).takeIf { it.destination.isListPaneDestination() }
+internal fun AppNavHost.listEntryForMainDetail(detailEntryId: String? = null): AppNavEntry? {
+    var source: AppNavEntry? = null
+    var firstDetailId: String? = null
+    for (entry in pageEntries) {
+        val destination = entry.destination
+        if (destination.opensInDetailPane() && (source != null || !destination.isListPaneDestination())) {
+            if (firstDetailId == null) firstDetailId = entry.id
+            if (destination.isDetailPaneDestination()) break
+        } else {
+            source = entry.takeIf { destination.isListPaneDestination() }
+            firstDetailId = null
+        }
+    }
+    if (firstDetailId == null || (detailEntryId != null && firstDetailId != detailEntryId)) return null
+    return source
 }

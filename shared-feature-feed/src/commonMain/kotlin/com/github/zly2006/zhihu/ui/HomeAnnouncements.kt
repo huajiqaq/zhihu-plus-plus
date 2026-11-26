@@ -36,6 +36,7 @@ import com.github.zly2006.zhihu.notification.HOME_NOTIFICATION_REFRESH_INTERVAL_
 import com.github.zly2006.zhihu.notification.HomeNotificationAction
 import com.github.zly2006.zhihu.notification.OnlineHomeNotificationRepository
 import com.github.zly2006.zhihu.platform.SettingsStore
+import com.github.zly2006.zhihu.platform.isLiteVariant
 import com.github.zly2006.zhihu.theme.miuixThemeAvailable
 import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateState
 import com.github.zly2006.zhihu.util.Log
@@ -46,7 +47,7 @@ import kotlin.time.Clock
 
 private const val MAX_HOME_PIN_ANNOUNCEMENTS = 3
 
-/** 页面在前台时加载作者想法公告和在线通知，结果写进 [homeState]。 */
+/** 前台加载事项。 */
 @Composable
 internal fun HomeAnnouncementLoadEffects(
     homeState: HomeScreenState,
@@ -104,7 +105,7 @@ internal fun HomeAnnouncementLoadEffects(
     }
 }
 
-/** 主页列表顶部的事项：新界面提示、新版本、在线通知、作者想法公告。各回调在点击时读写 [homeState] 里的当前值。 */
+/** 事项。 */
 internal fun buildHomeTransactions(
     homeState: HomeScreenState,
     showNewUiNotice: Boolean,
@@ -118,11 +119,11 @@ internal fun buildHomeTransactions(
     var dismissedUpdateVersion by homeState.dismissedUpdateVersion
     var authorPinAnnouncements by homeState.authorPinAnnouncements
     return buildList {
-        if (showNewUiNotice) {
+        if (showNewUiNotice && !isLiteVariant) {
             add(
                 HomeTransaction(
                     key = NEW_UI_NOTICE_TAG,
-                    title = "动态 UI 已开启",
+                    title = "可切换 UI 风格",
                     content = null,
                     acceptText = "切换皮肤".takeIf { miuixThemeAvailable },
                     onAccept = if (miuixThemeAvailable) {

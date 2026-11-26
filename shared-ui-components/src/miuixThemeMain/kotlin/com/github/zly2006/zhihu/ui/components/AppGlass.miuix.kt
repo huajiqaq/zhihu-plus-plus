@@ -26,7 +26,7 @@ import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.material.GlassShadows
 import top.yukonga.miuix.kmp.material.GlassShape
 
-/** 原生导航栏没有逐项 modifier；保留共享导航的标签与手势，仅使用原生导航材质。 */
+/** 悬浮玻璃材质。 */
 @Composable
 internal actual fun Modifier.miuixFloatingGlassSurface(
     shape: RoundedCornerShape,

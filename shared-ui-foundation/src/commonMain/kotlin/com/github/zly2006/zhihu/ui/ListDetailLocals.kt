@@ -21,3 +21,6 @@ import androidx.compose.runtime.compositionLocalOf
 import com.github.zly2006.zhihu.navigation.NavDestination
 
 val LocalSelectedContentDestination = compositionLocalOf<NavDestination?> { null }
+
+/** 双栏阅读区。 */
+val LocalIsDualPaneReading = compositionLocalOf { false }

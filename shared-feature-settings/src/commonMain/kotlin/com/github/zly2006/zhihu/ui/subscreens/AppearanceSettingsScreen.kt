@@ -90,7 +90,6 @@ const val APPEARANCE_SETTINGS_TIQIAN_MARKDOWN_TAG = "appearanceSettings.tiqianMa
 const val APPEARANCE_SETTINGS_WEBVIEW_FONT_TAG = "appearanceSettings.webViewFont"
 const val APPEARANCE_SETTINGS_WEBVIEW_OPTIONS_TAG = "appearanceSettings.webViewOptions"
 const val APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY = "appearanceSettings.bottomBarSection"
-const val APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG = "appearanceSettings.collectionDirectBrowse"
 const val APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG = "appearanceSettings.landscapeListDetail"
 const val APPEARANCE_SETTINGS_MORE_COLORS_TAG = "appearanceSettings.moreColors"
 
@@ -134,6 +133,7 @@ fun AppearanceSettingsScreen(
             !isMiuixSkin && requestedKey == MIUIX_STYLE_PREFERENCE_KEY -> THEME_STYLE_PREFERENCE_KEY
             isMiuixSkin && (requestedKey == APPEARANCE_SETTINGS_CUSTOM_COLOR_KEY || requestedKey in MORE_COLOR_OPTION_KEYS || requestedKey == "dynamicColor") -> THEME_STYLE_PREFERENCE_KEY
             useDynamicColor && requestedKey == APPEARANCE_SETTINGS_CUSTOM_COLOR_KEY -> "dynamicColor"
+            requestedKey == FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY && !settings.getBoolean(FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true) -> FLOATING_BOTTOM_BAR_PREFERENCE_KEY
             else -> requestedKey
         }
     }
@@ -163,7 +163,6 @@ fun AppearanceSettingsScreen(
                     initialColor = ThemeManager.getCustomColor(),
                     onDismiss = { showColorPicker = false },
                     onColorSelected = { color ->
-                        ThemeManager.setCustomColor(color)
                         settings.putInt("customThemeColor", color.toArgb())
                         userMessages.showShortMessage("主题色已保存")
                         showColorPicker = false
@@ -182,7 +181,6 @@ fun AppearanceSettingsScreen(
                     ),
                     onDismiss = { showBackgroundColorPicker = false },
                     onColorSelected = { color ->
-                        ThemeManager.setBackgroundColor(color, isDark)
                         settings.putInt(if (isDark) "backgroundColorDark" else "backgroundColorLight", color.toArgb())
                         userMessages.showShortMessage("背景颜色已保存")
                         showBackgroundColorPicker = false
@@ -216,9 +214,9 @@ fun AppearanceSettingsScreen(
                 val themeStyles = ThemeStyle.entries
 
                 fun selectThemeStyle(index: Int) {
-                    ThemeManager.setThemeStyle(themeStyles[index])
-                    settings.putString(THEME_STYLE_PREFERENCE_KEY, ThemeManager.currentStyle.name)
-                    userMessages.showShortMessage("已切换到${ThemeManager.currentStyle.displayName}皮肤")
+                    val style = themeStyles[index]
+                    settings.putString(THEME_STYLE_PREFERENCE_KEY, style.name)
+                    userMessages.showShortMessage("已切换到${style.displayName}皮肤")
                 }
 
                 /** 弹层退出与换皮同帧会向已销毁的 NavigationEventDispatcher 注册 BackHandler，故不用弹层选择器。 */
@@ -266,11 +264,7 @@ fun AppearanceSettingsScreen(
                         AppSegmentedControl(
                             options = miuixStyles.map(MiuixStyle::displayName),
                             selectedIndex = miuixStyles.indexOf(currentMiuixStyle),
-                            onSelect = { index ->
-                                val style = miuixStyles[index]
-                                ThemeManager.setMiuixStyle(style)
-                                settings.putString(MIUIX_STYLE_PREFERENCE_KEY, style.name)
-                            },
+                            onSelect = { index -> settings.putString(MIUIX_STYLE_PREFERENCE_KEY, miuixStyles[index].name) },
                             modifier = Modifier
                                 .padding(top = AppDimens.Space8)
                                 .fillMaxWidth()
@@ -288,7 +282,6 @@ fun AppearanceSettingsScreen(
 
             fun selectThemeMode(index: Int) {
                 val (mode, label) = themeModes[index]
-                ThemeManager.setThemeMode(mode)
                 settings.putString("themeMode", mode.name)
                 userMessages.showShortMessage("已切换到$label")
             }
@@ -314,10 +307,7 @@ fun AppearanceSettingsScreen(
                     title = { Text("使用 Material You 动态取色") },
                     description = { Text("从系统壁纸提取主题色，并应用所选调色风格；不支持壁纸取色的平台使用保存的主题色。") },
                     checked = useDynamicColor,
-                    onCheckedChange = { checked ->
-                        ThemeManager.setUseDynamicColor(checked)
-                        settings.putBoolean("useDynamicColor", checked)
-                    },
+                    onCheckedChange = { checked -> settings.putBoolean("useDynamicColor", checked) },
                     settingKey = "dynamicColor",
                 )
             }
@@ -340,10 +330,7 @@ fun AppearanceSettingsScreen(
                     Text(if (amoledAvailable) "暗色模式下使用纯黑背景和更低亮度的表面层级" else "仅深色模式可用")
                 },
                 checked = ThemeManager.getAmoledTheme(),
-                onCheckedChange = { enabled ->
-                    ThemeManager.setAmoledTheme(enabled)
-                    settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, enabled)
-                },
+                onCheckedChange = { enabled -> settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, enabled) },
                 enabled = amoledAvailable,
                 settingKey = AMOLED_THEME_PREFERENCE_KEY,
             )
@@ -379,11 +366,7 @@ fun AppearanceSettingsScreen(
                         description = { Text("决定强调色与中性色之间的关系") },
                         options = paletteStyles.map { it.displayName },
                         selectedIndex = paletteStyles.indexOf(ThemeManager.getPaletteStyle()),
-                        onSelect = { index ->
-                            val style = paletteStyles[index]
-                            ThemeManager.setPaletteStyle(style)
-                            settings.putString(THEME_PALETTE_STYLE_PREFERENCE_KEY, style.name)
-                        },
+                        onSelect = { index -> settings.putString(THEME_PALETTE_STYLE_PREFERENCE_KEY, paletteStyles[index].name) },
                         settingKey = THEME_PALETTE_STYLE_PREFERENCE_KEY,
                     )
                 }
@@ -403,11 +386,7 @@ fun AppearanceSettingsScreen(
                         },
                         options = colorSpecs.map { it.displayName },
                         selectedIndex = colorSpecs.indexOf(currentPalette.effectiveColorSpec(ThemeManager.getColorSpec())),
-                        onSelect = { index ->
-                            val spec = colorSpecs[index]
-                            ThemeManager.setColorSpec(spec)
-                            settings.putString(THEME_COLOR_SPEC_PREFERENCE_KEY, spec.name)
-                        },
+                        onSelect = { index -> settings.putString(THEME_COLOR_SPEC_PREFERENCE_KEY, colorSpecs[index].name) },
                         settingKey = THEME_COLOR_SPEC_PREFERENCE_KEY,
                     )
                 }
@@ -460,7 +439,7 @@ fun AppearanceSettingsScreen(
         SettingItemGroup(title = "悬浮控件") {
             SettingItemWithSwitch(
                 title = { Text("悬浮玻璃") },
-                description = { Text("顶栏、底栏和悬浮控件使用背景模糊；关闭后使用不透明背景。") },
+                description = { Text("顶栏、悬浮底栏和悬浮控件使用背景模糊；关闭后使用不透明背景。") },
                 checked = appBlurEnabled,
                 onCheckedChange = { appBlurEnabled = it },
                 settingKey = APP_BLUR_PREFERENCE_KEY,
@@ -469,10 +448,21 @@ fun AppearanceSettingsScreen(
             var floatingBottomBar by rememberSetting(settings, FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true)
             SettingItemWithSwitch(
                 title = { Text("悬浮底栏") },
-                description = { Text("底栏脱离屏幕边缘，以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。底栏内拖动仅切换标签，不移动底栏。") },
+                description = { Text("底栏脱离屏幕边缘，以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。") },
                 checked = floatingBottomBar,
                 onCheckedChange = { floatingBottomBar = it },
                 settingKey = FLOATING_BOTTOM_BAR_PREFERENCE_KEY,
+            )
+
+            var floatingStyle by rememberSetting(settings, FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY, "default")
+            SettingItemSelect(
+                title = { Text("悬浮底栏样式") },
+                options = listOf("默认", "Apple"),
+                selectedIndex = if (floatingStyle == "apple") 1 else 0,
+                onSelect = { floatingStyle = if (it == 1) "apple" else "default" },
+                enabled = floatingBottomBar,
+                settingKey = FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY,
+                modifier = Modifier.testTag("appearanceSettings.floatingBottomBarStyle"),
             )
 
             var squarePopups by rememberSetting(settings, DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY, false)

@@ -29,6 +29,7 @@ import com.github.zly2006.zhihu.ui.PrivateMessageScreen
 import com.github.zly2006.zhihu.ui.subscreens.AccountToolsScreen
 import com.github.zly2006.zhihu.ui.subscreens.AppearanceSettingsScreen
 import com.github.zly2006.zhihu.ui.subscreens.BlockedFeedHistoryScreen
+import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.ContentFilterSettingsScreen
 import com.github.zly2006.zhihu.ui.subscreens.FEED_SETTINGS_KEYS
 import com.github.zly2006.zhihu.ui.subscreens.FeedSettingsScreen
@@ -89,7 +90,7 @@ fun AppNavEntryBuilder.accountSettings(
     }
     entry<Account.AppearanceSettings>(swipeDismiss = swipeBack) { args ->
         when (args.setting) {
-            in NAVIGATION_SETTINGS_KEYS -> NavigationSettingsScreen(args.setting, reloadPreferences)
+            COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, in NAVIGATION_SETTINGS_KEYS -> NavigationSettingsScreen(args.setting, reloadPreferences)
             in PAGE_TURN_SETTINGS_KEYS -> PageTurnSettingsScreen(args.setting)
             in READING_LAYOUT_SETTINGS_KEYS -> ReadingSettingsScreen(args.setting)
             in FEED_SETTINGS_KEYS -> FeedSettingsScreen(args.setting)

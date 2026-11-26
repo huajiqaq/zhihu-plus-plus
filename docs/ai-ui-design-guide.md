@@ -45,7 +45,7 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 - 设置读取使用现有可观察绑定。需确认后保存的输入仍持有草稿，不改成每次按键立即写入。
 - 新增或移动设置时核对 key、默认值、运行时读取、父项禁用、设置搜索和 `settingKey` 高亮。目标被隐藏时跳到父项，不跳到空白位置。
 - 父项禁用时，行内分段控件和按钮也禁用；不只改说明文字。恢复备份不覆盖本机连接信息和凭据。
-- `themeMode`、`uiThemeStyle`、`bottom_bar_items`、`startDestination` 等状态只从权威设置读取，平台 toolbar 不再维护另一份选择。
+- `themeMode`、`uiThemeStyle`、`bottom_bar_items`、`startDestination` 等状态只从权威设置读取，平台 toolbar 不维护另一份选择。
 - 提椠使用 `tiqian_markdown`、`tiqian_math_font`。主壳初始化时仅在正式键缺失且旧 `duo3_*` 键存在时迁入；两套键并存以正式键为准，不删除旧键或用默认值覆盖显式选择。
 - 账号设置按“账号与安全／显示与阅读／内容与隐私／系统／关于”分组，账号与登录维护不依赖开发者模式。手机底栏默认主页、关注、日报；历史从账号面板进入，不占手机底栏位置。其余可选项目保留用户选择，没有主页时须保留账号设置出口。
 
@@ -55,7 +55,7 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 - Miuix 实现放在 `miuixThemeMain`，Lite 提供对应 actual。共享页面通过 `App*` 和 `LocalAppSkinTokens` 取控件、颜色与字阶，不直接依赖 miuix theme/basic/popup。
 - API 与平台能力以版本目录、上游 lock 及源码为准；参考镜像保留出处与许可，不当作运行实现。
 - 主题根的组合位置保持不变，换肤只更新值，避免重建导航和浮层状态。两套皮肤共用业务状态，不复制页面或 ViewModel。
-- Miuix 的「HyperOS 风格」通过独立 `miuixStyle` 偏好选择 HyperOS 3 / 4，默认 HyperOS 3。明暗、配色、玻璃和悬浮底栏仍独立；关闭玻璃或设备不支持渲染时保留可用控件，不改写已保存的风格。HyperOS 4 在共享呈现入口采用已发布玻璃组件；复杂标题、复合菜单及导航标签不能为更换材质而丢失。
+- Miuix 的「HyperOS 风格」通过独立 `miuixStyle` 偏好选择 HyperOS 3 / 4，默认 HyperOS 3。明暗、配色与玻璃仍独立；关闭玻璃或设备不支持渲染时保留可用控件，不改写已保存的风格。HyperOS 4 在共享呈现入口采用已发布玻璃组件；复杂标题、复合菜单及导航标签不能为更换材质而丢失。
 - Miuix 容器中的 Material `Text`/`Icon` 需要在容器内容作用域桥接内容色；只改页面颜色不能修复按钮或卡片中的前景色。Markdown 等 Material 路径也要使用投影后的配色。
 - 形状、字阶和动效优先采用原生 token；共享固定尺寸使用 `AppDimens`。无实际布局或状态差异时，不增加 index、圆角或颜色参数。
 - 顶栏复用 `AppTopBar`、`AppCompactTopBar`、`AppPageTitleBar`，通过 `onBack` 和 `backTag` 提供返回。保留已有 tag；Miuix 不提供逐项 tag 的原生控件按容器和文字定位，不加透明影子点击项。
@@ -81,21 +81,21 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 - `AppScaffold` 登记当前层的内容采样源；采样前铺不透明底色，避免透明区模糊扩散。浮动控件只采样下方内容，不采样自身。
 - 开启玻璃时容器透明，tint 在模糊结果中混合；另画不透明底色会盖住模糊。半径和 tint 取共享值。
 - RuntimeShader 不支持或用户关闭效果时退回实心容器，导航文字、选中反馈和手势仍保留。
-- 悬浮底栏保留文字、整格 tab 语义和 `nav_tab_*`。点击交给原生项，拖动只在真正切换目标时提交一次，不叠两套手势反馈。
+- 默认导航使用各皮肤的图文项。Full 的 MD3E 与 Lite 共用 Apple 悬浮底栏的布局和折射材质。底栏横拖时选中指示、图标和文字颜色随位置更新，松手才切换。窄窗可滑动查看屏外项，从当前项拖选。整格保留 tab 语义和 `nav_tab_*`，轻点重选交给分页宿主。内容区可左右滑动。
 - `AppOverlayHost` 在背景模糊之外承载 popup。确认框使用能覆盖当前 Sheet/Dialog 的窗口级宿主；独立评论窗口内的排序菜单不能投递到下层页面。
 - 页面被新路由覆盖时隐藏所属弹层，但不执行 dismiss、不重置草稿和滚动位置；返回后恢复。发布、删除和退出等动作先确认。
-- 窗口级底部面板使用 `AppBottomSheet` 与 `rememberBottomSheetState`，通过 `enabledValues` 明确可达状态。录音等业务限制保留 `confirmValueChange`；关闭须在 `hide()` 完成且状态确实隐藏后通知页面，评论返回仍先收键盘、再收表情面板。
+- 窗口级底部面板使用 `AppBottomSheet` 与 `rememberBottomSheetState`，通过 `enabledValues` 明确可达状态。录音等业务限制保留 `confirmValueChange`；关闭须在 `hide()` 完成且状态确实隐藏后通知页面。评论编辑器优先收起当前的键盘或表情面板，下一次返回才关闭编辑器。
 
 ## 阅读与页面状态
 
-- 完整标题、作者、正文和操作区共用阅读列；平板最大宽度为 720dp。图片和悬浮控件按实际 pane 与遮挡范围避让，不用物理窗口宽度或固定 FAB 常量推算。
+- 完整标题、作者、正文和操作区共用阅读列，最大宽度 720dp；双栏阅读列靠所在栏起点，单栏居中。图片和悬浮控件按实际 pane 与遮挡范围避让。
 - 长标题展开时完整测量，收起状态按组件契约显示。不为新增按钮把原标题或正文改成省略号。
 - 加载、失败和成功空态分开。刷新与追加失败保留已有内容；旧请求或异步过滤不能回写新一轮状态。
 - 下拉刷新使用业务层的同一加载真值，在刷新回调首次挂起前同步发布刷新状态，避免控件先回弹再进入加载；不另建计时状态镜像。
 - 触摸拖拽、鼠标滚轮和键盘滚动按各自输入路径验证，短内容也单独核对 overscroll；框架默认效果与自定义效果只保留一份，不用触摸结果代替桌面输入验收。
 - 正文字号、行高、段间距变化不需要重建 AST。WebView 正文仅保留兼容，不接新阅读功能。
-- 正文搜索与用户选区独立，使用真实命中行几何和现有 requester 定位，见 [正文搜索](article-search-design.md)。
-- 段评创建要求可靠的原始段落和偏移，保留正文格式；选区规则见 [段评选区契约](segment-selection-contract.md)。评论计数按客户端和正文身份隔离，失败不增加计数。
+- 正文搜索的匹配、定位与状态隔离见 [正文搜索](article-search-design.md)。
+- 段评创建、已有划线与计数见 [段评选区契约](segment-selection-contract.md)。
 - 段评末端图标不占原文字符，复制、搜索和选区不能泄漏布局占位符。
 - 正文格式优先于段评注入。保留加粗、斜体；脚注、链接、图片或公式无法可靠保留时跳过该段高亮，不展平原文来匹配段评。
 

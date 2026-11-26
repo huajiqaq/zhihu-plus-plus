@@ -161,6 +161,10 @@ expect suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>)
 @Composable
 expect fun rememberSettingsStore(): SettingsStore
 
+/** 当前窗口的软件键盘可见性，不按输入焦点推断。 */
+@Composable
+expect fun isSoftwareKeyboardVisible(): Boolean
+
 expect fun Modifier.exportTestTagsForUiAutomation(): Modifier
 
 @Composable

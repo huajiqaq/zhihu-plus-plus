@@ -21,21 +21,20 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,9 +48,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.NavigationBarDefaults
+import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.squircle.squircleBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -60,18 +59,44 @@ import top.yukonga.miuix.kmp.basic.NavigationRail as MiuixNavigationRailComponen
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 
 @Composable
-internal actual fun MiuixBottomBar(items: List<BottomBarItem>, modifier: Modifier) {
-    BoxWithConstraints {
-        val itemWidth = maxWidth / items.size.coerceAtLeast(1)
-        MiuixNavigationBar(
-            modifier = modifier.appGlassBlur(
-                shape = androidx.compose.ui.graphics.RectangleShape,
-                tint = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.35f),
-            ),
-            color = appGlassContainerColor(MiuixTheme.colorScheme.surface),
-        ) {
-            items.forEach { item ->
-                MiuixFloatingNavigationItem(item, Modifier.testTag(item.testTag), itemWidth)
+internal actual fun MiuixBottomBar(items: List<BottomBarItem>, modifier: Modifier, floating: Boolean) {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MiuixTheme.textStyles.main.copy(
+        fontSize = NavigationBarDefaults.LabelFontSize,
+        fontWeight = FontWeight.Bold,
+    )
+    val labels = items.map { it.label }
+    val foreground = MiuixTheme.colorScheme.onSurfaceContainer
+    MiuixNavigationBar(
+        modifier = modifier,
+        color = if (floating) Color.Transparent else MiuixTheme.colorScheme.surface,
+        showDivider = !floating,
+        defaultWindowInsetsPadding = !floating,
+    ) {
+        BottomBarDragStrip(items) { itemWidth, preview ->
+            val contentHeight = remember(labels, labelStyle, density, itemWidth, textMeasurer) {
+                val available = Constraints(maxWidth = with(density) { itemWidth.toPx().toInt().coerceAtLeast(1) })
+                val height = labels.maxOf { textMeasurer.measure(it, labelStyle, constraints = available).size.height }
+                NavigationBarDefaults.IconTopPadding + NavigationBarDefaults.IconSize + with(density) { height.toDp() } + NavigationBarDefaults.BottomPadding
+            }
+            Row(Modifier.fillMaxWidth()) {
+                items.forEachIndexed { index, item ->
+                    key(item.testTag) {
+                        val weight = preview?.tabWeight(index)
+                        val alpha = NavigationBarDefaults.UnselectedAlpha
+                        NavigationBarItem(
+                            selected = weight?.let { it > 0f } ?: item.selected,
+                            onClick = item.onClick,
+                            icon = appIconVector(item.icon),
+                            label = item.label,
+                            modifier = Modifier.heightIn(min = contentHeight.coerceAtLeast(NavigationBarDefaults.ItemHeight)).bottomBarTab(item),
+                            colors = NavigationBarDefaults.navigationBarItemColors(
+                                selectedContentColor = if (weight == null) foreground else foreground.copy(alpha = foreground.alpha * (alpha + (1f - alpha) * weight)),
+                            ),
+                        )
+                    }
+                }
             }
         }
     }
@@ -163,66 +188,5 @@ internal actual fun MiuixDraggableRefreshButton(
         ) {
             content()
         }
-    }
-}
-
-@Composable
-internal actual fun RowScope.MiuixFloatingNavigationItem(
-    item: BottomBarItem,
-    modifier: Modifier,
-    itemWidth: Dp,
-    highlightSelected: Boolean,
-    contentColor: Color?,
-) {
-    val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
-    val labelStyle = MiuixTheme.textStyles.main.copy(
-        fontSize = NavigationBarDefaults.LabelFontSize,
-        fontWeight = FontWeight.Normal,
-    )
-    val labelLayout = textMeasurer.measure(
-        text = item.label,
-        style = labelStyle,
-        constraints = Constraints(maxWidth = with(density) { itemWidth.roundToPx() }.coerceAtLeast(1)),
-    )
-    val contentHeight = NavigationBarDefaults.IconTopPadding + NavigationBarDefaults.IconSize +
-        with(density) { labelLayout.size.height.toDp() } + NavigationBarDefaults.BottomPadding
-    // 0.9.4 原生项固定乘未选中 alpha；图标与标签共同消费胶囊的连续跟手色。
-    val foreground = contentColor ?: if (item.selected && highlightSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    Column(
-        modifier = modifier
-            .weight(1f)
-            .height(contentHeight.coerceAtLeast(NavigationBarDefaults.ItemHeight))
-            .selectable(
-                selected = item.selected,
-                onClick = item.onClick,
-                role = Role.Tab,
-                interactionSource = interactionSource,
-                indication = null,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Image(
-            imageVector = appIconVector(item.icon),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(
-                if (isPressed) {
-                    val alpha = if (item.selected) NavigationBarDefaults.SelectedPressedAlpha else NavigationBarDefaults.UnselectedPressedAlpha
-                    foreground.copy(alpha = foreground.alpha * alpha)
-                } else {
-                    foreground
-                },
-            ),
-            modifier = Modifier.padding(top = NavigationBarDefaults.IconTopPadding).size(NavigationBarDefaults.IconSize),
-        )
-        MiuixText(
-            text = item.label,
-            color = foreground,
-            textAlign = TextAlign.Center,
-            style = labelStyle,
-            modifier = Modifier.padding(bottom = NavigationBarDefaults.BottomPadding),
-        )
     }
 }

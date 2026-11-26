@@ -30,6 +30,8 @@ const val PREF_BLOCK_SPACING = "contentBlockSpacing"
 const val START_DESTINATION_PREFERENCE_KEY = "startDestination"
 const val BOTTOM_BAR_ITEMS_PREFERENCE_KEY = "bottom_bar_items"
 const val BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY = "bottom_bar_item_order"
+
+/** 仅用于旧设置深链重定向，不再参与收藏页选择。 */
 const val COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY = "collectionDirectBrowse"
 const val LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY = "landscapeListDetail"
 private const val BOTTOM_BAR_ITEM_ORDER_SEPARATOR = ","

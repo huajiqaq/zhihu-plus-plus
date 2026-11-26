@@ -18,7 +18,6 @@
 package com.github.zly2006.zhihu.ui.components
 
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,20 +103,11 @@ fun FeedCard(
     val showFeedThumbnail by rememberObservedSetting(settings, "showFeedThumbnail") {
         getBoolean("showFeedThumbnail", true)
     }
-    val feedCardStyle by rememberObservedSetting(settings, FEED_CARD_STYLE_PREFERENCE_KEY) {
-        getString(FEED_CARD_STYLE_PREFERENCE_KEY, "card")
-    }
     val pinImages = (item.feed?.target as? Feed.PinTarget)
         ?.content
         ?.filterIsInstance<DataHolder.Pin.ContentImage>()
         .orEmpty()
     val isSelected = item.navDestination != null && item.navDestination == selectedDestination
-    val isMiuix = settingSkinIsMiuix()
-    val resolvedHorizontalPadding = if (horizontalPadding == Dp.Unspecified) {
-        if (isMiuix) AppDimens.FeedCardHorizontalPaddingMiuix else AppDimens.FeedCardHorizontalPaddingM3e
-    } else {
-        horizontalPadding
-    }
     val performClick: (FeedDisplayItem) -> Unit = { clickedItem ->
         val destination = clickedItem.navDestination?.withReadingQueueSource(readingQueueSourceId)
         if (onClick != null) {
@@ -171,15 +161,42 @@ fun FeedCard(
         }
     }
 
+    FeedItemSurface(
+        modifier = modifier.semantics { selected = isSelected },
+        horizontalPadding = horizontalPadding,
+        onClick = { performClick(item) },
+        onLongClick = { showPreview = true },
+        content = cardContent,
+    )
+}
+
+/** 统一列表条目的外观与内外间距。 */
+@Composable
+fun FeedItemSurface(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = Dp.Unspecified,
+    onLongClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val settings = rememberSettingsStore()
+    val feedCardStyle by rememberObservedSetting(settings, FEED_CARD_STYLE_PREFERENCE_KEY) {
+        getString(FEED_CARD_STYLE_PREFERENCE_KEY, "card")
+    }
+    val isMiuix = settingSkinIsMiuix()
+    val resolvedHorizontalPadding = if (horizontalPadding == Dp.Unspecified) {
+        if (isMiuix) AppDimens.FeedCardHorizontalPaddingMiuix else AppDimens.FeedCardHorizontalPaddingM3e
+    } else {
+        horizontalPadding
+    }
     if (feedCardStyle == "divider") {
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .semantics { selected = isSelected }
                 .clip(RectangleShape)
                 .combinedClickable(
-                    onClick = { performClick(item) },
-                    onLongClick = { showPreview = true },
+                    onClick = onClick,
+                    onLongClick = onLongClick,
                 ),
         ) {
             Column(
@@ -192,7 +209,7 @@ fun FeedCard(
                         bottom = AppDimens.FeedCardContentBottomPadding,
                     ),
             ) {
-                cardContent()
+                content()
             }
             HorizontalDivider(
                 thickness = AppDimens.DividerThickness,
@@ -206,49 +223,41 @@ fun FeedCard(
         MiuixFeedCard(
             modifier = modifier
                 .fillMaxWidth()
-                .semantics { selected = isSelected }
                 .padding(
                     horizontal = resolvedHorizontalPadding,
                     vertical = AppDimens.FeedCardVerticalSpacingMiuix,
                 ),
-            onClick = { performClick(item) },
-            onLongClick = { showPreview = true },
-            content = cardContent,
+            onClick = onClick,
+            onLongClick = onLongClick,
+            content = content,
         )
         return
     }
 
-    Box(
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shape = CardDefaults.shape,
+        elevation = CardDefaults.cardElevation(defaultElevation = AppDimens.ElevationNone),
         modifier = modifier
             .fillMaxWidth()
-            .semantics { selected = isSelected }
             .padding(
                 horizontal = resolvedHorizontalPadding,
                 vertical = AppDimens.FeedCardVerticalSpacingM3e,
+            ).clip(CardDefaults.shape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
             ),
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            shape = CardDefaults.shape,
-            elevation = CardDefaults.cardElevation(defaultElevation = AppDimens.ElevationNone),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(CardDefaults.shape)
-                .combinedClickable(
-                    onClick = { performClick(item) },
-                    onLongClick = { showPreview = true },
-                ),
+        Column(
+            Modifier.padding(
+                start = AppDimens.FeedCardContentHorizontalPadding,
+                top = AppDimens.FeedCardContentTopPadding,
+                end = AppDimens.FeedCardContentHorizontalPadding,
+                bottom = AppDimens.FeedCardContentBottomPadding,
+            ),
         ) {
-            Column(
-                Modifier.padding(
-                    start = AppDimens.FeedCardContentHorizontalPadding,
-                    top = AppDimens.FeedCardContentTopPadding,
-                    end = AppDimens.FeedCardContentHorizontalPadding,
-                    bottom = AppDimens.FeedCardContentBottomPadding,
-                ),
-            ) {
-                cardContent()
-            }
+            content()
         }
     }
 }

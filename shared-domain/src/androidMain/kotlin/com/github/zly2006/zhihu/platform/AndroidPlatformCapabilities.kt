@@ -28,6 +28,9 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,6 +75,10 @@ fun openInSystemBrowser(context: Context, url: String) {
         androidUserMessageSink(context).showShortMessage("系统拒绝打开浏览器")
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+actual fun isSoftwareKeyboardVisible(): Boolean = WindowInsets.isImeVisible
 
 @Composable
 actual fun rememberExternalUrlOpener(): ExternalUrlOpener {

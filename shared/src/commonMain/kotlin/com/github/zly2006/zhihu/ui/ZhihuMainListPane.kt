@@ -50,6 +50,7 @@ import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Navigator
+import com.github.zly2006.zhihu.navigation.isDetailPaneDestination
 import com.github.zly2006.zhihu.navigation.isListPaneDestination
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.ui.components.AppBottomBar
@@ -70,16 +71,16 @@ internal fun ZhihuMainListEntryFrame(
 ) {
     val density = LocalDensity.current
     val destination = entry.destination
-    val sourceEntry = remember(entry.id) { navHost.listEntryBeforeFirstReading(readingEntryId = entry.id) }
+    val sourceEntry = remember(entry.id) { navHost.listEntryForMainDetail(detailEntryId = entry.id) }
     DisposableEffect(entry.id, sourceEntry?.id) {
         if (sourceEntry != null) {
             paneState.renderedMainListEntry = sourceEntry
-            paneState.renderedMainReadingEntryId = entry.id
+            paneState.renderedMainDetailEntryId = entry.id
         }
         onDispose {
-            if (paneState.renderedMainReadingEntryId == entry.id) {
+            if (paneState.renderedMainDetailEntryId == entry.id) {
                 paneState.renderedMainListEntry = null
-                paneState.renderedMainReadingEntryId = null
+                paneState.renderedMainDetailEntryId = null
             }
         }
     }
@@ -109,6 +110,9 @@ internal fun ZhihuMainListEntryFrame(
             Box(Modifier.weight(1f).fillMaxSize()) {
                 val parentNavigator = LocalNavigator.current
                 CompositionLocalProvider(
+                    LocalIsDualPaneReading provides (
+                        (layout.showMainStackListDetail || layout.showMainReadingListContext) && destination.isDetailPaneDestination()
+                    ),
                     LocalNavigator provides if (layout.showMainStackListDetail && entry.id == layout.mainListEntry?.id) {
                         Navigator(
                             onNavigate = { navigate(it) },
@@ -136,7 +140,6 @@ internal fun ZhihuMainTabsSurface(
     autoHideBottomBar: Boolean,
     floatingBottomBar: Boolean,
     bottomPadding: Dp,
-    collectionDirectBrowseEnabled: Boolean,
     showHomeTopActions: Boolean,
 ) {
     // 底栏与列表属于同一条目，返回过程中保留完整的来源页和内容边界。
@@ -152,9 +155,9 @@ internal fun ZhihuMainTabsSurface(
                     exit = slideOutVertically(tween(200)) { it },
                 ) {
                     AppBottomBar(
-                        bottomPadding = bottomPadding,
-                        floating = floatingBottomBar,
                         items = mainTabBarItems(tabs.barItems, currentBottomDestination, tabs.onTabClick),
+                        floating = floatingBottomBar,
+                        bottomPadding = bottomPadding,
                     )
                 }
             }
@@ -166,7 +169,6 @@ internal fun ZhihuMainTabsSurface(
             isActive = isActive,
             scrollToTopTrigger = tabs.state.scrollToTopTrigger,
             innerPadding = mainPadding,
-            collectionDirectBrowseEnabled = collectionDirectBrowseEnabled,
             showHomeTopActions = showHomeTopActions,
         )
     }

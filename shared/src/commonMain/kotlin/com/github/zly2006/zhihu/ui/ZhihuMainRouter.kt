@@ -22,7 +22,6 @@ import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.Video
 import com.github.zly2006.zhihu.navigation.isDetailPaneDestination
-import com.github.zly2006.zhihu.navigation.isSecondaryDetailDestination
 import com.github.zly2006.zhihu.navigation.readingDestinationOrNull
 
 /**
@@ -88,10 +87,10 @@ internal class ZhihuMainRouter(
             currentEntryId = navHost.topEntryId,
             detailTop = detailHost.top,
             detailOwnerEntryId = paneState.detailOwnerEntryId,
-            mainListEntry = navHost.listEntryBeforeFirstReading() ?: paneState.renderedMainListEntry?.takeIf { navHost.containsEntry(it.id) },
+            mainListEntry = paneState.mainListEntry(navHost),
         )
         val opensInDetailHost = (destination is Question && current.currentDestination?.isDetailPaneDestination() == true) ||
-            (current.useSecondaryContentNavigation && (destination.isDetailPaneDestination() || destination.isSecondaryDetailDestination()))
+            (current.useSecondaryContentNavigation && destination.opensInDetailPane())
         if (opensInDetailHost) openListDetail(destination) else navigate(destination)
     }
 
@@ -108,7 +107,7 @@ internal class ZhihuMainRouter(
             }
             destination is Question && layout.hasMainReadingListContext -> navigateContent(destination, detailHost)
             destination is Video && layout.hasMainReadingListContext -> navigateContent(destination, navHost)
-            destination is Video || destination.isDetailPaneDestination() || destination.isSecondaryDetailDestination() -> {
+            destination is Video || destination.opensInDetailPane() -> {
                 navigateContent(destination, detailHost)
             }
             else -> navigate(destination)

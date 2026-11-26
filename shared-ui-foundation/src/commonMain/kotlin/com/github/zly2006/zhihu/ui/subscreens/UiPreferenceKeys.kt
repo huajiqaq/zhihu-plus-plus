@@ -25,6 +25,7 @@ const val APP_BLUR_PREFERENCE_KEY = "appBlurEnabled"
 const val FEED_CARD_STYLE_PREFERENCE_KEY = "feedCardStyle"
 
 const val FLOATING_BOTTOM_BAR_PREFERENCE_KEY = "floatingBottomBar"
+const val FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY = "floatingBottomBarStyle"
 const val PAGE_TRANSITION_PREFERENCE_KEY = "pageTransitionStyle"
 
 /** 正式键优先；只迁入已有旧值，不写缺省值或删除旧键。 */

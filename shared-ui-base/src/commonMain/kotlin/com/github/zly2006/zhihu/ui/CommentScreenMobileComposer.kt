@@ -20,10 +20,8 @@ package com.github.zly2006.zhihu.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -48,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -58,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.UserMessageSink
+import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -124,7 +122,7 @@ internal fun CommentScreenMobileComposer(
         ) {
             val keyboard = LocalSoftwareKeyboardController.current
             val focus = LocalFocusManager.current
-            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            val keyboardVisible = isSoftwareKeyboardVisible()
 
             fun closeSheet() {
                 if (recording) {
@@ -140,12 +138,13 @@ internal fun CommentScreenMobileComposer(
             }
             if (platformName == "Android") {
                 PlatformBackHandler(enabled = true) {
+                    /** 手动切表情已释放输入焦点，IME 可见状态可能晚于面板切换更新。 */
                     when {
+                        showEmojiPicker -> onHideEmojiPicker()
                         keyboardVisible -> {
                             focus.clearFocus(force = true)
                             keyboard?.hide()
                         }
-                        showEmojiPicker -> onHideEmojiPicker()
                         else -> closeSheet()
                     }
                 }

@@ -17,14 +17,11 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 
 @Composable
-internal actual fun MiuixBottomBar(items: List<BottomBarItem>, modifier: Modifier): Unit =
+internal actual fun MiuixBottomBar(items: List<BottomBarItem>, modifier: Modifier, floating: Boolean): Unit =
     error("Miuix theme widgets are not supported by the lite variant")
 
 @Composable
@@ -39,7 +36,3 @@ internal actual fun MiuixDraggableRefreshButton(
     compact: Boolean,
     content: @Composable () -> Unit,
 ): Unit = error("Miuix theme widgets are not supported by the lite variant")
-
-@Composable
-internal actual fun RowScope.MiuixFloatingNavigationItem(item: BottomBarItem, modifier: Modifier, itemWidth: Dp, highlightSelected: Boolean, contentColor: Color?): Unit =
-    error("Miuix theme widgets are not supported by the lite variant")

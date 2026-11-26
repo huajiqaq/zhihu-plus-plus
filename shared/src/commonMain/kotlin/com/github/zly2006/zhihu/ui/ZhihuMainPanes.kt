@@ -53,6 +53,7 @@ import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.accountSettings
 import com.github.zly2006.zhihu.navigation.contentDetailEntries
 import com.github.zly2006.zhihu.navigation.detailNotificationEntries
+import com.github.zly2006.zhihu.navigation.isDetailPaneDestination
 import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
@@ -71,6 +72,7 @@ import com.github.zly2006.zhihu.navigation.AppNavDisplay as NavDisplay
 @Composable
 internal fun ZhihuMainDetailPane(
     visible: Boolean,
+    isDualPaneReading: Boolean,
     modifier: Modifier,
     detailHost: AppNavHost,
     navigator: Navigator,
@@ -107,6 +109,12 @@ internal fun ZhihuMainDetailPane(
             onBack = detailHost::onBack,
             transition = navTransition,
             effects = navEffects,
+            entryWrapper = { entry, content ->
+                CompositionLocalProvider(
+                    LocalIsDualPaneReading provides (isDualPaneReading && entry.destination.isDetailPaneDestination()),
+                    content = content,
+                )
+            },
         ) {
             entry<EmptyDetail>(swipeDismiss = NavSwipeDirection.None) { EmptyDetailPane() }
             contentDetailEntries(swipeBack, articleContent)

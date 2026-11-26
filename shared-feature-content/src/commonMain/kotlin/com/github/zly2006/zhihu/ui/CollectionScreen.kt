@@ -56,12 +56,12 @@ import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
-import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.CreateCollectionDialog
+import com.github.zly2006.zhihu.ui.components.FeedItemSurface
 import com.github.zly2006.zhihu.ui.components.PaginatedList
 import com.github.zly2006.zhihu.ui.components.ProgressIndicatorFooter
 import com.github.zly2006.zhihu.ui.components.appPageTitleBarScroll
@@ -161,17 +161,12 @@ fun CollectionScreen(
                 .testTag(COLLECTION_SCREEN_LIST_TAG),
             footer = ProgressIndicatorFooter,
         ) { collection ->
-            AppCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .testTag("collection_screen_item_${collection.id}"),
+            FeedItemSurface(
+                modifier = Modifier.testTag("collection_screen_item_${collection.id}"),
                 onClick = { navigator.onNavigate(CollectionContent(collection.id)) },
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(

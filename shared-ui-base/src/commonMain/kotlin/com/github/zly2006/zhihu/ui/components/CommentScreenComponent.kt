@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
@@ -48,9 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,7 +60,6 @@ import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Pin
-import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -79,7 +74,7 @@ import kotlinx.serialization.encodeToString
 /** Android 的系统栏和 IME 由评论窗口布局共同避让，不能依赖底层 Activity 的 adjustResize。 */
 internal expect val commentDialogProperties: DialogProperties
 
-/** 独立评论窗口的菜单必须留在自身 Scaffold，不能投递到下层页面。 */
+/** 独立评论窗口的菜单留在自身 Scaffold；移动端 IME 返回由独立编辑窗口处理。 */
 @Composable
 private fun CommentDialogSheet(
     onDismissRequest: () -> Unit,
@@ -97,16 +92,6 @@ private fun CommentDialogSheet(
         },
         properties = commentDialogProperties,
     ) {
-        if (platformName == "Android") {
-            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-            val keyboard = LocalSoftwareKeyboardController.current
-            val focus = LocalFocusManager.current
-            // 独立 Dialog 也会接收系统返回；键盘可见时不能先关闭评论并丢失当前回复上下文。
-            PlatformBackHandler(enabled = keyboardVisible) {
-                focus.clearFocus(force = true)
-                keyboard?.hide()
-            }
-        }
         AppScaffold(
             modifier = if (platformName == "Android") Modifier.safeDrawingPadding() else Modifier,
             containerColor = Color.Transparent,

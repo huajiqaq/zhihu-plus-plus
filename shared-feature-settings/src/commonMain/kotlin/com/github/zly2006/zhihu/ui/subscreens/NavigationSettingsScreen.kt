@@ -60,6 +60,7 @@ import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.rememberSetting
 
 const val NAVIGATION_SETTINGS_BACK_BUTTON_TAG = "navigation_settings_back_button"
+internal const val LANDSCAPE_LIST_DETAIL_DESCRIPTION = "平板和电脑的横屏窗口能同时容纳列表和详情时使用双栏。手机、竖屏和窄窗口保持单栏，侧边导航不受影响。"
 
 val NAVIGATION_SETTINGS_KEYS: Set<String> = setOf(
     APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY,
@@ -68,7 +69,6 @@ val NAVIGATION_SETTINGS_KEYS: Set<String> = setOf(
     "bottomBarTapScrollToTop",
     "autoHideBottomBar",
     LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,
-    COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY,
     "enable_predictive_back",
     PAGE_TRANSITION_PREFERENCE_KEY,
     BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY,
@@ -158,7 +158,11 @@ fun NavigationSettingsScreen(
     }
 
     var predictiveBackEnabled by rememberSetting(settings, "enable_predictive_back", true)
-    val highlightedKey = if (requestedKey == BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY) BOTTOM_BAR_ITEMS_PREFERENCE_KEY else requestedKey
+    val highlightedKey = when (requestedKey) {
+        BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY, COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY -> BOTTOM_BAR_ITEMS_PREFERENCE_KEY
+        "enable_predictive_back" -> PAGE_TRANSITION_PREFERENCE_KEY
+        else -> requestedKey
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -187,7 +191,7 @@ fun NavigationSettingsScreen(
                             modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding).padding(top = AppDimens.Space8),
                         )
                         Text(
-                            text = "建议选择 3-5 项，可用箭头调整显示和滑动顺序；底栏内拖动只切换标签，不移动底栏或改变顺序。",
+                            text = "建议选择 3-5 项，可用箭头调整显示和滑动顺序。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -278,41 +282,25 @@ fun NavigationSettingsScreen(
             SettingItemWithSwitch(
                 modifier = Modifier.testTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG),
                 title = { Text("横屏双栏布局") },
-                description = { Text("开启后，平板和电脑在窗口宽度至少 840dp 且宽大于高时同时显示列表与详情；竖屏、窄窗口和手机始终单栏。侧边导航不受此开关影响。") },
+                description = { Text(LANDSCAPE_LIST_DETAIL_DESCRIPTION) },
                 checked = landscapeListDetail,
                 onCheckedChange = { landscapeListDetail = it },
                 settingKey = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,
             )
-
-            var collectionDirectBrowse by rememberSetting(settings, COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false)
-            SettingItemWithSwitch(
-                modifier = Modifier.testTag(APPEARANCE_SETTINGS_COLLECTION_DIRECT_BROWSE_TAG),
-                title = { Text("收藏直达浏览") },
-                description = { Text("从底栏收藏夹直接浏览收藏内容，支持切换收藏夹、顺序浏览与随机浏览。") },
-                checked = collectionDirectBrowse,
-                onCheckedChange = { collectionDirectBrowse = it },
-                settingKey = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY,
-            )
         }
 
         SettingItemGroup(title = "返回与分享") {
-            SettingItemWithSwitch(
-                title = { Text("预测性返回") },
-                description = { Text("开启后页面使用所选转场；关闭后页面直接切换，不播放转场动画。") },
-                checked = predictiveBackEnabled,
-                onCheckedChange = { predictiveBackEnabled = it },
-                settingKey = "enable_predictive_back",
-            )
-
             var pageTransition by rememberSetting(settings, PAGE_TRANSITION_PREFERENCE_KEY, "miuix")
-            val pageTransitionOptions = arrayOf("miuix" to "侧滑", "aosp" to "AOSP")
+            val pageTransitionOptions = arrayOf("none" to "无动画", "miuix" to "侧滑", "aosp" to "AOSP")
             SettingItemSelect(
                 modifier = Modifier.testTag("navigation_settings_page_transition"),
                 title = { Text("页面转场") },
                 options = pageTransitionOptions.map { it.second },
-                selectedIndex = pageTransitionOptions.indexOfFirst { it.first == pageTransition }.coerceAtLeast(0),
-                onSelect = { index -> pageTransition = pageTransitionOptions[index].first },
-                enabled = predictiveBackEnabled,
+                selectedIndex = if (predictiveBackEnabled) pageTransitionOptions.indexOfFirst { it.first == pageTransition }.coerceAtLeast(1) else 0,
+                onSelect = { index ->
+                    if (index > 0) pageTransition = pageTransitionOptions[index].first
+                    predictiveBackEnabled = index > 0
+                },
                 settingKey = PAGE_TRANSITION_PREFERENCE_KEY,
             )
 

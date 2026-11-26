@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -55,7 +56,6 @@ import com.github.zly2006.zhihu.platform.rememberFileImporter
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEM_ORDER_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.TIQIAN_MARKDOWN_PREFERENCE_KEY
@@ -273,11 +273,10 @@ enum class TtsState(
     SwitchingChunk(true),
 }
 
-/** [ZhihuMain] 整体读取设置快照，避免应用更新到一半的导航设置。 */
+/** 主壳整体读取导航偏好，分栏开关单独即时更新。 */
 data class ZhihuMainPreferenceSnapshot(
     val tapToScrollToTopEnabled: Boolean,
     val autoHideBottomBar: Boolean,
-    val collectionDirectBrowseEnabled: Boolean,
     val landscapeListDetailEnabled: Boolean,
     val selectedBottomBarItemKeys: List<String>,
     val startDestination: TopLevelDestination,
@@ -291,8 +290,11 @@ class ZhihuMainPreferenceState(
 
     val tapToScrollToTopEnabled: Boolean get() = snapshot.tapToScrollToTopEnabled
     val autoHideBottomBar: Boolean get() = snapshot.autoHideBottomBar
-    val collectionDirectBrowseEnabled: Boolean get() = snapshot.collectionDirectBrowseEnabled
-    val landscapeListDetailEnabled: Boolean get() = snapshot.landscapeListDetailEnabled
+    var landscapeListDetailEnabled: Boolean
+        get() = snapshot.landscapeListDetailEnabled
+        internal set(value) {
+            snapshot = snapshot.copy(landscapeListDetailEnabled = value)
+        }
     val selectedBottomBarItemKeys: List<String> get() = snapshot.selectedBottomBarItemKeys
     val startDestination: TopLevelDestination get() = snapshot.startDestination
 
@@ -307,7 +309,7 @@ fun rememberZhihuMainPreferenceState(): ZhihuMainPreferenceState {
     val allBottomBarItemKeys = remember {
         listOf(Home.name, Follow.name, HotList.name, Daily.name, OnlineHistory.name, MyCollections.name, Account.name)
     }
-    return remember(settings) {
+    val state = remember(settings) {
         migrateLegacyReadingPreferences(settings)
         ZhihuMainPreferenceState {
             val selectedKeys = normalizeBottomBarSelection(
@@ -325,7 +327,6 @@ fun rememberZhihuMainPreferenceState(): ZhihuMainPreferenceState {
             ZhihuMainPreferenceSnapshot(
                 tapToScrollToTopEnabled = settings.getBoolean("bottomBarTapScrollToTop", true),
                 autoHideBottomBar = settings.getBoolean("autoHideBottomBar", false),
-                collectionDirectBrowseEnabled = settings.getBoolean(COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY, false),
                 landscapeListDetailEnabled = settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true),
                 selectedBottomBarItemKeys = orderedSelectedKeys,
                 startDestination = navDestinationFromName(
@@ -337,6 +338,16 @@ fun rememberZhihuMainPreferenceState(): ZhihuMainPreferenceState {
             )
         }
     }
+    DisposableEffect(settings, state) {
+        val subscription = settings.observeKeyChanges { key ->
+            if (key == LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY) {
+                state.landscapeListDetailEnabled = settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true)
+            }
+        }
+        state.landscapeListDetailEnabled = settings.getBoolean(LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true)
+        onDispose(subscription::close)
+    }
+    return state
 }
 
 data class AccountSettingsAccountState(

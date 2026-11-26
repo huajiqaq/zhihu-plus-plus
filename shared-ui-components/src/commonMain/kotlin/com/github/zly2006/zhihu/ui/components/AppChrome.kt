@@ -120,7 +120,10 @@ fun AppScaffold(
                         .fillMaxSize()
                         .then(if (backdrop == null) Modifier else Modifier.layerBackdrop(backdrop)),
                 ) {
-                    content(padding)
+                    /** 正文里的控件不能读取正在录制自身的图层。 */
+                    CompositionLocalProvider(LocalAppBackdrop provides null, LocalAppPopupBackdrop provides backdrop) {
+                        content(padding)
+                    }
                 }
             },
         )

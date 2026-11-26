@@ -47,6 +47,9 @@ actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>)
 @Composable
 actual fun rememberSettingsStore(): SettingsStore = remember { desktopSettingsStore() }
 
+@Composable
+actual fun isSoftwareKeyboardVisible(): Boolean = false
+
 actual fun Modifier.exportTestTagsForUiAutomation(): Modifier = this
 
 @Composable

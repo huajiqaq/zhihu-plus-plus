@@ -278,7 +278,7 @@ internal fun AccountQuickAccessRow(
             val actionWidth = (maxWidth - AppDimens.AccountQuickAccessSpacing * (columns - 1)) / columns
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AppDimens.AccountQuickAccessSpacing),
+                horizontalArrangement = Arrangement.spacedBy(AppDimens.AccountQuickAccessSpacing, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(AppDimens.AccountQuickAccessSpacing),
                 maxItemsInEachRow = columns,
             ) {
@@ -287,7 +287,6 @@ internal fun AccountQuickAccessRow(
                         onClick = action.onClick,
                         modifier = Modifier
                             .width(actionWidth)
-                            .heightIn(min = AppDimens.AccountQuickAccessHeight)
                             .testTag(action.testTag),
                         containerColor = containerColor,
                         contentColor = contentColor,
@@ -295,6 +294,7 @@ internal fun AccountQuickAccessRow(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(min = AppDimens.AccountQuickAccessHeight)
                                 .padding(horizontal = AppDimens.Space4, vertical = AppDimens.Space12),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
@@ -304,12 +304,13 @@ internal fun AccountQuickAccessRow(
                                     imageVector = action.icon,
                                     contentDescription = null,
                                     tint = contentColor,
-                                    modifier = Modifier.size(AppDimens.IconSizeMedium),
+                                    modifier = Modifier.size(AppDimens.IconSizeMedium).testTag("${action.testTag}:icon"),
                                 )
                             }
                             Spacer(Modifier.height(AppDimens.Space6))
                             Text(
                                 text = action.label,
+                                modifier = Modifier.fillMaxWidth(),
                                 style = if (miuix) LocalAppSkinTokens.current.footnote2 else MaterialTheme.typography.labelLarge,
                                 color = contentColor,
                                 textAlign = TextAlign.Center,

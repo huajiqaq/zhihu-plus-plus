@@ -138,10 +138,10 @@ private data class SettingsSearchEntry(
     }
 }
 
-private val requiresPredictiveBack = SettingsSearchRequirement(
-    hint = { "需先开启预测性返回" },
-    parent = { Account.NavigationSettings(setting = "enable_predictive_back") },
-    isMet = { settings -> settings.getBoolean("enable_predictive_back", true) },
+private val requiresFloatingBottomBar = SettingsSearchRequirement(
+    hint = { "需先开启悬浮底栏" },
+    parent = { Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY) },
+    isMet = { settings -> rememberObservedSetting(settings, FLOATING_BOTTOM_BAR_PREFERENCE_KEY) { getBoolean(FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true) }.value },
 )
 private val requiresMiuixSkin = SettingsSearchRequirement(
     hint = { "需先切换到 Miuix 皮肤" },
@@ -211,7 +211,7 @@ private val settingsSearchEntries = buildList {
     add(SettingsSearchEntry("appearance.paletteStyle", "调色风格", "外观", "选择均衡、中性、鲜明、表现力等 Material 调色板。", Account.AppearanceSettings(setting = THEME_PALETTE_STYLE_PREFERENCE_KEY), listOf("颜色风格", "palette", "expressive")))
     add(SettingsSearchEntry("appearance.colorSpec", "颜色规范", "外观", "切换 2021 或 2025 动态颜色算法；部分调色风格仅支持 2021。", Account.AppearanceSettings(setting = THEME_COLOR_SPEC_PREFERENCE_KEY), listOf("颜色算法", "spec 2025")))
     add(SettingsSearchEntry("appearance.amoled", "AMOLED 纯黑", "外观", "暗色模式使用纯黑背景和更低亮度的表面。", Account.AppearanceSettings(setting = AMOLED_THEME_PREFERENCE_KEY), listOf("纯黑", "OLED"), requiresDarkMode))
-    add(SettingsSearchEntry("appearance.landscapeListDetail", "横屏双栏布局", "导航与交互", "开启后，平板和电脑在窗口宽度至少 840dp 且宽大于高时同时显示列表与详情；竖屏、窄窗口和手机始终单栏。侧边导航不受此开关影响。", Account.NavigationSettings(setting = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY), listOf("双栏", "分栏", "平板", "横屏")))
+    add(SettingsSearchEntry("appearance.landscapeListDetail", "横屏双栏布局", "导航与交互", LANDSCAPE_LIST_DETAIL_DESCRIPTION, Account.NavigationSettings(setting = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY), listOf("双栏", "分栏", "平板", "横屏")))
     add(SettingsSearchEntry("appearance.fontScale", "字号", "阅读与排版", "调整正文阅读字号。", Account.ReadingSettings(setting = "fontScale"), listOf("字体大小", "内容字体", "正文字号")))
     add(SettingsSearchEntry("appearance.feedCardStyle", "信息流样式", "外观", "选择圆角卡片或分割线列表，立即应用于共用信息流。", Account.AppearanceSettings(setting = FEED_CARD_STYLE_PREFERENCE_KEY), listOf("卡片", "分割线", "分隔线", "列表样式")))
     add(SettingsSearchEntry("appearance.showFeedThumbnail", "显示 Feed 卡片缩略图", "推荐与信息流", "控制信息流卡片图片显示。", Account.FeedSettings(setting = "showFeedThumbnail"), listOf("图片", "封面")))
@@ -248,7 +248,7 @@ private val settingsSearchEntries = buildList {
             "appearance.bottomBar",
             "底部导航栏",
             "导航与交互",
-            "启动页、导航显示页面和顺序；底栏内拖动只切换标签，不移动底栏或改变顺序。",
+            "启动页、导航显示页面和顺序。",
             Account.NavigationSettings(setting = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY),
             listOf(
                 "启动默认页面",
@@ -269,14 +269,13 @@ private val settingsSearchEntries = buildList {
             ),
         ),
     )
-    add(SettingsSearchEntry("appearance.collectionDirectBrowse", "收藏直达浏览", "导航与交互", "从底栏收藏夹直接浏览收藏内容，支持切换收藏夹、顺序浏览与随机浏览。", Account.NavigationSettings(setting = COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY), listOf("收藏夹", "顺序浏览", "随机浏览")))
     add(SettingsSearchEntry("appearance.shareAction", "分享操作", "导航与交互", "设置分享按钮默认复制、分享或询问。", Account.NavigationSettings(setting = "shareAction"), listOf("复制链接", "分享链接", "分享按钮")))
     add(SettingsSearchEntry("appearance.showSearchHotSearch", "搜索界面显示热搜", "导航与交互", "控制搜索页空查询时是否展示热搜。", Account.NavigationSettings(setting = "showSearchHotSearch"), listOf("热搜")))
     add(SettingsSearchEntry("appearance.showSearchHistory", "记录并显示搜索历史", "导航与交互", "控制搜索历史记录和展示。", Account.NavigationSettings(setting = "showSearchHistory"), listOf("搜索记录", "历史记录", "清除搜索历史")))
-    add(SettingsSearchEntry("appearance.predictiveBack", "预测性返回", "导航与交互", "控制 Android 预测性返回手势是否驱动页面转场。", Account.NavigationSettings(setting = "enable_predictive_back"), listOf("返回手势", "预测式返回")))
-    add(SettingsSearchEntry("navigation.pageTransition", "页面转场", "导航与交互", "选择侧滑或 AOSP 风格；关闭预测性返回即可关闭动画。", Account.NavigationSettings(setting = PAGE_TRANSITION_PREFERENCE_KEY), listOf("动画", "转场", "侧滑", "AOSP"), requiresPredictiveBack))
+    add(SettingsSearchEntry("navigation.pageTransition", "页面转场", "导航与交互", "选择无动画、侧滑或 AOSP 风格。", Account.NavigationSettings(setting = PAGE_TRANSITION_PREFERENCE_KEY), listOf("动画", "转场", "侧滑", "AOSP", "返回手势", "预测性返回", "预测式返回")))
     add(SettingsSearchEntry("appearance.appBlur", "悬浮玻璃", "外观", "弹层、弹窗打开时模糊底层内容。", Account.AppearanceSettings(setting = APP_BLUR_PREFERENCE_KEY), listOf("模糊", "玻璃", "背景")))
-    add(SettingsSearchEntry("appearance.floatingBottomBar", "悬浮底栏", "外观", "底栏以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。底栏内拖动仅切换标签，不移动底栏。", Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY), listOf("底栏", "浮动", "悬浮", "导航栏")))
+    add(SettingsSearchEntry("appearance.floatingBottomBar", "悬浮底栏", "外观", "底栏以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。", Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY), listOf("底栏", "浮动", "悬浮", "导航栏")))
+    add(SettingsSearchEntry("appearance.floatingBottomBarStyle", "悬浮底栏样式", "外观", "选择默认或 Apple 玻璃底栏。", Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY), listOf("Apple", "苹果", "液态玻璃", "底栏样式", "折射"), requiresFloatingBottomBar))
     add(SettingsSearchEntry("reading.contentAndHome", "排版", "阅读与排版", "调整字号、行高、段落间距与正文排版引擎，或恢复默认排版。", Account.ReadingSettings(setting = "contentAndHome"), listOf("正文排版", "提椠", "Markdown", "排版恢复默认", "重置排版")))
     if (isTiqianMarkdownRendererAvailable) {
         add(SettingsSearchEntry("reading.tiqianMarkdown", "正文：使用提椠 Markdown 渲染器", "阅读与排版", "改进正文两端对齐、中西混排及代码、表格、公式与脚注排版。", Account.ReadingSettings(setting = TIQIAN_MARKDOWN_PREFERENCE_KEY), listOf("提椠", "Markdown", "正文渲染", "排版引擎")))

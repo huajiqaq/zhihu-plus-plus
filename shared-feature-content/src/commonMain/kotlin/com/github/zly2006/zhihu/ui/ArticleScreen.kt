@@ -450,7 +450,7 @@ fun ArticleScreen(
 
     Box(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = if (LocalIsDualPaneReading.current) Alignment.TopStart else Alignment.TopCenter,
     ) {
         Box(
             modifier = Modifier

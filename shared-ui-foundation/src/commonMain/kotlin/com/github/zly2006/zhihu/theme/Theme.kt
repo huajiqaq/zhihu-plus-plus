@@ -21,22 +21,21 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
+import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.material3.rememberDynamicColorScheme
 
-/** 固定换肤组合根，避免重建页面状态；Miuix 色表同时投影到 Material。 */
+/** 固定换肤组合根；不提供设置存储的独立渲染使用宿主显式装载的快照。 */
 @Composable
 fun ZhihuTheme(
+    settings: SettingsStore? = rememberSettingsStore(),
     content: @Composable () -> Unit,
 ) {
-    /** 无 Application 初始化入口的平台仍需恢复主题偏好。 */
-    val settings = rememberSettingsStore()
-    LaunchedEffect(settings) {
-        ThemeManager.loadFromSettings(settings)
+    if (settings != null) {
+        ThemeManager.ObserveSettings(settings)
     }
     val useDynamicColor = ThemeManager.getUseDynamicColor()
     val customBackgroundColor = ThemeManager.getBackgroundColor()
