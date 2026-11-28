@@ -941,6 +941,8 @@ def run_acceptance(root, output, stage, handoff, variant='full'):
                   '-sdk', sdk, '-destination', 'generic/platform=iOS Simulator' if simulator else 'generic/platform=iOS',
                   '-derivedDataPath', derived, 'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO',
                   'LD_GENERATE_MAP_FILE=YES', f'LD_MAP_FILE_PATH={link_map}', *debug_flags, 'build')
+            # 编译缓存与产物验收分开；后续校验失败仍必须使任务失败。
+            publish_native_build(github_output)
             app = derived / f'Build/Products/{configuration}-{sdk}/{product}.app'
             info = plistlib.loads((app / 'Info.plist').read_bytes())
             if (info.get('CFBundleIdentifier') != bundle_id or info.get('CFBundleExecutable') != product
@@ -970,8 +972,6 @@ def run_acceptance(root, output, stage, handoff, variant='full'):
                 command('/usr/bin/ditto', '-c', '-k', '--norsrc', '--keepParent', payload, archive)
             digest = verify_app_archive(archive, app, variant, simulator)
             (output / 'SHA256SUMS').write_text(f'{digest}  {archive.name}\n', encoding='utf-8')
-            # Native caches are eligible only after resources, linkage and archive integrity pass.
-            publish_native_build(github_output)
 
         elif stage == 'simulator-build':
             project = work / production.name
@@ -993,11 +993,11 @@ def run_acceptance(root, output, stage, handoff, variant='full'):
             xcode('simulator-build.log', '-project', project, '-scheme', 'ZhihuPlusPlus', '-configuration', 'Debug',
                   '-derivedDataPath', debug, 'CODE_SIGNING_ALLOWED=NO', f'SRCROOT={root / "iosApp"}',
                   '-destination', 'generic/platform=iOS Simulator', 'ARCHS=arm64', 'build-for-testing')
+            publish_native_build(github_output)
             manifest = pack_products(debug / 'Build/Products', handoff, identity, command)
             (output / 'products.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
             with github_output.open('a', encoding='utf-8') as stream:
                 stream.write(f'products-sha256={manifest["sha256"]}\n')
-            publish_native_build(github_output)
 
         else:
             xctestrun = unpack_products(handoff, work / 'Build/Products', identity, os.environ['PRODUCTS_SHA256'], command)

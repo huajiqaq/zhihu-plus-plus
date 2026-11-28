@@ -527,8 +527,8 @@ jobs:
             --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE"
 
       - &ios_cache_save
-        name: Save Kotlin Native after verified build
-        if: success() && steps.ios_inputs.outputs.native-cache-writable == 'true' && steps.ios_inputs.outputs.native-cache-hit != 'true' && steps.ios_acceptance.outputs.native-build-succeeded == 'true'
+        name: Save Kotlin Native after successful compilation
+        if: ${{ !cancelled() && steps.ios_inputs.outputs.native-cache-writable == 'true' && steps.ios_inputs.outputs.native-cache-hit != 'true' && steps.ios_acceptance.outputs.native-build-succeeded == 'true' }}
         uses: actions/cache/save@v6
         with:
           path: ~/.konan
