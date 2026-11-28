@@ -48,6 +48,12 @@ if [ "${ZHIHU_GRADLE_PROFILE:-false}" = true ]; then
 fi
 ./gradlew "$@" -PzhihuUpstreamPatches=true "-PzhihuIosVariant=$ZHIHU_IOS_VARIANT" :shared:embedAndSignAppleFrameworkForXcode ":shared:$license_task"
 
+if [ "$ZHIHU_IOS_VARIANT" = full ]; then
+    : "${ZHIHU_IOS_ORT_BINARY:?missing ZHIHU_IOS_ORT_BINARY}"
+    [ -s "$ZHIHU_IOS_ORT_BINARY" ] || { printf 'Missing generated ONNX Runtime link input: %s\n' "$ZHIHU_IOS_ORT_BINARY" >&2; exit 1; }
+    printf 'Generated ONNX Runtime link input: %s\n' "$ZHIHU_IOS_ORT_BINARY"
+fi
+
 license_source="shared/build/generated/apple-licenses/$ZHIHU_IOS_VARIANT/$ios_target"
 license_staging="$DERIVED_FILE_DIR/apple-licenses/$ZHIHU_IOS_VARIANT/$ios_target"
 [ -s "$license_source/aboutlibraries.json" ] || { printf '%s\n' 'Missing iOS dependency license manifest' >&2; exit 1; }
@@ -87,6 +93,8 @@ for language in en zh-Hans; do
     localized_strings="$localized_dir/InfoPlist.strings"
     cp "$SRCROOT/$language.lproj/InfoPlist.strings" "$localized_strings"
     if [ "$ZHIHU_IOS_VARIANT" = lite ]; then
+        # plutil can read OpenStep .strings, but mutations require a writable plist format.
+        /usr/bin/plutil -convert binary1 "$localized_strings"
         for key in CFBundleDisplayName CFBundleName; do
             name=$(/usr/bin/plutil -extract "$key" raw -o - "$localized_strings")
             /usr/bin/plutil -replace "$key" -string "$name Lite" "$localized_strings"

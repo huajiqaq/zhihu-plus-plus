@@ -1,0 +1,2 @@
+# The Full link input is produced by the Build Shared script before Xcode's Ld task.
+$(ZHIHU_IOS_ORT_BINARY)

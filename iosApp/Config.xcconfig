@@ -27,7 +27,8 @@ ENABLE_USER_SCRIPT_SANDBOXING = NO
 FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
 ZHIHU_IOS_ORT_SLICE[sdk=iphoneos*] = ios-arm64
 ZHIHU_IOS_ORT_SLICE[sdk=iphonesimulator*] = ios-arm64_x86_64-simulator
+ZHIHU_IOS_ORT_BINARY = $(SRCROOT)/../shared-domain/build/generated/onnxruntime-apple/$(ZHIHU_IOS_ORT_SLICE)/onnxruntime.framework/onnxruntime
 // Shared is static; only the Full executable links the official ORT archive.
-ZHIHU_IOS_NLP_LDFLAGS_full = -force_load "$(SRCROOT)/../shared-domain/build/generated/onnxruntime-apple/$(ZHIHU_IOS_ORT_SLICE)/onnxruntime.framework/onnxruntime" -weak_framework CoreML
+ZHIHU_IOS_NLP_LDFLAGS_full = -force_load "$(ZHIHU_IOS_ORT_BINARY)" -weak_framework CoreML
 ZHIHU_IOS_NLP_LDFLAGS_lite =
 OTHER_LDFLAGS = $(inherited) -framework Shared -framework Security -framework UniformTypeIdentifiers -framework UserNotifications -lc++ $(ZHIHU_IOS_NLP_LDFLAGS_$(ZHIHU_IOS_VARIANT))

@@ -87,6 +87,7 @@
 			files = ();
 			name = "Build Shared";
 			inputPaths = ("$(SRCROOT)/build-shared.sh", "$(SRCROOT)/Info.plist", "$(SRCROOT)/en.lproj/InfoPlist.strings", "$(SRCROOT)/zh-Hans.lproj/InfoPlist.strings", "$(SRCROOT)/../gradle.properties");
+			outputFileListPaths = ("$(SRCROOT)/build-outputs-$(ZHIHU_IOS_VARIANT).xcfilelist");
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/ZhihuPlusPlus-Info.plist",
 				"$(DERIVED_FILE_DIR)/en.lproj/InfoPlist.strings",
