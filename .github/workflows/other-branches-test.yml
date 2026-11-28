@@ -58,8 +58,8 @@ jobs:
               args = ['xcrun', '--sdk', sdk, 'clang', '-target', triple, '-isysroot', sysroot,
                       '-I', work / 'ort/include', code, '-Xlinker', '-force_load', '-Xlinker',
                       work / 'ort' / slice_name / 'onnxruntime.framework/onnxruntime',
-                      '-framework', 'Foundation', '-framework', 'Security', '-framework', 'Network',
-                      '-weak_framework', 'CoreML', '-lc++', '-o', work / ('ort-' + sdk)]
+                      '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'Security', '-framework', 'Network',
+                      '-weak_framework', 'CoreML', '-lc++', '-lsqlite3', '-lz', '-o', work / ('ort-' + sdk)]
               results[sdk + '-link'] = run(sdk + '-link', args)
           main = work / 'main.c'
           main.write_text('int main(void) { return 0; }\n')
@@ -69,6 +69,7 @@ jobs:
           for kind in ('xml', 'utf16'):
               folder = work / kind
               folder.mkdir()
+              expected = {}
               for language in ('en', 'zh-Hans'):
                   source = root / 'iosApp' / (language + '.lproj') / 'InfoPlist.strings'
                   values = json.loads(subprocess.check_output(['/usr/bin/plutil', '-convert', 'json', '-o', '-', str(source)]))
@@ -76,14 +77,18 @@ jobs:
                       values[key] += ' Lite'
                   target = folder / (language + '.lproj') / 'InfoPlist.strings'
                   target.parent.mkdir()
+                  expected[language] = values
                   if kind == 'xml':
-                      target.write_bytes(plistlib.dumps(values))
+                      target.write_bytes(source.read_bytes())
+                      subprocess.run(['/usr/bin/plutil', '-convert', 'xml1', str(target)], check=True)
+                      for key in ('CFBundleDisplayName', 'CFBundleName'):
+                          subprocess.run(['/usr/bin/plutil', '-replace', key, '-string', values[key], str(target)], check=True)
                   else:
                       target.write_text('\n'.join(json.dumps(k, ensure_ascii=False) + ' = ' + json.dumps(v, ensure_ascii=False) + ';' for k, v in values.items()) + '\n', encoding='utf-16')
               ids = {name: f'{n:024X}' for n, name in enumerate(('project', 'group', 'products', 'target', 'product', 'configs', 'debug', 'sources', 'source', 'source-build', 'resources', 'strings', 'en', 'zh', 'strings-build'), 1)}
               objects = {}
-              def obj(name, isa, **fields):
-                  objects[ids[name]] = dict(isa=isa, **fields)
+              def obj(key, isa, **fields):
+                  objects[ids[key]] = dict(isa=isa, **fields)
               obj('project', 'PBXProject', attributes={}, buildConfigurationList=ids['configs'], compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'zh-Hans'], mainGroup=ids['group'], productRefGroup=ids['products'], targets=[ids['target']])
               obj('group', 'PBXGroup', children=[ids['source'], ids['strings'], ids['products']], sourceTree='<group>')
               obj('products', 'PBXGroup', children=[ids['product']], name='Products', sourceTree='<group>')
@@ -107,7 +112,7 @@ jobs:
                   for language in ('en', 'zh-Hans'):
                       packed = folder / 'products/Debug-iphonesimulator/InputsProbe.app' / (language + '.lproj') / 'InfoPlist.strings'
                       parsed = json.loads(subprocess.check_output(['/usr/bin/plutil', '-convert', 'json', '-o', '-', str(packed)]))
-                      assert parsed['CFBundleName'].endswith(' Lite') and parsed['CFBundleDisplayName'].endswith(' Lite')
+                      assert parsed == expected[language], (kind, language, parsed)
           (evidence / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
           print(json.dumps(results), flush=True)
           raise SystemExit(int(results['iphonesimulator-link'] != 0 or results['iphoneos-link'] != 0 or (results['xml-strings'] != 0 and results['utf16-strings'] != 0)))
