@@ -382,30 +382,32 @@ def ios_identity(variant):
 
 def verify_ort_linkage(executable, link_map, symbols, variant):
     """The final link map remains authoritative when Release strips its nm table."""
-    text = link_map.read_text(encoding='utf-8')
-    linked_path = re.search(r'^# Path: (.+)$', text, re.MULTILINE)
-    if (not linked_path or Path(linked_path[1]).resolve() != executable.resolve()
-            or not re.search(r'^# Arch: arm64$', text, re.MULTILINE)):
+    # ld prints literal-string payloads verbatim; the symbol map is not a UTF-8 document.
+    data = link_map.read_bytes()
+    linked_path = re.search(rb'^# Path: ([^\r\n]+)\r?$', data, re.MULTILINE)
+    if (not linked_path or Path(linked_path[1].decode('utf-8')).resolve() != executable.resolve()
+            or not re.search(rb'^# Arch: arm64\r?$', data, re.MULTILINE)):
         raise RuntimeError('Link map does not belong to the current arm64 app executable')
     live = []
     active = False
-    for line in text.splitlines():
-        if line.startswith('# '):
-            if line == '# Symbols:':
+    for line in data.split(b'\n'):
+        line = line.removesuffix(b'\r')
+        if line.startswith(b'# '):
+            if line == b'# Symbols:':
                 active = True
-            elif not line.startswith('# Address'):
+            elif not line.startswith(b'# Address'):
                 active = False
         elif active:
-            match = re.fullmatch(r'0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+\[\s*\d+\]\s+(.+)', line)
+            match = re.fullmatch(rb'0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+\[\s*\d+\]\s+(.+)', line)
             if match and int(match[1], 16) > 0:
                 live.append(match[2])
     if not live:
         raise RuntimeError('Final link map has no live symbol evidence')
-    native_ort = re.compile(r'^(?:_?Ort[A-Z]\w*|__?Z\S*onnxruntime)')
-    live_ort = [name for name in live if native_ort.search(name)]
-    nm_ort = [name for name in symbols.splitlines() if native_ort.search(name)]
+    native_ort = r'^(?:_?Ort[A-Z]\w*|__?Z\S*onnxruntime)'
+    live_ort = [name for name in live if re.search(native_ort.encode('ascii'), name)]
+    nm_ort = [name for name in symbols.splitlines() if re.search(native_ort, name)]
     if variant == 'full':
-        if '_OrtGetApiBase' not in live:
+        if b'_OrtGetApiBase' not in live:
             raise RuntimeError('Full app has no live static OrtGetApiBase in its final link map')
     elif live_ort or nm_ort:
         raise RuntimeError('Lite app contains linked ONNX Runtime symbols')
@@ -676,9 +678,15 @@ def self_check_variants():
                                   header + main_symbol + (ort_symbol if variant == 'lite' else '')):
                     link_map.write_text(wrong_map, encoding='utf-8')
                     reject(lambda: verify_ort_linkage(executable, link_map, '', variant))
-                link_map.write_text(valid_map, encoding='utf-8')
+                opaque_literal = b'0x3000 0x08 [ 3] literal string: \x02\x1f\x8b\x08\x0b\x0c\x00\n'
+                link_map.write_bytes(valid_map.encode('utf-8').replace(b'# Dead Stripped Symbols:',
+                    opaque_literal + b'# Dead Stripped Symbols:') + b'<<dead>> 0x04 [ 3] literal string: \xff\x8b\n')
+                assert verify_ort_linkage(executable, link_map, '', variant)['liveOrtSymbols'] == int(variant == 'full')
                 if variant == 'lite':
                     reject(lambda: verify_ort_linkage(executable, link_map, '_OrtGetApiBase\n', variant))
+                    link_map.write_bytes(link_map.read_bytes().replace(b'# Dead Stripped Symbols:',
+                        ort_symbol.encode('ascii') + b'# Dead Stripped Symbols:'))
+                    reject(lambda: verify_ort_linkage(executable, link_map, '', variant))
                 target = 'iosSimulatorArm64' if simulator else 'iosArm64'
                 manifest = dict(libraries=[dict(uniqueId='kotlin', name='Kotlin')], licenses={})
                 if variant == 'full':

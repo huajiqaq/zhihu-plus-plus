@@ -8,7 +8,7 @@ on:
         type: choice
         required: true
         default: all
-        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, ios-test-inputs, macos, aigc-server]
+        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, macos, aigc-server]
 
 permissions:
   contents: read
@@ -18,90 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ios-test-inputs:
-    name: Inspect official XCTest runtime paths without Kotlin
-    if: inputs.target == 'ios-test-inputs'
-    runs-on: macos-26
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Build a minimal UI test host and inspect all runtime paths
-        run: |
-          python -I - <<'PY'
-          from pathlib import Path
-          import json, os, plistlib, re, runpy, subprocess, tempfile, xml.etree.ElementTree as ET
-          root = Path(os.environ['GITHUB_WORKSPACE'])
-          work = Path(tempfile.mkdtemp(prefix='zhihu-xctest-inputs-', dir=os.environ['RUNNER_TEMP']))
-          evidence = Path(os.environ['RUNNER_TEMP']) / 'ios-test-inputs-evidence'
-          evidence.mkdir()
-          checks = runpy.run_path(str(root / '.github/scripts/verify-ios-acceptance.py'))
-          main = work / 'main.c'
-          main.write_text('int main(void) { return 0; }\n')
-          info = work / 'Info.plist'
-          info.write_bytes(plistlib.dumps(dict(CFBundleIdentifier=checks['BUNDLE_ID'], CFBundleExecutable='ZhihuPlusPlus', CFBundleName='ZhihuPlusPlus', CFBundlePackageType='APPL', CFBundleVersion='1', CFBundleShortVersionString='1')))
-          ids = {name: f'{n:024X}' for n, name in enumerate(('project', 'group', 'products', 'target', 'product', 'configs', 'debug', 'sources', 'source', 'source-build'), 1)}
-          objects = {}
-          def obj(key, isa, **fields):
-              objects[ids[key]] = dict(isa=isa, **fields)
-          obj('project', 'PBXProject', attributes={}, buildConfigurationList=ids['configs'], compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en'], mainGroup=ids['group'], productRefGroup=ids['products'], targets=[ids['target']])
-          obj('group', 'PBXGroup', children=[ids['source'], ids['products']], sourceTree='<group>')
-          obj('products', 'PBXGroup', children=[ids['product']], name='Products', sourceTree='<group>')
-          obj('product', 'PBXFileReference', explicitFileType='wrapper.application', path='ZhihuPlusPlus.app', sourceTree='BUILT_PRODUCTS_DIR')
-          obj('target', 'PBXNativeTarget', name='ZhihuPlusPlus', productName='ZhihuPlusPlus', productType='com.apple.product-type.application', productReference=ids['product'], buildConfigurationList=ids['configs'], buildPhases=[ids['sources']], dependencies=[], buildRules=[])
-          obj('configs', 'XCConfigurationList', buildConfigurations=[ids['debug']], defaultConfigurationName='Debug', defaultConfigurationIsVisible=0)
-          obj('debug', 'XCBuildConfiguration', name='Debug', buildSettings=dict(SDKROOT='iphonesimulator', ARCHS='arm64', IPHONEOS_DEPLOYMENT_TARGET='16.0', PRODUCT_NAME='ZhihuPlusPlus', PRODUCT_BUNDLE_IDENTIFIER=checks['BUNDLE_ID'], INFOPLIST_FILE=str(info), CODE_SIGNING_ALLOWED='NO', ALWAYS_SEARCH_USER_PATHS='NO'))
-          obj('source', 'PBXFileReference', lastKnownFileType='sourcecode.c.c', path=str(main), sourceTree='<absolute>')
-          obj('source-build', 'PBXBuildFile', fileRef=ids['source'])
-          obj('sources', 'PBXSourcesBuildPhase', buildActionMask=2147483647, files=[ids['source-build']], runOnlyForDeploymentPostprocessing=0)
-          document = dict(archiveVersion='1', objectVersion='56', objects=objects, rootObject=ids['project'])
-          project = work / 'Inputs.xcodeproj'
-          project.mkdir()
-          test_source = work / 'IOSAcceptanceTests.swift'
-          test_source.write_text(checks['SWIFT_TEST'])
-          test_target = checks['add_test_target'](document, test_source)
-          (project / 'project.pbxproj').write_bytes(plistlib.dumps(document))
-          scheme = ET.Element('Scheme', LastUpgradeVersion='2600', version='1.3')
-          entries = ET.SubElement(ET.SubElement(scheme, 'BuildAction', parallelizeBuildables='YES', buildImplicitDependencies='YES'), 'BuildActionEntries')
-          entry = ET.SubElement(entries, 'BuildActionEntry', buildForTesting='YES', buildForRunning='YES', buildForProfiling='NO', buildForArchiving='NO', buildForAnalyzing='NO')
-          ET.SubElement(entry, 'BuildableReference', BuildableIdentifier='primary', BlueprintIdentifier=ids['target'], BuildableName='ZhihuPlusPlus.app', BlueprintName='ZhihuPlusPlus', ReferencedContainer='container:Inputs.xcodeproj')
-          checks['add_test_action'](scheme, test_target, project)
-          scheme_path = project / 'xcshareddata/xcschemes/Inputs.xcscheme'
-          scheme_path.parent.mkdir(parents=True)
-          ET.ElementTree(scheme).write(scheme_path, encoding='utf-8', xml_declaration=True)
-          derived = work / 'derived'
-          result = subprocess.run(['xcodebuild', '-quiet', '-project', str(project), '-scheme', 'Inputs', '-configuration', 'Debug', '-derivedDataPath', str(derived), '-destination', 'generic/platform=iOS Simulator', 'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO', 'build-for-testing'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
-          (evidence / 'build.log').write_text(result.stdout)
-          if result.returncode:
-              print(result.stdout[-8000:])
-              raise SystemExit(result.returncode)
-          products = derived / 'Build/Products'
-          paths = {}
-          for path in products.rglob('*'):
-              if not path.is_file() or path.is_symlink():
-                  continue
-              with path.open('rb') as stream:
-                  magic = stream.read(4)
-              if magic in (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca', b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'):
-                  commands = subprocess.check_output(['/usr/bin/otool', '-l', str(path)], text=True)
-                  paths[str(path.relative_to(products))] = re.findall(r'^\s+(?:name|path) (.+) \(offset \d+\)$', commands, re.MULTILINE)
-          (evidence / 'runtime-paths.json').write_text(json.dumps(paths, indent=2))
-          print(json.dumps(paths, indent=2))
-          def command(*args, capture=False):
-              return subprocess.check_output(list(map(str, args)), text=True)
-          checks['verify_test_products'](products, command)
-          (evidence / 'verification.txt').write_text('Product verification passed')
-          PY
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: ios-test-inputs-diagnostics
-          path: ${{ runner.temp }}/ios-test-inputs-evidence/
-          if-no-files-found: error
-          retention-days: 7
-
   aigc-server:
     name: Check Rust AIGC service without tests or deployment
     if: inputs.target == 'all' || inputs.target == 'aigc-server'
