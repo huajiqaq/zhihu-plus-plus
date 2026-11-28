@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.markdown.rememberMarkdownImageModel
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.rememberImagePreviewOpener
@@ -97,7 +98,7 @@ internal fun CommentImageGrid(
                         .width(width)
                         .height(height)
                         .clip(RoundedCornerShape(6.dp)),
-                    contentDescription = "评论图片",
+                    contentDescription = CommentsStrings.commentImage,
                     contentScale = if (images.size == 1) ContentScale.Fit else ContentScale.Crop,
                 )
             }
@@ -110,7 +111,7 @@ internal fun CommentImageGrid(
 internal fun ClickableImageWithMenu(
     imageUrl: String,
     modifier: Modifier = Modifier,
-    contentDescription: String = "图片",
+    contentDescription: String = CommentsStrings.image,
     contentScale: ContentScale = ContentScale.Fit,
 ) {
     var showContextMenu by remember { mutableStateOf(false) }
@@ -143,7 +144,7 @@ internal fun ClickableImageWithMenu(
         ) {
             AppDropdownMenuItem(
                 modifier = Modifier.testTag(COMMENT_IMAGE_MENU_OPEN_TAG),
-                text = { Text("查看图片") },
+                text = { Text(CommentsStrings.viewImage) },
                 onClick = {
                     openImagePreview(imageUrl)
                     showContextMenu = false
@@ -151,7 +152,7 @@ internal fun ClickableImageWithMenu(
             )
             AppDropdownMenuItem(
                 modifier = Modifier.testTag(COMMENT_IMAGE_MENU_BROWSER_TAG),
-                text = { Text("在浏览器中打开") },
+                text = { Text(CommentsStrings.openInBrowser) },
                 onClick = {
                     openSystemUrl(imageUrl)
                     showContextMenu = false
@@ -159,7 +160,7 @@ internal fun ClickableImageWithMenu(
             )
             AppDropdownMenuItem(
                 modifier = Modifier.testTag(COMMENT_IMAGE_MENU_SAVE_TAG),
-                text = { Text("保存图片") },
+                text = { Text(CommentsStrings.saveImage) },
                 onClick = {
                     saveImage(imageUrl)
                     showContextMenu = false
@@ -167,7 +168,7 @@ internal fun ClickableImageWithMenu(
             )
             AppDropdownMenuItem(
                 modifier = Modifier.testTag(COMMENT_IMAGE_MENU_SHARE_TAG),
-                text = { Text("分享图片") },
+                text = { Text(CommentsStrings.shareImage) },
                 onClick = {
                     showContextMenu = false
                     shareImage(imageUrl)

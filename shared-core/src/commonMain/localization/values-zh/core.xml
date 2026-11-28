@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ad_label">广告</string>
+    <string name="ad_with_action">%1$s广告</string>
+    <string name="app_author">作者</string>
+    <string name="app_author_badge">知乎++ 作者</string>
+    <string name="app_name">知乎++</string>
+    <string name="compact_billions">%1$s 十亿</string>
+    <string name="compact_millions">%1$s 百万</string>
+    <string name="compact_ten_thousands">%1$s 万</string>
+    <string name="compact_thousands">%1$s 千</string>
+    <string name="daily_date">%1$s年%2$s月%3$s日</string>
+    <plurals name="days_ago">
+        <item quantity="other">%1$d天前</item>
+    </plurals>
+    <string name="deleted_content">该内容已被删除</string>
+    <plurals name="duration_hours">
+        <item quantity="other">%1$d小时</item>
+    </plurals>
+    <string name="duration_hours_minutes">%1$s%2$s</string>
+    <plurals name="duration_minutes">
+        <item quantity="other">%1$d分钟</item>
+    </plurals>
+    <string name="failure_forbidden">其他访问拒绝</string>
+    <string name="failure_human_verification">需要人工验证</string>
+    <string name="failure_login_required">需要登录</string>
+    <string name="failure_session_expired">登录已失效</string>
+    <string name="feed_answer_details">回答 · %1$d 赞同 · %2$d 评论</string>
+    <string name="feed_article_details">文章 · %1$d 赞 · %2$d 评论</string>
+    <string name="feed_pin_details">想法 · %1$d 赞 · %2$d 评论</string>
+    <string name="feed_question_details">问题 · %1$d 关注 · %2$d 回答</string>
+    <string name="feed_video_details">视频 · %1$d 赞 · %2$d 评论</string>
+    <string name="filter_answer_rule">规则：回答；赞数 &lt; %1$d，未关注作者</string>
+    <string name="filter_article_rule">规则：文章；作者粉丝数 &lt; %1$d 或文章赞数 &lt; %2$d，未关注作者</string>
+    <string name="filter_question_rule">规则：问题；回答数 &lt; %1$d，关注数 &lt; %2$d</string>
+    <string name="filter_video_rule">规则：视频；作者粉丝数 &lt; %1$d 且赞数 &lt; %2$d</string>
+    <plurals name="hours_ago">
+        <item quantity="other">%1$d小时前</item>
+    </plurals>
+    <string name="http_auth_header">可见请求头携带认证：%1$s</string>
+    <string name="http_error_code">错误码：%1$d</string>
+    <string name="http_feedback_intro">遇到 HTTP 403，请作者检查接口是否需要更新。</string>
+    <string name="http_local_sign_in">本机登录状态：%1$s</string>
+    <string name="http_no">否</string>
+    <string name="http_redacted_headers">请求头（Token、Cookie、签名与地址参数已脱敏）：</string>
+    <string name="http_request">请求：%1$s %2$s</string>
+    <string name="http_request_source">请求来源：%1$s</string>
+    <string name="http_response_kind">响应分类：%1$s</string>
+    <string name="http_signed_in">已登录</string>
+    <string name="http_signed_out">未登录</string>
+    <string name="http_unknown">未知</string>
+    <string name="http_yes">是</string>
+    <string name="invalid_request_address">无法显示的请求地址</string>
+    <string name="just_now">刚刚</string>
+    <plurals name="minutes_ago">
+        <item quantity="other">%1$d分钟前</item>
+    </plurals>
+    <string name="recommend_android">安卓端推荐</string>
+    <string name="recommend_android_hint">使用知乎安卓端的推荐算法</string>
+    <string name="recommend_local">本地推荐</string>
+    <string name="recommend_local_hint">基于本地数据的推荐算法</string>
+    <string name="recommend_mixed">混合推荐</string>
+    <string name="recommend_mixed_hint">融合安卓和网页端推荐算法，并过滤盐选内容</string>
+    <string name="recommend_web">Web 端推荐</string>
+    <string name="recommend_web_hint">使用知乎网页端的推荐算法</string>
+    <string name="redacted">已隐藏</string>
+    <string name="type_answer">回答</string>
+    <string name="type_article">文章</string>
+    <string name="type_collection">收藏夹</string>
+    <string name="type_column">专栏</string>
+    <string name="type_ebook">电子书</string>
+    <string name="type_other">其他</string>
+    <string name="type_person">用户</string>
+    <string name="type_pin">想法</string>
+    <string name="type_question">问题</string>
+    <string name="type_roundtable">圆桌</string>
+    <string name="type_special">专题</string>
+    <string name="type_topic">话题</string>
+    <string name="type_video">视频</string>
+    <string name="unsupported_feed">暂不支持此内容</string>
+</resources>

@@ -37,6 +37,7 @@ import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -54,7 +55,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.rememberLifecycleOwner
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.Account
+import com.github.zly2006.zhihu.navigation.AppNavDisplay
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.EmptyDetail
@@ -63,13 +66,13 @@ import com.github.zly2006.zhihu.navigation.Login
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Navigator
-import com.github.zly2006.zhihu.navigation.TopLevelDestination
 import com.github.zly2006.zhihu.navigation.isListPaneDestination
+import com.github.zly2006.zhihu.navigation.isSystemContactUri
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.navigation.resolveNavigationUrl
-import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -86,7 +89,6 @@ import com.github.zly2006.zhihu.ui.subscreens.FLOATING_BOTTOM_BAR_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.PAGE_TRANSITION_PREFERENCE_KEY
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
-import com.github.zly2006.zhihu.navigation.AppNavDisplay as NavDisplay
 
 /** 主栈与详情栏按访问 ID 持有状态；换肤和偏好重读不重建返回栈。 */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -94,32 +96,27 @@ import com.github.zly2006.zhihu.navigation.AppNavDisplay as NavDisplay
 fun ZhihuMain(
     modifier: Modifier = Modifier,
     navHost: AppNavHost,
-    mainTabNavigationTarget: TopLevelDestination?,
+    tabsState: ZhihuMainTabsState,
     navigate: (NavDestination) -> Unit,
     navigateContent: (NavDestination, AppNavHost) -> Unit = { destination, _ -> navigate(destination) },
+    openWebPage: ((String) -> Unit)? = null,
     enableLandscapeListDetail: Boolean = false,
     isListDetailCapable: Boolean = true,
-    setCurrentMainTabOpenFrom: (String?) -> Unit,
-    consumeMainTabNavigationTarget: (TopLevelDestination) -> Unit,
-    preferenceState: ZhihuMainPreferenceState,
-    isDarkTheme: Boolean,
     articleContent: @Composable (Article) -> Unit,
     showMainNavigationBar: Boolean = true,
     showHomeTopActions: Boolean = true,
-    onCurrentMainTabDestinationChange: (TopLevelDestination) -> Unit = {},
-    blocklistSettingsNlpContent: @Composable (onNavigateBack: () -> Unit) -> Unit = {
-        error("$platformName 暂不支持 NLP 智能屏蔽设置")
-    },
+    blocklistSettingsNlpContent: @Composable (onNavigateBack: () -> Unit) -> Unit = { PlatformNlpSettingsContent() },
     accountSheetVisible: Boolean = false,
     onDismissAccountSheet: () -> Unit = {},
 ) = BoxWithConstraints(modifier = modifier.fillMaxSize()) {
     val containerWidth = maxWidth
     val layoutDirection = LocalLayoutDirection.current
     val bottomPadding = ScaffoldDefaults.contentWindowInsets.asPaddingValues().calculateBottomPadding()
+    val preferenceState = tabsState.preferences
     val autoHideBottomBar = preferenceState.autoHideBottomBar
     val reloadBottomBarPreferences = preferenceState::reload
     val readingPlayer = rememberReadingPlayerController()
-    val readingPlayerState by readingPlayer.state
+    val readingPlayerState = readingPlayer?.state?.value ?: remember { ReadingPlayerState() }
     val settings = rememberSettingsStore()
     val floatingBottomBar by rememberObservedSetting(settings, FLOATING_BOTTOM_BAR_PREFERENCE_KEY) {
         getBoolean(FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true)
@@ -195,28 +192,27 @@ fun ZhihuMain(
     }
     ZhihuMainReadingPlayerEffects(
         ui = readingUi,
-        readingPlayer = readingPlayer,
+        readingPlayerState = readingPlayerState,
         currentDestination = currentDestination,
         isOnArticle = panes.isOnArticle,
         onOpenReadingDestination = { router.openReadingDestination(it, onlyIfReading = true) },
     )
 
     val tabs = rememberZhihuMainTabs(
+        state = tabsState,
         navHost = navHost,
         detailHost = detailHost,
         layout = panes,
-        preferenceState = preferenceState,
-        mainTabNavigationTarget = mainTabNavigationTarget,
         animatePageScroll = predictiveBackEnabled,
         navigate = navigate,
-        consumeMainTabNavigationTarget = consumeMainTabNavigationTarget,
-        setCurrentMainTabOpenFrom = setCurrentMainTabOpenFrom,
-        onCurrentMainTabDestinationChange = onCurrentMainTabDestinationChange,
         onTabClicked = { readingUi.isExpandedByUser = false },
     )
+    LocalMainNavigationBinding.current?.let { bind ->
+        if (tabsState.startupHandled) SideEffect { bind(detailHost, paneState) }
+    }
 
     val mainPaneNavigator = Navigator(
-        onNavigate = router::navigateFromMainPane,
+        onNavigate = navigateWithWebPageOpener(openWebPage, router::navigateFromMainPane),
         onNavigateBack = navHost::back,
         onNavigateTopLevel = tabs.navigateTopLevel,
     )
@@ -233,11 +229,11 @@ fun ZhihuMain(
                     val destination = resolveNavigationUrl(uri)
                     when {
                         destination != null -> onNavigate(destination)
-                        uri.substringBefore(':').lowercase() in setOf("mailto", "tel", "sms") -> {
+                        isSystemContactUri(uri) -> {
                             runCatching { platformUriHandler.openUri(uri) }
-                                .onFailure { messages.showShortMessage("没有可打开此链接的应用") }
+                                .onFailure { messages.showShortMessage(AppStrings.linkNoApp) }
                         }
-                        else -> messages.showShortMessage("不支持的链接")
+                        else -> messages.showShortMessage(AppStrings.unsupportedLink)
                     }
                 }
             }
@@ -274,7 +270,7 @@ fun ZhihuMain(
                                 LocalReadingPlayerOverlayOffsetState provides readingUi.overlayOffsetState,
                                 LocalSelectedContentDestination provides panes.selectedContentDestination,
                             ) {
-                                NavDisplay(
+                                AppNavDisplay(
                                     navHost = navHost,
                                     modifier = (if (panes.showListDetail) Modifier.width(listPaneWidth).fillMaxHeight() else Modifier.fillMaxSize()).afterEachGesture {
                                         if (shouldCompactPlayerOnBackgroundInteraction) {
@@ -317,7 +313,7 @@ fun ZhihuMain(
                                             layout = panes,
                                             tabs = tabs,
                                             listPaneWidth = listPaneWidth,
-                                            navigate = navigate,
+                                            navigate = navigateWithWebPageOpener(openWebPage, navigate),
                                             content = content,
                                         )
                                     },
@@ -373,7 +369,7 @@ fun ZhihuMain(
                                     },
                                     detailHost = detailHost,
                                     navigator = Navigator(
-                                        onNavigate = router::navigateFromDetailPane,
+                                        onNavigate = navigateWithWebPageOpener(openWebPage, router::navigateFromDetailPane),
                                         onNavigateBack = detailHost::back,
                                         onNavigateTopLevel = tabs.navigateTopLevel,
                                     ),
@@ -404,7 +400,7 @@ fun ZhihuMain(
                     )
                 }
 
-                ZhihuMainReadingPlayerBar(
+                if (readingPlayer != null) ZhihuMainReadingPlayerBar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(
@@ -440,7 +436,7 @@ fun ZhihuMain(
                 }
             }
 
-            ZhihuMainReadingQueueSheet(
+            if (readingPlayer != null) ZhihuMainReadingQueueSheet(
                 ui = readingUi,
                 readingPlayer = readingPlayer,
                 readingPlayerState = readingPlayerState,

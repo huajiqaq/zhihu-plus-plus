@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       checks:
-        description: '验收范围：all 保留完整检查，ios 仅重验 iOS UI 与 unsigned Release'
+        description: '验收范围：all 完整检查，web 仅构建 Web，ios 仅重验 iOS'
         type: choice
         required: false
         default: all
-        options: [all, ios]
+        options: [all, web, ios]
       ios_stage:
         description: 'iOS 阶段：all 完整验收；单项仅用于定向重验'
         type: choice
@@ -38,6 +38,7 @@ jobs:
       desktop: ${{ steps.scope.outputs.desktop }}
       macos: ${{ steps.scope.outputs.macos }}
       rust: ${{ steps.scope.outputs.rust }}
+      web: ${{ steps.scope.outputs.web }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,8 +57,15 @@ jobs:
           desktop=true
           macos=true
           rust=true
+          web=true
           if [[ "$EVENT_NAME" == "workflow_dispatch" && "$MANUAL_CHECKS" == ios ]]; then
             scope=ios
+            desktop=false
+            macos=false
+            rust=false
+            web=false
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$MANUAL_CHECKS" == web ]]; then
+            scope=web
             desktop=false
             macos=false
             rust=false
@@ -67,24 +75,29 @@ jobs:
             desktop=false
             macos=false
             rust=false
+            web=false
             docs_only=true
             android_tests_only=true
+            web_only=true
             changed=false
             while IFS= read -r -d '' path; do
               changed=true
               if [[ "$path" == *$'\n'* || "$path" == *$'\r'* ]]; then
-                docs_only=false; android_tests_only=false
-                desktop=true; macos=true; rust=true
+                docs_only=false; android_tests_only=false; web_only=false
+                desktop=true; macos=true; rust=true; web=true
                 continue
               fi
               case "$path" in
-                README.md|CONTRIBUTING.md|CHANGELOG.md|docs/*.md|.github/PULL_REQUEST_TEMPLATE.md)
-                  android_tests_only=false ;;
+                README.md|CONTRIBUTING.md|CHANGELOG.md|CLAUDE.md|AGENTS.md|docs/*.md|webApp/README.md|.agents/skills/*.md|.github/PULL_REQUEST_TEMPLATE.md)
+                  : ;;
+                webApp/*|misc/zhihu-web-bridge/*|shared*/src/wasmJs*|.github/workflows/pages.yml)
+                  docs_only=false; android_tests_only=false; web=true ;;
                 app/src/androidTest/*)
-                  docs_only=false ;;
+                  docs_only=false; web_only=false ;;
                 *)
                   docs_only=false
                   android_tests_only=false
+                  web_only=false
                   case "$path" in
                     app/src/full/*|rs-hf-tokenizer/*|sentence_embeddings/*)
                       rust=true ;;
@@ -95,9 +108,9 @@ jobs:
                     macosApp/*|macosUiDebug/*|shared*/src/macos*|shared*/src/native*|shared*/src/apple*|shared*/src/ios*)
                       macos=true ;;
                     shared*/src/*)
-                      desktop=true; macos=true ;;
+                      desktop=true; macos=true; web=true ;;
                     *)
-                      desktop=true; macos=true; rust=true ;;
+                      desktop=true; macos=true; rust=true; web=true ;;
                   esac ;;
               esac
               case "$path" in
@@ -106,15 +119,17 @@ jobs:
               esac
             done < "$RUNNER_TEMP/pr-changed-paths"
             if [[ "$changed" == false ]]; then
-              desktop=true; macos=true; rust=true
+              desktop=true; macos=true; rust=true; web=true
             elif [[ "$docs_only" == true ]]; then
               scope=docs
             elif [[ "$android_tests_only" == true ]]; then
               scope=android-tests
+            elif [[ "$web_only" == true ]]; then
+              scope=web
             fi
           fi
-          printf 'scope=%s\ndesktop=%s\nmacos=%s\nrust=%s\n' "$scope" "$desktop" "$macos" "$rust" >> "$GITHUB_OUTPUT"
-          printf 'Required checks: %s; desktop=%s, macOS=%s, Rust/JNI=%s\n' "$scope" "$desktop" "$macos" "$rust" >> "$GITHUB_STEP_SUMMARY"
+          printf 'scope=%s\ndesktop=%s\nmacos=%s\nrust=%s\nweb=%s\n' "$scope" "$desktop" "$macos" "$rust" "$web" >> "$GITHUB_OUTPUT"
+          printf 'Required checks: %s; desktop=%s, macOS=%s, Rust/JNI=%s, Web=%s\n' "$scope" "$desktop" "$macos" "$rust" "$web" >> "$GITHUB_STEP_SUMMARY"
 
   build_pr:
     name: Build PR
@@ -127,8 +142,8 @@ jobs:
       - name: Set Up JDK
         uses: actions/setup-java@v6
         with:
-          distribution: zulu
-          java-version: "21"
+          distribution: temurin
+          java-version: "25"
           problem-matcher: true
 
       - name: Change wrapper permissions
@@ -164,6 +179,32 @@ jobs:
           path: app/build/instrument-apks/
           retention-days: 1
 
+  wasm:
+    name: Web production build
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        with:
+          upstream-tools: 'false'
+      - name: Check browser bridge boundaries
+        run: node --test misc/zhihu-web-bridge/bridge.test.mjs
+      - name: Build static Web distribution
+        run: bash ./gradlew -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g :webApp:wasmJsBrowserDistribution --max-workers=2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Web production distribution
+          path: webApp/build/dist/wasmJs/productionExecutable/
+          if-no-files-found: error
+          retention-days: 7
+
   unit-tests:
     name: Application JVM regressions
     needs: changes
@@ -173,11 +214,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set Up JDK
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
-          distribution: zulu
-          java-version: "21"
+          distribution: temurin
+          java-version: "25"
           problem-matcher: true
 
       - name: Change wrapper permissions
@@ -191,6 +232,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           fc-match -f '%{family}\n' ':lang=zh-cn'
+
+      - name: Install Linux desktop helper build dependencies
+        if: needs.changes.outputs.desktop == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake pkg-config libspeechd-dev libglib2.0-dev libjson-glib-dev
 
       - name: Run application regressions and compile selected desktop host
         env:
@@ -243,8 +290,8 @@ jobs:
       - name: Set Up JDK
         uses: actions/setup-java@v6
         with:
-          distribution: zulu
-          java-version: "21"
+          distribution: temurin
+          java-version: "25"
           problem-matcher: true
 
       - name: Change wrapper permissions
@@ -330,19 +377,23 @@ jobs:
           if-no-files-found: error
 
   macos-native:
-    name: macOS Native Compile and Tests
+    name: macOS Native Compile and Tests (${{ matrix.stage }})
     needs: changes
     if: needs.changes.outputs.macos == 'true'
     runs-on: macos-26
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.checks == 'all' && inputs.apple_release && '["debug","release"]' || '["debug"]') }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Set Up JDK
         uses: actions/setup-java@v6
         with:
-          distribution: zulu
-          java-version: "21"
+          distribution: temurin
+          java-version: "25"
           problem-matcher: true
 
       - name: Change wrapper permissions
@@ -352,10 +403,11 @@ jobs:
         id: native_inputs
         uses: ./.github/actions/setup-build-inputs
         with:
-          native-cache-scope: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release && 'debug-release' || 'debug' }}
+          native-cache-scope: ${{ matrix.stage }}
 
       - name: Compile offscreen host and run native-specific regressions
         id: native_compile
+        if: matrix.stage == 'debug'
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
@@ -370,12 +422,12 @@ jobs:
             fi
           done
           /usr/bin/time -lp ./gradlew "${tasks[@]}" -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --profile --continue --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
-          printf '%s\n' 'native-build-succeeded=true' >> "$GITHUB_OUTPUT"
           python3 -I .github/scripts/verify-test-results.py "${reports[@]}"
-          echo 'Native-specific suites and isolated offscreen application run here; common-only suites run on JVM. Manual apple_release additionally checks Release packaging and isolation without opening a Mac window.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Native-specific suites ran here; common-only suites run on JVM.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run isolated offscreen native smoke without a window
-        if: ${{ !cancelled() && steps.native_inputs.outcome == 'success' }}
+        id: native_smoke
+        if: ${{ !cancelled() && matrix.stage == 'debug' && steps.native_inputs.outcome == 'success' }}
         run: |
           set -euo pipefail
           python3 -I .github/scripts/verify-test-results.py \
@@ -387,9 +439,10 @@ jobs:
 
       - name: Verify macOS Release package without launching a window
         id: native_release
-        if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+        if: matrix.stage == 'release'
         run: |
           set -euo pipefail
+          test "$(uname -m)" = arm64
           /usr/bin/time -lp ./gradlew :macosApp:packageReleaseMacosApp :macosUiDebug:verifyMacosReleaseIsolation \
             -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --profile --no-daemon --max-workers=1 \
             -Dorg.gradle.jvmargs="-Xmx5120m -Dfile.encoding=UTF-8"
@@ -404,18 +457,21 @@ jobs:
           /usr/bin/codesign --verify --deep --strict "$extracted/Zhihu++.app"
           cmp "$app_bundle/Contents/MacOS/ZhihuPlusPlus" "$extracted/Zhihu++.app/Contents/MacOS/ZhihuPlusPlus"
           shasum -a 256 "$output/zhihu++-macos-arm64.app.zip" > "$output/SHA256SUMS"
-          printf '%s\n' 'macOS: isolated debug UI smoke + Release resources, ad-hoc signature, archive round-trip and protocol isolation verified. Release GUI was not launched; no notarization or public release.' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'macOS Release resources, ad-hoc signature, archive round-trip and protocol isolation verified. Release GUI was not launched; no notarization or public release.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload macOS Release acceptance package
-        if: github.event_name == 'workflow_dispatch' && inputs.apple_release
+        if: matrix.stage == 'release'
         uses: actions/upload-artifact@v7
         with:
-          name: macOS Release Acceptance
+          name: macOS Release Acceptance-${{ github.run_attempt }}
           path: ${{ runner.temp }}/macos-release-acceptance/
           if-no-files-found: error
 
-      - name: Save Kotlin Native after successful compilation
-        if: ${{ always() && !cancelled() && steps.native_inputs.outputs.native-cache-writable == 'true' && steps.native_inputs.outputs.native-cache-hit != 'true' && steps.native_compile.outputs.native-build-succeeded == 'true' && (steps.native_release.outcome == 'success' || steps.native_release.outcome == 'skipped') }}
+      - name: Save Kotlin Native after successful stage checks
+        if: >-
+          success() && steps.native_inputs.outputs.native-cache-writable == 'true' && steps.native_inputs.outputs.native-cache-hit != 'true' &&
+          ((matrix.stage == 'debug' && steps.native_compile.outcome == 'success' && steps.native_smoke.outcome == 'success') ||
+          (matrix.stage == 'release' && steps.native_release.outcome == 'success'))
         uses: actions/cache/save@v6
         with:
           path: ~/.konan
@@ -425,7 +481,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: macOS Native Test Reports
+          name: macOS Native Test Reports-${{ matrix.stage }}-${{ github.run_attempt }}
           path: |
             shared*/build/reports/tests/macosArm64Test/**
             shared*/build/test-results/macosArm64Test/**
@@ -437,55 +493,116 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  ios-acceptance:
-    name: iOS Acceptance (${{ matrix.stage }})
-    if: github.event_name == 'workflow_dispatch' && (inputs.apple_release || inputs.checks == 'ios')
-    runs-on: ${{ matrix.stage == 'release' && 'macos-26-intel' || 'macos-26' }}
+  ios-release:
+    name: iOS Acceptance (release)
+    if: github.event_name == 'workflow_dispatch' && ((inputs.checks == 'all' && inputs.apple_release) || inputs.checks == 'ios') && inputs.ios_stage != 'simulator'
+    runs-on: macos-26-intel
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        stage: ${{ fromJSON(inputs.ios_stage == 'release' && '["release"]' || inputs.ios_stage == 'simulator' && '["simulator"]' || '["release","simulator"]') }}
+    env:
+      IOS_STAGE: release
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set Up JDK
+      - &ios_jdk
+        name: Set Up JDK
         uses: actions/setup-java@v6
         with:
-          distribution: zulu
-          java-version: "21"
+          distribution: temurin
+          java-version: "25"
           problem-matcher: true
 
-      - name: Prepare build inputs
+      - &ios_inputs
+        name: Prepare build inputs
         id: ios_inputs
         uses: ./.github/actions/setup-build-inputs
         with:
-          native-cache-scope: ${{ matrix.stage }}
+          native-cache-scope: ${{ env.IOS_STAGE }}
 
-      - name: Run iOS ${{ matrix.stage }} acceptance
+      - name: Verify unsigned Release app and IPA
         id: ios_acceptance
-        env:
-          IOS_STAGE: ${{ matrix.stage }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
           python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" \
             --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE"
 
-      - name: Save Kotlin Native after successful compilation
-        if: ${{ always() && !cancelled() && steps.ios_inputs.outputs.native-cache-writable == 'true' && steps.ios_inputs.outputs.native-cache-hit != 'true' && steps.ios_acceptance.outputs.native-build-succeeded == 'true' }}
+      - &ios_cache_save
+        name: Save Kotlin Native after verified build
+        if: success() && steps.ios_inputs.outputs.native-cache-writable == 'true' && steps.ios_inputs.outputs.native-cache-hit != 'true' && steps.ios_acceptance.outputs.native-build-succeeded == 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/.konan
           key: ${{ steps.ios_inputs.outputs.native-cache-key }}
 
-      - name: Upload isolated iOS acceptance evidence
+      - &ios_evidence
+        name: Upload isolated iOS acceptance evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: iOS Acceptance-${{ matrix.stage }}
-          path: ${{ runner.temp }}/ios-acceptance-${{ matrix.stage }}/
+          name: iOS Acceptance-${{ env.IOS_STAGE }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-acceptance-${{ env.IOS_STAGE }}/
           if-no-files-found: error
+
+  ios-simulator-build:
+    name: iOS Acceptance (simulator build)
+    if: github.event_name == 'workflow_dispatch' && ((inputs.checks == 'all' && inputs.apple_release) || inputs.checks == 'ios') && inputs.ios_stage != 'release'
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      IOS_STAGE: simulator-build
+    outputs:
+      artifact-id: ${{ steps.products.outputs.artifact-id }}
+      products-sha256: ${{ steps.ios_acceptance.outputs.products-sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+      - *ios_jdk
+      - *ios_inputs
+      - name: Build relocatable XCTest products
+        id: ios_acceptance
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" --root "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE" --handoff "$RUNNER_TEMP/ios-simulator-products"
+
+      - name: Upload simulator test products
+        id: products
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-products-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-simulator-products/
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 7
+      - *ios_cache_save
+      - *ios_evidence
+
+  ios-simulator-test:
+    name: iOS Acceptance (simulator test)
+    needs: ios-simulator-build
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      IOS_STAGE: simulator-test
+      PRODUCTS_ID: ${{ needs.ios-simulator-build.outputs.artifact-id }}
+      PRODUCTS_SHA256: ${{ needs.ios-simulator-build.outputs.products-sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Require the successful producer's immutable artifact ID and payload digest
+        run: '[[ "$PRODUCTS_ID" =~ ^[1-9][0-9]*$ && "$PRODUCTS_SHA256" =~ ^[0-9a-f]{64}$ ]]'
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ env.PRODUCTS_ID }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/ios-simulator-products
+      - name: Test verified simulator products without building
+        run: |
+          python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" --root "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE" --handoff "$RUNNER_TEMP/ios-simulator-products"
+      - *ios_evidence
 
   mock-instrumented-shards:
     name: Mock Instrumented Shard (${{ matrix.shard_label }}/2)
@@ -567,9 +684,12 @@ jobs:
       - changes
       - build_pr
       - unit-tests
+      - wasm
       - rust-verification
       - macos-native
-      - ios-acceptance
+      - ios-release
+      - ios-simulator-build
+      - ios-simulator-test
       - mock-instrumented-shards
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -581,13 +701,18 @@ jobs:
           RUN_DESKTOP: ${{ needs.changes.outputs.desktop }}
           RUN_RUST: ${{ needs.changes.outputs.rust }}
           RUN_MACOS: ${{ needs.changes.outputs.macos }}
+          RUN_WEB: ${{ needs.changes.outputs.web }}
+          WEB_RESULT: ${{ needs.wasm.result }}
           BUILD_RESULT: ${{ needs.build_pr.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
           RUST_RESULT: ${{ needs.rust-verification.result }}
           MACOS_RESULT: ${{ needs.macos-native.result }}
-          RUN_APPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release == true && inputs.checks != 'ios' }}
-          RUN_IOS: ${{ github.event_name == 'workflow_dispatch' && (inputs.apple_release == true || inputs.checks == 'ios') }}
-          IOS_RESULT: ${{ needs.ios-acceptance.result }}
+          RUN_APPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_release == true && inputs.checks == 'all' }}
+          RUN_IOS: ${{ github.event_name == 'workflow_dispatch' && ((inputs.checks == 'all' && inputs.apple_release == true) || inputs.checks == 'ios') }}
+          IOS_STAGE: ${{ inputs.ios_stage || 'all' }}
+          IOS_RELEASE_RESULT: ${{ needs.ios-release.result }}
+          IOS_BUILD_RESULT: ${{ needs.ios-simulator-build.result }}
+          IOS_TEST_RESULT: ${{ needs.ios-simulator-test.result }}
           SHARD_RESULT: ${{ needs.mock-instrumented-shards.result }}
         run: |
           set -euo pipefail
@@ -599,7 +724,7 @@ jobs:
             android-tests)
               android_result=success
               cross_platform_result=skipped ;;
-            docs|ios)
+            docs|ios|web)
               android_result=skipped
               cross_platform_result=skipped ;;
             *) exit 1 ;;
@@ -618,15 +743,32 @@ jobs:
           if [[ "$RUN_MACOS" == true ]]; then macos_result=success; fi
           test "$RUST_RESULT" = "$rust_result"
           test "$MACOS_RESULT" = "$macos_result"
+          web_result=skipped
+          case "$RUN_WEB" in
+            true)
+              [[ "$CHECK_SCOPE" == full || "$CHECK_SCOPE" == web ]]
+              web_result=success ;;
+            false) test "$CHECK_SCOPE" != web ;;
+            *) exit 1 ;;
+          esac
+          test "$WEB_RESULT" = "$web_result"
+          ios_release=skipped
+          ios_simulator=skipped
           case "$RUN_IOS" in
             true)
               [[ "$CHECK_SCOPE" == full || "$CHECK_SCOPE" == ios ]]
-              test "$IOS_RESULT" = success ;;
-            false)
-              test "$CHECK_SCOPE" != ios
-              test "$IOS_RESULT" = skipped ;;
+              case "$IOS_STAGE" in
+                all) ios_release=success; ios_simulator=success ;;
+                release) ios_release=success ;;
+                simulator) ios_simulator=success ;;
+                *) exit 1 ;;
+              esac ;;
+            false) test "$CHECK_SCOPE" != ios ;;
             *) exit 1 ;;
           esac
+          test "$IOS_RELEASE_RESULT" = "$ios_release"
+          test "$IOS_BUILD_RESULT" = "$ios_simulator"
+          test "$IOS_TEST_RESULT" = "$ios_simulator"
           case "$RUN_APPLE_RELEASE" in
             true)
               test "$CHECK_SCOPE" = full

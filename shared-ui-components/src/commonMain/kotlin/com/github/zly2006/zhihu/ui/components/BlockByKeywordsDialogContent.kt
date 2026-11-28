@@ -40,10 +40,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.nlp.KeywordWithWeight
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordScope
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /**
  * 按关键词屏蔽的信息流辅助弹窗。
@@ -81,14 +81,14 @@ fun BlockByKeywordsDialogContent(
     if (showDialog) {
         AppAlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("按关键词屏蔽") },
+            title = { Text(WidgetsStrings.blockByKeyword) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("作用范围", style = MaterialTheme.typography.titleSmall)
+                    Text(WidgetsStrings.keywordScope, style = MaterialTheme.typography.titleSmall)
                     AppSegmentedControl(
-                        options = listOf("全部内容", "问题", "回答"),
+                        options = listOf(WidgetsStrings.scopeAll, WidgetsStrings.scopeQuestions, WidgetsStrings.scopeAnswers),
                         selectedIndex = scope.ordinal,
                         onSelect = { onScopeChange(KeywordScope.entries[it]) },
                         enabled = !isAdding,
@@ -104,7 +104,7 @@ fun BlockByKeywordsDialogContent(
                         ) {
                             AppSpinner()
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("正在提取关键词...")
+                            Text(WidgetsStrings.keywordExtracting)
                         }
                     } else if (extractedKeywords.isEmpty()) {
                         Column(
@@ -114,18 +114,18 @@ fun BlockByKeywordsDialogContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
-                                "未能提取到关键词",
+                                WidgetsStrings.noKeywordsFound,
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
                     } else {
                         Text(
-                            "从内容中提取到以下关键词，选择要屏蔽的关键词：",
+                            WidgetsStrings.chooseKeywords,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "提示：选中的关键词将用空格串联成一个短语进行NLP语义匹配",
+                            WidgetsStrings.keywordPhraseHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -162,7 +162,7 @@ fun BlockByKeywordsDialogContent(
                                     modifier = Modifier.padding(12.dp),
                                 ) {
                                     Text(
-                                        "短语预览",
+                                        WidgetsStrings.phrasePreview,
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
@@ -179,7 +179,7 @@ fun BlockByKeywordsDialogContent(
 
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "提示：基于NLP语义相似度，即使用词不同，主题相似的内容也会被过滤",
+                            WidgetsStrings.similarTopicsHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -188,8 +188,8 @@ fun BlockByKeywordsDialogContent(
                             enabled = keywordInfoList.isNotEmpty() && !isLoading,
                             modifier = Modifier.align(Alignment.End),
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                            Text("查看关键词权重")
+                            AppIcon(Icons.Default.Info, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                            Text(WidgetsStrings.showKeywordWeights)
                         }
                     }
                 }
@@ -206,7 +206,7 @@ fun BlockByKeywordsDialogContent(
                     if (isAdding) {
                         AppSpinner(size = 16.dp)
                     } else {
-                        Text("屏蔽 (${selectedKeywords.size})")
+                        Text(WidgetsStrings.blockSelectedCount(selectedKeywords.size))
                     }
                 }
             },
@@ -215,7 +215,7 @@ fun BlockByKeywordsDialogContent(
                     onClick = onDismiss,
                     enabled = !isAdding,
                 ) {
-                    Text("取消")
+                    Text(WidgetsStrings.cancel)
                 }
             },
         )
@@ -242,7 +242,7 @@ fun KeywordDetailDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("关键词详细信息") },
+        title = { Text(WidgetsStrings.keywordDetails) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -256,7 +256,7 @@ fun KeywordDetailDialog(
                         modifier = Modifier.padding(12.dp),
                     ) {
                         Text(
-                            "内容预览",
+                            WidgetsStrings.contentPreview,
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -280,7 +280,7 @@ fun KeywordDetailDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    "提取的关键词（按重要性排序）",
+                    WidgetsStrings.keywordRanking,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -299,7 +299,7 @@ fun KeywordDetailDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    "说明：权重值由TextRank算法计算得出，数值越高表示该关键词在内容中越重要",
+                    WidgetsStrings.keywordWeightExplanation,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -307,7 +307,7 @@ fun KeywordDetailDialog(
         },
         confirmButton = {
             AppTextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text(WidgetsStrings.close)
             }
         },
     )

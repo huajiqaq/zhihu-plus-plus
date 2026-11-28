@@ -26,7 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
+import java.util.concurrent.atomic.AtomicBoolean
 import javafx.application.Platform
 import javafx.beans.InvalidationListener
 import javafx.concurrent.Worker
@@ -34,10 +36,9 @@ import javafx.embed.swing.JFXPanel
 import javafx.scene.Scene
 import javafx.scene.web.WebEngine
 import javafx.scene.web.WebView
-import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
-internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser = remember(initialUrl) { DesktopWebPageBrowser(initialUrl) }
+internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser? = remember(initialUrl) { DesktopWebPageBrowser(initialUrl) }
 
 private class DesktopWebPageBrowser(
     initialUrl: String,
@@ -78,7 +79,7 @@ private class DesktopWebPageBrowser(
                 currentUrl = location
                 errorMessage = null
             } else {
-                errorMessage = "此链接不是 HTTP 或 HTTPS 网页"
+                errorMessage = WidgetsStrings::notHttpAddress
                 web.loadWorker.cancel()
             }
         }
@@ -86,7 +87,10 @@ private class DesktopWebPageBrowser(
             if (engine !== web) return@addListener
             when (state) {
                 Worker.State.RUNNING -> if (isWebPageUrl(web.location)) errorMessage = null else web.loadWorker.cancel()
-                Worker.State.FAILED -> errorMessage = "网页加载失败：${web.loadWorker.exception?.localizedMessage.orEmpty()}"
+                Worker.State.FAILED -> {
+                    val detail = web.loadWorker.exception?.localizedMessage.orEmpty()
+                    errorMessage = { WidgetsStrings.webLoadFailed(detail) }
+                }
                 else -> Unit
             }
         }
@@ -106,7 +110,10 @@ private class DesktopWebPageBrowser(
         val panel = remember(attempt) { runCatching { JFXPanel() } }
         val target = panel.getOrNull()
         if (target == null) {
-            LaunchedEffect(attempt) { errorMessage = "无法启动 JavaFX 网页引擎：${panel.exceptionOrNull()?.message.orEmpty()}" }
+            LaunchedEffect(attempt) {
+                val detail = panel.exceptionOrNull()?.message.orEmpty()
+                errorMessage = { WidgetsStrings.webEngineFailed(detail) }
+            }
             return
         }
         DisposableEffect(target) {
@@ -116,7 +123,8 @@ private class DesktopWebPageBrowser(
                 if (disposed.get()) return@runLater
                 runCatching { target.scene = Scene(createView()) }.onFailure {
                     releaseEngine()
-                    errorMessage = "无法启动 JavaFX 网页引擎：${it.localizedMessage.orEmpty()}"
+                    val detail = it.localizedMessage.orEmpty()
+                    errorMessage = { WidgetsStrings.webEngineFailed(detail) }
                 }
             }
             onDispose {

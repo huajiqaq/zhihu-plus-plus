@@ -15,12 +15,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import buildlogic.configureAndroidVariant
+import buildlogic.configureIosVariant
 import buildlogic.configureAppleTargets
-import org.gradle.language.jvm.tasks.ProcessResources
+import buildlogic.zhihuIosVariant
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
@@ -59,34 +63,26 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        val jvmAndAndroidMain by creating {
-            dependsOn(commonMain.get())
+        findByName("appleMain")?.let { appleMain ->
+            val appleFullMain = create("appleFullMain") { dependsOn(appleMain) }
+            getByName("macosMain").dependsOn(appleFullMain)
+            getByName("iosMain").configureIosVariant()
+            if (project.zhihuIosVariant == "full") getByName("iosMain").dependsOn(appleFullMain)
         }
+        val jvmAndAndroidMain = create("jvmAndAndroidMain") { dependsOn(commonMain.get()) }
         androidMain.get().dependsOn(jvmAndAndroidMain)
         jvmMain.get().dependsOn(jvmAndAndroidMain)
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-                dependencies {
-                }
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
         commonMain.dependencies {
             api(project(":shared-local-db"))
             api(project(":shared-core"))
             implementation(libs.jb.compose.runtime)
             implementation(libs.jb.compose.foundation)
             implementation(libs.material3)
-            implementation(libs.jb.material.icons.extended)
             implementation(libs.jb.compose.ui)
             implementation(libs.jb.compose.components.resources)
-            implementation(libs.coil.compose)
-            implementation(libs.coil.network.core)
             implementation(libs.jetbrains.lifecycle.runtime.compose)
             implementation(libs.jetbrains.lifecycle.viewmodel.compose)
+            implementation(libs.androidx.navigationevent.compose)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
@@ -104,6 +100,7 @@ kotlin {
             implementation(libs.ktor.client.mock)
         }
         androidMain {
+            configureAndroidVariant()
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.androidx.core.ktx)
@@ -111,55 +108,77 @@ kotlin {
                 implementation(libs.androidx.media)
                 implementation(libs.androidx.webkit)
                 implementation(libs.zxing.core)
-                implementation(libs.coil.gif)
-                implementation(libs.coil.network.ktor3.android)
                 implementation(libs.ktor.client.android)
                 implementation(libs.jsoup)
             }
         }
-        // Gradle 不解析 JavaFX POM 的平台 classifier；显式指定才能取得类和 JNI。
-        val osName = System.getProperty("os.name").lowercase()
-        val osArch = System.getProperty("os.arch").lowercase()
-        val fxClassifier =
-            when {
-                osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
-                osName.contains("mac") -> "mac"
-                osName.contains("win") -> "win"
-                osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
-                else -> "linux"
-            }
-        val javafxModules =
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            )
-
         jvmMain.dependencies {
-            implementation(libs.jb.ui.backhandler.desktop)
-            implementation(libs.navigationevent)
-            implementation(libs.coil.network.ktor3)
+            implementation(libs.openhtmltopdf.pdfbox)
+            implementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:${libs.versions.openhtmltopdf.get()}") {
+                // JDK 提供 JAXP；旧标准包会遮蔽 ACCESS_EXTERNAL_*，SVG DOM 的 xml-apis-ext 仍保留。
+                exclude(group = "xml-apis", module = "xml-apis")
+            }
+            implementation(libs.onnxruntime.jvm)
+            implementation(libs.hanlp)
+            implementation(libs.jsoup)
             implementation(libs.sqlite.bundled)
             implementation(libs.zxing.core)
             implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutines.swing)
-            // JavaFX 运行时由桌面宿主提供，共享模块只需编译类。
-            javafxModules.forEach { compileOnly(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
         }
         findByName("appleMain")?.dependencies {
             implementation(libs.ktor.client.darwin)
         }
+        wasmJsMain.dependencies {
+            implementation(npm("html2canvas-pro", "2.6.5"))
+            implementation(npm("katex", "0.16.22"))
+            implementation(npm("fflate", "0.8.3"))
+            implementation(npm("onnxruntime-web", libs.versions.onnxRuntimeWeb.get()))
+            implementation(npm("@noble/hashes", libs.versions.nobleHashes.get()))
+        }
         jvmTest.dependencies {
-            javafxModules.forEach { implementation(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
             implementation(libs.jb.compose.ui.test)
             implementation(libs.jsoup)
         }
     }
 }
 
-tasks.named<ProcessResources>("jvmProcessResources") {
-    from(rootProject.file("app/src/main/assets/article_export_template.html"))
+if (providers.systemProperty("os.name").get().startsWith("Mac", ignoreCase = true)) {
+    val appleRuntime = layout.buildDirectory.dir("generated/onnxruntime-apple")
+    val prepareAppleOnnxRuntime =
+        tasks.register<Exec>("prepareAppleOnnxRuntime") {
+            val script = layout.projectDirectory.file("tools/prepare_apple_onnxruntime.py")
+            val lock = layout.projectDirectory.file("onnxruntime-apple.lock.json")
+            val cache = layout.buildDirectory.dir("onnxruntime-apple-downloads")
+            val python = providers.environmentVariable("ZHIHU_PYTHON").orElse("python3")
+            inputs.files(script, lock)
+            inputs.property("pythonCommand", python)
+            outputs.dir(appleRuntime)
+            localState.register(cache)
+            commandLine(python.get(), "-I", script.asFile.absolutePath, "--lock", lock.asFile.absolutePath, "--cache", cache.get().asFile.absolutePath, "--output", appleRuntime.get().asFile.absolutePath)
+        }
+    val iosFull = zhihuIosVariant == "full"
+    kotlin.targets.withType<KotlinNativeTarget>().configureEach {
+        val targetName = name
+        if (targetName.startsWith("ios") && !iosFull) return@configureEach
+        val interop = compilations.getByName("main").cinterops.create("onnxruntime") {
+            definitionFile.set(layout.projectDirectory.file("src/nativeInterop/cinterop/onnxruntime.def"))
+            includeDirs(layout.projectDirectory.dir("src/nativeInterop/cinterop"), appleRuntime.map { it.dir("include") })
+            when (targetName) {
+                "macosArm64" -> linkerOpts(appleRuntime.get().file("macosArm64/libonnxruntime.1.dylib").asFile.absolutePath)
+                // Shared.framework 为静态库，ORT 及系统依赖只由最终 Xcode Full 宿主链接一次。
+                "iosArm64", "iosSimulatorArm64" -> Unit
+                else -> error("Unsupported Apple ONNX Runtime target: $targetName")
+            }
+        }
+        tasks.named(interop.interopProcessingTaskName) {
+            dependsOn(prepareAppleOnnxRuntime)
+            inputs.dir(appleRuntime)
+        }
+        if (targetName == "macosArm64") {
+            binaries.all {
+                linkerOpts("-rpath", "@executable_path/../Frameworks", "-rpath", appleRuntime.get().dir("macosArm64").asFile.absolutePath)
+            }
+        }
+    }
 }

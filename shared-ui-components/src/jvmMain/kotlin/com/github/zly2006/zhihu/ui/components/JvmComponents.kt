@@ -19,11 +19,20 @@ package com.github.zly2006.zhihu.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.PopupProperties
+import com.github.zly2006.zhihu.desktop.DesktopFileShareBridge
+import com.github.zly2006.zhihu.desktop.copyDesktopPlainText
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
+import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.nlp.KeywordAnalyzerCore
 import com.github.zly2006.zhihu.nlp.KeywordWithWeight
-import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
+import com.github.zly2006.zhihu.nlp.jvmKeywordWeightExtractor
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import java.awt.KeyboardFocusManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 internal actual val hrmSelectionToolbarPopupProperties = PopupProperties(focusable = true)
 
@@ -35,33 +44,42 @@ actual suspend fun extractFeedKeywords(
     excerpt = excerpt,
     content = null,
     topN = 10,
-    extractor = ::extractDesktopKeywordsWithWeight,
+    extractor = jvmKeywordWeightExtractor,
 )
 
 actual val feedKeywordExtractionAvailable: Boolean = true
 
 @Composable
 actual fun rememberShareActionExecutor(): ShareActionExecutor {
-    val copyPlainText = rememberPlainTextClipboard()
+    val scope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
-    return remember(copyPlainText, userMessages) { clipboardShareActionExecutor(copyPlainText, userMessages) }
-}
-
-private fun extractDesktopKeywordsWithWeight(
-    text: String,
-    topN: Int,
-): List<KeywordWithWeight> {
-    val words = Regex("[\\p{L}\\p{N}_\\u4e00-\\u9fff]{2,}")
-        .findAll(text)
-        .map { it.value.trim() }
-        .filter { it.length >= 2 }
-        .filter { !KeywordAnalyzerCore.isStopWord(it) }
-        .filter { !KeywordAnalyzerCore.isNumberOnly(it) }
-        .groupingBy { it }
-        .eachCount()
-
-    return words
-        .map { (keyword, count) -> KeywordWithWeight(keyword, count.toDouble()) }
-        .sortedByDescending { it.weight }
-        .take(topN)
+    return remember(scope, userMessages) {
+        object : ShareActionExecutor {
+            override fun invoke(action: ShareAction, content: NavDestination, shareText: String) {
+                if (action == ShareAction.CopyLink) {
+                    runCatching { copyDesktopPlainText(shareText) }
+                        .onSuccess { userMessages.showMessage(WidgetsStrings.linkCopied) }
+                        .onFailure { userMessages.showLongMessage(DomainStrings.clipboardDenied) }
+                    return
+                }
+                val activeWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow
+                val window = generateSequence(activeWindow) { it.owner }.lastOrNull()
+                if (window == null) {
+                    userMessages.showLongMessage(WidgetsStrings.systemShareUnavailable)
+                    return
+                }
+                scope.launch {
+                    try {
+                        DesktopFileShareBridge.shareText(window, shareText, getShareTitle(content))
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        userMessages.showLongMessage(error.message ?: WidgetsStrings.systemShareFailed)
+                    } catch (_: LinkageError) {
+                        userMessages.showLongMessage(DomainStrings.desktopFileShareUnavailable)
+                    }
+                }
+            }
+        }
+    }
 }

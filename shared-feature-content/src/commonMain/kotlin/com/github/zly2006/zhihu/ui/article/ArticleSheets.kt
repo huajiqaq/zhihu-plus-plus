@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
@@ -71,7 +72,7 @@ internal fun ArticleSummarySheet(
                 .padding(16.dp)
                 .verticalScroll(scrollState),
         ) {
-            Text("总结本文", style = MaterialTheme.typography.titleLarge)
+            Text(ContentStrings.summarizeContent, style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(12.dp))
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (loading && summaryText.isBlank()) {
@@ -80,7 +81,7 @@ internal fun ArticleSummarySheet(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         AppSpinner(size = 20.dp)
-                        Text("正在生成总结...")
+                        Text(ContentStrings.generatingSummary)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -98,13 +99,13 @@ internal fun ArticleSummarySheet(
                 horizontalArrangement = Arrangement.End,
             ) {
                 AppTextButton(
-                    text = "关闭",
+                    text = ContentStrings.close,
                     onClick = onDismissRequest,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 if (!loading) {
                     AppTextButton(
-                        text = "重新总结",
+                        text = ContentStrings.regenerateSummary,
                         onClick = onRetryRequest,
                     )
                 }
@@ -145,47 +146,49 @@ internal fun AigcFlagSheet(
                         (viewModel.aigcVoteCredit > 0 && viewModel.isAigcFlagEvidenceReady())
                 )
             Text(
-                text = "标记疑似 AIGC",
+                text = ContentStrings.flagAiContent,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "每浏览 20 篇内容获得 1 点投票积分，最多保留 ${viewModel.aigcVoteCap} 点。标记会上传当前正文 HTML、编辑时间和投票人身份，服务端按内容版本统计。",
+                text = ContentStrings.aiFlaggingHelp(viewModel.aigcVoteCap),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = if (!viewModel.aigcVoteAvailable) {
-                    "AIGC 标记未启用"
+                    ContentStrings.aiFlaggingDisabled
                 } else if (viewModel.aigcVoterName.isBlank()) {
-                    "未登录，无法记名投票"
+                    ContentStrings.aiVoteLoginRequired
                 } else {
-                    "投票人：${viewModel.aigcVoterName}"
+                    ContentStrings.voterName(viewModel.aigcVoterName)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = if (viewModel.aigcCreditBypassAvailable) {
-                    "积分 ${viewModel.aigcVoteCredit}/${viewModel.aigcVoteCap} · 当前账号可免积分标记"
+                    ContentStrings.creditsExempt(viewModel.aigcVoteCredit, viewModel.aigcVoteCap)
                 } else {
-                    "积分 ${viewModel.aigcVoteCredit}/${viewModel.aigcVoteCap} · 进度 ${viewModel.aigcVoteProgress}/20"
+                    ContentStrings.creditsProgress(viewModel.aigcVoteCredit, viewModel.aigcVoteCap, viewModel.aigcVoteProgress)
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
                 text = if (viewModel.aigcEffectiveFlagCount > 0) {
-                    "已有 ${viewModel.aigcEffectiveFlagCount} 个有效标记"
+                    ContentStrings.effectiveFlagCount(viewModel.aigcEffectiveFlagCount)
                 } else {
-                    "当前还没有有效标记"
+                    ContentStrings.noEffectiveFlags
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (viewModel.aigcNamedVoters.isNotEmpty()) {
                 Text(
-                    text = "记名投票：" + viewModel.aigcNamedVoters.joinToString("、") { voter ->
-                        if (voter.creditBypassed) "${voter.voterName}（免积分）" else voter.voterName
-                    },
+                    text = ContentStrings.namedVoters(
+                        viewModel.aigcNamedVoters.joinToString(ContentStrings.listSeparator) { voter ->
+                            if (voter.creditBypassed) ContentStrings.voterCreditExempt(voter.voterName) else voter.voterName
+                        },
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -203,20 +206,20 @@ internal fun AigcFlagSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AppTextButton(
-                    text = "关闭",
+                    text = ContentStrings.close,
                     onClick = onDismissRequest,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 AppButton(
                     text = when {
-                        !viewModel.aigcVoteAvailable -> "未启用"
-                        viewModel.aigcFlagged -> "已标记"
-                        viewModel.aigcVoteLoading -> "提交中"
-                        viewModel.aigcVoterName.isBlank() -> "需登录"
-                        viewModel.aigcCreditBypassAvailable -> "免积分标记"
-                        viewModel.aigcVoteCredit <= 0 -> "积分不足"
-                        !viewModel.isAigcFlagEvidenceReady() -> "继续阅读"
-                        else -> "消耗 1 点标记"
+                        !viewModel.aigcVoteAvailable -> ContentStrings.notEnabled
+                        viewModel.aigcFlagged -> ContentStrings.flagged
+                        viewModel.aigcVoteLoading -> ContentStrings.submitting
+                        viewModel.aigcVoterName.isBlank() -> ContentStrings.loginRequired
+                        viewModel.aigcCreditBypassAvailable -> ContentStrings.flagWithoutCredit
+                        viewModel.aigcVoteCredit <= 0 -> ContentStrings.insufficientCredits
+                        !viewModel.isAigcFlagEvidenceReady() -> ContentStrings.keepReading
+                        else -> ContentStrings.flagWithCredit
                     },
                     onClick = onSubmitRequest,
                     enabled = canSubmitAigcFlag,

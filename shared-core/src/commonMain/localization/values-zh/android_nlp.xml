@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="save">保存</string>
+    <string name="save_failed">保存失败</string>
+    <string name="enter_text">请输入文本</string>
+    <string name="no_keywords_extracted">未能提取到关键词</string>
+    <string name="extraction_failed">提取失败</string>
+    <string name="blocked_phrases_scope">已屏蔽短语：%1$s</string>
+    <string name="phrases_empty">暂无 NLP 屏蔽短语</string>
+    <string name="phrases_empty_hint">在上方提取关键词，或点“手动添加”。</string>
+    <plurals name="clear_phrases_title">
+        <item quantity="other">清空当前范围的 %1$d 个 NLP 屏蔽短语？</item>
+    </plurals>
+    <string name="clear_phrases_hint">仅清空当前作用范围的 NLP 短语，不影响其他范围或精确关键词。清空后无法撤销，如需保留请先导出规则。</string>
+    <string name="model_loaded">模型已加载</string>
+    <string name="model_load_failed">模型加载失败</string>
+    <string name="model_unloaded">已卸载模型</string>
+    <string name="phrase_added_detail">已添加短语：%1$s</string>
+    <string name="phrase_added">已添加短语</string>
+    <string name="phrase_updated">已更新短语</string>
+    <string name="add_phrase_title">手动添加 NLP 短语</string>
+    <string name="transformer_model">Transformer 模型</string>
+    <string name="model_status_unloaded">当前状态：未加载</string>
+    <string name="model_status_loading">当前状态：正在加载</string>
+    <string name="model_status_ready">当前状态：已就绪</string>
+    <string name="model_status_failed">当前状态：加载失败</string>
+    <string name="model_status_downloading">当前状态：下载中 %1$s%%</string>
+    <string name="processing_unload_unavailable">提示：正在进行关键词任务，卸载暂不可用</string>
+    <string name="load_model">加载模型</string>
+    <string name="about_blocking">基于自然语言处理技术，通过组合多个关键词成短语来表达与逻辑。例如：“政治 敏感”将匹配同时包含这两个主题的内容。</string>
+    <string name="threshold_hint">阈值越高，匹配越严格；阈值越低，匹配越宽松</string>
+    <string name="extract_keywords">提取关键词</string>
+    <string name="input_text">输入文本</string>
+    <string name="input_placeholder">粘贴 Feed 内容或输入任意文本</string>
+    <string name="extracting">提取中…</string>
+    <string name="extracted_keywords">提取的关键词</string>
+    <string name="combine_and_add">组合为短语并添加</string>
+    <string name="combine_hint">提示：所有关键词将用空格连接成一个短语</string>
+    <plurals name="records_count">
+        <item quantity="other">最近 %1$d 条被语义屏蔽的内容与匹配的短语</item>
+    </plurals>
+    <string name="records_hint">被语义屏蔽的内容与匹配的短语</string>
+    <plurals name="phrase_details">
+        <item quantity="other">包含 %1$d 个关键词 · 添加于 %2$s</item>
+    </plurals>
+    <string name="edit_phrase_accessibility">编辑短语“%1$s”</string>
+    <string name="delete_phrase_accessibility">删除短语“%1$s”</string>
+    <string name="add_manually">手动添加</string>
+    <plurals name="records_scope">
+        <item quantity="other">最近 %1$d 条被 NLP 语义屏蔽的内容，点开可查看匹配的短语。</item>
+    </plurals>
+    <plurals name="clear_records_title">
+        <item quantity="other">清空 %1$d 条 NLP 匹配记录？</item>
+    </plurals>
+    <string name="phrase_label">短语</string>
+    <string name="phrase_placeholder">用空格分隔多个关键词，如：政治 敏感</string>
+    <string name="phrase_hint">提示：用空格分隔多个关键词来表达与逻辑。例如：“政治 敏感”将匹配同时包含这两个主题的内容。</string>
+    <string name="excerpt">摘要</string>
+    <string name="top_matched_keywords">匹配的关键词（前3个）</string>
+    <string name="delete_record">删除记录</string>
+    <string name="model_context_missing">模型的应用上下文尚未初始化</string>
+    <string name="required_model_file_missing">未找到必需的模型文件：%1$s</string>
+    <string name="local_model_corrupted">本地文件 %1$s 已损坏，且无法验证远程版本</string>
+    <string name="download_size_mismatch">下载文件 %1$s 的大小不符：预期 %2$d 字节，实际 %3$d 字节</string>
+</resources>

@@ -16,14 +16,19 @@
  */
 
 import buildlogic.configureAppleTargets
+import buildlogic.zhihuIosVariant
+import com.mikepenz.aboutlibraries.plugin.AboutLibrariesTask
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.compose)
+    id("com.mikepenz.aboutlibraries.plugin")
     alias(libs.plugins.ktlint)
 }
 
@@ -63,16 +68,6 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-                dependencies {
-                }
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
         commonMain.dependencies {
             implementation(project(":shared-local-db"))
             api(project(":shared-core"))
@@ -104,6 +99,9 @@ kotlin {
             implementation(libs.kotlinx.io.core)
             implementation(libs.kotlinx.serialization.json)
         }
+        wasmJsMain.dependencies {
+            implementation(libs.coil.network.ktor3)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
@@ -123,27 +121,6 @@ kotlin {
                 implementation(libs.jsoup)
             }
         }
-        // Gradle 不解析 JavaFX POM 的平台 classifier；显式指定才能取得类和 JNI。
-        val osName = System.getProperty("os.name").lowercase()
-        val osArch = System.getProperty("os.arch").lowercase()
-        val fxClassifier =
-            when {
-                osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
-                osName.contains("mac") -> "mac"
-                osName.contains("win") -> "win"
-                osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
-                else -> "linux"
-            }
-        val javafxModules =
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            )
-
         jvmMain {
         }
         jvmMain.dependencies {
@@ -154,16 +131,44 @@ kotlin {
             implementation(libs.zxing.core)
             implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutines.swing)
-            // JavaFX 运行时由桌面宿主提供，共享模块只需编译类。
-            javafxModules.forEach { compileOnly(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
         }
         findByName("macosMain")?.dependencies {
             implementation(libs.ktor.client.darwin)
         }
         jvmTest.dependencies {
-            javafxModules.forEach { implementation(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
             implementation(libs.jb.compose.ui.test)
             implementation(libs.jsoup)
+        }
+    }
+}
+
+aboutLibraries { collect { all.set(true) } }
+val iosLicenseVariant = zhihuIosVariant
+kotlin.targets.withType<KotlinNativeTarget>().configureEach {
+    val targetName = name
+    val suffix = targetName.replaceFirstChar { it.uppercase() }
+    val variant = if (targetName.startsWith("ios")) iosLicenseVariant else "full"
+    val rawManifest = layout.buildDirectory.file("generated/aboutLibraries/$variant/$targetName/dependencies.json")
+    val exportDependencies = tasks.register<AboutLibrariesTask>("exportAppleLicenses$suffix") {
+        this.variant.set(compilations.getByName("main").compileDependencyConfigurationName)
+        configureOutputFile(rawManifest)
+        configure()
+    }
+    tasks.register<Exec>("prepare${suffix}LicenseManifest") {
+        dependsOn(exportDependencies)
+        val script = layout.projectDirectory.file("tools/merge_apple_licenses.py")
+        val output = layout.buildDirectory.file("generated/apple-licenses/$variant/$targetName/aboutlibraries.json")
+        val python = providers.environmentVariable("ZHIHU_PYTHON").orElse("python3")
+        inputs.files(script, rawManifest)
+        inputs.property("licenseVariant", variant)
+        outputs.file(output)
+        outputs.dir(output.map { it.asFile.parentFile.resolve("licenses") })
+        commandLine(python.get(), "-I", script.asFile.absolutePath, "--input", rawManifest.get().asFile.absolutePath, "--output", output.get().asFile.absolutePath)
+        if (variant == "full") {
+            val notices = project(":shared-domain").layout.buildDirectory.dir("generated/onnxruntime-apple/licenses")
+            dependsOn(":shared-domain:prepareAppleOnnxRuntime")
+            inputs.dir(notices)
+            args("--ort-licenses", notices.get().asFile.absolutePath)
         }
     }
 }

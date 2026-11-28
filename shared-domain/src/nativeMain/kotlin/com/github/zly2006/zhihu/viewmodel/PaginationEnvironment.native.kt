@@ -19,138 +19,65 @@ package com.github.zly2006.zhihu.viewmodel
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.account.defaultNativeAccountStore
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
-import com.github.zly2006.zhihu.navigation.NavDestination
+import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.platform.LocalNativeFileDelivery
+import com.github.zly2006.zhihu.platform.NativeFileDelivery
+import com.github.zly2006.zhihu.platform.exportNativeArticleHtml
+import com.github.zly2006.zhihu.platform.exportNativeArticleImage
+import com.github.zly2006.zhihu.platform.exportNativeArticlePdf
+import com.github.zly2006.zhihu.platform.exportNativeCollection
+import com.github.zly2006.zhihu.platform.readNativeExportAsset
+import com.github.zly2006.zhihu.platform.requireNativeFileDelivery
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.nativeNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.copyNativePlainText
-import com.github.zly2006.zhihu.platform.platformName
-import com.github.zly2006.zhihu.util.Log
-import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
-import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
-import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
-import io.ktor.client.HttpClient
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonElement
 
 @Composable
 actual fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationEnvironment {
     val store = rememberZhihuAccountStore()
-    return remember(allowGuestAccess, store) { NativePaginationEnvironment(accountStore = store, allowGuestAccess = allowGuestAccess) }
+    val delivery = LocalNativeFileDelivery.current
+    return remember(allowGuestAccess, store, delivery) {
+        NativePaginationEnvironment(accountStore = store, allowGuestAccess = allowGuestAccess, fileDelivery = delivery)
+    }
 }
 
 class NativePaginationEnvironment(
-    override val notificationSettingsStore: NotificationSettingsStore = nativeNotificationSettingsStore(),
-    private val accountStore: ZhihuAccountStore = defaultNativeAccountStore,
-    override val allowGuestAccess: Boolean = false,
-) : PaginationEnvironment,
-    CollectionContentEnvironment,
-    NotificationEnvironment {
-    private val contentFilterDatabase = getContentFilterDatabase()
-
-    override val accountClient: ZhihuAccountClient
-        get() = accountStore.client
-
-    override fun httpClient(): HttpClient = accountClient.let { it.httpClient(useCookies = it.load().login) }
-
-    override fun authenticatedCookies(): Map<String, String> = accountStore.session
-        .takeIf { it.login }
-        ?.cookies
-        .orEmpty()
-
-    override suspend fun <T> withAuthenticatedClient(
-        block: suspend (client: HttpClient, cookies: Map<String, String>) -> T,
-    ): T = accountStore.client.withAuthenticatedClient(block)
-
+    notificationSettingsStore: NotificationSettingsStore = nativeNotificationSettingsStore(),
+    accountStore: ZhihuAccountStore,
+    allowGuestAccess: Boolean = false,
+    private val fileDelivery: NativeFileDelivery? = null,
+) : StoredPaginationEnvironment(notificationSettingsStore, accountStore, allowGuestAccess) {
     override fun setPlainTextClipboard(label: String, text: String) = copyNativePlainText(text)
 
-    override suspend fun isUserBlocked(userId: String): Boolean =
-        contentFilterDatabase.blockedUserDao().isUserBlocked(userId)
-
-    override suspend fun isQuestionAuthorBlocked(userId: String): Boolean =
-        contentFilterDatabase.blockedQuestionAuthorDao().isUserBlocked(userId)
-
-    override fun blockedUserIds(): Set<String> = runBlocking {
-        contentFilterDatabase
-            .blockedUserDao()
-            .getAllUsers()
-            .map { it.userId }
-            .toSet()
-    }
-
-    override suspend fun addBlockedUser(
-        userId: String,
-        userName: String,
-        urlToken: String?,
-        avatarUrl: String?,
-    ) {
-        contentFilterDatabase.blockedUserDao().insertUser(
-            BlockedUser(
-                userId = userId,
-                userName = userName,
-                urlToken = urlToken,
-                avatarUrl = avatarUrl,
-            ),
-        )
-    }
-
-    override suspend fun addBlockedQuestionAuthor(
-        userId: String,
-        userName: String,
-        urlToken: String?,
-        avatarUrl: String?,
-    ) {
-        contentFilterDatabase.blockedQuestionAuthorDao().insertUser(
-            BlockedQuestionAuthor(
-                userId = userId,
-                userName = userName,
-                urlToken = urlToken,
-                avatarUrl = avatarUrl,
-            ),
-        )
-    }
-
-    override suspend fun removeBlockedUser(userId: String) {
-        contentFilterDatabase.blockedUserDao().deleteUserById(userId)
-    }
-
-    override suspend fun removeBlockedQuestionAuthor(userId: String) {
-        contentFilterDatabase.blockedQuestionAuthorDao().deleteUserById(userId)
-    }
-
-    override suspend fun recordContentOpenEvent(
-        destination: NavDestination,
-        questionId: Long?,
-        openFrom: String,
-    ) {
-        ContentOpenEventSupport.recordOpenEvent(
-            database = contentFilterDatabase,
-            destination = destination,
-            questionId = questionId,
-            openFrom = openFrom,
-        )
-    }
+    override fun loadExportAssetText(fileName: String): String = readNativeExportAsset(fileName)
 
     override suspend fun exportCollectionItemsToHtmlZip(
         collectionTitle: String,
         items: List<CollectionItem>,
         includeImages: Boolean,
         onProgress: suspend (CollectionHtmlExportProgress) -> Unit,
-    ): CollectionHtmlExportResult = error("$platformName 暂不支持收藏夹 HTML 压缩包导出")
+    ): CollectionHtmlExportResult = exportNativeCollection(
+        this, collectionTitle, items, includeImages, onProgress, requireNativeFileDelivery(fileDelivery),
+    )
 
-    override suspend fun handleCollectionExportFailure(error: Exception) {
-        Log.e("CollectionContentViewModel", "Failed to export collection HTML zip", error)
-    }
+    override suspend fun ensureImageExportPermission(): ArticleExportPermission =
+        requireNativeFileDelivery(fileDelivery).ensureImagePermission()
 
-    override fun logDecodeFailure(tag: String?, item: JsonElement, error: Exception) {
-        Log.e(tag ?: "PaginationViewModel", "Failed to decode item: $item", error)
-    }
+    override suspend fun exportPdf(content: DataHolder.Content, includeAppAttribution: Boolean): ArticleExportResult =
+        exportNativeArticlePdf(content, includeAppAttribution, httpClient(), requireNativeFileDelivery(fileDelivery))
 
-    override suspend fun handleFetchFailure(tag: String?, error: Exception) {
-        Log.e(tag ?: "PaginationViewModel", "Failed to fetch feeds", error)
-    }
+    override suspend fun exportHtml(content: DataHolder.Content, includeAppAttribution: Boolean): ArticleExportResult =
+        exportNativeArticleHtml(content, includeAppAttribution, httpClient(), requireNativeFileDelivery(fileDelivery))
+
+    override suspend fun exportImage(
+        content: DataHolder.Content,
+        includeAppAttribution: Boolean,
+        extraSectionsHtml: String,
+        includeComments: Boolean,
+    ): ArticleExportResult = exportNativeArticleImage(
+        content, includeAppAttribution, extraSectionsHtml, includeComments,
+        httpClient(), requireNativeFileDelivery(fileDelivery),
+    )
 }

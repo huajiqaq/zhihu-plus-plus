@@ -1,0 +1,49 @@
+name: Deploy Web to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'zly2006/zhihu-plus-plus' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        with:
+          upstream-tools: 'false'
+      - name: Check browser bridge boundaries
+        run: node --test misc/zhihu-web-bridge/bridge.test.mjs
+      - name: Build static Web distribution
+        run: bash ./gradlew -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g :webApp:wasmJsBrowserDistribution --max-workers=2
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: webApp/build/dist/wasmJs/productionExecutable/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -35,12 +35,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.reading.ReadingPlaybackStatus
 import com.github.zly2006.zhihu.reading.hasReadableFields
-import com.github.zly2006.zhihu.reading.isReadingPlayerSupported
 import com.github.zly2006.zhihu.reading.loadReadingPlaybackSpeed
 import com.github.zly2006.zhihu.reading.loadReadingPreferences
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
@@ -52,7 +54,6 @@ import com.github.zly2006.zhihu.ui.components.handleShareAction
 import com.github.zly2006.zhihu.ui.components.rememberAppPageTitleBarScrollState
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.rememberShareActionExecutor
-import com.github.zly2006.zhihu.util.jsonObject
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.deleteSigned
@@ -61,11 +62,13 @@ import com.github.zly2006.zhihu.viewmodel.nextUrlOrNull
 import com.github.zly2006.zhihu.viewmodel.postSigned
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.replaceOrAppendUniqueVoters
+import io.ktor.client.call.body
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
@@ -101,9 +104,9 @@ private suspend fun togglePinLike(
 ): PinLikeResult {
     val endpoint = "https://www.zhihu.com/api/v4/pins/${pin.id}/voters/up"
     val jojo = if (isLiked) {
-        environment.deleteSigned(endpoint).raiseForStatus().jsonObject()
+        environment.deleteSigned(endpoint).raiseForStatus().body<JsonObject>()
     } else {
-        environment.postSigned(endpoint).raiseForStatus().jsonObject()
+        environment.postSigned(endpoint).raiseForStatus().body<JsonObject>()
     }
     return PinLikeResult(
         isLiked = !isLiked,
@@ -134,7 +137,7 @@ fun PinScreen(
 ) {
     val navigator = LocalNavigator.current
     val coroutineScope = rememberCoroutineScope()
-    val paginationEnvironment = rememberPaginationEnvironment(allowGuestAccess = false)
+    val paginationEnvironment = rememberPaginationEnvironment(allowGuestAccess = rememberZhihuAccountStore().usesBrowserSession)
     val client = paginationEnvironment.httpClient()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
@@ -142,7 +145,7 @@ fun PinScreen(
     val readingPreferences = loadReadingPreferences(settings)
     val readingPlaybackSpeed = loadReadingPlaybackSpeed(settings)
     val readingPlayer = rememberReadingPlayerController()
-    val readingPlayerState by readingPlayer.state
+    val readingPlayerState = readingPlayer?.state?.value
     val executeShareAction = rememberShareActionExecutor()
     val screenData: PinScreenData = viewModel(key = "pin_${pin.id}") { PinScreenData() }
     val isLoading by screenData.isLoading
@@ -200,7 +203,7 @@ fun PinScreen(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    operationError = error.message?.takeIf(String::isNotBlank) ?: "点赞操作失败，请重试"
+                    operationError = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.likeFailedRetry
                 } finally {
                     likeChanging = false
                 }
@@ -227,7 +230,7 @@ fun PinScreen(
             } catch (error: CancellationException) {
                 throw error
             } catch (e: Exception) {
-                votersError = e.message?.takeIf(String::isNotBlank) ?: "加载赞同者失败"
+                votersError = e.message?.takeIf(String::isNotBlank) ?: ContentStrings.votersLoadFailed
             } finally {
                 votersLoading = false
             }
@@ -242,7 +245,7 @@ fun PinScreen(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             val readingItem = pinContent?.toReadingQueueItem(pin)
-            val isCurrentReadingItem = readingItem?.key == readingPlayerState.currentItem?.key
+            val isCurrentReadingItem = readingItem != null && readingItem.key == readingPlayerState?.currentItem?.key
             PinScreenTopBar(
                 pin = pin,
                 pinContent = pinContent,
@@ -250,9 +253,9 @@ fun PinScreen(
                 onBack = navigator.onNavigateBack,
                 readingItem = readingItem,
                 isCurrentReadingItem = isCurrentReadingItem,
-                readingEnabled = isReadingPlayerSupported && readingItem?.hasReadableFields(readingPreferences) == true,
-                readingStatus = readingPlayerState.status,
-                isActivelyPlaying = readingPlayerState.isActivelyPlaying,
+                readingEnabled = readingPlayer != null && readingItem?.hasReadableFields(readingPreferences) == true,
+                readingStatus = readingPlayerState?.status ?: ReadingPlaybackStatus.Idle,
+                isActivelyPlaying = readingPlayerState?.isActivelyPlaying == true,
                 readingPlayer = readingPlayer,
                 coroutineScope = coroutineScope,
                 readingPreferences = readingPreferences,
@@ -346,7 +349,7 @@ fun PinScreen(
                                 throw error
                             } catch (e: Exception) {
                                 pollVotingOptionId = null
-                                pollErrorMessage = e.message?.takeIf(String::isNotBlank) ?: "投票失败"
+                                pollErrorMessage = e.message?.takeIf(String::isNotBlank) ?: ContentStrings.voteFailed
                             } finally {
                                 pollVotingOptionId = null
                             }

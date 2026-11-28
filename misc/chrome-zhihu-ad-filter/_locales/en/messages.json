@@ -1,0 +1,19 @@
+{
+  "extensionName": {
+    "message": "Zhihu Feed Ad Filter"
+  },
+  "extensionDescription": {
+    "message": "Filters ads and promotional content from your Zhihu recommendations."
+  },
+  "filtered": {
+    "message": "Filtered: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "untitled": {
+    "message": "Untitled item"
+  }
+}

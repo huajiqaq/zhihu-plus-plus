@@ -68,6 +68,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.HostStrings
 
 @Composable
 internal fun BoxScope.VideoPlayerControls(
@@ -96,17 +97,17 @@ internal fun BoxScope.VideoPlayerControls(
                 progress()
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onTogglePlayback, modifier = Modifier.size(36.dp)) {
-                        Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (isPlaying) "暂停" else "播放", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (isPlaying) HostStrings.videoPause else HostStrings.videoPlay, tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                     Text(timeText(), color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
                     IconButton(onClick = onScreenshot, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.CameraAlt, "截图", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.CameraAlt, HostStrings.videoScreenshot, tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = onLock, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.LockOpen, "锁定", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.LockOpen, HostStrings.videoLock, tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = onDownload, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.Download, "下载", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Download, HostStrings.videoDownload, tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                     Box {
                         Text(
@@ -117,9 +118,9 @@ internal fun BoxScope.VideoPlayerControls(
                             modifier = Modifier
                                 .padding(8.dp)
                                 .semantics {
-                                    contentDescription = "播放速度"
-                                    stateDescription = "${playbackSpeed}倍"
-                                }.clickable(role = Role.Button, onClickLabel = "选择播放速度", onClick = onShowSpeedMenu),
+                                    contentDescription = HostStrings.videoSpeed
+                                    stateDescription = HostStrings.videoSpeedValue(playbackSpeed.toString())
+                                }.clickable(role = Role.Button, onClickLabel = HostStrings.videoChooseSpeed, onClick = onShowSpeedMenu),
                         )
                         DropdownMenu(expanded = speedMenuExpanded, onDismissRequest = onDismissSpeedMenu, modifier = Modifier.background(Color(0xFF2D2D2D), RoundedCornerShape(8.dp))) {
                             floatArrayOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { sp ->
@@ -154,7 +155,7 @@ internal fun VideoPlayerProgress(
             .fillMaxWidth()
             .height(20.dp)
             .semantics {
-                contentDescription = "播放进度"
+                contentDescription = HostStrings.videoProgress
                 stateDescription = timeText
             },
         track = {

@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.nlp
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
 import com.ml.shubham0204.sentence_embeddings.SentenceEmbedding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,7 +49,9 @@ object SentenceEmbeddingManager {
 
     suspend fun ensureModel(context: Context? = null): SentenceEmbedding {
         embedding?.let { return it }
-        val resolvedContext = context?.applicationContext ?: defaultContext ?: throw IllegalStateException("SentenceEmbeddingManager default context not set")
+        val resolvedContext = context?.applicationContext ?: defaultContext ?: throw NlpDisplayFailure("SentenceEmbeddingManager default context not set") {
+            AndroidNlpStrings.modelContextMissing
+        }
         return mutex.withLock {
             embedding?.let { return it }
             _state.value = ModelState.Loading
@@ -67,8 +70,12 @@ object SentenceEmbeddingManager {
 
                 _state.value = ModelState.Loading
 
-                val modelFile = downloadedFiles["model_O4.onnx"] ?: throw IllegalStateException("Model file not found")
-                val tokenizerFile = downloadedFiles["tokenizer.json"] ?: throw IllegalStateException("Tokenizer file not found")
+                val modelFile = downloadedFiles["model_O4.onnx"] ?: throw NlpDisplayFailure("Model file not found") {
+                    AndroidNlpStrings.requiredModelFileMissing("model_O4.onnx")
+                }
+                val tokenizerFile = downloadedFiles["tokenizer.json"] ?: throw NlpDisplayFailure("Tokenizer file not found") {
+                    AndroidNlpStrings.requiredModelFileMissing("tokenizer.json")
+                }
 
                 model.init(
                     modelFilepath = modelFile.absolutePath,
@@ -87,7 +94,7 @@ object SentenceEmbeddingManager {
                     e.addSuppressed(closeError)
                 }
                 embedding = null
-                _state.value = if (e is CancellationException) ModelState.Uninitialized else ModelState.Error(e.message ?: "模型加载失败")
+                _state.value = if (e is CancellationException) ModelState.Uninitialized else ModelState.Error(e)
                 throw e
             }
         }

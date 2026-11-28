@@ -23,12 +23,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.editor.uploadVoiceComment
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.ui.components.LocalVoiceCommentPlayer
@@ -38,9 +44,11 @@ import com.github.zly2006.zhihu.ui.components.VoiceCommentRecorder
 import com.github.zly2006.zhihu.ui.components.rememberVoiceCommentPlayer
 import com.github.zly2006.zhihu.ui.components.rememberVoiceCommentRecorder
 import com.github.zly2006.zhihu.ui.components.rememberVoiceRecordPermissionRequester
-import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
+import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -57,7 +65,7 @@ internal class CommentVoiceState(
     uploadedVoiceIdState: State<String?>,
     isUploadingVoiceState: State<Boolean>,
     recordingElapsedMsState: State<Long>,
-    voiceUploadErrorState: State<String?>,
+    voiceUploadErrorState: State<(() -> String)?>,
     val discardRecordedVoice: () -> Unit,
     val uploadRecordedVoice: () -> Unit,
     val stopVoiceRecording: () -> Unit,
@@ -67,52 +75,99 @@ internal class CommentVoiceState(
     val uploadedVoiceId by uploadedVoiceIdState
     val isUploadingVoice by isUploadingVoiceState
     val recordingElapsedMs by recordingElapsedMsState
-    val voiceUploadError by voiceUploadErrorState
+    private val voiceUploadErrorText by voiceUploadErrorState
+    val voiceUploadError: String? get() = voiceUploadErrorText?.invoke()
 }
 
-/** 语音评论的录制、试听和上传；录音与上传结果随 [resolvedContent] 重建。 */
+/** 只在调用方按内容与账号客户端建立的子组合内使用；切 owner 销毁录音和上传，不清除文字草稿。 */
 @Composable
 internal fun rememberCommentVoiceState(
     resolvedContent: NavDestination,
+    accountClient: ZhihuAccountClient,
+    paginationEnvironment: ZhihuApiEnvironment,
     isSendingState: State<Boolean>,
-    paginationEnvironment: PaginationEnvironment,
+    isCurrentAccount: () -> Boolean,
     coroutineScope: CoroutineScope,
     userMessages: UserMessageSink,
     /** 权限窗口启动前通知 owner，避免窗口失焦卸载注册。 */
     onPickerLaunched: () -> Unit,
 ): CommentVoiceState {
     val isSending by isSendingState
-    val voiceRecorder = rememberVoiceCommentRecorder()
+    val uploadEnvironment = remember(accountClient, paginationEnvironment) {
+        val owner = accountClient
+        object : ZhihuApiEnvironment {
+            override val accountClient = owner
+
+            override suspend fun handleFetchFailure(tag: String?, error: Exception) =
+                paginationEnvironment.handleFetchFailure(tag, error)
+        }
+    }
+    val voiceRecorder = key(resolvedContent) { rememberVoiceCommentRecorder() }
     val voicePreviewPlayer = LocalVoiceCommentPlayer.current ?: rememberVoiceCommentPlayer()
     val recordedVoiceState = remember(resolvedContent) { mutableStateOf<RecordedVoiceComment?>(null) }
     var recordedVoice by recordedVoiceState
     val uploadedVoiceIdState = remember(resolvedContent) { mutableStateOf<String?>(null) }
     var uploadedVoiceId by uploadedVoiceIdState
     val submittedVoices = remember(resolvedContent) { mutableStateMapOf<String, RecordedVoiceComment>() }
-    DisposableEffect(submittedVoices, voiceRecorder, recordedVoiceState) {
+    val isUploadingVoiceState = remember(resolvedContent) { mutableStateOf(false) }
+    var isUploadingVoice by isUploadingVoiceState
+    val recordingElapsedMsState = remember { mutableStateOf(0L) }
+    var recordingElapsedMs by recordingElapsedMsState
+    var voiceErrorMessage by remember { mutableStateOf<String?>(null) }
+    val voiceUploadErrorState = remember(resolvedContent) { mutableStateOf<(() -> String)?>(null) }
+    var voiceUploadError by voiceUploadErrorState
+    var isVoiceScreenActive by remember(resolvedContent) { mutableStateOf(true) }
+    var generation by remember(resolvedContent) { mutableStateOf(0) }
+    var recordingJob by remember(resolvedContent) { mutableStateOf<Job?>(null) }
+    var uploadJob by remember(resolvedContent) { mutableStateOf<Job?>(null) }
+    val operationBusy = remember(resolvedContent) { mutableStateOf(false) }
+    val exposedRecorder = remember(voiceRecorder, operationBusy) {
+        object : VoiceCommentRecorder by voiceRecorder {
+            override val isBusy: Boolean get() = operationBusy.value || voiceRecorder.isBusy
+
+            override fun cancel() {
+                generation++
+                recordingJob?.cancel()
+                voiceRecorder.cancel()
+                operationBusy.value = false
+            }
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    DisposableEffect(resolvedContent, lifecycle, voiceRecorder) {
+        isVoiceScreenActive = true
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                voicePreviewPlayer.stop()
+                if (voiceRecorder.isRecording || voiceRecorder.isBusy) {
+                    generation++
+                    recordingJob?.cancel()
+                    voiceRecorder.cancel()
+                    operationBusy.value = false
+                    voiceErrorMessage = CommentsStrings.recordingInterrupted
+                }
+            }
+        }
+        lifecycle.addObserver(observer)
         onDispose {
+            lifecycle.removeObserver(observer)
+            isVoiceScreenActive = false
+            generation++
+            recordingJob?.cancel()
+            uploadJob?.cancel()
+            voicePreviewPlayer.stop()
             voiceRecorder.cancel()
             recordedVoiceState.value?.let(voiceRecorder::delete)
             submittedVoices.values.forEach(voiceRecorder::delete)
         }
     }
-    val isUploadingVoiceState = remember { mutableStateOf(false) }
-    var isUploadingVoice by isUploadingVoiceState
-    val recordingElapsedMsState = remember { mutableStateOf(0L) }
-    var recordingElapsedMs by recordingElapsedMsState
-    var voiceErrorMessage by remember { mutableStateOf<String?>(null) }
-    val voiceUploadErrorState = remember(resolvedContent) { mutableStateOf<String?>(null) }
-    var voiceUploadError by voiceUploadErrorState
-    var isVoiceScreenActive by remember { mutableStateOf(true) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            isVoiceScreenActive = false
-            voicePreviewPlayer.stop()
-        }
-    }
 
     fun discardRecordedVoice() {
+        generation++
+        uploadJob?.cancel()
+        uploadJob = null
+        isUploadingVoice = false
         voicePreviewPlayer.stop()
         recordedVoice?.let { voiceRecorder.delete(it) }
         recordedVoice = null
@@ -121,62 +176,126 @@ internal fun rememberCommentVoiceState(
     }
 
     fun uploadRecordedVoice() {
-        if (isUploadingVoice || isSending) return
+        if (isUploadingVoice || isSending || !isCurrentAccount()) return
         val recorded = recordedVoice ?: return
-        val bytes = voiceRecorder.readBytes(recorded)
-        if (bytes == null || bytes.isEmpty()) {
-            voiceUploadError = "读取录音失败"
-            voiceErrorMessage = voiceUploadError
-            return
-        }
+        val operation = generation
         voiceUploadError = null
         isUploadingVoice = true
-        coroutineScope.launch {
+        uploadJob = coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
+                val bytes = voiceRecorder.readBytes(recorded)
+                if (bytes == null || bytes.isEmpty()) {
+                    if (operation == generation && isVoiceScreenActive && isCurrentAccount()) {
+                        voiceUploadError = { CommentsStrings.recordingReadFailed }
+                        voiceErrorMessage = voiceUploadError?.invoke()
+                    }
+                    return@launch
+                }
+                if (operation != generation || !isVoiceScreenActive || !isCurrentAccount()) return@launch
                 val uploaded = uploadVoiceComment(
-                    environment = paginationEnvironment,
+                    environment = uploadEnvironment,
                     bytes = bytes,
                     durationMs = recorded.durationMs,
                     mimeType = recorded.mimeType,
                 )
-                uploadedVoiceId = uploaded.voiceId
+                if (operation == generation && isVoiceScreenActive && isCurrentAccount()) uploadedVoiceId = uploaded.voiceId
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                voiceUploadError = "语音上传失败：${e.message}"
-                voiceErrorMessage = voiceUploadError
+                if (operation == generation && isVoiceScreenActive && isCurrentAccount()) {
+                    voiceUploadError = { CommentsStrings.voiceUploadFailed(e.message.orEmpty()) }
+                    voiceErrorMessage = voiceUploadError?.invoke()
+                }
             } finally {
-                isUploadingVoice = false
+                if (operation == generation) isUploadingVoice = false
             }
         }
     }
 
     fun stopVoiceRecording() {
-        val recorded = voiceRecorder.stop()
-        if (recorded == null || recorded.sizeBytes <= 0L) {
-            voiceErrorMessage = "录音时间太短"
-            return
+        if (!voiceRecorder.isRecording || exposedRecorder.isBusy) return
+        operationBusy.value = true
+        val operation = generation
+        recordingJob = coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                val recorded = voiceRecorder.stop()
+                if (operation != generation || !isVoiceScreenActive || !isCurrentAccount()) {
+                    recorded?.let(voiceRecorder::delete)
+                    return@launch
+                }
+                if (recorded == null || recorded.sizeBytes <= 0L || recorded.durationMs <= 0L) {
+                    recorded?.let(voiceRecorder::delete)
+                    if (voiceRecorder.errorMessage == null) voiceErrorMessage = CommentsStrings.recordingTooShort
+                    return@launch
+                }
+                recordedVoice?.let(voiceRecorder::delete)
+                recordedVoice = recorded
+                uploadedVoiceId = null
+                recordingElapsedMs = recorded.durationMs
+                voicePreviewPlayer.toggle(recorded.filePath)
+                uploadRecordedVoice()
+            } catch (e: CancellationException) {
+                if (operation == generation) voiceRecorder.cancel()
+                throw e
+            } catch (_: Exception) {
+                if (operation == generation) {
+                    voiceRecorder.cancel()
+                    voiceErrorMessage = CommentsStrings.recordingFailed("")
+                }
+            } finally {
+                if (operation == generation) operationBusy.value = false
+            }
         }
-        recordedVoice?.let { voiceRecorder.delete(it) }
-        recordedVoice = recorded
-        uploadedVoiceId = null
-        recordingElapsedMs = recorded.durationMs
-        voicePreviewPlayer.toggle(recorded.filePath)
-        uploadRecordedVoice()
     }
 
-    val requestVoicePermission = rememberVoiceRecordPermissionRequester(onLaunched = onPickerLaunched) { granted ->
-        if (!isVoiceScreenActive) return@rememberVoiceRecordPermissionRequester
-        if (granted) {
-            discardRecordedVoice()
-            if (voiceRecorder.start()) {
-                recordingElapsedMs = 0L
-            } else {
-                voiceErrorMessage = "无法开始录音"
+    val launchVoicePermission = key(resolvedContent, generation) {
+        val requestGeneration = generation
+        rememberVoiceRecordPermissionRequester(onLaunched = onPickerLaunched) { granted ->
+            if (requestGeneration == generation && isVoiceScreenActive && operationBusy.value && isCurrentAccount()) {
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                    operationBusy.value = false
+                } else if (granted) {
+                    discardRecordedVoice()
+                    val operation = generation
+                    recordingJob = coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        try {
+                            if (voiceRecorder.start()) {
+                                if (operation == generation && isVoiceScreenActive && isCurrentAccount()) {
+                                    recordingElapsedMs = 0L
+                                } else {
+                                    voiceRecorder.cancel()
+                                }
+                            } else if (operation == generation) {
+                                if (voiceRecorder.errorMessage == null) voiceErrorMessage = CommentsStrings.recordingStartFailed
+                            }
+                        } catch (e: CancellationException) {
+                            if (operation == generation) voiceRecorder.cancel()
+                            throw e
+                        } catch (_: Exception) {
+                            if (operation == generation) {
+                                voiceRecorder.cancel()
+                                voiceErrorMessage = CommentsStrings.recordingStartFailed
+                            }
+                        } finally {
+                            if (operation == generation) operationBusy.value = false
+                        }
+                    }
+                } else {
+                    operationBusy.value = false
+                    voiceErrorMessage = CommentsStrings.microphonePermissionRequired
+                }
             }
-        } else {
-            voiceErrorMessage = "需要麦克风权限才能录制语音评论"
         }
+    }
+    val requestVoicePermission: () -> Unit = {
+        if (!exposedRecorder.isBusy && !voiceRecorder.isRecording && !isSending && !isUploadingVoice && isCurrentAccount()) {
+            operationBusy.value = true
+            launchVoicePermission()
+        }
+    }
+
+    LaunchedEffect(voiceRecorder.errorMessage, generation) {
+        voiceRecorder.errorMessage?.let { voiceErrorMessage = it }
     }
 
     LaunchedEffect(voiceRecorder.isRecording) {
@@ -194,7 +313,7 @@ internal fun rememberCommentVoiceState(
     }
 
     return CommentVoiceState(
-        recorder = voiceRecorder,
+        recorder = exposedRecorder,
         previewPlayer = voicePreviewPlayer,
         submittedVoices = submittedVoices,
         recordedVoiceState = recordedVoiceState,

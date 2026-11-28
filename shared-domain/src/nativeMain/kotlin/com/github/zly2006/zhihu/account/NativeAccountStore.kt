@@ -17,15 +17,9 @@
 
 package com.github.zly2006.zhihu.account
 
-import androidx.compose.runtime.Composable
 import com.github.zly2006.zhihu.platform.nativeAccountFilePath
 import kotlinx.io.files.Path
 
-@Composable
-actual fun rememberZhihuAccountStore(): ZhihuAccountStore = LocalZhihuAccountStore.current ?: defaultNativeAccountStore
-
-internal val defaultNativeAccountStore by lazy {
-    ZhihuAccountStore(
-        repository = ZhihuAccountRepository(Path(nativeAccountFilePath())),
-    )
-}
+fun createNativeAccountStore(): ZhihuAccountStore = ZhihuAccountStore(
+    repository = ZhihuAccountRepository(Path(nativeAccountFilePath())),
+)

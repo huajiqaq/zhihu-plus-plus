@@ -38,7 +38,7 @@ import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.ContentOpenEvent
 import com.github.zly2006.zhihu.viewmodel.filter.ContentViewRecord
-import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import com.github.zly2006.zhihu.viewmodel.filter.desktopContentFilterDatabase
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -46,6 +46,11 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import io.ktor.http.headersOf
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,11 +70,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 /** 生产分页与历史同步并发时，结构广告不能先发布到列表。 */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,7 +84,7 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             val pull = async { model.pullToRefresh(environment) }
             try {
                 environment.historyStarted.await()
-                while (model.allData.isEmpty()) {
+                while (environment.requests.isEmpty()) {
                     runCurrent()
                     kotlinx.coroutines.yield()
                 }
@@ -92,9 +92,8 @@ class HomeFollowStructuralAdvertisementRegressionTest {
                 advanceTimeBy(299)
                 runCurrent()
                 assertFalse(pull.isCompleted)
-                assertIs<AdvertisementFeed>(model.allData.single())
+                assertTrue(model.allData.isEmpty(), "过滤成功前不得提交原始页")
                 assertEquals(emptyList(), model.displayItems.toList())
-                assertEquals(emptyList(), model.latestLoadedDisplayItems.value)
                 assertEquals(0, model.completedPageCount)
                 assertEquals(1, environment.requests.size, "推荐 GET 必须在历史等待完成前发出")
                 assertEquals(1, environment.historyRequests)
@@ -105,7 +104,6 @@ class HomeFollowStructuralAdvertisementRegressionTest {
                 pull.await()
                 assertIs<AdvertisementFeed>(model.allData.single())
                 assertEquals(emptyList(), model.displayItems.toList())
-                assertEquals(emptyList(), model.latestLoadedDisplayItems.value)
                 assertEquals(1, model.completedPageCount)
                 assertEquals(1, environment.requests.size)
                 assertEquals(emptyList(), environment.detailRequests)
@@ -167,7 +165,7 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             "remoteHistoryReadTime" to "0",
         )
         val previousValues = values.keys.associateWith(settings::getStringOrNull)
-        val database = getContentFilterDatabase()
+        val database = desktopContentFilterDatabase
         val tables = arrayOf(
             ContentViewRecord.TABLE_NAME,
             ContentOpenEvent.TABLE_NAME,

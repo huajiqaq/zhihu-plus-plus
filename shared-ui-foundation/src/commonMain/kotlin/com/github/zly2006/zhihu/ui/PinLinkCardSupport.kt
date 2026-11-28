@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.ui
 
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ReadingStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -57,4 +58,7 @@ fun compactTitle(raw: String, maxLength: Int = 56): String = compactPreview(raw,
 data class PinLinkCardPreview(
     val title: String,
     val preview: String,
-)
+    val pinAuthorName: String? = null,
+) {
+    val displayTitle: String get() = pinAuthorName?.let(ReadingStrings::pinByAuthor) ?: title
+}

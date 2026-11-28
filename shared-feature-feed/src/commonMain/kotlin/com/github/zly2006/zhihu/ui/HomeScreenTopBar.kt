@@ -45,14 +45,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSearchBar
 import com.github.zly2006.zhihu.ui.components.appGlassBlur
 import com.github.zly2006.zhihu.ui.components.appGlassContainerColor
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 private fun HomeAccountAvatarAction(
@@ -80,7 +81,7 @@ private fun HomeAccountAvatarAction(
             if (!avatarUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = avatarUrl,
-                    contentDescription = "账号",
+                    contentDescription = FeedStrings.account,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(AppDimens.AvatarSizeMedium)
@@ -91,9 +92,9 @@ private fun HomeAccountAvatarAction(
                         ).clip(CircleShape),
                 )
             } else {
-                Icon(
+                AppIcon(
                     Icons.Default.AccountCircle,
-                    contentDescription = "账号",
+                    contentDescription = FeedStrings.account,
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(AppDimens.AvatarSizeMedium),
                 )
@@ -132,7 +133,7 @@ internal fun HomeScreenTopBar(
             .padding(top = AppDimens.Space8, bottom = AppDimens.Space4),
     ) {
         AppSearchBar(
-            hint = "搜索",
+            hint = FeedStrings.search,
             onClick = onSearchClick,
             modifier = Modifier
                 .padding(horizontal = 16.dp)

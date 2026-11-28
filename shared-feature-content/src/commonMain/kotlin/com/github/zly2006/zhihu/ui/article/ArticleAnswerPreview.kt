@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,26 +47,27 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.fleeksoft.ksoup.Ksoup
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.util.formatCompactCount
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel.CachedAnswerContent
 import org.jetbrains.compose.resources.painterResource
 import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_vote_up_24dp
-import androidx.compose.material3.Icon as MaterialIcon
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun CachedAnswerPreview(cached: CachedAnswerContent, previous: Boolean = false) {
     val tokens = LocalAppSkinTokens.current
-    val excerpt = remember(cached.sourceContent, cached.content) {
+    val excerpt = remember(cached.sourceContent, cached.content, AppLocale.current) {
         val document = Ksoup.parse(cached.sourceContent ?: cached.content)
         val blocks = document.select("p, h1, h2, h3, h4, h5, h6, li, pre, img")
         blocks
             .joinToString("\n\n") { block ->
                 when (block.tagName()) {
-                    "img" -> "[图片]"
+                    "img" -> ContentStrings.imagePlaceholder
                     "pre" -> block.wholeText()
                     else -> block.text()
                 }
@@ -87,7 +89,7 @@ internal fun CachedAnswerPreview(cached: CachedAnswerContent, previous: Boolean 
             verticalArrangement = Arrangement.spacedBy(AppDimens.Space16),
         ) {
             Text(
-                text = "回答预览 · ${cached.sourceLabel}",
+                text = ContentStrings.answerPreviewFrom(cached.sourceLabel),
                 modifier = Modifier
                     .background(tokens.secondaryVariant, MaterialTheme.shapes.small)
                     .padding(horizontal = AppDimens.Space12, vertical = AppDimens.Space6),
@@ -137,14 +139,14 @@ internal fun CachedAnswerPreview(cached: CachedAnswerContent, previous: Boolean 
                     horizontalArrangement = Arrangement.spacedBy(AppDimens.Space4),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    MaterialIcon(
+                    Icon(
                         painter = painterResource(Res.drawable.ic_vote_up_24dp),
                         contentDescription = null,
                         tint = tokens.onSurfaceVariantSummary,
                         modifier = Modifier.size(AppDimens.IconSizeSmall),
                     )
                     Text(
-                        text = "${formatCompactCount(cached.voteUpCount)} 赞同",
+                        text = ContentStrings.compactUpvotes(cached.voteUpCount, formatCompactCount(cached.voteUpCount)),
                         color = tokens.onSurfaceVariantSummary,
                         style = tokens.footnote2,
                     )
@@ -153,21 +155,21 @@ internal fun CachedAnswerPreview(cached: CachedAnswerContent, previous: Boolean 
                     horizontalArrangement = Arrangement.spacedBy(AppDimens.Space4),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.AutoMirrored.Filled.Comment,
                         contentDescription = null,
                         tint = tokens.onSurfaceVariantSummary,
                         modifier = Modifier.size(AppDimens.IconSizeSmall),
                     )
                     Text(
-                        text = "${formatCompactCount(cached.commentCount)} 评论",
+                        text = ContentStrings.compactComments(cached.commentCount, formatCompactCount(cached.commentCount)),
                         color = tokens.onSurfaceVariantSummary,
                         style = tokens.footnote2,
                     )
                 }
             }
             Text(
-                text = excerpt.ifBlank { if (previous) "正在准备上一个回答" else "正在准备下一个回答" },
+                text = excerpt.ifBlank { if (previous) ContentStrings.preparingPreviousAnswer else ContentStrings.preparingNextAnswer },
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(tokens.surface, MaterialTheme.shapes.extraLarge)

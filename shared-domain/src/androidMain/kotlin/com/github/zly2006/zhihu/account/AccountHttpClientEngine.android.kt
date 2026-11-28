@@ -17,7 +17,14 @@
 
 package com.github.zly2006.zhihu.account
 
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.android.Android
 
 internal actual val accountHttpClientEngineFactory: HttpClientEngineFactory<*> = Android
+
+actual fun createDirectHttpClient(configure: HttpClientConfig<*>.() -> Unit): HttpClient = HttpClient(Android) {
+    configure()
+    followRedirects = false
+}

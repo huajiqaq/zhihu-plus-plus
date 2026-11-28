@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.account
 
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.redactDiagnosticText
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.util.ZhihuMessageBodyEncryptor
 import com.github.zly2006.zhihu.util.hmacSha1Hex
 import io.ktor.client.engine.HttpClientEngine
@@ -34,17 +35,20 @@ import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.formUrlEncode
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
-import kotlin.time.Clock
 
 class InvalidRefreshTokenException internal constructor(
     val serverMessage: String?,
-) : IllegalStateException(listOfNotNull(serverMessage, "刷新凭据已失效，请重新登录").joinToString("。"))
+) : IllegalStateException() {
+    override val message: String
+        get() = serverMessage?.let { DomainStrings.refreshExpiredDetail(it) } ?: DomainStrings.refreshExpired
+}
 
 /** 借用账号存储对象的网络引擎；续期 Cookie 与活动账号隔离，验证后由账号存储对象原子提交。 */
 internal class ZhihuMobileSessionProtocol(

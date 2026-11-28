@@ -31,16 +31,6 @@ rustup target add aarch64-linux-android x86_64-linux-android
 sentence_embeddings/build/outputs/aar/sentence_embeddings-release.aar
 ```
 
-## 集成
-
-在应用的 `build.gradle.kts` 中添加：
-
-```kotlin
-dependencies {
-    implementation(project(":sentence_embeddings"))
-}
-```
-
 ## 故障排查
 
 找不到 NDK 时，确认已安装构建脚本指定的版本；需要显式指定时，将 `ANDROID_NDK_HOME` 设为该 NDK 的安装目录。缺少 Rust 目标或 cargo-ndk 时，按上面的开发依赖补齐。

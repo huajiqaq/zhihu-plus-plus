@@ -17,10 +17,8 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
 /**
  * 关键词类型枚举
@@ -41,15 +39,15 @@ enum class KeywordScope {
  * 屏蔽关键词实体
  * 用于屏蔽包含特定关键词的内容
  */
-@Entity(tableName = BlockedKeyword.TABLE_NAME)
+@Serializable
 data class BlockedKeyword(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val keyword: String, // 关键词内容（NLP模式下为空格分隔的短语）
     val keywordType: String = KeywordType.EXACT_MATCH.name, // 关键词类型
     val caseSensitive: Boolean = false, // 是否区分大小写（仅精确匹配模式）
     val isRegex: Boolean = false, // 是否为正则表达式（仅精确匹配模式）
     val createdTime: Long = currentEpochMillis(), // 创建时间
-    @ColumnInfo(defaultValue = "'ALL'") val scope: String = KeywordScope.ALL.name,
+    val scope: String = KeywordScope.ALL.name,
 ) {
     companion object {
         const val TABLE_NAME = "blocked_keywords"

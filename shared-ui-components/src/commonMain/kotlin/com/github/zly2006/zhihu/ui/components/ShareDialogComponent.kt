@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
@@ -53,7 +54,6 @@ import com.github.zly2006.zhihu.navigation.Topic
 import com.github.zly2006.zhihu.platform.PlainTextClipboard
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.UserMessageSink
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 分享只分发动作；窗口、拖拽、返回、inset 和页面覆盖隐藏由共享弹层负责。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,11 +72,11 @@ fun ShareDialogContent(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         ) {
-            MenuActionButton(icon = Icons.Filled.Share, text = "分享", onClick = onShareClick)
+            MenuActionButton(icon = Icons.Filled.Share, text = WidgetsStrings.share, onClick = onShareClick)
             Spacer(modifier = Modifier.height(12.dp))
-            MenuActionButton(icon = Icons.Filled.ContentCopy, text = "复制链接", onClick = onCopyClick)
+            MenuActionButton(icon = Icons.Filled.ContentCopy, text = WidgetsStrings.copyLink, onClick = onCopyClick)
             Spacer(modifier = Modifier.height(12.dp))
-            MenuActionButton(icon = Icons.Filled.Settings, text = "分享设置", onClick = onSettingsClick)
+            MenuActionButton(icon = Icons.Filled.Settings, text = WidgetsStrings.shareSettings, onClick = onSettingsClick)
         }
     }
 }
@@ -104,7 +104,7 @@ private fun MenuActionButton(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.size(24.dp)) {
-                Icon(
+                AppIcon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = contentColor,
@@ -143,11 +143,11 @@ internal fun clipboardShareActionExecutor(
 ): ShareActionExecutor = object : ShareActionExecutor {
     override fun invoke(action: ShareAction, content: NavDestination, shareText: String) {
         if (action == ShareAction.CopyLink) {
-            copyPlainText("Link", shareText)
-            userMessages.showMessage("已复制链接")
+            copyPlainText(WidgetsStrings.link, shareText)
+            userMessages.showMessage(WidgetsStrings.linkCopied)
         } else {
-            copyPlainText("Share", shareText)
-            userMessages.showMessage("已复制分享文本")
+            copyPlainText(WidgetsStrings.share, shareText)
+            userMessages.showMessage(WidgetsStrings.shareTextCopied)
         }
     }
 }
@@ -202,33 +202,30 @@ fun handleShareAction(
 
 fun getShareText(content: NavDestination, title: String = "", authorName: String = ""): String? = when (content) {
     is Article -> {
-        when (content.type) {
-            ArticleType.Answer -> {
-                "https://www.zhihu.com/answer/${content.id}\n【$title - $authorName 的回答】"
-            }
-            ArticleType.Article -> {
-                "https://zhuanlan.zhihu.com/p/${content.id}\n【$title - $authorName 的文章】"
-            }
+        val url = when (content.type) {
+            ArticleType.Answer -> "https://www.zhihu.com/answer/${content.id}"
+            ArticleType.Article -> "https://zhuanlan.zhihu.com/p/${content.id}"
         }
+        val caption = articleShareTitle(content.type, title.ifBlank { content.title }, authorName.ifBlank { content.authorName })
+        "$url\n${WidgetsStrings.shareCaption(caption)}"
     }
-    is Question -> {
-        "https://www.zhihu.com/question/${content.questionId}\n【${content.title}】"
-    }
-    is Pin -> {
-        "https://www.zhihu.com/pin/${content.id}"
-    }
+    is Question -> "https://www.zhihu.com/question/${content.questionId}\n${WidgetsStrings.shareCaption(title.ifBlank { content.title })}"
+    is Pin -> "https://www.zhihu.com/pin/${content.id}"
     is Topic -> {
-        "https://www.zhihu.com/topic/${content.id}\n【${content.name.ifBlank { title.ifBlank { "知乎话题" } }}】"
+        val caption = content.name.ifBlank { title.ifBlank { WidgetsStrings.zhihuTopic } }
+        "https://www.zhihu.com/topic/${content.id}\n${WidgetsStrings.shareCaption(caption)}"
     }
     else -> null
 }
 
+private fun articleShareTitle(type: ArticleType, title: String, author: String): String = when (type) {
+    ArticleType.Answer -> WidgetsStrings.shareAnswerTitle(title, author)
+    ArticleType.Article -> WidgetsStrings.shareArticleTitle(title, author)
+}
+
 fun getShareTitle(content: NavDestination): String = when (content) {
-    is Article -> content.title + when (content.type) {
-        ArticleType.Answer -> " - ${content.authorName} 的回答"
-        ArticleType.Article -> " - ${content.authorName} 的文章"
-    }
+    is Article -> articleShareTitle(content.type, content.title, content.authorName)
     is Question -> content.title
-    is Topic -> content.name.ifBlank { "知乎话题" }
-    else -> "分享内容"
+    is Topic -> content.name.ifBlank { WidgetsStrings.zhihuTopic }
+    else -> WidgetsStrings.shareContent
 }

@@ -17,6 +17,9 @@
 
 package com.github.zly2006.zhihu.ui.components
 
+import java.net.CookieHandler
+import java.net.CookieManager
+import java.net.URI
 import javafx.animation.KeyFrame
 import javafx.animation.Timeline
 import javafx.concurrent.Worker
@@ -25,9 +28,6 @@ import javafx.event.EventHandler
 import javafx.scene.web.WebEngine
 import javafx.scene.web.WebView
 import javafx.util.Duration
-import java.net.CookieHandler
-import java.net.CookieManager
-import java.net.URI
 
 internal class DesktopWebviewSession(
     private val onPageFinished: (String?) -> Unit,

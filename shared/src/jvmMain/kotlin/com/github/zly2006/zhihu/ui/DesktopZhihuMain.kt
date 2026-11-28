@@ -17,16 +17,21 @@
 
 package com.github.zly2006.zhihu.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
 import com.github.zly2006.zhihu.desktop.openDesktopExternalUrl
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.Video
@@ -34,7 +39,10 @@ import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.notification.JvmSystemNotificationHost
 import com.github.zly2006.zhihu.notification.LocalJvmNotificationWindow
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.reading.ReadingPlayerHost
+import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.PageTurnFab
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +51,14 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun DesktopZhihuMain() {
+    ReadingPlayerHost { DesktopMainContent() }
+}
+
+@Composable
+private fun DesktopMainContent() {
     val navHost = rememberAppNavHost(MainTabs)
+    val pageTurnDispatcher = remember { PageTurnDispatcher() }
+    val tabsState = rememberZhihuMainTabsState()
     val accountStore = rememberZhihuAccountStore()
     val accounts by accountStore.accountsState.collectAsState()
     val accountSession = accounts.session
@@ -69,7 +84,7 @@ fun DesktopZhihuMain() {
                     }.getOrNull()
                 }
                 if (videoUrl == null) {
-                    userMessages.showMessage("获取视频链接失败")
+                    userMessages.showMessage(AppStrings.videoLoadFailed)
                 } else {
                     openDesktopExternalUrl(videoUrl)
                 }
@@ -77,9 +92,10 @@ fun DesktopZhihuMain() {
         },
     )
     val currentShowMessage by rememberUpdatedState<(String) -> Unit>({ userMessages.showMessage(it) })
-    val navigationCoordinator = remember(navHost) {
+    val navigationCoordinator = remember(navHost, tabsState) {
         ZhihuMainNavigationCoordinator(
             mainHost = { navHost },
+            tabs = { tabsState },
             showMessage = { currentShowMessage(it) },
             openVideo = { video, contentId, contentType -> currentOpenVideo(video, contentId, contentType) },
         )
@@ -90,22 +106,23 @@ fun DesktopZhihuMain() {
         onOpen = { navigationCoordinator.navigate(it) },
         wakeWindow = LocalJvmNotificationWindow.current,
     ) {
-        ZhihuMain(
-            navHost = navHost,
-            mainTabNavigationTarget = navigationCoordinator.mainTabNavigationTarget,
-            navigate = { navigationCoordinator.navigate(it) },
-            navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
-            enableLandscapeListDetail = true,
-            setCurrentMainTabOpenFrom = navigationCoordinator::setCurrentMainTabOpenFrom,
-            consumeMainTabNavigationTarget = navigationCoordinator::consumeMainTabNavigationTarget,
-            preferenceState = rememberZhihuMainPreferenceState(),
-            isDarkTheme = ThemeManager.isDarkTheme(),
-            articleContent = { article: Article ->
-                val articleViewModel: ArticleViewModel = viewModel {
-                    ArticleViewModel(article, httpClient, userMessages)
-                }
-                ArticleScreen(article, articleViewModel)
-            },
-        )
+        CompositionLocalProvider(LocalPageTurnDispatcher provides pageTurnDispatcher) {
+            Box(Modifier.fillMaxSize()) {
+                ZhihuMain(
+                    navHost = navHost,
+                    tabsState = tabsState,
+                    navigate = { navigationCoordinator.navigate(it) },
+                    navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
+                    enableLandscapeListDetail = true,
+                    articleContent = { article: Article ->
+                        val articleViewModel: ArticleViewModel = viewModel {
+                            ArticleViewModel(article, httpClient, userMessages)
+                        }
+                        ArticleScreen(article, articleViewModel)
+                    },
+                )
+                PageTurnFab(dispatcher = pageTurnDispatcher)
+            }
+        }
     }
 }

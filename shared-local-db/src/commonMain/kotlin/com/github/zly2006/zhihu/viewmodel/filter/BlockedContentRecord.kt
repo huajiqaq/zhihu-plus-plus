@@ -17,17 +17,16 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
 /**
  * 被屏蔽内容记录实体。
  * 这里只记录内容级的 NLP 语义匹配结果，不代表某条 feed 卡片本身的完整屏蔽历史。
  */
-@Entity(tableName = BlockedContentRecord.TABLE_NAME)
+@Serializable
 data class BlockedContentRecord(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val contentId: String, // 内容ID
     val contentType: String, // 内容类型（answer/article/question等）
     val title: String, // 内容标题
@@ -47,7 +46,7 @@ data class BlockedContentRecord(
 /**
  * 匹配关键词信息
  */
-@kotlinx.serialization.Serializable
+@Serializable
 data class MatchedKeywordInfo(
     val keyword: String,
     val similarity: Double,

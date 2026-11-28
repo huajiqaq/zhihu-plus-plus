@@ -23,12 +23,10 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -58,6 +56,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.data.VoteUpState
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.LocalMarkdownWidthManagedByHost
 import com.github.zly2006.zhihu.markdown.MarkdownSearchState
 import com.github.zly2006.zhihu.markdown.RenderMarkdown
@@ -77,24 +77,25 @@ import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBarScrollState
 import com.github.zly2006.zhihu.ui.components.AppScaffold
-import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.ContentEndMarker
+import com.github.zly2006.zhihu.ui.components.ContentSkeleton
 import com.github.zly2006.zhihu.ui.components.LocalOnRequestContentRefresh
 import com.github.zly2006.zhihu.ui.components.LocalSegmentSelectionTarget
 import com.github.zly2006.zhihu.ui.components.PageTurnTarget
 import com.github.zly2006.zhihu.ui.components.SegmentSelectionTarget
+import com.github.zly2006.zhihu.ui.components.SkeletonLayout
 import com.github.zly2006.zhihu.ui.components.appPageTitleBarScroll
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.util.smoothGradient
 import com.github.zly2006.zhihu.viewmodel.ArticleAnswerSwitchData
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -109,6 +110,7 @@ internal fun ArticleMainContent(
     readingPlayerOverlayPadding: Dp,
     environment: PaginationEnvironment,
     accountStore: ZhihuAccountStore,
+    onVote: ((VoteUpState) -> Unit)?,
     skin: AppSkinTokens,
     displayTitle: String,
     hasBody: Boolean,
@@ -171,7 +173,7 @@ internal fun ArticleMainContent(
             @Composable {
                 ArticleMainBottomBar(
                     viewModel = viewModel,
-                    environment = environment,
+                    onVote = onVote,
                     userMessages = userMessages,
                     bottomBarState = bottomBarState,
                     readingPlayerOverlayPadding = readingPlayerOverlayPadding,
@@ -329,9 +331,9 @@ private fun ArticleMainTopBar(
                     },
                     modifier = Modifier.testTag("article_search"),
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.Default.Search,
-                        contentDescription = "搜索正文",
+                        contentDescription = ContentStrings.searchContent,
                         tint = skin.onSurfaceVariantActions,
                     )
                 }
@@ -340,17 +342,17 @@ private fun ArticleMainTopBar(
                         onClick = { navigator.onNavigate(Question(viewModel.questionId, displayTitle)) },
                         modifier = Modifier.testTag("article_question"),
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.Filled.QuestionAnswer,
-                            contentDescription = "查看问题",
+                            contentDescription = ContentStrings.viewQuestion,
                             tint = skin.onSurfaceVariantActions,
                         )
                     }
                 }
                 AppIconButton(onClick = { onActionsMenuVisibilityChange(true) }) {
-                    Icon(
+                    AppIcon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "更多选项",
+                        contentDescription = ContentStrings.moreOptions,
                         tint = skin.onSurfaceVariantActions,
                     )
                 }
@@ -365,7 +367,7 @@ private fun ArticleMainTopBar(
 @Composable
 private fun ArticleMainBottomBar(
     viewModel: ArticleViewModel,
-    environment: PaginationEnvironment,
+    onVote: ((VoteUpState) -> Unit)?,
     userMessages: UserMessageSink,
     bottomBarState: ArticleBottomBarState,
     readingPlayerOverlayPadding: Dp,
@@ -390,7 +392,7 @@ private fun ArticleMainBottomBar(
             ) {
                 ArticleActionBar(
                     viewModel = viewModel,
-                    environment = environment,
+                    onVote = onVote,
                     userMessages = userMessages,
                     onShowComments = onShowComments,
                     onShowCollectionDialog = onShowCollectionDialog,
@@ -408,14 +410,14 @@ private fun ArticleWebViewLimitsDialog(
 ) {
     AppDialog(
         modifier = Modifier.testTag("article_webview_limitations"),
-        title = "WebView 渲染已弃用",
-        summary = "当前模式不支持正文查找定位与高亮、正文内划线喜欢与句子评论交互，以及电纸书翻页。普通评论、朗读、分享和双击仍可使用。请在“阅读与排版”关闭 WebView 后使用完整功能。",
-        confirmText = "去设置",
+        title = ContentStrings.webviewDeprecated,
+        summary = ContentStrings.webviewLimitations,
+        confirmText = ContentStrings.goToSettings,
         onConfirm = {
             onWebViewLimitsVisibilityChange(false)
             navigator.onNavigate(Account.ReadingSettings(ARTICLE_USE_WEBVIEW_PREFERENCE_KEY))
         },
-        dismissText = "知道了",
+        dismissText = ContentStrings.gotIt,
         onDismissRequest = { onWebViewLimitsVisibilityChange(false) },
     )
 }
@@ -454,7 +456,7 @@ private fun ArticleMainActionsMenu(
         onSetImmersiveDoubleTap = {
             onActionsMenuVisibilityChange(false)
             onToggleImmersiveMode()
-            userMessages.showMessage("已进入沉浸式，按返回键即可退出")
+            userMessages.showMessage(ContentStrings.immersiveEntered)
         },
     )
 }
@@ -467,23 +469,6 @@ private fun ArticleMainLoadState(
     hasBody: Boolean,
     awaitingDetail: Boolean,
 ) {
-    if (!hasBody && awaitingDetail) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = AppDimens.Space16)
-                .testTag(ARTICLE_LOADING_TAG),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
-        ) {
-            AppSpinner(size = AppDimens.Space24)
-            Text(
-                text = "正在加载内容…",
-                style = skin.footnote1,
-                color = skin.onSurfaceVariantSummary,
-            )
-        }
-    }
     if (viewModel.loadError != null) {
         if (hasBody) {
             Column(
@@ -493,12 +478,12 @@ private fun ArticleMainLoadState(
                     .testTag(ARTICLE_LOAD_ERROR_TAG),
             ) {
                 Text(
-                    text = "更新失败，仍可阅读已加载内容",
+                    text = ContentStrings.refreshFailedContentKept,
                     style = skin.footnote1,
                     color = skin.onSurfaceVariantSummary,
                 )
                 AppTextButton(
-                    text = "重试",
+                    text = ContentStrings.retry,
                     onClick = { viewModel.loadArticle(environment) },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.testTag(ARTICLE_LOAD_RETRY_TAG),
@@ -506,12 +491,12 @@ private fun ArticleMainLoadState(
             }
         } else {
             AppEmptyState(
-                title = "内容加载失败",
+                title = ContentStrings.contentLoadFailed,
                 description = viewModel.loadError,
                 modifier = Modifier.testTag(ARTICLE_LOAD_ERROR_TAG),
                 action = {
                     AppButton(
-                        text = "重试",
+                        text = ContentStrings.retry,
                         onClick = { viewModel.loadArticle(environment) },
                         enabled = !viewModel.isLoading,
                         modifier = Modifier.testTag(ARTICLE_LOAD_RETRY_TAG),
@@ -519,10 +504,12 @@ private fun ArticleMainLoadState(
                 },
             )
         }
+    } else if (!hasBody && awaitingDetail) {
+        ContentSkeleton(SkeletonLayout.Paragraph, Modifier.testTag(ARTICLE_LOADING_TAG), description = ContentStrings.loadingContent)
     } else if (!hasBody && !viewModel.isLoading && viewModel.hasLoaded) {
         AppEmptyState(
-            title = "暂无正文",
-            description = "当前内容没有可显示的正文",
+            title = ContentStrings.noBody,
+            description = ContentStrings.noBodyDescription,
             modifier = Modifier.testTag(ARTICLE_EMPTY_TAG),
         )
     }
@@ -541,7 +528,7 @@ private fun ArticleMainWebView(
     onAnswerDoubleTap: () -> Unit,
 ) {
     AppTextButton(
-        text = "WebView 已弃用 · 查看功能限制",
+        text = ContentStrings.webviewLimitationsLink,
         onClick = { onWebViewLimitsVisibilityChange(true) },
         modifier = Modifier.testTag("article_webview_notice"),
     )
@@ -553,7 +540,7 @@ private fun ArticleMainWebView(
         rememberedScrollY = viewModel.rememberedScrollY,
         rememberedScrollYSync = viewModel.rememberedScrollYSync,
         onRememberedScrollYSyncChange = onRememberedScrollYSyncChange,
-        onImageLoadFailed = { userMessages.showMessage("图片加载失败，请向开发者反馈") },
+        onImageLoadFailed = { userMessages.showMessage(ContentStrings.imageLoadReport) },
         onDoubleTap = onAnswerDoubleTap,
     )
     Column(
@@ -565,7 +552,7 @@ private fun ArticleMainWebView(
         }
         if (article.type == ArticleType.Article && viewModel.ipInfo != null) {
             Text(
-                "IP属地：${viewModel.ipInfo}",
+                ContentStrings.ipLocation(viewModel.ipInfo),
                 color = skin.onSurfaceVariantSummary,
                 style = skin.footnote2,
             )
@@ -631,14 +618,14 @@ private fun ArticleMainMarkdown(
                     }
                     if (article.type == ArticleType.Article && viewModel.ipInfo != null) {
                         Text(
-                            "IP属地：${viewModel.ipInfo}",
+                            ContentStrings.ipLocation(viewModel.ipInfo),
                             color = skin.onSurfaceVariantSummary,
                             style = skin.footnote2,
                         )
                     }
                     if (accountStore.session.login && viewModel.paidContentActionVisible) {
                         AppTextButton(
-                            text = if (viewModel.isLoadingFullContent) "加载中..." else "加载完整内容",
+                            text = if (viewModel.isLoadingFullContent) ContentStrings.loadingEllipsis else ContentStrings.loadFullContent,
                             onClick = { viewModel.loadFullContent(environment) },
                             enabled = !viewModel.isLoadingFullContent,
                         )

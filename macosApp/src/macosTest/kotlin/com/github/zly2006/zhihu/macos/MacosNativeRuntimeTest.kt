@@ -21,7 +21,13 @@ package com.github.zly2006.zhihu.macos
 
 import com.github.zly2006.zhihu.data.BACKGROUND_UI_DEBUG_DATA_HOME_ENV
 import com.github.zly2006.zhihu.data.macosAppDataDirectoryPath
+import com.github.zly2006.zhihu.platform.SettingValue
 import com.github.zly2006.zhihu.platform.platformSettingsStore
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.toKString
 import platform.Foundation.NSFileManager
@@ -33,11 +39,6 @@ import platform.Foundation.create
 import platform.posix.getenv
 import platform.posix.setenv
 import platform.posix.unsetenv
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
 
 class MacosNativeRuntimeTest {
     @Test
@@ -57,7 +58,7 @@ class MacosNativeRuntimeTest {
             settings.putString("prefix.two", "two")
             val filePath = "$directory/settings.properties"
             val saved = checkNotNull(files.contentsAtPath(filePath))
-            val initial = settings.allEntries()
+            val initial = settings.snapshot()
             val changes = mutableListOf<String>()
             val subscription = settings.observeKeyChanges { changes += it }
             try {
@@ -66,16 +67,17 @@ class MacosNativeRuntimeTest {
                 assertFailsWith<IllegalStateException> { settings.putString("keep", "after") }
                 assertFailsWith<IllegalStateException> { settings.remove("keep") }
                 assertFailsWith<IllegalStateException> { settings.removeByPrefix("prefix.") }
-                assertEquals(initial, settings.allEntries())
+                assertEquals(initial, settings.snapshot())
                 assertTrue(changes.isEmpty())
                 check(files.removeItemAtPath(filePath, error = null))
                 check(files.createFileAtPath(filePath, contents = saved, attributes = null))
                 settings.putString("keep", "after")
                 settings.removeByPrefix("prefix.")
-                assertEquals(mapOf("keep" to "after"), settings.allEntries())
+                assertEquals(mapOf("keep" to SettingValue.StringValue("after")), settings.snapshot())
                 assertEquals(listOf("keep", "prefix.one", "prefix.two"), changes)
                 val persisted = NSString.create(data = checkNotNull(files.contentsAtPath(filePath)), encoding = NSUTF8StringEncoding).toString()
-                assertTrue(persisted.contains("keep=after\n"))
+                assertTrue(persisted.startsWith("#Zhihu++ typed settings 1\n"))
+                assertTrue(persisted.contains("\"keep\":{\"type\":\"string\",\"value\":\"after\"}"))
                 assertTrue(!persisted.contains("prefix."))
             } finally {
                 subscription.close()

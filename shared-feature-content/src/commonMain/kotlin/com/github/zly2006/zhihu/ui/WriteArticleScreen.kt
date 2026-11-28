@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.rememberTextMeasurer
+import com.github.zly2006.zhihu.account.BrowserBusinessRequestRejected
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.editor.ZhihuImageUploadSource
@@ -52,6 +53,7 @@ import com.github.zly2006.zhihu.editor.isImagePickerSupported
 import com.github.zly2006.zhihu.editor.rememberImagePickerLauncher
 import com.github.zly2006.zhihu.editor.uploadZhihuImage
 import com.github.zly2006.zhihu.editor.zhihuHtmlToEditorMarkdown
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -59,12 +61,15 @@ import com.github.zly2006.zhihu.navigation.WriteArticle
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.ui.components.AppButton
+import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.RichEditorState
 import com.github.zly2006.zhihu.ui.components.WriteContentPreviewSheet
 import com.github.zly2006.zhihu.ui.components.isRichEditorSupported
 import com.github.zly2006.zhihu.ui.components.replaceSelection
+import com.github.zly2006.zhihu.util.HttpStatusException
 import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
@@ -101,6 +106,7 @@ private data class LocalArticleDraft(
     val articleId: Long? = null,
     val html: String = "",
     val richMode: Boolean = true,
+    val browserCreateUncertain: Boolean = false,
 )
 
 @Serializable
@@ -139,6 +145,8 @@ fun WriteArticleScreen(destination: WriteArticle) {
         )
     }
     var articleId by remember(draftKey) { mutableStateOf(initialDraft.articleId) }
+    var browserCreateUncertain by remember(draftKey) { mutableStateOf(initialDraft.browserCreateUncertain) }
+    var confirmNewDraft by remember(draftKey) { mutableStateOf(false) }
     var richMode by remember(draftKey) {
         mutableStateOf(isRichEditorSupported && initialDraft.richMode && (initialDraft.html.isNotBlank() || initialDraft.markdown.isBlank()))
     }
@@ -149,8 +157,8 @@ fun WriteArticleScreen(destination: WriteArticle) {
     var isSaving by remember(accountClient) { mutableStateOf(false) }
     var isSubmitting by remember(accountClient) { mutableStateOf(false) }
     var isUploadingImage by remember(accountClient) { mutableStateOf(false) }
-    var errorMessage by remember(accountClient) { mutableStateOf<String?>(null) }
-    var saveStatus by remember(accountClient) { mutableStateOf("草稿保存在本机") }
+    var errorMessage by remember(accountClient) { mutableStateOf<(() -> String)?>(null) }
+    var saveStatus by remember(accountClient) { mutableStateOf<() -> String>({ ContentStrings.draftSavedLocally }) }
     var lastSaved by remember(draftKey) { mutableStateOf<Pair<String, String>?>(null) }
     var showPreview by remember(accountClient) { mutableStateOf(false) }
     var previewMarkdown by remember(accountClient) { mutableStateOf("") }
@@ -164,7 +172,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
 
     fun persistDraft() {
         if (draftPublished) return
-        val draft = LocalArticleDraft(title.text.toString(), content.text.toString(), articleId, richEditor.html, richMode)
+        val draft = LocalArticleDraft(title.text.toString(), content.text.toString(), articleId, richEditor.html, richMode, browserCreateUncertain)
         if (draft == initialDraft && settings.getStringOrNull(draftKey) == null) return
         settings.putString(draftKey, ZhihuJson.json.encodeToString(draft))
     }
@@ -177,28 +185,34 @@ fun WriteArticleScreen(destination: WriteArticle) {
     suspend fun submit(publish: Boolean, silent: Boolean = false) {
         saveMutex.withLock {
             if (isSubmitting || isUploadingImage || !editorAvailable) return@withLock
+            if (account.usesBrowserSession && browserCreateUncertain && articleId == null) {
+                persistDraft()
+                saveStatus = { ContentStrings.articleCreateUncertain }
+                if (!silent) errorMessage = { ContentStrings.articleCreateUncertain }
+                return@withLock
+            }
             val currentContent = if (richMode) richEditor.html else content.text.toString()
             val snapshot = title.text.toString() to currentContent
             if (publish && snapshot.first.isBlank()) {
-                userMessages.showShortMessage("请填写文章标题")
+                userMessages.showShortMessage(ContentStrings.articleTitleRequired)
                 return@withLock
             }
             if (silent && snapshot == lastSaved) return@withLock
             if (account.client !== accountClient) return@withLock
             persistDraft()
-            if (accountClient.load().cookies["z_c0"].isNullOrBlank()) {
-                if (!silent) errorMessage = "保存文章需要登录；当前内容已保存在本机。"
+            if (if (account.usesBrowserSession) !accountClient.load().login else accountClient.load().cookies["z_c0"].isNullOrBlank()) {
+                if (!silent) errorMessage = { ContentStrings.articleSaveLoginRequired }
                 return@withLock
             }
             isSaving = !publish
             isSubmitting = publish
-            saveStatus = if (publish) "发布中" else "正在保存草稿"
+            saveStatus = { if (publish) ContentStrings.publishing else ContentStrings.savingDraft }
             try {
                 val html = if (richMode) richEditor.snapshotHtml() else compileMdToZhihuHtml(snapshot.second)
                 val hasBody = writeArticleScreenHasBody(html)
                 if (!hasBody && (publish || snapshot.first.isBlank())) {
-                    saveStatus = "草稿保存在本机"
-                    if (publish) userMessages.showShortMessage("文章内容为空")
+                    saveStatus = { ContentStrings.draftSavedLocally }
+                    if (publish) userMessages.showShortMessage(ContentStrings.articleEmpty)
                     return@withLock
                 }
                 currentCoroutineContext().ensureActive()
@@ -213,6 +227,11 @@ fun WriteArticleScreen(destination: WriteArticle) {
                     val body = writeArticleScreenDraftRequestBody(snapshot.first, html, currentId)
 
                     /** /articles/write 对 Web UA 返回 403，草稿请求需保留已验证的 Android 编辑器环境。 */
+                    if (account.usesBrowserSession && currentId == null) {
+                        // 请求发出前持久化，关闭页面、取消和断网都不会让下一次自动保存重复新建。
+                        browserCreateUncertain = true
+                        persistDraft()
+                    }
                     val saved = if (currentId != null && snapshot == lastSaved && publish) {
                         ArticleEditorDraft(currentId, snapshot.first, html)
                     } else {
@@ -223,18 +242,19 @@ fun WriteArticleScreen(destination: WriteArticle) {
                                 cookies["_xsrf"]?.let { header("x-xsrftoken", it) }
                                 contentType(ContentType.Application.FormUrlEncoded)
                                 setBody(body)
-                                signZhihuFetchRequest(cookies)
+                                if (!account.usesBrowserSession) signZhihuFetchRequest(cookies)
                             }.raiseForStatus()
                             .json<ArticleEditorDraft>()
                     }
                     currentCoroutineContext().ensureActive()
                     if (account.client !== accountClient) return@withAuthenticatedClient
                     articleId = saved.id
+                    browserCreateUncertain = false
                     lastSaved = snapshot.first to if (richMode) html else snapshot.second
                     persistDraft()
-                    saveStatus = "草稿已保存"
+                    saveStatus = { ContentStrings.draftSaved }
                     if (!publish) {
-                        if (!silent) userMessages.showShortMessage("已保存草稿")
+                        if (!silent) userMessages.showShortMessage(ContentStrings.draftSavedConfirmation)
                     } else {
                         val published = client
                             .put("https://api.zhihu.com/articles/${saved.id}/draft") {
@@ -245,14 +265,14 @@ fun WriteArticleScreen(destination: WriteArticle) {
                                 setBody(
                                     writeArticleScreenPublishRequestBody(snapshot.first, html),
                                 )
-                                signZhihuFetchRequest(cookies)
+                                if (!account.usesBrowserSession) signZhihuFetchRequest(cookies)
                             }.raiseForStatus()
                             .json<ArticleEditorDraft>()
                         currentCoroutineContext().ensureActive()
                         if (account.client !== accountClient) return@withAuthenticatedClient
                         draftPublished = true
                         settings.remove(draftKey)
-                        userMessages.showShortMessage("文章已发布")
+                        userMessages.showShortMessage(ContentStrings.articlePublished)
                         navigator.onNavigateBack()
                         navigator.onNavigate(Article(title = snapshot.first, type = ArticleType.Article, id = published.id))
                     }
@@ -261,8 +281,20 @@ fun WriteArticleScreen(destination: WriteArticle) {
                 throw error
             } catch (error: Exception) {
                 if (account.client !== accountClient) return@withLock
-                saveStatus = "云端保存失败，内容仍保存在本机"
-                if (!silent || publish) errorMessage = buildWriteOperationErrorMessage(if (publish) "发布文章失败" else "保存文章草稿失败", error)
+                if (account.usesBrowserSession && articleId == null) {
+                    if (error is BrowserBusinessRequestRejected || error is HttpStatusException && error.status.value in 400..499) {
+                        browserCreateUncertain = false
+                    }
+                    persistDraft()
+                }
+                saveStatus = if (browserCreateUncertain) {
+                    { ContentStrings.articleCreateUncertain }
+                } else {
+                    { ContentStrings.cloudSaveFailedLocalKept }
+                }
+                if (!silent || publish) errorMessage = {
+                    buildWriteOperationErrorMessage(if (publish) ContentStrings.articlePublishFailed else ContentStrings.articleDraftSaveFailed, error)
+                }
             } finally {
                 isSaving = false
                 isSubmitting = false
@@ -279,7 +311,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
     }
 
     LaunchedEffect(draftKey, accountClient) {
-        snapshotFlow { LocalArticleDraft(title.text.toString(), content.text.toString(), articleId, richEditor.html, richMode) }
+        snapshotFlow { LocalArticleDraft(title.text.toString(), content.text.toString(), articleId, richEditor.html, richMode, browserCreateUncertain) }
             .collect { if (account.client === accountClient) persistDraft() }
     }
 
@@ -303,7 +335,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
                     throw error
                 } catch (error: Exception) {
                     if (account.client !== accountClient) return@launch
-                    errorMessage = buildWriteOperationErrorMessage("插入图片失败", error)
+                    errorMessage = { buildWriteOperationErrorMessage(ContentStrings.insertImageFailed, error) }
                 } finally {
                     isUploadingImage = false
                 }
@@ -313,6 +345,24 @@ fun WriteArticleScreen(destination: WriteArticle) {
         null
     }
 
+    if (confirmNewDraft) {
+        AppDialog(
+            title = ContentStrings.articleCreateUncertainTitle,
+            summary = ContentStrings.articleCreateUncertainSummary,
+            confirmText = ContentStrings.articleCreateUncertainConfirm,
+            confirmEnabled = !isSaving && !isSubmitting,
+            dismissText = ContentStrings.articleCreateUncertainKeepPaused,
+            onDismissRequest = { confirmNewDraft = false },
+            onConfirm = {
+                if (!isSaving && !isSubmitting) {
+                    browserCreateUncertain = false
+                    confirmNewDraft = false
+                    persistDraft()
+                    saveStatus = { ContentStrings.draftSavedLocally }
+                }
+            },
+        )
+    }
     AppScaffold(
         sampleContent = !richMode,
         topBar = {
@@ -339,6 +389,13 @@ fun WriteArticleScreen(destination: WriteArticle) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space12),
         ) {
+            if (browserCreateUncertain && articleId == null) {
+                AppButton(
+                    ContentStrings.articleCreateUncertainAction,
+                    enabled = !isSaving && !isSubmitting,
+                    onClick = { if (!isSaving && !isSubmitting) confirmNewDraft = true },
+                )
+            }
             WriteArticleScreenEditor(
                 title = title,
                 richMode = richMode,
@@ -347,7 +404,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
                 isUploadingImage = isUploadingImage,
                 editorAvailable = editorAvailable,
                 hasContent = hasContent,
-                saveStatus = saveStatus,
+                saveStatus = saveStatus(),
                 content = content,
                 richEditor = richEditor,
                 isEditorConverting = isEditorConverting,
@@ -374,7 +431,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
                                 throw error
                             } catch (error: Exception) {
                                 if (account.client !== accountClient) return@launch
-                                errorMessage = buildWriteOperationErrorMessage("切换编辑模式失败", error)
+                                errorMessage = { buildWriteOperationErrorMessage(ContentStrings.editorModeSwitchFailed, error) }
                             } finally {
                                 isEditorConverting = false
                             }
@@ -393,7 +450,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
                             throw error
                         } catch (error: Exception) {
                             if (account.client !== accountClient) return@launch
-                            errorMessage = buildWriteOperationErrorMessage("生成预览失败", error)
+                            errorMessage = { buildWriteOperationErrorMessage(ContentStrings.previewFailed, error) }
                         }
                     }
                 },
@@ -413,7 +470,7 @@ fun WriteArticleScreen(destination: WriteArticle) {
         )
     }
     WriteOperationErrorDialog(
-        message = errorMessage,
+        message = errorMessage?.invoke(),
         onDismissRequest = { errorMessage = null },
         onCopy = { clipboard("write-article-error", it) },
     )

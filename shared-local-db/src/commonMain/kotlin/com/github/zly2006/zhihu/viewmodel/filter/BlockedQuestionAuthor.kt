@@ -17,13 +17,12 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
-@Entity(tableName = BlockedQuestionAuthor.TABLE_NAME)
+@Serializable
 data class BlockedQuestionAuthor(
-    @PrimaryKey val userId: String,
+    val userId: String,
     val userName: String,
     val urlToken: String? = null,
     val avatarUrl: String? = null,

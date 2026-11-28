@@ -38,7 +38,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 
 internal object SortableCheckRowLayoutId
 
@@ -59,8 +59,8 @@ fun AppSortableCheckList(
     onMove: (key: String, offset: Int) -> Unit,
     minChecked: Int = 1,
     maxChecked: Int? = null,
-    minCheckedReason: String = if (minChecked <= 1) "至少保留一项" else "至少保留 $minChecked 项",
-    maxCheckedReason: String = "最多选择 ${maxChecked ?: 0} 项",
+    minCheckedReason: String = if (minChecked <= 1) WidgetsStrings.keepAtLeastOne else WidgetsStrings.keepAtLeast(minChecked),
+    maxCheckedReason: String = WidgetsStrings.selectAtMost(maxChecked ?: 0),
     testTagPrefix: String = "sortable_check",
 ) {
     val miuix = settingSkinIsMiuix()
@@ -94,7 +94,7 @@ fun AppSortableCheckList(
                                 role = Role.Checkbox
                                 toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
                                 disabled()
-                                contentDescription = "${item.title}，$blockedReason"
+                                contentDescription = WidgetsStrings.itemDisabledReason(item.title, blockedReason.orEmpty())
                             }
                     },
                 )
@@ -120,14 +120,14 @@ fun AppSortableCheckList(
                             enabled = position > 0,
                             modifier = Modifier.size(AppDimens.TouchTarget).testTag("$testTagPrefix:moveUp:${item.key}"),
                         ) {
-                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上移${item.title}")
+                            AppIcon(Icons.Filled.KeyboardArrowUp, contentDescription = WidgetsStrings.moveUp(item.title))
                         }
                         AppIconButton(
                             onClick = { onMove(item.key, 1) },
                             enabled = position in 0 until checkedKeys.lastIndex,
                             modifier = Modifier.size(AppDimens.TouchTarget).testTag("$testTagPrefix:moveDown:${item.key}"),
                         ) {
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "下移${item.title}")
+                            AppIcon(Icons.Filled.KeyboardArrowDown, contentDescription = WidgetsStrings.moveDown(item.title))
                         }
                     }
                 }

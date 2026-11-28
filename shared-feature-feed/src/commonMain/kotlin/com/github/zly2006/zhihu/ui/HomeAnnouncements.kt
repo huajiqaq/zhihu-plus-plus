@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.Pin
@@ -39,11 +40,11 @@ import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.isLiteVariant
 import com.github.zly2006.zhihu.theme.miuixThemeAvailable
 import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateState
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlin.time.Clock
 
 private const val MAX_HOME_PIN_ANNOUNCEMENTS = 3
 
@@ -74,7 +75,7 @@ internal fun HomeAnnouncementLoadEffects(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("HomeScreen", "Failed to load home pin announcements", e)
+                AppLog.e("HomeScreen", "Failed to load home pin announcements", e)
                 null
             }
             if (loadedAnnouncements != null) {
@@ -96,7 +97,7 @@ internal fun HomeAnnouncementLoadEffects(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.e("HomeScreen", "Failed to load online notifications", e)
+                        AppLog.e("HomeScreen", "Failed to load online notifications", e)
                     }
                     delay(HOME_NOTIFICATION_REFRESH_INTERVAL_MILLIS)
                 }
@@ -123,9 +124,9 @@ internal fun buildHomeTransactions(
             add(
                 HomeTransaction(
                     key = NEW_UI_NOTICE_TAG,
-                    title = "可切换 UI 风格",
+                    title = FeedStrings.appearanceNotice,
                     content = null,
-                    acceptText = "切换皮肤".takeIf { miuixThemeAvailable },
+                    acceptText = FeedStrings.changeAppearance.takeIf { miuixThemeAvailable },
                     onAccept = if (miuixThemeAvailable) {
                         {
                             dismissNewUiNotice()
@@ -134,7 +135,7 @@ internal fun buildHomeTransactions(
                     } else {
                         null
                     },
-                    dismissText = "知道了",
+                    dismissText = FeedStrings.gotIt,
                     onDismiss = dismissNewUiNotice,
                 ),
             )
@@ -143,12 +144,12 @@ internal fun buildHomeTransactions(
             add(
                 HomeTransaction(
                     key = "update:${update.version}",
-                    title = "发现新版本：${update.version}${if (update.isNightly) " (Nightly)" else ""}",
-                    content = "查看更新内容和安装选项。",
+                    title = FeedStrings.updateAvailable(update.version, if (update.isNightly) " (Nightly)" else ""),
+                    content = FeedStrings.updateDescription,
                     icon = Icons.Default.ArrowCircleUp,
-                    acceptText = "查看更新",
+                    acceptText = FeedStrings.viewUpdate,
                     onAccept = { navigator.onNavigate(Account.SystemAndUpdateSettings()) },
-                    dismissText = "以后",
+                    dismissText = FeedStrings.later,
                     onDismiss = { dismissedUpdateVersion = update.version },
                 ),
             )
@@ -165,7 +166,7 @@ internal fun buildHomeTransactions(
                     content = notification.content,
                     icon = Icons.Default.Notifications,
                     acceptText = notification.accept?.let { accept ->
-                        if ((accept.action as? HomeNotificationAction.Navigate)?.destination is WebPage) "打开网页" else accept.text
+                        if ((accept.action as? HomeNotificationAction.Navigate)?.destination is WebPage) FeedStrings.openWebPage else accept.text
                     },
                     onAccept = notification.accept?.let { accept ->
                         {
@@ -194,22 +195,22 @@ internal fun buildHomeTransactions(
             add(
                 HomeTransaction(
                     key = homeAuthorPollAnnouncementTag(announcement.pinId),
-                    title = if (announcement.kind == HomePinAnnouncementKind.Poll) "请给未来的知乎++提出建议" else "知乎++新动态",
+                    title = if (announcement.kind == HomePinAnnouncementKind.Poll) FeedStrings.feedbackPoll else FeedStrings.appUpdates,
                     content = buildString {
                         append(announcement.title)
                         val details = buildList {
-                            if (announcement.optionCount > 0) add("${announcement.optionCount} 个选项")
-                            if (announcement.memberCount > 0) add("${announcement.memberCount} 人已参与")
+                            if (announcement.optionCount > 0) add(FeedStrings.pollOptions(announcement.optionCount))
+                            if (announcement.memberCount > 0) add(FeedStrings.pollParticipants(announcement.memberCount))
                         }
                         if (details.isNotEmpty()) append("\n${details.joinToString(" · ")}")
                     },
                     icon = Icons.Default.Flag,
-                    acceptText = if (announcement.kind == HomePinAnnouncementKind.Poll) "去投票" else "查看",
+                    acceptText = if (announcement.kind == HomePinAnnouncementKind.Poll) FeedStrings.castVote else FeedStrings.view,
                     onAccept = {
                         markRead()
                         navigator.onNavigate(Pin(announcement.pinId))
                     },
-                    dismissText = "关闭",
+                    dismissText = FeedStrings.close,
                     onDismiss = markRead,
                 ),
             )

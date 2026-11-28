@@ -55,6 +55,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.AppLanguage
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.platform.rememberImageGalleryOpener
 import com.github.zly2006.zhihu.platform.rememberImageSaver
 import com.github.zly2006.zhihu.platform.rememberImageSharer
@@ -283,7 +286,7 @@ actual fun PlatformTiqianMarkdown(
                 ZhihuImageViewerActionButton(onClick = { saveImage(image.destination) }) {
                     Icon(
                         imageVector = Icons.Outlined.FileDownload,
-                        contentDescription = "下载图片",
+                        contentDescription = ReaderStrings.downloadImage,
                         tint = Color.White,
                     )
                 }
@@ -291,7 +294,7 @@ actual fun PlatformTiqianMarkdown(
                 ZhihuImageViewerActionButton(onClick = { shareImage(image.destination) }) {
                     Icon(
                         imageVector = Icons.Outlined.Share,
-                        contentDescription = "分享图片",
+                        contentDescription = ReaderStrings.shareImage,
                         tint = Color.White,
                     )
                 }
@@ -365,6 +368,7 @@ private fun rememberZhihuInlineSlots(
     val hasSegmentClick = onSegmentHighlightClick != null
 
     return remember(
+        AppLocale.current,
         imageUrls,
         density,
         segmentUnderlineColor,
@@ -470,7 +474,7 @@ private fun rememberZhihuInlineSlots(
                                     }
                                 }
                             },
-                            accessibilityLabel = { text -> "打开划线片段：$text" },
+                            accessibilityLabel = { text -> ReaderStrings.openHighlight(text) },
                             endMarker = if (state.hasComments) {
                                 MarkdownInlineEndMarker(painter = segmentCommentPainter, color = segmentCommentColor)
                             } else {
@@ -576,8 +580,12 @@ actual fun TiqianBrandTitle(prefix: String, suffix: String) {
     CjkText(
         text = buildAnnotatedString {
             append(prefix)
-            ruby("提", "tí")
-            ruby("椠", "qiàn")
+            if (AppLocale.current == AppLanguage.Chinese) {
+                ruby("提", "tí")
+                ruby("椠", "qiàn")
+            } else {
+                append(ReaderStrings.tiqianName)
+            }
             append(suffix)
         },
     )

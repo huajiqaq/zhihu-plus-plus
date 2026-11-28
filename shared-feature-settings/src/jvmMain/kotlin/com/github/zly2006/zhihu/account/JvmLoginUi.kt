@@ -34,13 +34,13 @@ import com.github.zly2006.zhihu.ui.components.DesktopWebviewComp
 import com.github.zly2006.zhihu.util.isZhihuLoginRiskControl
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
-import kotlinx.coroutines.launch
-import netscape.javascript.JSObject
-import org.jetbrains.skia.Image
 import java.util.Base64
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.launch
+import netscape.javascript.JSObject
+import org.jetbrains.skia.Image
 
 actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Phone,
@@ -77,28 +77,10 @@ actual fun decodePhoneLoginCaptchaImage(content: String) = runCatching {
 }.getOrNull()
 
 @Composable
-actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) {
-    val store = rememberZhihuAccountStore()
-    val owner = store.client
-    val cookies = remember(owner) { (store.session.cookies + store.accountsState.value.guestCookies).toMutableMap() }
-    val client = rememberLoginHttpClient(cookies)
-    SharedQrLoginPane(
-        client = client,
-        cookies = cookies,
-        onRiskControl = { url, candidate -> owner.reportHumanVerification(url, candidate) },
-        onLoginSuccess = { cookies ->
-            if (store.login(cookies.toMutableMap())) {
-                onLoginSuccess(store.session.username)
-                true
-            } else {
-                false
-            }
-        },
-    )
-}
+actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) = AccountQrLoginPane(onLoginSuccess)
 
 @Composable
-actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
+actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit) {
     val store = rememberZhihuAccountStore()
     val owner = store.client
     val currentOwner = rememberUpdatedState(owner)
@@ -126,7 +108,7 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
                         isVerifying = true
                         scope.launch {
                             try {
-                                if (store.login(cookies.toMutableMap())) {
+                                if (store.login(owner, cookies.toMutableMap())) {
                                     loginSuccess.value(store.session.username)
                                 }
                             } finally {

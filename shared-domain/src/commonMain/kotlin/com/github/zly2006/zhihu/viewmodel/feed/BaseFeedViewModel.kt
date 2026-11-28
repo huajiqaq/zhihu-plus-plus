@@ -22,55 +22,86 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.data.AdvertisementFeed
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.flattenFeeds
 import com.github.zly2006.zhihu.data.toDisplayItem
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
-import com.github.zly2006.zhihu.viewmodel.HomeFeedFilterResult
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.PaginationViewModel
 import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedTopic
+import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
+import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
+import com.github.zly2006.zhihu.viewmodel.filter.extractTopicIds
 import com.github.zly2006.zhihu.viewmodel.filter.ContentDetailProvider
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.getOrFetchContentDetail
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
-import kotlin.reflect.typeOf
 
 abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
-    var displayItems = mutableStateListOf<FeedDisplayItem>()
-    var latestLoadedDisplayItems = mutableStateOf<List<FeedDisplayItem>>(emptyList())
+    private val mutableDisplayItems = mutableStateListOf<FeedDisplayItem>()
+    protected val committedDisplayItems: List<FeedDisplayItem> get() = mutableDisplayItems
+    private class PagePreview(val items: List<FeedDisplayItem>, val isCurrent: () -> Boolean)
+    private var pagePreview by mutableStateOf<PagePreview?>(null)
+    protected open val previewBeforeFiltering: Boolean get() = false
+    protected open val hasCommittedPageItems: Boolean get() = committedDisplayItems.isNotEmpty()
+    protected val previewDisplayItems: List<FeedDisplayItem>?
+        get() = pagePreview?.takeIf { it.isCurrent() && !platformSettingsStore().getBoolean("reverseBlock", false) }?.items
+    open val displayItems: List<FeedDisplayItem>
+        get() {
+            val preview = previewDisplayItems?.takeIf { it.isNotEmpty() } ?: return committedDisplayItems
+            return ((if (isRefreshPending) emptyList() else committedDisplayItems) + preview).distinctBy { it.stableKey }
+        }
     var completedPageCount by mutableIntStateOf(0)
     var isPullToRefresh by mutableStateOf(false)
         protected set
 
-    /** 刷新首屏成功前保留旧列表，网络失败时仍可阅读已加载内容。 */
-    internal var pendingRefresh = mutableStateOf(false)
-
-    override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray) {
-        super.processResponse(environment, data, rawData)
+    override fun previewPage(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): ((Throwable?) -> Unit)? {
+        if (!previewBeforeFiltering) return null
         val settings = FeedDisplaySettings(platformSettingsStore())
-        val loadedItems = data
-            .flattenFeeds()
-            .map { createDisplayItem(settings, it) }
-            .filterNot {
-                (it.feed is AdvertisementFeed && !settings.reverseBlock) ||
-                    (it.isQualityFiltered && settings.qualityFilterMode == QualityFilterMode.HIDE)
+        if (settings.reverseBlock) {
+            pagePreview = null
+            return null
+        }
+        val generation = pagingGeneration
+        val client = environment.httpClient()
+        val preview = PagePreview(createDisplayItems(settings, data)) {
+            runCatching {
+                generation == pagingGeneration && environment.accountClient?.isCurrent != false && environment.httpClient() === client
+            }.getOrDefault(false)
+        }
+        pagePreview = preview
+        return { error ->
+            if (pagePreview === preview && (error == null || error is CancellationException || hasCommittedPageItems || !preview.isCurrent())) {
+                pagePreview = null
             }
-        addDisplayItems(loadedItems)
-        latestLoadedDisplayItems.value = loadedItems
+        }
     }
+
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): () -> Unit {
+        val settings = FeedDisplaySettings(platformSettingsStore())
+        val loadedItems = createDisplayItems(settings, data)
+        return { commitDisplayPage(loadedItems, data, rawData) }
+    }
+
+    protected fun createDisplayItems(settings: FeedDisplaySettings, data: List<Feed>): List<FeedDisplayItem> = data
+        .flattenFeeds()
+        .mapNotNull { settings.applyQualityFilter(createDisplayItem(settings, it)) }
+        .filterNot { it.feed is AdvertisementFeed && !settings.reverseBlock }
 
     public override fun resetForRefresh() {
         super.resetForRefresh()
-        pendingRefresh.value = true
+        pagePreview = null
         isPullToRefresh = false
     }
 
@@ -78,21 +109,31 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
         if (isLoading) return
         resetForRefresh()
         isPullToRefresh = true
-        isLoading = true
         val generation = pagingGeneration
-        val client = environment.httpClient()
         try {
-            fetchFeeds(environment)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            if (generation == pagingGeneration && environment.accountClient?.isCurrent != false && environment.httpClient() === client) errorHandle(e)
+            launchPageRequest(environment)?.join()
         } finally {
-            if (generation == pagingGeneration && environment.accountClient?.isCurrent != false && environment.httpClient() === client) {
-                isLoading = false
-                isPullToRefresh = false
-            }
+            if (generation == pagingGeneration) isPullToRefresh = false
         }
+    }
+
+    /** 所有挂起处理成功后一次提交；首个成功页替换旧内容，失败不消费刷新标记。 */
+    protected fun commitDisplayPage(items: List<FeedDisplayItem>, data: List<Feed> = emptyList(), rawData: JsonArray = JsonArray(emptyList())) {
+        val replacing = isRefreshPending
+        if (replacing) {
+            allData.clear()
+            debugData.clear()
+            isRefreshPending = false
+        }
+        allData.addAll(data)
+        debugData.addAll(rawData)
+        val keys = if (replacing) hashSetOf() else committedDisplayItems.mapTo(hashSetOf()) { it.stableKey }
+        val additions = items.filterNot { it.feed is AdvertisementFeed && it.isFiltered }.filter { keys.add(it.stableKey) }
+        updateDisplayItems {
+            if (replacing) clear()
+            addAll(additions)
+        }
+        completedPageCount++
     }
 
     open fun createDisplayItem(settings: FeedDisplaySettings, feed: Feed): FeedDisplayItem = feed.toDisplayItem(
@@ -101,19 +142,47 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
         qualityFilterSettings = settings.qualityFilter,
     )
 
-    fun addDisplayItems(newItems: List<FeedDisplayItem>) {
-        if (pendingRefresh.value) {
-            // 第一页成功返回后才替换旧列表；失败时 addDisplayItems 不会被调用。
-            displayItems.clear()
-            pendingRefresh.value = false
+    private fun updateDisplayItems(update: MutableList<FeedDisplayItem>.() -> Unit) {
+        Snapshot.withMutableSnapshot {
+            val previous = mutableDisplayItems.toList()
+            mutableDisplayItems.update()
+            if (previous != mutableDisplayItems.toList()) onDisplayItemsChanged()
         }
-        newItems.forEach {
-            // 首页会在后台过滤前插入卡片；只跳过普通模式结构广告，不吞掉 RULES 质量占位。
-            if (it.feed is AdvertisementFeed && it.isFiltered) return@forEach
-            if (displayItems.none { existing -> existing.stableKey == it.stableKey }) {
-                displayItems.add(it)
-            }
-        }
+    }
+
+    protected open fun onDisplayItemsChanged() = Unit
+
+    protected open fun onFilterPolicyChanged() = Unit
+
+    protected fun addDisplayItems(newItems: List<FeedDisplayItem>) {
+        val keys = committedDisplayItems.mapTo(hashSetOf()) { it.stableKey }
+        val additions = newItems.filterNot { it.feed is AdvertisementFeed && it.isFiltered }.filter { keys.add(it.stableKey) }
+        updateDisplayItems { addAll(additions) }
+    }
+
+    protected fun replaceDisplayItems(items: List<FeedDisplayItem>) = updateDisplayItems {
+        clear()
+        addAll(items)
+    }
+
+    protected fun removeDisplayItems(predicate: (FeedDisplayItem) -> Boolean) = updateDisplayItems {
+        removeAll(predicate)
+    }
+
+    /** 规则写入成功后才通知页面；首页据此复检并更新离线快照。 */
+    suspend fun blockUser(userId: String, userName: String, urlToken: String?, avatarUrl: String?) {
+        getContentFilterDatabase().blockedUserDao().insertUser(BlockedUser(userId, userName, urlToken, avatarUrl))
+        onFilterPolicyChanged()
+    }
+
+    suspend fun blockQuestionAuthor(userId: String, userName: String, urlToken: String?, avatarUrl: String?) {
+        getContentFilterDatabase().blockedQuestionAuthorDao().insertUser(BlockedQuestionAuthor(userId, userName, urlToken, avatarUrl))
+        onFilterPolicyChanged()
+    }
+
+    fun removeItemsByBlockedTopic(topicId: String) {
+        onFilterPolicyChanged()
+        removeDisplayItems { item -> item.raw?.let(::extractTopicIds)?.contains(topicId) == true }
     }
 
     fun handleBlockUser(
@@ -130,7 +199,7 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
             if (authorInfo != null) {
                 onShowDialog(authorInfo)
             } else {
-                userMessages.showLongMessage("无法获取屏蔽用户所需的数据，请尝试进入内容详情页操作")
+                userMessages.showLongMessage(DomainStrings.blockUserDataMissing)
             }
         }
     }
@@ -149,7 +218,7 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
             if (authorInfo != null) {
                 onShowDialog(authorInfo)
             } else {
-                userMessages.showLongMessage("当前条目没有可用的提问者数据，无法屏蔽提问者")
+                userMessages.showLongMessage(DomainStrings.blockQuestionAuthorMissing)
             }
         }
     }
@@ -168,7 +237,7 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
             if (contentInfo != null) {
                 onShowDialog(feedItem to contentInfo)
             } else {
-                userMessages.showLongMessage("无法获取关键词屏蔽所需的数据，请尝试进入内容详情页操作")
+                userMessages.showLongMessage(DomainStrings.blockKeywordDataMissing)
             }
         }
     }
@@ -183,37 +252,13 @@ abstract class BaseFeedViewModel : PaginationViewModel<Feed>(typeOf<Feed>()) {
                 getContentFilterDatabase()
                     .blockedTopicDao()
                     .insertTopic(BlockedTopic(topicId = topicId, topicName = topicName))
-                userMessages.showShortMessage("已屏蔽主题「$topicName」")
-                removeFeedItemsByBlockedTopic(this@BaseFeedViewModel, topicId)
+                userMessages.showShortMessage(DomainStrings.topicBlocked(topicName))
+                removeItemsByBlockedTopic(topicId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                userMessages.showShortMessage("屏蔽失败: ${e.message}")
+                userMessages.showShortMessage(DomainStrings.blockFailed(e.message.orEmpty()))
             }
-        }
-    }
-}
-
-/** 只更新当前代次的前台卡片，保留无关条目和已有原始内容。 */
-internal fun MutableList<FeedDisplayItem>.replaceHomeFeedItemsWithFilteredResult(filterResult: HomeFeedFilterResult) {
-    if (filterResult.reverseBlock) return
-
-    val foregroundKeys = filterResult.foregroundItems.map { it.stableKey }.toSet()
-    val filteredItemsByKey = filterResult.filteredItems.associateBy { it.stableKey }
-    var index = 0
-    while (index < size) {
-        val item = this[index]
-        if (item.stableKey !in foregroundKeys) {
-            index++
-            continue
-        }
-
-        val filteredVersion = filteredItemsByKey[item.stableKey]
-        if (filteredVersion == null) {
-            removeAt(index)
-        } else {
-            this[index] = filteredVersion.copy(raw = filteredVersion.raw ?: item.raw)
-            index++
         }
     }
 }

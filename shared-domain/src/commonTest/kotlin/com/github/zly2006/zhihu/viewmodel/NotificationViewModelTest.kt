@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.viewmodel
 
 import androidx.lifecycle.viewModelScope
+import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.NotificationType
 import io.ktor.client.HttpClient
@@ -31,6 +32,11 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -42,11 +48,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class NotificationViewModelTest {
     @Test
@@ -158,7 +159,7 @@ class NotificationViewModelTest {
     }
 
     private fun privateMessage(id: String, createdTime: Long) =
-        com.github.zly2006.zhihu.data.ZhihuPrivateMessage(
+        ZhihuPrivateMessage(
             id = id,
             createdTime = createdTime,
         )

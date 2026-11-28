@@ -17,4 +17,13 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-internal actual fun nativeContentFilterDatabase(): ContentFilterDatabase = emptyContentFilterDatabase
+import androidx.room.Room
+import com.github.zly2006.zhihu.data.iosDatabasePath
+
+private val iosContentFilterDatabase by lazy {
+    buildContentFilterDatabase(
+        Room.databaseBuilder<RoomContentFilterDatabase>(name = iosDatabasePath("content-filter.db")),
+    )
+}
+
+actual fun getContentFilterDatabase(): ContentFilterDatabase = iosContentFilterDatabase

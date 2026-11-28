@@ -53,7 +53,7 @@ if (!$JavaHome) {
     $java = (Get-Command javac.exe -ErrorAction Stop).Source
     $JavaHome = Split-Path (Split-Path $java -Parent) -Parent
 }
-if (!(Test-Path -LiteralPath (Join-Path $JavaHome 'include\jni.h'))) { throw 'JDK 21 JAVA_HOME is required.' }
+if (!(Test-Path -LiteralPath (Join-Path $JavaHome 'include\jni.h'))) { throw 'Pass a desktop JDK containing include\jni.h with -JavaHome.' }
 
 # Only the project's normal jpackage image is an input; no executable is run from it.
 $cfgPath = Join-Path $AppImage 'app\Zhihu++.cfg'
@@ -161,7 +161,7 @@ Write-Utf8 (Join-Path $stage 'AppxManifest.xml') $manifest
 Add-Type -AssemblyName System.Drawing
 $assets = Join-Path $stage 'Assets'
 New-Item -ItemType Directory -Path $assets | Out-Null
-$icon = [Drawing.Image]::FromFile((Join-Path $PSScriptRoot '..\src\main\resources\desktop-icon.png'))
+$icon = [Drawing.Image]::FromFile((Join-Path $PSScriptRoot '..\src\main\composeResources\drawable\desktop_icon.png'))
 try {
     foreach ($asset in @(@('StoreLogo', 50), @('Square44x44Logo', 44), @('Square150x150Logo', 150))) {
         $bitmap = [Drawing.Bitmap]::new([int]$asset[1], [int]$asset[1])
@@ -173,5 +173,14 @@ try {
         } finally { $graphics.Dispose(); $bitmap.Dispose() }
     }
 } finally { $icon.Dispose() }
+# Index only our resource sources, not the staged JVM and application jars.
+$makepri = Join-Path $WindowsSdkRoot "bin\$WindowsSdkVersion\x64\makepri.exe"
+$priConfig = Join-Path $inputs 'priconfig.xml'
+Invoke-Checked $makepri @('createconfig', '/cf', $priConfig, '/dq', 'en-US', '/o')
+# This is one MSIX, not a bundle of separately installed language packs.
+[xml]$priSettings = [IO.File]::ReadAllText($priConfig)
+$null = $priSettings.DocumentElement.RemoveChild($priSettings.SelectSingleNode('/resources/packaging'))
+$priSettings.Save($priConfig)
+Invoke-Checked $makepri @('new', '/pr', (Join-Path $PSScriptRoot 'Strings'), '/cf', $priConfig, '/in', $IdentityName, '/of', (Join-Path $stage 'resources.pri'), '/o')
 Invoke-Checked $makeappx @('pack', '/d', $stage, '/p', (Join-Path $OutputDirectory 'Zhihu++.unsigned.msix'), '/o')
 Write-Output 'Unsigned MSIX created and SDK-validated. No signing, installation, registration, application launch or notification was performed.'

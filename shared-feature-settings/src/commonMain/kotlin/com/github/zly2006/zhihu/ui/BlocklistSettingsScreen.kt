@@ -32,13 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.github.zly2006.zhihu.filter.asListLoadState
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.isBlocklistNlpSupported
-import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppDimens
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.LoadState
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedKeyword
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
@@ -88,9 +88,7 @@ object BlocklistSettingsTestTags {
 
 @Composable
 fun BlocklistSettingsScreen(
-    nlpContent: @Composable (onNavigateBack: () -> Unit) -> Unit = {
-        error("$platformName 暂不支持 NLP 智能屏蔽设置")
-    },
+    nlpContent: @Composable (onNavigateBack: () -> Unit) -> Unit = { PlatformNlpSettingsContent() },
 ) {
     val navigator = LocalNavigator.current
     val userMessages = rememberUserMessageSink()
@@ -133,8 +131,8 @@ fun BlocklistSettingsScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("BlocklistSettingsScreen", failurePrefix, e)
-                userMessages.showShortMessage("$failurePrefix：${e.message}")
+                AppLog.e("BlocklistSettingsScreen", failurePrefix, e)
+                userMessages.showShortMessage(AccountStrings.failureDetail(failurePrefix, e.message))
             }
         }
     }
@@ -156,8 +154,8 @@ fun BlocklistSettingsScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("BlocklistSettingsScreen", "Failed to add blocklist rule", e)
-                userMessages.showShortMessage("添加失败：${e.message}")
+                AppLog.e("BlocklistSettingsScreen", "Failed to add blocklist rule", e)
+                userMessages.showShortMessage(AccountStrings.addFailedDetail(e.message))
             } finally {
                 submitting = false
             }
@@ -165,7 +163,7 @@ fun BlocklistSettingsScreen(
     }
 
     val requestImport = rememberBlocklistRuleImporter(userMessages) { summary ->
-        userMessages.showLongMessage("导入成功：$summary")
+        userMessages.showLongMessage(AccountStrings.importSuccessDetail(summary))
     }
 
     var fabHeightPx by remember { mutableIntStateOf(0) }
@@ -182,7 +180,7 @@ fun BlocklistSettingsScreen(
         layoutDirection = layoutDirection,
         onBack = navigator.onNavigateBack,
         onImport = { requestImport() },
-        onExport = { launchAction("导出失败") { userMessages.showLongMessage(exportRules()) } },
+        onExport = { launchAction(AccountStrings.exportFailed) { userMessages.showLongMessage(exportRules()) } },
         onFabHeightChange = { fabHeightPx = it },
         onAdd = { if (!submitting) addingTab = selectedTab },
         onSelect = { selectedIndex = it },
@@ -207,32 +205,32 @@ fun BlocklistSettingsScreen(
                 onScopeSelect = { keywordScope = it },
                 onClearKeywords = {
                     val scopeToClear = keywordScope.name
-                    launchAction("清空失败") {
+                    launchAction(AccountStrings.clearFailed) {
                         database.blockedKeywordDao().deleteKeywordsByType(KeywordType.EXACT_MATCH.name, scopeToClear)
                     }
                 },
                 onDeleteKeyword = { keyword ->
-                    launchAction("删除失败") {
+                    launchAction(AccountStrings.deleteFailed) {
                         database.blockedKeywordDao().deleteKeywordById(keyword.id, KeywordType.EXACT_MATCH.name, keywordScope.name)
                     }
                 },
-                onClearUsers = { launchAction("清空失败") { database.blockedUserDao().clearAllUsers() } },
+                onClearUsers = { launchAction(AccountStrings.clearFailed) { database.blockedUserDao().clearAllUsers() } },
                 onDeleteUser = { user ->
-                    launchAction("删除失败") { database.blockedUserDao().deleteUserById(user.userId) }
+                    launchAction(AccountStrings.deleteFailed) { database.blockedUserDao().deleteUserById(user.userId) }
                 },
                 onClickUser = { user ->
                     navigator.onNavigate(Person(id = user.userId, urlToken = user.urlToken ?: "", name = user.userName))
                 },
-                onClearQuestionAuthors = { launchAction("清空失败") { database.blockedQuestionAuthorDao().clearAllUsers() } },
+                onClearQuestionAuthors = { launchAction(AccountStrings.clearFailed) { database.blockedQuestionAuthorDao().clearAllUsers() } },
                 onDeleteQuestionAuthor = { author ->
-                    launchAction("删除失败") { database.blockedQuestionAuthorDao().deleteUserById(author.userId) }
+                    launchAction(AccountStrings.deleteFailed) { database.blockedQuestionAuthorDao().deleteUserById(author.userId) }
                 },
                 onClickQuestionAuthor = { author ->
                     navigator.onNavigate(Person(id = author.userId, urlToken = author.urlToken ?: "", name = author.userName))
                 },
-                onClearTopics = { launchAction("清空失败") { database.blockedTopicDao().clearAllTopics() } },
+                onClearTopics = { launchAction(AccountStrings.clearFailed) { database.blockedTopicDao().clearAllTopics() } },
                 onDeleteTopic = { topic ->
-                    launchAction("删除失败") { database.blockedTopicDao().deleteTopicById(topic.topicId) }
+                    launchAction(AccountStrings.deleteFailed) { database.blockedTopicDao().deleteTopicById(topic.topicId) }
                 },
             )
         }
@@ -246,7 +244,7 @@ fun BlocklistSettingsScreen(
                 submitting = submitting,
                 dismiss = dismiss,
                 onConfirmKeyword = { keyword, caseSensitive, isRegex ->
-                    submitRule("已添加关键词") {
+                    submitRule(AccountStrings.keywordAdded) {
                         database.blockedKeywordDao().insertKeyword(
                             BlockedKeyword(
                                 keyword = keyword.trim(),
@@ -259,17 +257,17 @@ fun BlocklistSettingsScreen(
                     }
                 },
                 onConfirmUser = { userId, userName ->
-                    submitRule("已添加用户") {
+                    submitRule(AccountStrings.userAdded) {
                         database.blockedUserDao().insertUser(BlockedUser(userId = userId, userName = userName))
                     }
                 },
                 onConfirmQuestionAuthor = { userId, userName ->
-                    submitRule("已添加屏蔽提问者") {
+                    submitRule(AccountStrings.questionAuthorAdded) {
                         database.blockedQuestionAuthorDao().insertUser(BlockedQuestionAuthor(userId = userId, userName = userName))
                     }
                 },
                 onConfirmTopic = { topicId, topicName ->
-                    submitRule("已添加主题") {
+                    submitRule(AccountStrings.topicAdded) {
                         database.blockedTopicDao().insertTopic(BlockedTopic(topicId = topicId, topicName = topicName))
                     }
                 },

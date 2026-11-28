@@ -19,6 +19,8 @@ package com.github.zly2006.zhihu.account
 
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.util.DisplayFailure
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestPipeline
 import io.ktor.client.request.get
@@ -26,6 +28,8 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -35,8 +39,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
-import kotlin.coroutines.AbstractCoroutineContextElement
-import kotlin.coroutines.CoroutineContext
 
 data class CommentSender(
     val sourceId: String,
@@ -66,7 +68,7 @@ class CommentIdentities internal constructor(
     private fun lane(id: String) = store.withSessionLock { lanes.getOrPut(id, ::Lane) }
 
     internal fun checkCanChangeAccounts() {
-        check(lanes.values.none { it.rotating }) { "正在恢复评论身份，请稍后再切换账号" }
+        if (lanes.values.any { it.rotating }) throw DisplayFailure { DomainStrings.identityRestoreInProgress }
     }
 
     /** 原始 HttpClient、已绑定 Cookie 的调用和续期可嵌套；同一操作不重复申请读锁。 */
@@ -94,18 +96,19 @@ class CommentIdentities internal constructor(
         if (id == null) return
         client.requestPipeline.intercept(HttpRequestPipeline.Before) {
             withOriginal(id) {
-                check(owner.isCurrent) { "账号已切换，请重新操作" }
+                if (!owner.isCurrent) throw DisplayFailure { DomainStrings.accountChangedRetry }
                 proceed()
             }
         }
     }
 
     private fun source(id: String): ZhihuSavedAccount = store.accounts.firstOrNull { it.id == id && it.session.login }
-        ?: error("该账号已退出登录，请重新选择")
+        ?: throw DisplayFailure { DomainStrings.identitySignedOut }
 
     private fun checkOwner(owner: ZhihuAccountClient) {
-        check(owner.isCurrent && owner.load().login && !owner.verificationState.value.blocksSessionChange) {
-            "账号已变更或需要先完成安全验证"
+        store.requireNativeAccount()
+        if (!owner.isCurrent || !owner.load().login || owner.verificationState.value.blocksSessionChange) {
+            throw DisplayFailure { DomainStrings.accountChangedOrVerify }
         }
     }
 
@@ -115,7 +118,7 @@ class CommentIdentities internal constructor(
             source(sourceId).session
         }
         val accounts = createAccountHttpClient(session.cookies.toMutableMap(), session.userAgent, store.engine, store.http403Log::record).use { client ->
-            val body = client.get("https://api.zhihu.com/people/account/list") { applyIdentityHeaders(session) }.identitySuccessBody("加载评论账号")
+            val body = client.get("https://api.zhihu.com/people/account/list") { applyIdentityHeaders(session) }.identitySuccessBody { DomainStrings.loadCommentAccounts }
             ZhihuJson.decodeJson<ZhihuIdentityAccountListResponse>(ZhihuJson.json.parseToJsonElement(body)).data
         }
         accounts.filter { it.id.isNotBlank() && it.name.isNotBlank() }.map {
@@ -138,8 +141,8 @@ class CommentIdentities internal constructor(
                     checkOwner(owner)
                     source(id).session
                 }
-                val original = requireNotNull(sourceSession.profile) { "账号资料不完整，请重新登录" }
-                require(original.id.isNotBlank() && sender.profile.id.isNotBlank()) { "账号身份不完整" }
+                val original = requireNotNull(sourceSession.profile) { DomainStrings.identityProfileMissing }
+                require(original.id.isNotBlank() && sender.profile.id.isNotBlank()) { DomainStrings.identityIncomplete }
                 currentCoroutineContext().ensureActive()
                 try {
                     val selected = if (original.id == sender.profile.id) {
@@ -208,7 +211,7 @@ class CommentIdentities internal constructor(
             store.withSessionLock {
                 val saved = source(id)
                 lane.unsaved = saved.session to restored
-                check(saved.session.profile?.id == original.id) { "来源账号已变更" }
+                if (saved.session.profile?.id != original.id) throw DisplayFailure { DomainStrings.identitySourceChanged }
                 val updated = saved.session.copy(
                     cookies = restored.cookies,
                     mobileAccessToken = restored.mobileAccessToken,
@@ -231,12 +234,12 @@ class CommentIdentities internal constructor(
                     applyIdentityHeaders(source)
                     contentType(ContentType.Application.Json)
                     setBody(SwitchAccountRequest(target.id))
-                }.identitySuccessBody("切换评论身份")
+                }.identitySuccessBody { DomainStrings.switchCommentIdentity }
         }
         val json = ZhihuJson.json.parseToJsonElement(body).jsonObject
-        check(json["verification"] == null || json["verification"] == JsonNull) { "请在身份管理中完成知乎验证" }
+        if (json["verification"] != null && json["verification"] != JsonNull) throw DisplayFailure { DomainStrings.identityVerificationRequired }
         val token = ZhihuJson.decodeJson<ZhihuIdentityToken>(json)
-        check(token.uid == target.id && token.accessToken.isNotBlank() && !token.cookie["z_c0"].isNullOrBlank()) { "服务器未返回所选身份的有效凭据" }
+        if (token.uid != target.id || token.accessToken.isBlank() || token.cookie["z_c0"].isNullOrBlank()) throw DisplayFailure { DomainStrings.identityInvalidCredentials }
         cookies.putAll(token.cookie)
         return source.copy(
             username = target.name,

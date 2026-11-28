@@ -60,13 +60,14 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppChip
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 private const val QUESTION_DETAIL_COLLAPSE_THRESHOLD = 100
 private val QUESTION_DETAIL_COLLAPSED_MAX_HEIGHT: Dp = 180.dp
@@ -183,14 +184,14 @@ internal fun QuestionAnimatedBodyHeader(
                         horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
                     ) {
                         Text(
-                            text = "$answerCount 回答",
+                            text = ContentStrings.answerCount(answerCount),
                             style = LocalAppSkinTokens.current.title4,
                             color = LocalAppSkinTokens.current.onSurface,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
                         )
                         AppSegmentedControl(
-                            options = listOf("默认", "最新"),
+                            options = listOf(ContentStrings.defaultSort, ContentStrings.latest),
                             selectedIndex = if (currentSort == "updated") 1 else 0,
                             onSelect = { onSortChange(if (it == 0) "default" else "updated") },
                             modifier = Modifier.widthIn(max = AppDimens.SettingControlWidth).testTag(QUESTION_SORT_CONTROL_TAG),
@@ -346,11 +347,11 @@ private fun QuestionDetailToggleButton(
                 .padding(end = AppDimens.Space4)
                 .testTag(QUESTION_DETAIL_TOGGLE_TAG),
     ) {
-        Icon(
+        AppIcon(
             imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
             contentDescription = null,
         )
         Spacer(Modifier.width(4.dp))
-        Text(if (isExpanded) "收起详情" else "展开详情")
+        Text(if (isExpanded) ContentStrings.collapseDetails else ContentStrings.expandDetails)
     }
 }

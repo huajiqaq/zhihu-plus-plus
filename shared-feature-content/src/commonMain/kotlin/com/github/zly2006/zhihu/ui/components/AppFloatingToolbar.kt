@@ -23,7 +23,7 @@ import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 
 /** 同一组操作使用当前皮肤的原生浮动工具栏，业务状态和动作由页面持有。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -46,7 +46,7 @@ fun AppFloatingToolbar(
             fallbackContainer = colors.toolbarContainerColor,
             tint = colors.toolbarContainerColor.copy(alpha = AppDimens.GlassContainerAlpha),
             borderColor = colors.toolbarContentColor.copy(alpha = 0.12f),
-            isDark = ThemeManager.isDarkTheme(),
+            isDark = LocalAppTheme.current.isDarkTheme,
         ),
         colors = colors.copy(toolbarContainerColor = appGlassContainerColor(colors.toolbarContainerColor)),
         expandedShadowElevation = AppDimens.ElevationNone,

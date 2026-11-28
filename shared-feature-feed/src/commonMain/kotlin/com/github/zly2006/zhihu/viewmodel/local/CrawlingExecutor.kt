@@ -18,12 +18,12 @@
 package com.github.zly2006.zhihu.viewmodel.local
 
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.data.Feed
-import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.account.accountIdentityKey
 import com.github.zly2006.zhihu.navigation.zhihuQuestionFeedsUrl
-import com.github.zly2006.zhihu.util.jsonObject
+import io.ktor.client.call.body
 import io.ktor.http.URLProtocol
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -31,8 +31,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlin.time.Clock
 
 class CrawlingExecutor(
     private val dao: LocalContentDao,
@@ -57,10 +57,10 @@ class CrawlingExecutor(
                     currentCoroutineContext().ensureActive()
 
                     val results = when (task.reason) {
-                        CrawlingReason.Following -> executeFollowingTask(task)
-                        CrawlingReason.Trending -> executeTrendingTask(task)
+                        CrawlingReason.Following -> fetchResults(zhihuFollowingRecommendUrl(), task)
+                        CrawlingReason.Trending -> fetchResults(zhihuTopstoryRecommendUrl(limit = 20), task, scoreMultiplier = 1.2)
                         CrawlingReason.UpvotedQuestion -> executeUpvotedQuestionTask(task)
-                        CrawlingReason.FollowingUpvote -> executeFollowingUpvoteTask(task)
+                        CrawlingReason.FollowingUpvote -> fetchResults(zhihuFollowingUpvoteRecommendUrl(limit = 20), task)
                         CrawlingReason.CollaborativeFiltering -> executeCollaborativeFilteringTask(task)
                     }
 
@@ -83,62 +83,9 @@ class CrawlingExecutor(
         }
     }
 
-    private suspend fun executeFollowingTask(task: CrawlingTask): List<CrawlingResult> {
-        val feedArray = fetchFeedArray(zhihuFollowingRecommendUrl())
-
-        return feedArray.mapNotNull { feedElement ->
-            try {
-                val feed = ZhihuJson.decodeJson<Feed>(feedElement)
-                createCrawlingResult(feed, task.id, CrawlingReason.Following)
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-
-    private suspend fun executeTrendingTask(task: CrawlingTask): List<CrawlingResult> {
-        val feedArray = fetchFeedArray(zhihuTopstoryRecommendUrl(limit = 20))
-
-        return feedArray.mapNotNull { feedElement ->
-            try {
-                val feed = ZhihuJson.decodeJson<Feed>(feedElement)
-                createCrawlingResult(feed, task.id, CrawlingReason.Trending, 1.2)
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-
     private suspend fun executeUpvotedQuestionTask(task: CrawlingTask): List<CrawlingResult> {
         val questionId = extractQuestionIdFromUrl(task.url) ?: return emptyList()
-
-        val feedArray = fetchFeedArray(zhihuQuestionFeedsUrl(questionId, limit = 20))
-
-        return feedArray.mapNotNull { feedElement ->
-            try {
-                val feed = ZhihuJson.decodeJson<Feed>(feedElement)
-                createCrawlingResult(feed, task.id, CrawlingReason.UpvotedQuestion, 1.1)
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-
-    private suspend fun executeFollowingUpvoteTask(task: CrawlingTask): List<CrawlingResult> {
-        val feedArray = fetchFeedArray(zhihuFollowingUpvoteRecommendUrl(limit = 20))
-
-        return feedArray.mapNotNull { feedElement ->
-            try {
-                val feed = ZhihuJson.decodeJson<Feed>(feedElement)
-                if (isVoteupFeed(feed)) {
-                    createCrawlingResult(feed, task.id, CrawlingReason.FollowingUpvote)
-                } else {
-                    null
-                }
-            } catch (_: Exception) {
-                null
-            }
-        }
+        return fetchResults(zhihuQuestionFeedsUrl(questionId, limit = 20), task, scoreMultiplier = 1.1)
     }
 
     private suspend fun executeCollaborativeFilteringTask(task: CrawlingTask): List<CrawlingResult> {
@@ -146,31 +93,36 @@ class CrawlingExecutor(
         val recentLikes = dao.getBehaviorsByActionSince("like", nowMillis - 7 * 24 * 60 * 60 * 1000)
 
         if (recentLikes.isEmpty()) {
-            return executeTrendingTask(task.copy(reason = CrawlingReason.CollaborativeFiltering))
+            return fetchResults(zhihuTopstoryRecommendUrl(limit = 20), task, CrawlingReason.Trending, 1.2)
         }
+        return fetchResults(zhihuTopstoryRecommendUrl(limit = 20), task, scoreMultiplier = 0.9)
+    }
 
-        val feedArray = fetchFeedArray(zhihuTopstoryRecommendUrl(limit = 20))
-
-        return feedArray.mapNotNull { feedElement ->
+    private suspend fun fetchResults(
+        url: String,
+        task: CrawlingTask,
+        reason: CrawlingReason = task.reason,
+        scoreMultiplier: Double = 1.0,
+    ): List<CrawlingResult> {
+        val owner = accountStore.client
+        val accountId = owner.load().accountIdentityKey()
+        val feedArray = crawlingFeedArrayForTesting?.invoke(url)
+            ?: owner.withAuthenticatedClient { client, _ ->
+                check(owner.httpClient() === client) { "账号已切换" }
+                val response = owner.get(url) { url { protocol = URLProtocol.HTTPS } }
+                check(accountStore.client === owner) { "账号已切换" }
+                if (response.status.isSuccess()) response.body<JsonObject>()["data"]?.jsonArray else null
+            }
+            ?: JsonArray(emptyList())
+        if (accountStore.client !== owner) throw CancellationException("账号已切换")
+        return feedArray.mapNotNull { element ->
             try {
-                val feed = ZhihuJson.decodeJson<Feed>(feedElement)
-                createCrawlingResult(feed, task.id, CrawlingReason.CollaborativeFiltering, 0.9)
+                createCrawlingResult(element, task.id, reason, scoreMultiplier, accountId)
             } catch (_: Exception) {
                 null
             }
         }
     }
-
-    private suspend fun fetchFeedArray(url: String): JsonArray =
-        crawlingFeedArrayForTesting?.invoke(url)
-            ?: accountStore.client.withAuthenticatedClient { client, cookies ->
-                val owner = accountStore.client
-                check(owner.httpClient() === client) { "账号已切换" }
-                val response = owner.get(url) { url { protocol = URLProtocol.HTTPS } }
-                check(accountStore.client === owner) { "账号已切换" }
-                if (response.status.isSuccess()) response.jsonObject()["data"]?.jsonArray else null
-            }
-            ?: JsonArray(emptyList())
 }
 
 var crawlingFeedArrayForTesting: (suspend (String) -> JsonArray)? = null

@@ -1,0 +1,34 @@
+<resources>
+    <string name="home">主页</string>
+    <string name="following">关注</string>
+    <string name="trending">热榜</string>
+    <string name="daily">日报</string>
+    <string name="history">历史</string>
+    <string name="collections">收藏夹</string>
+    <string name="account">账号</string>
+    <string name="content_section">内容</string>
+    <string name="library_section">资料</string>
+    <string name="account_settings">账号与设置</string>
+    <string name="search">搜索</string>
+    <string name="notifications">通知</string>
+    <string name="video_load_failed">获取视频链接失败</string>
+    <string name="video_unknown_type">无法打开视频：未知的内容类型</string>
+    <string name="link_no_app">没有可打开此链接的应用</string>
+    <string name="unsupported_link">不支持的链接</string>
+    <string name="nlp_unavailable">%1$s 暂不支持 NLP 智能屏蔽设置</string>
+    <string name="session_expired">登录已过期</string>
+    <string name="session_sign_in_again">请重新登录以继续使用完整功能。</string>
+    <string name="sign_in_again">重新登录</string>
+    <string name="cancel">取消</string>
+    <string name="reading_width_sample">值得反复阅读的收藏内容</string>
+    <string name="browser_session_unchecked">尚未检查知乎登录状态</string>
+    <string name="browser_bridge_missing">未检测到本机知乎请求桥</string>
+    <string name="browser_guest">浏览器未登录知乎</string>
+    <string name="browser_signed_in">已登录：%1$s</string>
+    <string name="browser_session_expired">知乎登录已失效</string>
+    <string name="browser_access_denied">当前标签页未获授权</string>
+    <string name="browser_session_unavailable">暂时无法检查登录状态</string>
+    <string name="install_bridge">安装请求桥</string>
+    <string name="checking_session">正在检查</string>
+    <string name="check_session">检查登录状态</string>
+</resources>

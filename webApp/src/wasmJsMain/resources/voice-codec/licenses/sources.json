@@ -1,0 +1,218 @@
+{
+  "package": "@ffmpeg/core",
+  "version": "0.12.10",
+  "binary": "https://registry.npmjs.org/@ffmpeg/core/-/core-0.12.10.tgz",
+  "integrity": "sha512-dzNplnn2Nxle2c2i2rrDhqcB19q9cglCkWnoMTDN9Q9l3PvdjZWd1HfSPjCNWc/p8Q3CT+Es9fWOR0UhAeYQZA==",
+  "source": "https://github.com/ffmpegwasm/ffmpeg.wasm/tree/71aa99d37c02a7b4c435275ca9ef50e612f6efa1",
+  "buildRecipe": "https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/Dockerfile",
+  "bindingsAndLinkFlags": "https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/build/ffmpeg-wasm.sh",
+  "sdlPort": "https://github.com/emscripten-core/emscripten/blob/3.1.40/tools/ports/sdl2.py",
+  "components": [
+    {
+      "id": "ffmpegwasm",
+      "name": "ffmpeg.wasm JS bindings",
+      "version": "core 0.12.10",
+      "license": "MIT",
+      "source": "https://github.com/ffmpegwasm/ffmpeg.wasm/tree/71aa99d37c02a7b4c435275ca9ef50e612f6efa1",
+      "licenseFiles": [
+        "ffmpegwasm/LICENSE"
+      ]
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "version": "n5.1.4",
+      "license": "GPL-2.0-or-later (enabled GPL components); see upstream terms",
+      "source": "https://github.com/FFmpeg/FFmpeg/tree/4729204c17f756e186d622060088371d10b34f7e",
+      "licenseFiles": [
+        "ffmpeg/COPYING.GPLv2",
+        "ffmpeg/COPYING.LGPLv2.1",
+        "ffmpeg/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "x264",
+      "name": "x264",
+      "version": "4-cores",
+      "license": "GPL-2.0-or-later",
+      "source": "https://github.com/ffmpegwasm/x264/tree/33cac6b77d5b9259c552156013a817ab23119612",
+      "licenseFiles": [
+        "x264/COPYING",
+        "x264/AUTHORS"
+      ]
+    },
+    {
+      "id": "x265",
+      "name": "x265",
+      "version": "3.4",
+      "license": "GPL-2.0-or-later",
+      "source": "https://github.com/ffmpegwasm/x265/tree/2bb5520e9596f361bf0ed81b3b8da0d7fd999069",
+      "licenseFiles": [
+        "x265/COPYING"
+      ]
+    },
+    {
+      "id": "libvpx",
+      "name": "libvpx",
+      "version": "v1.13.1",
+      "license": "BSD-3-Clause and patent grant",
+      "source": "https://github.com/ffmpegwasm/libvpx/tree/10b9492dcf05b652e2e4b370e205bd605d421972",
+      "licenseFiles": [
+        "libvpx/LICENSE",
+        "libvpx/PATENTS"
+      ]
+    },
+    {
+      "id": "lame",
+      "name": "LAME",
+      "version": "master",
+      "license": "LGPL-2.0-or-later; see LAME notice",
+      "source": "https://github.com/ffmpegwasm/lame/tree/2badea1974ae36cb8312afe99cff1e6b3b5decee",
+      "licenseFiles": [
+        "lame/COPYING",
+        "lame/LICENSE"
+      ]
+    },
+    {
+      "id": "ogg",
+      "name": "libogg",
+      "version": "v1.3.4",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/ffmpegwasm/Ogg/tree/bada45718453ac27b56773ae663f7e65112f6a6e",
+      "licenseFiles": [
+        "ogg/COPYING"
+      ]
+    },
+    {
+      "id": "theora",
+      "name": "libtheora",
+      "version": "v1.1.1",
+      "license": "BSD-3-Clause and On2 statement",
+      "source": "https://github.com/ffmpegwasm/theora/tree/7ffd8b2ecfc2d93ae5e16028e7528e609266bfbf",
+      "licenseFiles": [
+        "theora/COPYING",
+        "theora/LICENSE"
+      ]
+    },
+    {
+      "id": "opus",
+      "name": "Opus",
+      "version": "v1.3.1",
+      "license": "BSD-3-Clause and contributor patent terms",
+      "source": "https://github.com/ffmpegwasm/opus/tree/e85ed7726db5d677c9c0677298ea0cb9c65bdd23",
+      "licenseFiles": [
+        "opus/COPYING",
+        "opus/LICENSE_PLEASE_READ.txt"
+      ]
+    },
+    {
+      "id": "vorbis",
+      "name": "libvorbis",
+      "version": "v1.3.3",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/ffmpegwasm/vorbis/tree/7798164043197d7e33f02de4353ce2aa5b248225",
+      "licenseFiles": [
+        "vorbis/COPYING"
+      ]
+    },
+    {
+      "id": "zlib",
+      "name": "zlib",
+      "version": "v1.2.11",
+      "license": "Zlib",
+      "source": "https://github.com/ffmpegwasm/zlib/tree/cacf7f1d4e3d44d871b605da3b647f07d718623f",
+      "licenseFiles": [
+        "zlib/README"
+      ]
+    },
+    {
+      "id": "libwebp",
+      "name": "libwebp",
+      "version": "v1.3.2",
+      "license": "BSD-3-Clause and patent grant",
+      "source": "https://github.com/ffmpegwasm/libwebp/tree/ca332209cb5567c9b249c86788cb2dbf8847e760",
+      "licenseFiles": [
+        "libwebp/COPYING",
+        "libwebp/PATENTS"
+      ]
+    },
+    {
+      "id": "freetype",
+      "name": "FreeType",
+      "version": "VER-2-10-4",
+      "license": "FTL or GPL-2.0-only",
+      "source": "https://github.com/ffmpegwasm/freetype2/tree/6a2b3e4007e794bfc6c91030d0ed987f925164a8",
+      "licenseFiles": [
+        "freetype/docs/LICENSE.TXT",
+        "freetype/docs/FTL.TXT",
+        "freetype/docs/GPLv2.TXT"
+      ]
+    },
+    {
+      "id": "fribidi",
+      "name": "GNU FriBidi",
+      "version": "v1.0.9",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://github.com/fribidi/fribidi/tree/f9e8e71a6fbf4a4619481284c9f484d10e559995",
+      "licenseFiles": [
+        "fribidi/COPYING"
+      ]
+    },
+    {
+      "id": "harfbuzz",
+      "name": "HarfBuzz",
+      "version": "5.2.0",
+      "license": "HarfBuzz (MIT-like); see upstream notices",
+      "source": "https://github.com/harfbuzz/harfbuzz/tree/4a1d891c6317d2c83e5f3c2607ec5f5ccedffcde",
+      "licenseFiles": [
+        "harfbuzz/COPYING"
+      ]
+    },
+    {
+      "id": "libass",
+      "name": "libass",
+      "version": "0.15.0",
+      "license": "ISC",
+      "source": "https://github.com/libass/libass/tree/d149636f502f5774ae1a8fb4c554b122674393b2",
+      "licenseFiles": [
+        "libass/COPYING"
+      ]
+    },
+    {
+      "id": "zimg",
+      "name": "zimg",
+      "version": "release-3.0.5",
+      "license": "WTFPL and included third-party terms",
+      "source": "https://github.com/sekrit-twc/zimg/tree/e5b0de6bebbcbc66732ed5afaafef6b2c7dfef87",
+      "licenseFiles": [
+        "zimg/COPYING"
+      ]
+    },
+    {
+      "id": "sdl2",
+      "name": "SDL2",
+      "version": "release-2.24.2",
+      "license": "Zlib",
+      "source": "https://github.com/libsdl-org/SDL/tree/55b03c7493a7abed33cf803d1380a40fa8af903f",
+      "licenseFiles": [
+        "sdl2/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "emscripten",
+      "name": "Emscripten runtime",
+      "version": "3.1.40",
+      "license": "MIT or NCSA; musl and LLVM runtimes retain their own terms",
+      "source": "https://github.com/emscripten-core/emscripten/tree/5c27e79dd0a9c4e27ef2326841698cdd4f6b5784",
+      "licenseFiles": [
+        "emscripten/LICENSE",
+        "emscripten/AUTHORS",
+        "emscripten/system/lib/libc/musl/COPYRIGHT",
+        "emscripten/system/lib/compiler-rt/LICENSE.TXT",
+        "emscripten/system/lib/libcxx/LICENSE.TXT",
+        "emscripten/system/lib/libcxxabi/LICENSE.TXT",
+        "emscripten/system/lib/libunwind/LICENSE.TXT"
+      ]
+    }
+  ]
+}

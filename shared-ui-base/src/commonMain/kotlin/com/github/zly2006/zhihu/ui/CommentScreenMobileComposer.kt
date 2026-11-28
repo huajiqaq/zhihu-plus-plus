@@ -53,18 +53,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.VoiceCommentRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 移动端的评论入口条和编辑底部面板；录音期间面板不能关闭。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,12 +102,12 @@ internal fun CommentScreenMobileComposer(
             horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.AutoMirrored.Outlined.Comment, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeMedium))
-            Text("发布评论", style = MaterialTheme.typography.bodyLarge)
+            AppIcon(Icons.AutoMirrored.Outlined.Comment, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeMedium))
+            Text(CommentsStrings.postComment, style = MaterialTheme.typography.bodyLarge)
         }
     }
     if (composerOpen) {
-        val recording by rememberUpdatedState(voiceRecorder.isRecording)
+        val recording by rememberUpdatedState(voiceRecorder.isRecording || voiceRecorder.isBusy)
         val sheetState = rememberBottomSheetState(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
@@ -126,7 +127,7 @@ internal fun CommentScreenMobileComposer(
 
             fun closeSheet() {
                 if (recording) {
-                    userMessages.showShortMessage("请先停止录音")
+                    userMessages.showShortMessage(CommentsStrings.stopRecordingFirst)
                 } else {
                     focus.clearFocus(force = true)
                     keyboard?.hide()
@@ -160,7 +161,7 @@ internal fun CommentScreenMobileComposer(
             ) {
                 Text(editorTitle, modifier = Modifier.weight(1f), style = titleStyle)
                 AppIconButton(onClick = ::closeSheet) {
-                    Icon(Icons.Filled.Close, contentDescription = "关闭编辑面板")
+                    AppIcon(Icons.Filled.Close, contentDescription = CommentsStrings.closeEditor)
                 }
             }
             Column(Modifier.verticalScroll(rememberScrollState())) { editor() }

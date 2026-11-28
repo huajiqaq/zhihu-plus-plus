@@ -17,7 +17,7 @@
 
 package com.github.zly2006.zhihu.notification
 
-import kotlinx.serialization.json.Json
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.FileAlreadyExistsException
@@ -36,6 +36,7 @@ import java.nio.file.attribute.FileAttribute
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.attribute.UserPrincipal
 import java.util.EnumSet
+import kotlinx.serialization.json.Json
 
 /** 只存本机通知元数据；缓存目录不参与应用备份，CACHEDIR.TAG 供遵循该规范的外部备份工具排除。 */
 object JvmNotificationFiles {
@@ -55,10 +56,10 @@ object JvmNotificationFiles {
         if (windows) return Path.of(WindowsNotificationBridge.storageDirectory()).also { verifyPrivate(it, directory = true) }
         val home = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()
         val base = System.getenv("XDG_CACHE_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) } ?: home.resolve(".cache")
-        check(base.isAbsolute) { "通知私有目录必须是绝对路径" }
+        check(base.isAbsolute) { NotificationsStrings.storageDirectoryAbsolute }
         val normalized = base.normalize()
         Files.createDirectories(normalized)
-        check(normalized.toRealPath() == normalized) { "通知私有目录不能经过符号链接" }
+        check(normalized.toRealPath() == normalized) { NotificationsStrings.storageDirectorySymlink }
         val app = normalized.resolve("zhihu-plus-plus-notifications")
         try {
             Files.createDirectory(app, permissions(directory = true))
@@ -95,17 +96,17 @@ object JvmNotificationFiles {
     }
 
     fun verifyPrivate(path: Path, directory: Boolean = false) {
-        check(!Files.isSymbolicLink(path)) { "通知私有文件不能是符号链接" }
+        check(!Files.isSymbolicLink(path)) { NotificationsStrings.storageFileSymlink }
         check(if (directory) Files.isDirectory(path, NOFOLLOW_LINKS) else Files.isRegularFile(path, NOFOLLOW_LINKS)) {
-            "通知私有文件类型不正确"
+            NotificationsStrings.storageFileType
         }
-        check(path.toRealPath() == path.toAbsolutePath().normalize()) { "通知私有路径不能经过符号链接" }
+        check(path.toRealPath() == path.toAbsolutePath().normalize()) { NotificationsStrings.storagePathSymlink }
         if (windows) {
             WindowsNotificationBridge.verifyStorage(path.toAbsolutePath().normalize().toString(), directory)
         } else {
-            check(Files.getOwner(path, NOFOLLOW_LINKS) == owner) { "通知私有文件不属于当前系统用户" }
+            check(Files.getOwner(path, NOFOLLOW_LINKS) == owner) { NotificationsStrings.storageOwnerInvalid }
             val expected = PosixFilePermissions.fromString(if (directory) "rwx------" else "rw-------")
-            check(Files.getPosixFilePermissions(path, NOFOLLOW_LINKS) == expected) { "通知私有文件权限不正确" }
+            check(Files.getPosixFilePermissions(path, NOFOLLOW_LINKS) == expected) { NotificationsStrings.storagePermissionsInvalid }
         }
     }
 
@@ -141,9 +142,9 @@ internal class JvmNotificationStateStore {
         if (!Files.exists(stateFile, NOFOLLOW_LINKS)) return DeviceNotificationState()
         JvmNotificationFiles.verifyPrivate(stateFile)
         return FileChannel.open(stateFile, READ, NOFOLLOW_LINKS).use { channel ->
-            check(channel.size() <= 16L * 1024 * 1024) { "本机通知状态过大" }
+            check(channel.size() <= 16L * 1024 * 1024) { NotificationsStrings.stateTooLarge }
             val buffer = ByteBuffer.allocate(channel.size().toInt())
-            while (buffer.hasRemaining()) check(channel.read(buffer) >= 0) { "本机通知状态不完整" }
+            while (buffer.hasRemaining()) check(channel.read(buffer) >= 0) { NotificationsStrings.stateIncomplete }
             json.decodeFromString<DeviceNotificationState>(buffer.array().decodeToString(throwOnInvalidSequence = true))
         }
     }
@@ -152,7 +153,7 @@ internal class JvmNotificationStateStore {
         JvmNotificationFiles.verifyPrivate(directory, directory = true)
         if (Files.exists(stateFile, NOFOLLOW_LINKS)) JvmNotificationFiles.verifyPrivate(stateFile)
         val bytes = json.encodeToString(DeviceNotificationState.serializer(), state).toByteArray()
-        check(bytes.size <= 16 * 1024 * 1024) { "本机通知状态过大" }
+        check(bytes.size <= 16 * 1024 * 1024) { NotificationsStrings.stateTooLarge }
         val temporary = directory.resolve("state-${java.util.UUID.randomUUID()}.tmp")
         try {
             JvmNotificationFiles.createPrivateFile(temporary).use { channel ->

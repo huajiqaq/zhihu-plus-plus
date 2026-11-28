@@ -55,12 +55,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.MobileNotificationColumnHead
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppBadgedBox
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.MobileNotificationCategory
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun NotificationCategoryRow(
@@ -88,7 +89,7 @@ internal fun NotificationCategoryRow(
                     .testTag("notification_category_${category.entryName}")
                     .semantics {
                         if (showUnreadBadges) {
-                            stateDescription = if (unreadCount > 0) "$unreadCount 条未读通知" else "已读"
+                            stateDescription = if (unreadCount > 0) NotificationsStrings.unreadNotifications(unreadCount) else NotificationsStrings.read
                         }
                     }.clickable(role = Role.Button) { onCategoryClick(category) }
                     .padding(vertical = 4.dp),
@@ -103,7 +104,7 @@ internal fun NotificationCategoryRow(
                             .background(if (miuix) LocalAppSkinTokens.current.surfaceContainerHigh else MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
+                        AppIcon(
                             imageVector = category.homeIcon(),
                             contentDescription = null,
                             tint = if (miuix) LocalAppSkinTokens.current.primary else MaterialTheme.colorScheme.onPrimaryContainer,
@@ -139,7 +140,7 @@ internal fun NotificationInvitationRow(
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .testTag("notification_invitation")
             .semantics {
-                if (showUnreadBadge) stateDescription = if (invitation.unreadCount > 0) "${invitation.unreadCount} 条未读邀请" else "已读"
+                if (showUnreadBadge) stateDescription = if (invitation.unreadCount > 0) NotificationsStrings.unreadInvitations(invitation.unreadCount) else NotificationsStrings.read
             }.clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -152,14 +153,14 @@ internal fun NotificationInvitationRow(
                 contentColor = LocalAppSkinTokens.current.onSecondaryVariant,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.ContactPage, contentDescription = null, modifier = Modifier.size(28.dp))
+                    AppIcon(Icons.Outlined.ContactPage, contentDescription = null, modifier = Modifier.size(28.dp))
                 }
             }
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = invitation.title.ifBlank { "邀请回答" },
+                text = invitation.title.ifBlank { NotificationsStrings.invitationTitle },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )

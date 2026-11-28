@@ -17,17 +17,16 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
 /**
  * 内容曝光记录实体。
  * 记录某个内容身份在 feed 中被展示/交互的次数，用于“重复曝光但一直不点开”的 feed 过滤规则。
  */
-@Entity(tableName = ContentViewRecord.TABLE_NAME)
+@Serializable
 data class ContentViewRecord(
-    @PrimaryKey val id: String, // 使用 targetType:targetId 作为主键
+    val id: String, // 使用 targetType:targetId 作为主键
     val targetType: String, // 内容类型，如 answer、article。
     val targetId: String, // 目标内容ID
     val viewCount: Int = 0, // 展示次数

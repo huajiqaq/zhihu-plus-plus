@@ -46,14 +46,16 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.DEFAULT_ZHIHU_USER_AGENT
+import com.github.zly2006.zhihu.account.createDirectHttpClient
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
-import com.github.zly2006.zhihu.notification.HOME_NOTIFICATION_READ_UUIDS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSecureTextField
 import com.github.zly2006.zhihu.ui.components.AppSettingsPage
 import com.github.zly2006.zhihu.ui.components.AppSpinner
@@ -63,7 +65,6 @@ import com.github.zly2006.zhihu.ui.components.SettingItemGroup
 import com.github.zly2006.zhihu.viewmodel.WebDavSyncViewModel
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val WEBDAV_SYNC_BACK_BUTTON_TAG = "webdav_sync_back_button"
 
@@ -87,9 +88,15 @@ fun WebDavSyncScreen() {
             settings = settings,
             database = database,
             notificationSettings = notificationSettings,
-            stringSetKeys = setOf(BOTTOM_BAR_ITEMS_PREFERENCE_KEY, HOME_NOTIFICATION_READ_UUIDS_PREFERENCE_KEY),
-            client = HttpClient(accountStore.engine) {
-                installZhihuCommonClientConfig(mutableMapOf(), DEFAULT_ZHIHU_USER_AGENT, enableCookies = false)
+            persistConnectionConfig = !accountStore.usesBrowserSession,
+            client = if (accountStore.usesBrowserSession) {
+                createDirectHttpClient()
+            } else {
+                HttpClient(accountStore.engine) {
+                    installZhihuCommonClientConfig(mutableMapOf(), DEFAULT_ZHIHU_USER_AGENT, enableCookies = false)
+                    // WebDAV 的 Basic 凭据不能随 Location 转发到其他地址。
+                    followRedirects = false
+                }
             },
         )
     }
@@ -103,11 +110,17 @@ fun WebDavSyncScreen() {
     }
 
     AppSettingsPage(
-        title = "WebDAV 同步",
+        title = SettingsStrings.webdavSync,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = WEBDAV_SYNC_BACK_BUTTON_TAG,
         pageTurnEnabled = !confirmRestore,
     ) {
+        if (accountStore.usesBrowserSession) {
+            SettingItem(
+                title = { Text(SettingsStrings.webdavSync) },
+                description = { Text(SettingsStrings.browserWebdavDescription) },
+            )
+        }
         val running = viewModel.runningLabel
         val status = viewModel.status
         AnimatedVisibility(visible = running != null || status != null) {
@@ -117,7 +130,7 @@ fun WebDavSyncScreen() {
                 failed -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.primary
             }
-            SettingItemGroup(title = "状态") {
+            SettingItemGroup(title = SettingsStrings.status) {
                 SettingItem(
                     title = {
                         Text(
@@ -131,19 +144,19 @@ fun WebDavSyncScreen() {
                     icon = {
                         when {
                             running != null -> AppSpinner(size = AppDimens.IconSizeMedium)
-                            failed -> Icon(Icons.Default.ErrorOutline, null, tint = statusColor)
-                            else -> Icon(Icons.Default.CheckCircle, null, tint = statusColor)
+                            failed -> AppIcon(Icons.Default.ErrorOutline, null, tint = statusColor)
+                            else -> AppIcon(Icons.Default.CheckCircle, null, tint = statusColor)
                         }
                     },
                 )
             }
         }
 
-        SettingItemGroup(title = "连接") {
+        SettingItemGroup(title = SettingsStrings.connection) {
             SettingItem(
-                title = { Text("服务器") },
-                description = { Text("可以直接粘贴带账号密码的完整链接（如 dav://用户名:密码@example.com/dav/），会自动拆分填入。") },
-                icon = { Icon(Icons.Default.Dns, null) },
+                title = { Text(SettingsStrings.server) },
+                description = { Text(SettingsStrings.webdavServerInstructions) },
+                icon = { AppIcon(Icons.Default.Dns, null) },
                 bottomAction = {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space12),
@@ -152,26 +165,26 @@ fun WebDavSyncScreen() {
                         AppTextField(
                             state = viewModel.url,
                             modifier = Modifier.fillMaxWidth().testTag(WEBDAV_URL_TAG),
-                            labelText = "WebDAV 目录地址",
+                            labelText = SettingsStrings.webdavDirectoryUrl,
                             placeholder = "https://dav.example.com/dav/",
                         )
                         AppTextField(
                             state = viewModel.username,
                             modifier = Modifier.fillMaxWidth().testTag(WEBDAV_USERNAME_TAG),
-                            labelText = "用户名",
+                            labelText = SettingsStrings.username,
                         )
                         AppSecureTextField(
                             state = viewModel.password,
                             modifier = Modifier.fillMaxWidth().testTag(WEBDAV_PASSWORD_TAG),
-                            labelText = "密码或应用密码",
+                            labelText = SettingsStrings.passwordOrAppPassword,
                         )
                     }
                 },
             )
             SettingItem(
-                title = { Text("检查连接") },
-                description = { Text("确认目录地址和登录凭据可用") },
-                icon = { Icon(Icons.Default.NetworkCheck, null) },
+                title = { Text(SettingsStrings.checkConnection) },
+                description = { Text(SettingsStrings.checkConnectionDescription) },
+                icon = { AppIcon(Icons.Default.NetworkCheck, null) },
                 enabled = running == null,
                 modifier = Modifier.testTag(WEBDAV_TEST_TAG),
                 onClick = viewModel::testConnection,
@@ -179,26 +192,26 @@ fun WebDavSyncScreen() {
         }
 
         SettingItemGroup(
-            title = "备份",
+            title = SettingsStrings.backup,
             footer = {
                 Text(
-                    "会备份：屏蔽列表、应用设置（包括底栏项目）和通知设置。\n" +
-                        "不会备份：WebDAV 连接信息和 GitHub Token。它们只保存在本机，恢复时也不会被覆盖。",
+                    SettingsStrings.backupIncluded +
+                        SettingsStrings.backupExcluded,
                 )
             },
         ) {
             SettingItem(
-                title = { Text("上传到 WebDAV") },
-                description = { Text("用本机的数据覆盖 WebDAV 上的备份") },
-                icon = { Icon(Icons.Default.CloudUpload, null) },
+                title = { Text(SettingsStrings.uploadWebdav) },
+                description = { Text(SettingsStrings.uploadWebdavDescription) },
+                icon = { AppIcon(Icons.Default.CloudUpload, null) },
                 enabled = running == null,
                 modifier = Modifier.testTag(WEBDAV_UPLOAD_TAG),
                 onClick = viewModel::upload,
             )
             SettingItem(
-                title = { Text("从 WebDAV 恢复") },
-                description = { Text("合并屏蔽列表，覆盖本机设置") },
-                icon = { Icon(Icons.Default.CloudDownload, null) },
+                title = { Text(SettingsStrings.restoreWebdav) },
+                description = { Text(SettingsStrings.restoreWebdavDescription) },
+                icon = { AppIcon(Icons.Default.CloudDownload, null) },
                 enabled = running == null,
                 modifier = Modifier.testTag(WEBDAV_RESTORE_TAG),
                 onClick = {
@@ -212,14 +225,14 @@ fun WebDavSyncScreen() {
     if (confirmRestore) {
         AppDialog(
             onDismissRequest = { confirmRestore = false },
-            title = "从 WebDAV 恢复备份？",
-            summary = "屏蔽列表会与备份合并；应用设置和通知设置会被备份覆盖，无法撤销。WebDAV 连接信息和 GitHub Token 不受影响。部分设置需要重启后生效。",
-            confirmText = "恢复",
+            title = SettingsStrings.restoreWebdavConfirmation,
+            summary = SettingsStrings.restoreWebdavWarning,
+            confirmText = SettingsStrings.restore,
             onConfirm = {
                 confirmRestore = false
                 viewModel.restore()
             },
-            dismissText = "取消",
+            dismissText = SettingsStrings.cancel,
             destructive = true,
         )
     }

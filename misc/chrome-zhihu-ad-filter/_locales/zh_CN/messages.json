@@ -1,0 +1,19 @@
+{
+  "extensionName": {
+    "message": "知乎推荐广告过滤"
+  },
+  "extensionDescription": {
+    "message": "过滤知乎推荐信息流中的广告和推广内容。"
+  },
+  "filtered": {
+    "message": "已过滤：$TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "untitled": {
+    "message": "无标题内容"
+  }
+}

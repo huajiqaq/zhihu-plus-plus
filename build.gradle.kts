@@ -15,6 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
+import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenEnvSpec
+import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenPlugin
+import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec
+import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsPlugin
+
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
@@ -27,4 +34,14 @@ plugins {
     alias(libs.plugins.kotlin.plugin.serialization) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.ktlint) apply false
+}
+
+// Web 使用已安装的 Node/npm；优化器的官方发行仓库由 settings 限定。
+allprojects {
+    plugins.withType<WasmNodeJsPlugin> {
+        extensions.configure<WasmNodeJsEnvSpec> { download = false }
+    }
+    plugins.withType<BinaryenPlugin> {
+        extensions.configure<BinaryenEnvSpec> { downloadBaseUrl.set(null as String?) }
+    }
 }

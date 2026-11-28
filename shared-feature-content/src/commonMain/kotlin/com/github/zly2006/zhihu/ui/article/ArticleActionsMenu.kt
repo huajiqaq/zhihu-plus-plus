@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -69,13 +70,13 @@ import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.reading.ReadingStartRequest
 import com.github.zly2006.zhihu.reading.hasReadableFields
-import com.github.zly2006.zhihu.reading.isReadingPlayerSupported
 import com.github.zly2006.zhihu.reading.loadReadingPlaybackSpeed
 import com.github.zly2006.zhihu.reading.loadReadingPreferences
 import com.github.zly2006.zhihu.reading.rememberReadingPlayerController
 import com.github.zly2006.zhihu.ui.TtsState
 import com.github.zly2006.zhihu.ui.articleActionText
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.ShareAction
@@ -84,11 +85,10 @@ import com.github.zly2006.zhihu.ui.rememberArticleBrowserOpener
 import com.github.zly2006.zhihu.ui.rememberArticleSpeechToggler
 import com.github.zly2006.zhihu.ui.rememberArticleTtsState
 import com.github.zly2006.zhihu.ui.reportUrl
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,7 +106,6 @@ fun ArticleActionsMenu(
     val ttsState = rememberArticleTtsState()
     val toggleSpeech = rememberArticleSpeechToggler()
     val readingPlayer = rememberReadingPlayerController()
-    val readingPlayerState by readingPlayer.state
     val readingSettings = rememberSettingsStore()
     val openArticleInBrowser = rememberArticleBrowserOpener()
     val openWebUrl = rememberWebViewUrlOpener()
@@ -130,7 +129,7 @@ fun ArticleActionsMenu(
     )
     val readingPreferences = loadReadingPreferences(readingSettings)
     val readingPlaybackSpeed = loadReadingPlaybackSpeed(readingSettings)
-    val hasReadingSession = readingPlayerState.hasSession
+    val hasReadingSession = readingPlayer?.state?.value?.hasSession == true
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
@@ -183,7 +182,7 @@ fun ArticleActionsMenu(
     ) {
         MenuActionButton(
             icon = {
-                Icon(
+                AppIcon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = contentColor,
@@ -210,7 +209,7 @@ fun ArticleActionsMenu(
         ) {
             MenuActionButton(
                 icon = Icons.Filled.Edit,
-                text = "编辑回答",
+                text = ContentStrings.editAnswer,
                 onClick = {
                     onDismissRequest()
                     navigator.onNavigate(WriteAnswer(questionId = viewModel.questionId, questionTitle = viewModel.title))
@@ -220,8 +219,8 @@ fun ArticleActionsMenu(
         }
         MenuActionButton(
             icon = {
-                if (isReadingPlayerSupported && hasReadingSession) {
-                    Icon(
+                if (hasReadingSession) {
+                    AppIcon(
                         Icons.AutoMirrored.Filled.VolumeOff,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -230,8 +229,8 @@ fun ArticleActionsMenu(
                     when (ttsState) {
                         TtsState.Initializing, TtsState.Uninitialized -> AppSpinner(modifier = Modifier.height(24.dp))
 
-                        else -> Icon(
-                            if (!isReadingPlayerSupported && ttsState.isSpeaking) {
+                        else -> AppIcon(
+                            if (readingPlayer == null && ttsState.isSpeaking) {
                                 Icons.AutoMirrored.Filled.VolumeOff
                             } else {
                                 Icons.AutoMirrored.Filled.VolumeUp
@@ -242,21 +241,21 @@ fun ArticleActionsMenu(
                     }
                 }
             },
-            text = if (isReadingPlayerSupported) {
-                if (hasReadingSession) "停止朗读" else "开始连续朗读"
+            text = if (readingPlayer != null) {
+                if (hasReadingSession) ContentStrings.stopReading else ContentStrings.startContinuousReading
             } else if (ttsState.isSpeaking) {
-                "停止朗读"
+                ContentStrings.stopReading
             } else {
-                "开始朗读"
+                ContentStrings.startReading
             },
-            enabled = if (isReadingPlayerSupported) {
+            enabled = if (readingPlayer != null) {
                 hasReadingSession || readingItem.hasReadableFields(readingPreferences)
             } else {
                 ttsState !in listOf(TtsState.Error, TtsState.Uninitialized, TtsState.Initializing)
             },
             onClick = {
                 onDismissRequest()
-                if (isReadingPlayerSupported) {
+                if (readingPlayer != null) {
                     if (hasReadingSession) {
                         readingPlayer.stop()
                     } else {
@@ -300,7 +299,7 @@ fun ArticleActionsMenu(
                                 } catch (error: CancellationException) {
                                     throw error
                                 } catch (error: Exception) {
-                                    Log.w("ArticleActionsMenu", "Failed to load the remaining reading queue", error)
+                                    AppLog.w("ArticleActionsMenu", "Failed to load the remaining reading queue", error)
                                     emptyList()
                                 }
                                 ReadingQueueSourceRegistry.queueStartingAt(
@@ -331,7 +330,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.Share,
-            text = "分享",
+            text = ContentStrings.share,
             onClick = {
                 onDismissRequest()
                 executeShareAction(
@@ -345,7 +344,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.Summarize,
-            text = "总结本文",
+            text = ContentStrings.summarizeContent,
             onClick = {
                 onDismissRequest()
                 onSummaryRequest()
@@ -355,7 +354,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.Flag,
-            text = "标记疑似 AIGC",
+            text = ContentStrings.flagAiContent,
             onClick = {
                 onDismissRequest()
                 onAigcFlagRequest()
@@ -365,7 +364,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.Report,
-            text = "举报",
+            text = ContentStrings.report,
             onClick = {
                 onDismissRequest()
                 showReportConfirm = true
@@ -375,7 +374,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.ContentCopy,
-            text = "复制链接",
+            text = ContentStrings.copyLink,
             onClick = {
                 onDismissRequest()
                 executeShareAction(
@@ -389,7 +388,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.FilterCenterFocus,
-            text = "进入沉浸式",
+            text = ContentStrings.enterImmersive,
             onClick = {
                 onDismissRequest()
                 onSetImmersiveDoubleTap()
@@ -399,7 +398,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.GetApp,
-            text = "导出文章 (Markdown、图片、HTML、PDF)",
+            text = ContentStrings.exportArticleFormats,
             onClick = {
                 onDismissRequest()
                 onExportRequest()
@@ -409,7 +408,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Filled.Share,
-            text = "分享 Markdown 正文",
+            text = ContentStrings.shareMarkdownBody,
             onClick = {
                 onDismissRequest()
                 executeShareAction(ShareAction.DirectShare, article, viewModel.convertToMarkdown())
@@ -419,7 +418,7 @@ fun ArticleActionsMenu(
         Spacer(modifier = Modifier.height(12.dp))
         MenuActionButton(
             icon = Icons.Outlined.DesktopWindows,
-            text = if (platformName == "Android") "在电脑打开" else "在浏览器中打开",
+            text = if (platformName == "Android") ContentStrings.openOnComputer else ContentStrings.openInBrowser,
             onClick = {
                 coroutineScope.launch {
                     openArticleInBrowser(article)
@@ -440,15 +439,15 @@ fun ArticleActionsMenu(
     if (showReportConfirm) {
         AppAlertDialog(
             onDismissRequest = { showReportConfirm = false },
-            title = { Text("举报") },
-            text = { Text("将在应用内打开知乎举报页。如需登录，请使用当前知乎账号。") },
+            title = { Text(ContentStrings.report) },
+            text = { Text(ContentStrings.reportHelp) },
             confirmButton = {
-                AppTextButton("打开举报页", {
+                AppTextButton(ContentStrings.openReportPage, {
                     showReportConfirm = false
                     openWebUrl(reportUrl(article.id.toString(), if (article.type == ArticleType.Article) "article" else "answer"))
                 })
             },
-            dismissButton = { AppTextButton("取消", { showReportConfirm = false }) },
+            dismissButton = { AppTextButton(ContentStrings.cancel, { showReportConfirm = false }) },
         )
     }
 }

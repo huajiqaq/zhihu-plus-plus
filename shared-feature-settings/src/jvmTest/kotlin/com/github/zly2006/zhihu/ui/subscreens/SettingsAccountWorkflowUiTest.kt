@@ -38,14 +38,12 @@ import com.github.zly2006.zhihu.account.ZhihuAccounts
 import com.github.zly2006.zhihu.account.ZhihuSavedAccount
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.coroutines.CompletableDeferred
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -53,6 +51,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.io.files.Path as KotlinxPath
 
 @OptIn(ExperimentalTestApi::class)
@@ -239,7 +238,6 @@ class SettingsAccountWorkflowUiTest {
         body: (ZhihuAccountStore) -> Unit,
     ) {
         val directory = Files.createTempDirectory("account-verification-ui-")
-        val originalTheme = ThemeManager.snapshot()
         var store: ZhihuAccountStore? = null
         try {
             val accountFile = directory.resolve("fixture-account.json")
@@ -253,7 +251,6 @@ class SettingsAccountWorkflowUiTest {
                 store?.close()
             } finally {
                 engine.close()
-                ThemeManager.load(originalTheme)
                 check(directory.toFile().deleteRecursively())
             }
         }

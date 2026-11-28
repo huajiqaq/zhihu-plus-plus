@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.ObjCSignatureOverride
@@ -60,7 +61,7 @@ import platform.objc.method_getTypeEncoding
 import platform.objc.object_getClass
 
 @Composable
-internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser {
+internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser? {
     val browser = remember(initialUrl) { AppleWebPageBrowser(initialUrl) }
     DisposableEffect(browser) { onDispose(browser::dispose) }
     return browser
@@ -139,7 +140,7 @@ private class AppleWebPageBrowser(
         ) {
             val response = decidePolicyForNavigationResponse
             val status = (response.response as? NSHTTPURLResponse)?.statusCode
-            if (response.forMainFrame && status != null && status >= 400) errorMessage = "网页请求失败（HTTP $status）"
+            if (response.forMainFrame && status != null && status >= 400) errorMessage = { WidgetsStrings.webRequestFailed(status.toInt()) }
             decisionHandler(WKNavigationResponsePolicyAllow)
         }
 
@@ -163,7 +164,7 @@ private class AppleWebPageBrowser(
             navigationFailed(didFailNavigation, withError)
 
         override fun webViewWebContentProcessDidTerminate(webView: WKWebView) {
-            errorMessage = "网页进程已退出，请重新加载"
+            errorMessage = WidgetsStrings::webProcessEnded
         }
     }
 
@@ -182,7 +183,7 @@ private class AppleWebPageBrowser(
         if (url?.absoluteString?.let(::isWebPageUrl) == true) {
             load(NSURLRequest.requestWithURL(url))
         } else {
-            errorMessage = "无效的网页地址"
+            errorMessage = WidgetsStrings::invalidWebAddress
         }
         return webView
     }
@@ -200,20 +201,21 @@ private class AppleWebPageBrowser(
 
     private fun acceptWebRequest(request: NSURLRequest): Boolean {
         if (request.URL?.absoluteString?.let(::isWebPageUrl) == true) return true
-        errorMessage = "此链接不是 HTTP 或 HTTPS 网页"
+        errorMessage = WidgetsStrings::notHttpAddress
         return false
     }
 
     private fun load(request: NSURLRequest) {
         val webView = view ?: return
         uncommittedRequest = request
-        if (webView.loadRequest(request) == null) errorMessage = "网页未能开始加载"
+        if (webView.loadRequest(request) == null) errorMessage = WidgetsStrings::webCouldNotLoad
     }
 
     private fun navigationFailed(navigation: WKNavigation?, error: NSError) {
         if (navigation != null && activeNavigation != null && navigation != activeNavigation) return
         if (error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) return
-        errorMessage = "网页加载失败：${error.localizedDescription}"
+        val detail = error.localizedDescription
+        errorMessage = { WidgetsStrings.webLoadFailed(detail) }
     }
 
     override fun goBack() {
@@ -230,7 +232,7 @@ private class AppleWebPageBrowser(
         if (request != null) {
             load(request)
         } else if (webView.reload() == null && errorMessage == null) {
-            errorMessage = "网页未能重新加载"
+            errorMessage = WidgetsStrings::webReloadFailed
         }
     }
 

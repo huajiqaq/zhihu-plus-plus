@@ -16,7 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 
-<html lang="zh-CN">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -83,7 +83,11 @@ body { margin: 0; font: 17px/1.6 sans-serif; color: var(--foreground); backgroun
   caret-color: var(--editor-accent);
 }
 .ql-snow .ql-tooltip a { color: var(--editor-accent); }
-.ql-snow .ql-tooltip a.ql-action::after { border-color: var(--editor-outline); }
+.ql-snow .ql-tooltip::before { content: attr(data-visit-link); }
+.ql-snow .ql-tooltip[data-mode=link]::before { content: attr(data-enter-link); }
+.ql-snow .ql-tooltip a.ql-action::after { border-color: var(--editor-outline); content: attr(data-edit-link); }
+.ql-snow .ql-tooltip.ql-editing a.ql-action::after { content: attr(data-save-link); }
+.ql-snow .ql-tooltip a.ql-remove::before { content: attr(data-remove-link); }
 .ql-snow .ql-editor blockquote { border-color: var(--editor-outline); }
 /* 只替换编辑器默认底色与默认链接色，作者的内联样式和 Quill 颜色格式优先。 */
 .ql-snow .ql-editor :is(code, .ql-code-block-container):where(:not([style*="background"]):not([class*="ql-bg-"])) { background: var(--editor-surface); }
@@ -99,11 +103,11 @@ body { margin: 0; font: 17px/1.6 sans-serif; color: var(--foreground); backgroun
 </head>
 <body>
 <div id="toolbar">
-  <span class="ql-formats"><button type="button" id="undo" class="history" aria-label="撤销"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="M6 3 2 7l4 4M2 7h8a4 4 0 0 1 0 8" fill="none"/></svg></button><button type="button" id="redo" class="history" aria-label="重做"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="m12 3 4 4-4 4M16 7H8a4 4 0 0 0 0 8" fill="none"/></svg></button></span>
-  <span class="ql-formats"><select class="ql-header" aria-label="标题级别"><option selected>正文</option><option value="1">标题一</option><option value="2">标题二</option><option value="3">标题三</option><option value="4">标题四</option></select></span>
-  <span class="ql-formats"><button class="ql-bold" aria-label="加粗"></button><button class="ql-italic" aria-label="斜体"></button><button class="ql-underline" aria-label="下划线"></button></span>
-  <span class="ql-formats"><button class="ql-list" value="ordered" aria-label="有序列表"></button><button class="ql-list" value="bullet" aria-label="无序列表"></button><button class="ql-blockquote" aria-label="引用"></button></span>
-  <span class="ql-formats"><button class="ql-code" aria-label="行内代码"></button><button class="ql-code-block" aria-label="代码块"></button><button class="ql-link" aria-label="插入链接"></button><button class="ql-clean" aria-label="清除格式"></button></span>
+  <span class="ql-formats"><button type="button" id="undo" class="history" data-label-key="undo"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="M6 3 2 7l4 4M2 7h8a4 4 0 0 1 0 8" fill="none"/></svg></button><button type="button" id="redo" class="history" data-label-key="redo"><svg viewBox="0 0 18 18" aria-hidden="true"><path class="ql-stroke" d="m12 3 4 4-4 4M16 7H8a4 4 0 0 0 0 8" fill="none"/></svg></button></span>
+  <span class="ql-formats"><select class="ql-header" data-label-key="headingLevel"><option selected></option><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option></select></span>
+  <span class="ql-formats"><button class="ql-bold" data-label-key="bold"></button><button class="ql-italic" data-label-key="italic"></button><button class="ql-underline" data-label-key="underline"></button></span>
+  <span class="ql-formats"><button class="ql-list" value="ordered" data-label-key="ordered"></button><button class="ql-list" value="bullet" data-label-key="bullet"></button><button class="ql-blockquote" data-label-key="blockquote"></button></span>
+  <span class="ql-formats"><button class="ql-code" data-label-key="code"></button><button class="ql-code-block" data-label-key="code-block"></button><button class="ql-link" data-label-key="link"></button><button class="ql-clean" data-label-key="clean"></button></span>
 </div>
 <div id="editor"></div>
 <script src="quill.js"></script>
@@ -136,16 +140,37 @@ class EditorImage extends QuillImage {
 Quill.register(EditorImage, true);
 const quill = new Quill('#editor', {
   theme: 'snow',
-  modules: { toolbar: '#toolbar', history: { delay: 500, maxStack: 100, userOnly: true } },
-  placeholder: '开始写作……'
+  modules: { toolbar: '#toolbar', history: { delay: 500, maxStack: 100, userOnly: true } }
 });
 let lastSelection = { index: 0, length: 0 };
-const toolbarLabels = { bold: '加粗', italic: '斜体', underline: '下划线', blockquote: '引用', code: '行内代码', 'code-block': '代码块', link: '插入链接', clean: '清除格式' };
-for (const [format, label] of Object.entries(toolbarLabels)) {
-  const button = document.querySelector(`button.ql-${format}`);
-  if (button) { button.setAttribute('aria-label', label); button.title = label; }
+function localizeControls(labels) {
+  document.documentElement.lang = labels.lang;
+  for (const control of document.querySelectorAll('#toolbar [data-label-key]')) {
+    control.setAttribute('aria-label', labels[control.dataset.labelKey]);
+    control.title = labels[control.dataset.labelKey];
+  }
+  const headings = [labels.paragraph, labels.heading1, labels.heading2, labels.heading3, labels.heading4];
+  const select = document.querySelector('#toolbar select.ql-header');
+  const picker = document.querySelector('#toolbar .ql-picker.ql-header');
+  for (const [index, option] of Array.from(select.options).entries()) option.textContent = headings[index];
+  for (const [index, item] of Array.from(picker.querySelectorAll('.ql-picker-item')).entries()) {
+    item.dataset.label = headings[index];
+    item.setAttribute('aria-label', headings[index]);
+  }
+  const pickerLabel = picker.querySelector('.ql-picker-label');
+  pickerLabel.dataset.label = headings[select.selectedIndex] || labels.paragraph;
+  pickerLabel.setAttribute('aria-label', labels.headingLevel);
+  const tooltip = quill.theme.tooltip.root;
+  tooltip.dataset.visitLink = labels.visitLink;
+  tooltip.dataset.enterLink = labels.enterLink;
+  tooltip.querySelector('input').setAttribute('aria-label', labels.enterLink);
+  const action = tooltip.querySelector('.ql-action');
+  action.dataset.editLink = labels.editLink;
+  action.dataset.saveLink = labels.saveLink;
+  const remove = tooltip.querySelector('.ql-remove');
+  remove.dataset.removeLink = labels.removeLink;
+  remove.setAttribute('aria-label', labels.removeLink);
 }
-for (const button of document.querySelectorAll('button.ql-list')) button.setAttribute('aria-label', button.value === 'ordered' ? '有序列表' : '无序列表');
 function publish() {
   if (window.EditorBridge) EditorBridge.contentChanged(quill.getSemanticHTML(), quill.getText());
 }
@@ -181,7 +206,8 @@ window.editorImage = function(url, width, height) {
   quill.setSelection(Math.min(index + 2, quill.getLength() - 1), 0, 'silent');
   publish();
 };
-window.editorConfigure = function(enabled, placeholder, foreground, background, muted) {
+window.editorConfigure = function(enabled, placeholder, foreground, background, muted, labels) {
+  if (document.documentElement.lang !== labels.lang) localizeControls(labels);
   quill.enable(enabled);
   quill.root.setAttribute('data-placeholder', placeholder);
   quill.root.setAttribute('aria-label', placeholder);

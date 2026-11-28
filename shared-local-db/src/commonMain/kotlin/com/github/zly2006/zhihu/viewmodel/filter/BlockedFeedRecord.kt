@@ -17,17 +17,16 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
 /**
  * Feed 屏蔽记录实体。
  * 记录的是某条 feed 卡片为何没有进入首页展示结果，包含广告、已读、关键词、作者、主题、NLP 等 feed 阶段原因。
  */
-@Entity(tableName = BlockedFeedRecord.TABLE_NAME)
+@Serializable
 data class BlockedFeedRecord(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val title: String,
     val questionId: Long?, // 回答所属问题 ID，文章/想法等则为 null
     val authorName: String?,

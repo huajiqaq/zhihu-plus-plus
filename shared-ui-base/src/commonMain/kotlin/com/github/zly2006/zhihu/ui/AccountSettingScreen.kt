@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowOutward
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,7 +45,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.account.BrowserSessionStatus
+import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Collections
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -60,6 +65,7 @@ import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.reading.isReadingPlayerSupported
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.SettingItem
 import com.github.zly2006.zhihu.ui.components.SettingItemGroup
@@ -76,7 +82,7 @@ import com.github.zly2006.zhihu.ui.subscreens.normalizeBottomBarSelection
 import com.github.zly2006.zhihu.ui.subscreens.rememberSystemUpdateState
 import com.github.zly2006.zhihu.ui.subscreens.shouldShowAccountHistoryShortcut
 import com.github.zly2006.zhihu.updater.UpdateStep
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -85,8 +91,6 @@ import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_github_24dp
 import zhihu.uicomponents.generated.resources.ic_launcher_foreground
 import zhihu.uicomponents.generated.resources.ic_license_24dp
-import androidx.compose.material3.Icon as MaterialIcon
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val ACCOUNT_SETTINGS_SCROLL_TAG = "accountSettings.scroll"
 const val ACCOUNT_SETTINGS_LOGIN_ITEM_TAG = "accountSettings.loginItem"
@@ -123,6 +127,18 @@ fun AccountSettingScreen(
     }
     val accountStore = rememberZhihuAccountStore()
     val accountClient = accountStore.client
+    val browserSessionFailure = if (accountStore.usesBrowserSession) {
+        val status by accountStore.browserSessionStatus.collectAsState()
+        when (status) {
+            BrowserSessionStatus.MissingBridge -> AccountStrings.webSessionMissingBridge
+            BrowserSessionStatus.Expired -> AccountStrings.webSessionExpired
+            BrowserSessionStatus.Denied -> AccountStrings.webSessionDenied
+            BrowserSessionStatus.Unavailable -> AccountStrings.webSessionUnavailable
+            else -> null
+        }
+    } else {
+        null
+    }
     val verification by accountClient.verificationState.collectAsState()
     val accountState = rememberAccountSettingsAccountState()
     val settings = rememberSettingsStore()
@@ -149,7 +165,7 @@ fun AccountSettingScreen(
     val data by accountState
     var profileRefresh by remember(accountClient, data.id) { mutableStateOf(ProfileRefresh.Idle) }
     var profileRetryKey by remember(accountClient, data.id) { mutableIntStateOf(0) }
-    var logoutTarget by remember { mutableStateOf<com.github.zly2006.zhihu.account.ZhihuAccountClient?>(null) }
+    var logoutTarget by remember { mutableStateOf<ZhihuAccountClient?>(null) }
     var logoutError by remember { mutableStateOf<String?>(null) }
     val showLogoutDialog = logoutTarget != null
     LaunchedEffect(accountClient) {
@@ -176,7 +192,7 @@ fun AccountSettingScreen(
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
             if (accountStore.client !== accountClient) return@LaunchedEffect
-            Log.e("AccountSettingScreen", "Failed to refresh account profile", e)
+            AppLog.e("AccountSettingScreen", "Failed to refresh account profile", e)
             ProfileRefresh.Failed
         }
         currentCoroutineContext().ensureActive()
@@ -184,13 +200,14 @@ fun AccountSettingScreen(
     }
 
     LaunchedEffect(updateState) {
+        if (accountStore.usesBrowserSession) return@LaunchedEffect
         when (val state = updateState) {
             is SystemUpdateState.UpdateAvailable -> {
-                val versionType = if (state.isNightly) "Nightly版本" else "正式版本"
-                userMessages.showShortMessage("发现新$versionType ${state.version}")
+                val versionType = if (state.isNightly) ReaderStrings.nightlyRelease else ReaderStrings.stableRelease
+                userMessages.showShortMessage(ReaderStrings.newReleaseAvailable(versionType, state.version))
             }
             is SystemUpdateState.Error -> if (state.step == UpdateStep.Check) {
-                userMessages.showLongMessage("检查更新失败：${state.message}")
+                userMessages.showLongMessage(ReaderStrings.updateCheckFailed(state.message))
             }
             else -> {}
         }
@@ -215,7 +232,7 @@ fun AccountSettingScreen(
                 if (data.login) {
                     AccountProfileCard(
                         data = data,
-                        refresh = profileRefresh,
+                        refresh = if (browserSessionFailure == null) profileRefresh else ProfileRefresh.Idle,
                         onRetryRefresh = { profileRetryKey++ },
                         onOpenProfile = {
                             navigateAway(
@@ -251,9 +268,11 @@ fun AccountSettingScreen(
                         onOpenNotification = { navigateAway(Notification) },
                         onOpenHistory = { navigateAway(OnlineHistoryRoute) },
                     )
-                } else {
+                }
+                if (!data.login || browserSessionFailure != null) {
                     AccountSettingLoginSection(
-                        showHistoryShortcut = showHistoryShortcut,
+                        showHistoryShortcut = !data.login && showHistoryShortcut,
+                        description = browserSessionFailure,
                         onLogin = {
                             onDismissRequest()
                             requestLoginNavigation()
@@ -291,7 +310,7 @@ fun AccountSettingScreen(
                     versionInfo = versionInfo,
                     onCopyVersion = {
                         copyPlainText("version", versionInfo)
-                        userMessages.showShortMessage("已复制版本号")
+                        userMessages.showShortMessage(ReaderStrings.versionCopied)
                     },
                     openWebUrl = { navigateAway(WebPage(it)) },
                     onOpenLicenses = { navigateAway(Account.OpenSourceLicenses) },
@@ -304,7 +323,7 @@ fun AccountSettingScreen(
     logoutTarget?.let { owner ->
         AccountSettingLogoutDialog(
             accountCount = accountStore.accounts.size,
-            error = logoutError,
+            error = logoutError?.let { ReaderStrings.logoutFailed(it) },
             confirmEnabled = accountStore.client === owner && !verification.blocksSessionChange,
             onDismissRequest = {
                 logoutTarget = null
@@ -323,7 +342,7 @@ fun AccountSettingScreen(
                         if (accountStore.accountsState.value === accountsBefore) {
                             /** 保存失败会重建可用客户端；账号快照未变时，确认和错误归还给恢复的客户端。 */
                             logoutTarget = accountStore.client
-                            logoutError = "退出失败：${e.message}"
+                            logoutError = e.message.orEmpty()
                         } else {
                             logoutTarget = null
                             logoutError = null
@@ -348,12 +367,12 @@ private fun AccountSettingAboutSection(
     onOpenWebDav: () -> Unit,
 ) {
     SettingItemGroup(
-        title = "关于",
-        footer = { Text("本软件仅供学习交流使用，应用内内容由知乎网站提供，著作权归其对应作者所有。") },
+        title = ReaderStrings.about,
+        footer = { Text(ReaderStrings.aboutNotice) },
     ) {
         SettingItem(
-            title = { Text("知乎++") },
-            description = { Text("版本号：$versionInfo") },
+            title = { Text(ReaderStrings.appName) },
+            description = { Text(ReaderStrings.versionInfo(versionInfo)) },
             icon = {
                 Image(
                     painterResource(Res.drawable.ic_launcher_foreground),
@@ -370,14 +389,14 @@ private fun AccountSettingAboutSection(
             ),
         )
         SettingItem(
-            title = { Text("GitHub 项目地址") },
+            title = { Text(ReaderStrings.githubProject) },
             description = { Text("https://github.com/zly2006/zhihu-plus-plus") },
-            icon = { MaterialIcon(painterResource(Res.drawable.ic_github_24dp), null) },
+            icon = { Icon(painterResource(Res.drawable.ic_github_24dp), null) },
             onClick = {
                 openWebUrl("https://github.com/zly2006/zhihu-plus-plus")
             },
             endAction = {
-                Icon(
+                AppIcon(
                     Icons.Default.ArrowOutward,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -386,14 +405,14 @@ private fun AccountSettingAboutSection(
         )
 
         SettingItem(
-            title = { Text("项目协议") },
+            title = { Text(ReaderStrings.projectLicense) },
             description = { Text("AGPL-3.0-only") },
-            icon = { MaterialIcon(painterResource(Res.drawable.ic_license_24dp), null) },
+            icon = { Icon(painterResource(Res.drawable.ic_license_24dp), null) },
             onClick = {
                 openWebUrl("https://github.com/zly2006/zhihu-plus-plus/blob/master/LICENSE")
             },
             endAction = {
-                Icon(
+                AppIcon(
                     Icons.Default.ArrowOutward,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -401,16 +420,16 @@ private fun AccountSettingAboutSection(
             },
         )
         SettingItem(
-            title = { Text("开源许可") },
-            description = { Text("查看第三方组件许可证") },
-            icon = { MaterialIcon(painterResource(Res.drawable.ic_license_24dp), null) },
+            title = { Text(ReaderStrings.openSourceLicenses) },
+            description = { Text(ReaderStrings.licensesDescription) },
+            icon = { Icon(painterResource(Res.drawable.ic_license_24dp), null) },
             modifier = Modifier.testTag(ACCOUNT_SETTINGS_LICENSES_TAG),
             onClick = onOpenLicenses,
         )
         SettingItem(
-            title = { Text("WebDAV 同步") },
-            description = { Text("备份与恢复屏蔽列表和应用设置") },
-            icon = { Icon(Icons.Default.Cloud, null) },
+            title = { Text(ReaderStrings.webdavSync) },
+            description = { Text(ReaderStrings.webdavDescription) },
+            icon = { AppIcon(Icons.Default.Cloud, null) },
             modifier = Modifier.testTag("accountSettings.webdav"),
             onClick = onOpenWebDav,
         )

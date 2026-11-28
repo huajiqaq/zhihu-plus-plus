@@ -21,6 +21,7 @@ package com.github.zly2006.zhihu.account
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
@@ -47,25 +48,25 @@ actual val supportedLoginMethods: List<LoginMethod> = listOf(
 
 actual fun generateQrLoginBitmap(content: String): ImageBitmap {
     val messageData = NSString.create(string = content).dataUsingEncoding(NSUTF8StringEncoding)
-        ?: error("无法编码二维码内容")
+        ?: throw LoginMessageException { AccountStrings.qrContentEncodingFailed }
     val filter = CIFilter.filterWithName("CIQRCodeGenerator")
-        ?: error("macOS 不支持二维码生成器")
+        ?: throw LoginMessageException { AccountStrings.qrGeneratorUnsupported }
     (filter as NSObject).setValue(messageData, forKey = "inputMessage")
     (filter as NSObject).setValue("M", forKey = "inputCorrectionLevel")
     val outputImage = filter.outputImage
         ?.imageByApplyingTransform(CGAffineTransformMakeScale(10.0, 10.0))
-        ?: error("无法生成二维码图像")
+        ?: throw LoginMessageException { AccountStrings.qrImageGenerationFailed }
     val imageRepresentation = NSCIImageRep.imageRepWithCIImage(outputImage)
     val image = NSImage(size = imageRepresentation.size)
     image.addRepresentation(imageRepresentation)
-    val tiffData = image.TIFFRepresentation ?: error("无法读取二维码图像")
+    val tiffData = image.TIFFRepresentation ?: throw LoginMessageException { AccountStrings.qrImageReadFailed }
     val bitmapRepresentation = NSBitmapImageRep.imageRepWithData(tiffData)
-        ?: error("无法转换二维码图像")
+        ?: throw LoginMessageException { AccountStrings.qrImageConversionFailed }
     val pngData = bitmapRepresentation.representationUsingType(
         storageType = NSBitmapImageFileTypePNG,
         properties = emptyMap<Any?, Any?>(),
-    ) ?: error("无法编码二维码图像")
+    ) ?: throw LoginMessageException { AccountStrings.qrImageEncodingFailed }
     val bytes = pngData.bytes?.reinterpret<ByteVar>()?.readBytes(pngData.length.toInt())
-        ?: error("二维码图像数据为空")
+        ?: throw LoginMessageException { AccountStrings.qrImageDataEmpty }
     return Image.makeFromEncoded(bytes).toComposeImageBitmap()
 }

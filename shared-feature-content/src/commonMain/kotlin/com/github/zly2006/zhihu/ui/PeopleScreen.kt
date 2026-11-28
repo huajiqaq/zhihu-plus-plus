@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.UserMessageSink
@@ -57,7 +58,8 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import com.github.zly2006.zhihu.navigation.Search as SearchDestination
 
-internal val PEOPLE_SCREEN_TITLES = listOf(
+/** jumpTo 的旧中文值是持久化导航协议，不随界面语言变化。 */
+private val PEOPLE_SCREEN_NAVIGATION_TOKENS = listOf(
     "回答",
     "文章",
     "动态",
@@ -70,8 +72,22 @@ internal val PEOPLE_SCREEN_TITLES = listOf(
     "关注订阅",
 )
 
+internal val PEOPLE_SCREEN_TITLES: List<String>
+    get() = listOf(
+        ContentStrings.answers,
+        ContentStrings.articles,
+        ContentStrings.activity,
+        ContentStrings.savedContent,
+        ContentStrings.questionsAsked,
+        ContentStrings.posts,
+        ContentStrings.columns,
+        ContentStrings.followers,
+        ContentStrings.followingPeople,
+        ContentStrings.subscriptions,
+    )
+
 internal fun peopleScreenInitialPage(person: Person): Int =
-    PEOPLE_SCREEN_TITLES.indexOf(person.jumpTo).takeIf { it >= 0 } ?: PEOPLE_SCREEN_TITLES.indexOf("动态")
+    PEOPLE_SCREEN_NAVIGATION_TOKENS.indexOf(person.jumpTo).takeIf { it >= 0 } ?: 2
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -113,7 +129,7 @@ fun PeopleScreen(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            userMessages.showShortMessage("加载页面内容失败: ${e.message}")
+            userMessages.showShortMessage(ContentStrings.pageLoadError(e.message))
         }
     }
 
@@ -214,21 +230,21 @@ private fun PeopleScreenBlockConfirmDialog(
 ) {
     if (showBlockConfirm) {
         AppDialog(
-            title = "拉黑 ${viewModel.name}？",
-            summary = "会同步到你的知乎账号。之后可以在这个页面点“取消拉黑”恢复。",
-            confirmText = "拉黑",
+            title = ContentStrings.blockUserConfirm(viewModel.name),
+            summary = ContentStrings.blockUserHelp,
+            confirmText = ContentStrings.blockUser,
             onConfirm = {
                 onShowBlockConfirmChange(false)
                 coroutineScope.launch {
                     try {
                         viewModel.toggleBlock(paginationEnvironment)
-                        userMessages.showShortMessage("已拉黑")
+                        userMessages.showShortMessage(ContentStrings.userBlocked)
                     } catch (error: Exception) {
-                        userMessages.showShortMessage("操作失败: ${error.message}")
+                        userMessages.showShortMessage(ContentStrings.operationError(error.message))
                     }
                 }
             },
-            dismissText = "取消",
+            dismissText = ContentStrings.cancel,
             onDismissRequest = { onShowBlockConfirmChange(false) },
             destructive = true,
         )

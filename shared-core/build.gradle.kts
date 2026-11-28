@@ -15,6 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import buildlogic.GenerateAppStrings
 import buildlogic.configureAppleTargets
 
 plugins {
@@ -22,6 +23,11 @@ plugins {
     id("zhihu.kmp-conventions")
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
+}
+
+val generateAppStrings = tasks.register<GenerateAppStrings>("generateAppStrings") {
+    catalogs = layout.projectDirectory.dir("src/commonMain/localization")
+    outputDirectory = layout.buildDirectory.dir("generated/appStrings")
 }
 
 kotlin {
@@ -39,7 +45,9 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
+        commonMain { kotlin.srcDir(generateAppStrings.flatMap { it.outputDirectory }) }
         commonMain.dependencies {
+            api(libs.jb.compose.runtime)
             api(libs.miuix.nav)
             api(libs.ktor.client.core)
             api("org.jetbrains.kotlinx:atomicfu:0.28.0")

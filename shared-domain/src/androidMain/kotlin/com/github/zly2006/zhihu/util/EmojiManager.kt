@@ -21,11 +21,11 @@ import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
-import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuJson
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -40,7 +40,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
-import java.io.File
 
 @Serializable
 private data class EmojiApiResponse(
@@ -73,7 +72,7 @@ object EmojiManager {
     val placeholders = mutablePlaceholders.asStateFlow()
     private var isInitialized = false
 
-    suspend fun initialize(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun initialize(context: Context, account: ZhihuAccountClient) = withContext(Dispatchers.IO) {
         if (isInitialized) return@withContext
         try {
             val emojiDir = File(context.filesDir, "emojis")
@@ -85,7 +84,6 @@ object EmojiManager {
                 ?.readText()
                 ?.trim()
                 ?.toIntOrNull()
-            val account = androidZhihuAccountStore(context).client
             val remoteVersion = fetchDefaultEmojiVersion(account)
             val needsDownload = !mappingFile.exists() ||
                 !versionFile.exists() ||

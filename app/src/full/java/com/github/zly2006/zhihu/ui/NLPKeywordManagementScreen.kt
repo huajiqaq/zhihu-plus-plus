@@ -54,8 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.github.zly2006.zhihu.filter.asListLoadState
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
+import com.github.zly2006.zhihu.i18n.ContentStrings
+import com.github.zly2006.zhihu.i18n.SettingsStrings
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.nlp.NLPService
 import com.github.zly2006.zhihu.nlp.SentenceEmbeddingManager
+import com.github.zly2006.zhihu.nlp.nlpDisplayMessage
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -116,36 +122,36 @@ fun NLPKeywordManagementScreen(
 
     fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
-    fun launchAction(failurePrefix: String, successMessage: String? = null, action: suspend () -> Unit) {
+    fun launchAction(failurePrefix: () -> String, successMessage: (() -> String)? = null, action: suspend () -> Unit) {
         coroutineScope.launch {
             try {
                 withContext(Dispatchers.IO) { action() }
                 currentCoroutineContext().ensureActive()
-                successMessage?.let(::toast)
+                successMessage?.let { toast(it()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(NLP_KEYWORD_MANAGEMENT_TAG, failurePrefix, e)
-                toast("$failurePrefix：${e.message}")
+                Log.e(NLP_KEYWORD_MANAGEMENT_TAG, failurePrefix(), e)
+                toast(SettingsStrings.failureWithReason(failurePrefix(), e.nlpDisplayMessage { WidgetsStrings.unknownError }))
             }
         }
     }
 
     // 确认按钮的禁用要等下一帧重组才生效，同一帧里的第二次点击只能靠这里拦住。
-    fun submitPhrase(successMessage: String, onSuccess: () -> Unit, write: suspend () -> Unit) {
+    fun submitPhrase(successMessage: () -> String, onSuccess: () -> Unit, write: suspend () -> Unit) {
         if (submitting) return
         submitting = true
         coroutineScope.launch {
             try {
                 withContext(Dispatchers.IO) { write() }
                 currentCoroutineContext().ensureActive()
-                toast(successMessage)
+                toast(successMessage())
                 onSuccess()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(NLP_KEYWORD_MANAGEMENT_TAG, "Failed to save NLP phrase", e)
-                toast("保存失败：${e.message}")
+                toast(SettingsStrings.failureWithReason(AndroidNlpStrings.saveFailed, e.nlpDisplayMessage { WidgetsStrings.unknownError }))
             } finally {
                 submitting = false
             }
@@ -156,7 +162,7 @@ fun NLPKeywordManagementScreen(
         if (isExtracting) return
         val sourceText = inputText.text.toString()
         if (sourceText.isBlank()) {
-            toast("请输入文本")
+            toast(AndroidNlpStrings.enterText)
             return
         }
         isExtracting = true
@@ -166,12 +172,12 @@ fun NLPKeywordManagementScreen(
                 currentCoroutineContext().ensureActive()
                 if (!inputText.text.contentEquals(sourceText)) return@launch
                 extractedKeywords = extracted
-                if (extractedKeywords.isEmpty()) toast("未能提取到关键词")
+                if (extractedKeywords.isEmpty()) toast(AndroidNlpStrings.noKeywordsExtracted)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(NLP_KEYWORD_MANAGEMENT_TAG, "Extract NLP keywords failed", e)
-                toast("提取失败：${e.message}")
+                toast(SettingsStrings.failureWithReason(AndroidNlpStrings.extractionFailed, e.nlpDisplayMessage { WidgetsStrings.unknownError }))
             } finally {
                 isExtracting = false
             }
@@ -181,15 +187,15 @@ fun NLPKeywordManagementScreen(
     BlocklistItemList(
         state = phrases,
         onRetry = { reload++ },
-        description = "已屏蔽短语：${keywordScopeDescription(keywordScope)}",
-        emptyTitle = "暂无 NLP 屏蔽短语",
-        emptyDescription = "在上方提取关键词，或点“手动添加”。",
-        clearTitle = { count -> "清空当前范围的 $count 个 NLP 屏蔽短语？" },
-        clearSummary = "仅清空当前作用范围的 NLP 短语，不影响其他范围或精确关键词。清空后无法撤销，如需保留请先导出规则。",
+        description = AndroidNlpStrings.blockedPhrasesScope(keywordScopeDescription(keywordScope)),
+        emptyTitle = AndroidNlpStrings.phrasesEmpty,
+        emptyDescription = AndroidNlpStrings.phrasesEmptyHint,
+        clearTitle = { count -> AndroidNlpStrings.clearPhrasesTitle(count) },
+        clearSummary = AndroidNlpStrings.clearPhrasesHint,
         clearTag = "nlpKeywords:clear",
         onClearAll = {
             val scopeToClear = keywordScope.name
-            launchAction("清空失败") {
+            launchAction({ SettingsStrings.clearFailed }) {
                 database.blockedKeywordDao().deleteKeywordsByType(KeywordType.NLP_SEMANTIC.name, scopeToClear)
             }
         },
@@ -217,19 +223,19 @@ fun NLPKeywordManagementScreen(
                         coroutineScope.launch {
                             try {
                                 SentenceEmbeddingManager.ensureModel(context)
-                                toast("模型已加载")
+                                toast(AndroidNlpStrings.modelLoaded)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
                                 Log.e(NLP_KEYWORD_MANAGEMENT_TAG, "Load NLP model failed", e)
-                                toast("模型加载失败：${e.message}")
+                                toast(SettingsStrings.failureWithReason(AndroidNlpStrings.modelLoadFailed, e.nlpDisplayMessage { AndroidNlpStrings.modelLoadFailed }))
                             }
                         }
                     },
                     onUnload = {
                         coroutineScope.launch {
                             SentenceEmbeddingManager.unload()
-                            toast("已卸载模型")
+                            toast(AndroidNlpStrings.modelUnloaded)
                         }
                     },
                 )
@@ -257,7 +263,7 @@ fun NLPKeywordManagementScreen(
                         submitting = submitting,
                         onAdd = {
                             val phrase = extractedKeywords.joinToString(" ")
-                            submitPhrase("已添加短语：$phrase", onSuccess = { extractedKeywords = emptyList() }) {
+                            submitPhrase({ AndroidNlpStrings.phraseAddedDetail(phrase) }, onSuccess = { extractedKeywords = emptyList() }) {
                                 database.blockedKeywordDao().insertKeyword(
                                     BlockedKeyword(keyword = phrase.trim(), keywordType = KeywordType.NLP_SEMANTIC.name, scope = keywordScope.name),
                                 )
@@ -278,7 +284,7 @@ fun NLPKeywordManagementScreen(
             keyword = keyword,
             onEdit = { editingKeywordId = keyword.id },
             onDelete = {
-                launchAction("删除失败", "已删除") {
+                launchAction({ SettingsStrings.deleteFailed }, { AccountStrings.deleted }) {
                     database.blockedKeywordDao().deleteKeywordById(keyword.id, KeywordType.NLP_SEMANTIC.name, keywordScope.name)
                 }
             },
@@ -287,13 +293,13 @@ fun NLPKeywordManagementScreen(
 
     if (showAddDialog) {
         PhraseDialog(
-            title = "手动添加NLP短语",
-            confirmText = "添加",
+            title = AndroidNlpStrings.addPhraseTitle,
+            confirmText = AccountStrings.add,
             initialPhrase = "",
             submitting = submitting,
             onDismiss = { if (!submitting) showAddDialog = false },
             onConfirm = { phrase ->
-                submitPhrase("已添加短语", onSuccess = { showAddDialog = false }) {
+                submitPhrase({ AndroidNlpStrings.phraseAdded }, onSuccess = { showAddDialog = false }) {
                     database.blockedKeywordDao().insertKeyword(
                         BlockedKeyword(keyword = phrase.trim(), keywordType = KeywordType.NLP_SEMANTIC.name, scope = keywordScope.name),
                     )
@@ -304,13 +310,13 @@ fun NLPKeywordManagementScreen(
 
     phrases.readyValue?.firstOrNull { it.id == editingKeywordId }?.let { keyword ->
         PhraseDialog(
-            title = "编辑NLP短语",
-            confirmText = "保存",
+            title = SettingsStrings.nlpEditPhrase,
+            confirmText = AndroidNlpStrings.save,
             initialPhrase = keyword.keyword,
             submitting = submitting,
             onDismiss = { if (!submitting) editingKeywordId = null },
             onConfirm = { phrase ->
-                submitPhrase("已更新短语", onSuccess = { editingKeywordId = null }) {
+                submitPhrase({ AndroidNlpStrings.phraseUpdated }, onSuccess = { editingKeywordId = null }) {
                     database.blockedKeywordDao().insertKeyword(keyword.copy(keyword = phrase.trim()))
                 }
             },
@@ -322,11 +328,11 @@ fun NLPKeywordManagementScreen(
             records = records,
             onDismiss = { showRecordsSheet = false },
             onRetry = { reload++ },
-            onClearAll = { launchAction("清空失败") { database.blockedContentRecordDao().clearAllRecords() } },
+            onClearAll = { launchAction({ SettingsStrings.clearFailed }) { database.blockedContentRecordDao().clearAllRecords() } },
         ) { record ->
             BlockedRecordItem(
                 record = record,
-                onDelete = { launchAction("删除失败") { database.blockedContentRecordDao().deleteRecord(record.id) } },
+                onDelete = { launchAction({ SettingsStrings.deleteFailed }) { database.blockedContentRecordDao().deleteRecord(record.id) } },
             )
         }
     }
@@ -360,7 +366,7 @@ private fun BlockedRecordItem(
                     Text(record.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(AppDimens.Space4))
                     Text(
-                        "${record.contentType} · ${record.authorName ?: "未知作者"} · ${
+                        "${record.contentType} · ${record.authorName ?: ContentStrings.unknownAuthor} · ${
                             java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(record.blockedTime))
                         }",
                         style = MaterialTheme.typography.bodySmall,
@@ -370,7 +376,7 @@ private fun BlockedRecordItem(
                 AppIconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "收起" else "展开",
+                        contentDescription = if (expanded) SettingsStrings.collapse else SettingsStrings.expand,
                     )
                 }
             }
@@ -379,14 +385,14 @@ private fun BlockedRecordItem(
                 HorizontalDivider(modifier = Modifier.padding(vertical = AppDimens.Space8))
                 val excerpt = record.excerpt
                 if (!excerpt.isNullOrBlank()) {
-                    Text("摘要", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(AndroidNlpStrings.excerpt, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(AppDimens.Space4))
                     SelectionContainer {
                         Text(excerpt, style = MaterialTheme.typography.bodyMedium)
                     }
                     Spacer(modifier = Modifier.height(AppDimens.Space12))
                 }
-                Text("匹配的关键词（前3个）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(AndroidNlpStrings.topMatchedKeywords, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(AppDimens.Space4))
                 matchedKeywords.forEach { match ->
                     Row(
@@ -408,7 +414,7 @@ private fun BlockedRecordItem(
                 }
                 Spacer(modifier = Modifier.height(AppDimens.Space8))
                 AppTextButton(
-                    text = "删除记录",
+                    text = AndroidNlpStrings.deleteRecord,
                     onClick = onDelete,
                     modifier = Modifier.align(Alignment.End),
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,

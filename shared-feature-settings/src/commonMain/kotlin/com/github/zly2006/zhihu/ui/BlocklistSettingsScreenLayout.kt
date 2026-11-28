@@ -35,8 +35,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppFloatingActionButton
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppTabRow
@@ -46,17 +48,19 @@ import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedTopic
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.readyValue
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 internal enum class BlocklistTab(
-    val label: String,
+    private val labelText: () -> String,
     val canAdd: Boolean,
 ) {
-    Keywords("屏蔽关键词", true),
-    Nlp("NLP智能屏蔽", false),
-    Users("屏蔽用户", true),
-    QuestionAuthors("屏蔽提问者", true),
-    Topics("屏蔽主题", true),
+    Keywords({ AccountStrings.blockedKeywords }, true),
+    Nlp({ AccountStrings.nlpBlocking }, false),
+    Users({ AccountStrings.blockedUsers }, true),
+    QuestionAuthors({ AccountStrings.blockedQuestionAuthors }, true),
+    Topics({ AccountStrings.blockedTopics }, true),
+    ;
+
+    val label: String get() = labelText()
 }
 
 internal fun blocklistTabTitles(
@@ -110,7 +114,7 @@ internal fun BlocklistSettingsLayout(
                         .onSizeChanged { onFabHeightChange(it.height) },
                     onClick = onAdd,
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "添加")
+                    AppIcon(Icons.Default.Add, contentDescription = AccountStrings.add)
                 }
             }
         },
@@ -148,7 +152,7 @@ private fun BlocklistSettingsTopBar(
     onExport: () -> Unit,
 ) {
     AppCompactTopBar(
-        title = "屏蔽列表",
+        title = AccountStrings.blocklistTitle,
         onBack = onBack,
         backTag = BLOCKLIST_SETTINGS_BACK_BUTTON_TAG,
         actions = {
@@ -156,13 +160,13 @@ private fun BlocklistSettingsTopBar(
                 onClick = onImport,
                 modifier = Modifier.testTag(BlocklistSettingsTestTags.IMPORT_BUTTON),
             ) {
-                Icon(Icons.Outlined.FileDownload, contentDescription = "导入规则")
+                AppIcon(Icons.Outlined.FileDownload, contentDescription = AccountStrings.importRules)
             }
             AppIconButton(
                 onClick = onExport,
                 modifier = Modifier.testTag(BlocklistSettingsTestTags.EXPORT_BUTTON),
             ) {
-                Icon(Icons.Outlined.FileUpload, contentDescription = "导出规则")
+                AppIcon(Icons.Outlined.FileUpload, contentDescription = AccountStrings.exportRules)
             }
         },
     )

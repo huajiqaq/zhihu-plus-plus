@@ -23,7 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.RecommendationMode
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.AUTO_REFRESH_HOME_ON_STARTUP_PREFERENCE_KEY
@@ -44,20 +46,22 @@ val FEED_SETTINGS_KEYS: Set<String> = setOf(
 @Composable
 fun FeedSettingsScreen(setting: String?) {
     val settings = rememberSettingsStore()
+    val browserSession = rememberZhihuAccountStore().usesBrowserSession
     AppSettingsPage(
-        title = "推荐与信息流",
+        title = SettingsStrings.recommendationsFeed,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = "feed_settings_back_button",
         highlightedKey = setting.orEmpty(),
         scrollTag = "feedSettings:scroll",
     ) {
-        SettingItemGroup(title = "推荐来源") {
-            val modes = RecommendationMode.entries
+        SettingItemGroup(title = SettingsStrings.recommendationSource) {
+            val modes = if (browserSession) listOf(RecommendationMode.WEB) else RecommendationMode.entries
             var modeKey by rememberSetting(settings, "recommendationMode", RecommendationMode.MIXED.key)
-            val mode = modes.find { it.key == modeKey } ?: RecommendationMode.MIXED
+            val mode = if (browserSession) RecommendationMode.WEB else modes.find { it.key == modeKey } ?: RecommendationMode.MIXED
             SettingItemSelect(
-                title = { Text("推荐算法") },
-                description = { Text(mode.description) },
+                title = { Text(SettingsStrings.recommendationAlgorithm) },
+                description = { Text(if (browserSession) SettingsStrings.browserRecommendations else mode.description) },
+                enabled = !browserSession,
                 options = modes.map { it.displayName },
                 summaries = modes.map { it.description },
                 selectedIndex = modes.indexOf(mode),
@@ -68,26 +72,26 @@ fun FeedSettingsScreen(setting: String?) {
             var loginForRecommendation by rememberSetting(settings, "loginForRecommendation", true)
             SettingItemWithSwitch(
                 modifier = Modifier.testTag("contentFilterSettings:loginForRecommendation"),
-                title = { Text("推荐内容时登录") },
-                description = { Text("获取推荐内容时携带登录凭证") },
+                title = { Text(SettingsStrings.recommendationLogin) },
+                description = { Text(SettingsStrings.recommendationLoginDescription) },
                 checked = loginForRecommendation,
                 onCheckedChange = { loginForRecommendation = it },
                 settingKey = "loginForRecommendation",
             )
         }
 
-        SettingItemGroup(title = "首页信息流") {
+        SettingItemGroup(title = SettingsStrings.homeFeed) {
             var showFeedThumbnail by rememberSetting(settings, "showFeedThumbnail", true)
             SettingItemWithSwitch(
-                title = { Text("显示 Feed 卡片缩略图") },
+                title = { Text(SettingsStrings.showFeedThumbnails) },
                 checked = showFeedThumbnail,
                 onCheckedChange = { showFeedThumbnail = it },
                 settingKey = "showFeedThumbnail",
             )
             var showRefreshFab by rememberSetting(settings, "showRefreshFab", true)
             SettingItemWithSwitch(
-                title = { Text("显示刷新悬浮按钮") },
-                description = { Text("首页按钮组固定在页面末端一侧，只能上下拖动；其他列表刷新按钮可上下左右拖动，松手贴靠左右边缘。横竖屏分别记忆位置。") },
+                title = { Text(SettingsStrings.showRefreshButton) },
+                description = { Text(SettingsStrings.showRefreshButtonDescription) },
                 checked = showRefreshFab,
                 onCheckedChange = { showRefreshFab = it },
                 settingKey = "showRefreshFab",
@@ -95,8 +99,8 @@ fun FeedSettingsScreen(setting: String?) {
             var autoRefreshHomeOnStartup by rememberSetting(settings, AUTO_REFRESH_HOME_ON_STARTUP_PREFERENCE_KEY, true)
             SettingItemWithSwitch(
                 modifier = Modifier.testTag("contentFilterSettings:autoRefreshHomeOnStartup"),
-                title = { Text("启动时自动刷新首页") },
-                description = { Text("关闭后先显示上次的推荐；没有旧推荐时加载新内容。") },
+                title = { Text(SettingsStrings.autoRefreshHome) },
+                description = { Text(SettingsStrings.autoRefreshHomeDescription) },
                 checked = autoRefreshHomeOnStartup,
                 onCheckedChange = { autoRefreshHomeOnStartup = it },
                 settingKey = AUTO_REFRESH_HOME_ON_STARTUP_PREFERENCE_KEY,

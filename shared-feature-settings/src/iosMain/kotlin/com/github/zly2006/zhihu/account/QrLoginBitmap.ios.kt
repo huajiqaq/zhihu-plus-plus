@@ -18,10 +18,11 @@
 package com.github.zly2006.zhihu.account
 
 import androidx.compose.ui.graphics.ImageBitmap
+import com.github.zly2006.zhihu.i18n.AccountStrings
 
 actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Phone,
 )
 
 actual fun generateQrLoginBitmap(content: String): ImageBitmap =
-    error("QR login bitmap is not implemented for iOS: ${content.length}")
+    throw LoginMessageException { AccountStrings.qrIosUnavailable(content.length) }

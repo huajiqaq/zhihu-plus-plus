@@ -63,14 +63,17 @@ import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.VoteUpState
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.rememberMarkdownSearchState
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
+import com.github.zly2006.zhihu.platform.defaultAnswerSwitchMode
 import com.github.zly2006.zhihu.platform.isAnswerSwipeSupported
 import com.github.zly2006.zhihu.platform.isArticleHtmlExportSupported
 import com.github.zly2006.zhihu.platform.isArticleImageExportSupported
+import com.github.zly2006.zhihu.platform.isArticlePdfExportSupported
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
@@ -87,6 +90,7 @@ import com.github.zly2006.zhihu.ui.components.ANSWER_SWITCH_SENSITIVITY_PREFEREN
 import com.github.zly2006.zhihu.ui.components.AnswerHorizontalOverscroll
 import com.github.zly2006.zhihu.ui.components.AnswerVerticalOverscroll
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.CollectionDialogComponent
 import com.github.zly2006.zhihu.ui.components.CommentScreenComponent
@@ -109,7 +113,6 @@ import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 private val ScrollThresholdDp = 10.dp
 
@@ -145,6 +148,11 @@ fun ArticleScreen(
     val readingPlayerOverlayOffsetState = LocalReadingPlayerOverlayOffsetState.current
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
     val accountStore = rememberZhihuAccountStore()
+    val onVote: ((VoteUpState) -> Unit)? = if (accountStore.usesBrowserSession) {
+        null
+    } else {
+        { state -> viewModel.toggleVoteUp(environment, state) }
+    }
     val articleNavHost = LocalArticleNavHost.current
     val articleEntryId = remember(articleNavHost, viewModel) { articleNavHost?.topEntryId }
     val skin = LocalAppSkinTokens.current
@@ -160,7 +168,7 @@ fun ArticleScreen(
         getBoolean("autoHideArticleBottomBar", true)
     }
     val configuredAnswerSwitchMode by rememberObservedSetting(settings, "answerSwitchMode") {
-        getString("answerSwitchMode", "vertical")
+        getString("answerSwitchMode", defaultAnswerSwitchMode)
     }
     val answerSwitchMode = configuredAnswerSwitchMode.takeIf { isAnswerSwipeSupported } ?: "off"
     val answerSwitchSensitivity by rememberObservedSetting(settings, ANSWER_SWITCH_SENSITIVITY_PREFERENCE_KEY) {
@@ -307,10 +315,12 @@ fun ArticleScreen(
     }
 
     fun upVoteFromDoubleTap() {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-        if (viewModel.voteUpState != VoteUpState.Up) {
-            viewModel.toggleVoteUp(environment, VoteUpState.Up)
+        if (onVote == null) {
+            userMessages.showShortMessage(ContentStrings.webVotingReadOnly)
+            return
         }
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+        if (viewModel.voteUpState != VoteUpState.Up) onVote(VoteUpState.Up)
     }
 
     fun performAnswerDoubleTapAction(action: AnswerDoubleTapAction) {
@@ -345,7 +355,7 @@ fun ArticleScreen(
         article.type == ArticleType.Answer &&
         answerDoubleTapAction != AnswerDoubleTapAction.None
     ) {
-        Modifier.pointerInput(answerDoubleTapAction) {
+        Modifier.pointerInput(answerDoubleTapAction, onVote) {
             detectTapGestures(
                 onDoubleTap = { handleAnswerDoubleTap() },
             )
@@ -410,6 +420,7 @@ fun ArticleScreen(
             readingPlayerOverlayPadding = readingPlayerOverlayPadding,
             environment = environment,
             accountStore = accountStore,
+            onVote = onVote,
             skin = skin,
             displayTitle = displayTitle,
             hasBody = hasBody,
@@ -539,7 +550,7 @@ fun ArticleScreen(
                         if (answerNavigationState.navigatingToNextAnswer) {
                             AppSpinner(size = 30.dp)
                         } else {
-                            Icon(Icons.Filled.SkipNext, contentDescription = "下一个回答")
+                            AppIcon(Icons.Filled.SkipNext, contentDescription = ContentStrings.nextAnswer)
                         }
                     }
                 }
@@ -599,7 +610,7 @@ fun ArticleScreen(
     )
     VotersSheet(
         show = showVoters,
-        title = "${formatCompactCount(viewModel.votersTotal)} 人赞同了该回答",
+        title = ContentStrings.answerUpvotes(viewModel.votersTotal, formatCompactCount(viewModel.votersTotal)),
         voters = viewModel.voters,
         isLoading = viewModel.votersLoading,
         errorMessage = viewModel.votersError,
@@ -614,6 +625,7 @@ fun ArticleScreen(
     )
     if (showDoubleTapActionDialog) {
         ArticleDoubleTapActionSheet(
+            votingEnabled = onVote != null,
             onDismissRequest = { showDoubleTapActionDialog = false },
             onSelect = { action ->
                 showDoubleTapActionDialog = false
@@ -625,7 +637,7 @@ fun ArticleScreen(
                     AnswerDoubleTapAction.ToggleImmersive -> isImmersiveMode = !isImmersiveMode
                     AnswerDoubleTapAction.JumpToTop, AnswerDoubleTapAction.JumpToBottom -> performAnswerDoubleTapAction(action)
                 }
-                userMessages.showMessage("已将双击回答动作设为：${action.label}")
+                userMessages.showMessage(ContentStrings.doubleTapActionSaved(action.label))
             },
         )
     }
@@ -633,7 +645,11 @@ fun ArticleScreen(
         showDialog = showExportDialog,
         isHtmlExportSupported = isArticleHtmlExportSupported,
         isImageExportSupported = isArticleImageExportSupported,
+        isPdfExportSupported = isArticlePdfExportSupported,
         onDismiss = { showExportDialog = false },
+        onExportPdf = { includeAppAttribution, onComplete ->
+            viewModel.exportToPdf(environment, includeAppAttribution, onComplete)
+        },
         onExportHtml = { includeAppAttribution, onComplete ->
             viewModel.exportToHtml(environment, includeAppAttribution, onComplete)
         },

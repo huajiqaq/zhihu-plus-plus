@@ -18,11 +18,11 @@
 package com.github.zly2006.zhihu.account
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.platform.platformName
-import org.jetbrains.skia.Image
 import kotlin.io.encoding.Base64
+import org.jetbrains.skia.Image
 
 actual val isLoginRiskControlSupported: Boolean = false
 
@@ -50,32 +50,14 @@ actual fun decodePhoneLoginCaptchaImage(content: String) = runCatching {
 }.getOrNull()
 
 @Composable
-actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) {
-    val store = rememberZhihuAccountStore()
-    val owner = store.client
-    val cookies = remember(owner) { (store.session.cookies + store.accountsState.value.guestCookies).toMutableMap() }
-    val client = rememberLoginHttpClient(cookies)
-    SharedQrLoginPane(
-        client = client,
-        cookies = cookies,
-        onRiskControl = { url, candidate -> owner.reportHumanVerification(url, candidate) },
-        onLoginSuccess = { cookies ->
-            if (store.login(cookies.toMutableMap())) {
-                onLoginSuccess(store.session.username)
-                true
-            } else {
-                false
-            }
-        },
-    )
-}
+actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) = AccountQrLoginPane(onLoginSuccess)
 
 @Composable
-actual fun WebLoginPane(onLoginSuccess: (String) -> Unit): Unit =
-    error("$platformName 暂不支持网页登录")
+actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit): Unit =
+    error(AccountStrings.webLoginUnsupported(platformName))
 
 internal actual fun readLoginRiskControlCookies(url: String): Map<String, String> =
-    error("$platformName 暂不支持登录风控验证")
+    error(AccountStrings.verificationPlatformUnsupported(platformName))
 
 @Composable
 actual fun LoginRiskControlPane(
@@ -83,4 +65,4 @@ actual fun LoginRiskControlPane(
     cookies: Map<String, String>,
     onCookiesChanged: (Map<String, String>) -> Unit,
     onVerificationComplete: () -> Unit,
-): Unit = error("$platformName 暂不支持登录风控验证")
+): Unit = error(AccountStrings.verificationPlatformUnsupported(platformName))

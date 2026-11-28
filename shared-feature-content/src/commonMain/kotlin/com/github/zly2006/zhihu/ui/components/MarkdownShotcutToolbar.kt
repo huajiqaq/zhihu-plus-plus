@@ -39,22 +39,27 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 
 enum class MarkdownShortcut(
-    val label: String,
-    val operationName: String,
+    private val symbol: String,
+    private val operationText: () -> String,
 ) {
-    H1("H1", "一级标题"),
-    H2("H2", "二级标题"),
-    Bold("B", "加粗"),
-    Italic("I", "斜体"),
-    Link("Link", "插入链接"),
-    Quote(">", "引用"),
-    InlineCode("</>", "行内代码"),
-    CodeBlock("```", "代码块"),
-    Divider("HR", "分隔线"),
-    Math("∑", "数学公式"),
-    Topic("#", "插入话题"),
+    H1("H1", { ContentStrings.headingOne }),
+    H2("H2", { ContentStrings.headingTwo }),
+    Bold("B", { ContentStrings.bold }),
+    Italic("I", { ContentStrings.italic }),
+    Link("Link", { ContentStrings.insertLink }),
+    Quote(">", { ContentStrings.quote }),
+    InlineCode("</>", { ContentStrings.inlineCode }),
+    CodeBlock("```", { ContentStrings.codeBlock }),
+    Divider("HR", { ContentStrings.divider }),
+    Math("∑", { ContentStrings.mathFormula }),
+    Topic("#", { ContentStrings.insertTopic }),
+    ;
+
+    val label: String get() = if (this == Link) ContentStrings.link else symbol
+    val operationName: String get() = operationText()
 }
 
 @Composable
@@ -122,12 +127,12 @@ fun TextFieldBuffer.applyMarkdownShortcut(shortcut: MarkdownShortcut) {
     when (shortcut) {
         MarkdownShortcut.H1 -> toggleHeading(targetPrefix = "# ", otherPrefix = "## ")
         MarkdownShortcut.H2 -> toggleHeading(targetPrefix = "## ", otherPrefix = "# ")
-        MarkdownShortcut.Bold -> toggleWrapSelection(prefix = "**", suffix = "**", placeholder = "加粗")
-        MarkdownShortcut.Italic -> toggleWrapSelection(prefix = "*", suffix = "*", placeholder = "斜体")
+        MarkdownShortcut.Bold -> toggleWrapSelection(prefix = "**", suffix = "**", placeholder = ContentStrings.bold)
+        MarkdownShortcut.Italic -> toggleWrapSelection(prefix = "*", suffix = "*", placeholder = ContentStrings.italic)
         MarkdownShortcut.Quote -> toggleQuoteAtLineStart()
         MarkdownShortcut.Divider -> insertBlock("---")
         MarkdownShortcut.CodeBlock -> toggleCodeBlock()
-        MarkdownShortcut.InlineCode -> toggleWrapSelection(prefix = "`", suffix = "`", placeholder = "code")
+        MarkdownShortcut.InlineCode -> toggleWrapSelection(prefix = "`", suffix = "`", placeholder = ContentStrings.codePlaceholder)
         MarkdownShortcut.Math -> toggleWrapSelection(prefix = "$", suffix = "$", placeholder = "x")
         MarkdownShortcut.Topic -> replaceSelection("#", 1)
         MarkdownShortcut.Link -> insertLink()
@@ -412,7 +417,7 @@ private fun TextFieldBuffer.insertLink() {
     val start = selection.min
     val end = selection.max
     val selected = text.substring(start, end)
-    val linkText = selected.ifEmpty { "链接文字" }
+    val linkText = selected.ifEmpty { ContentStrings.linkText }
     val insert = "[$linkText](https://)"
     val cursorOffset =
         if (selected.isEmpty()) {

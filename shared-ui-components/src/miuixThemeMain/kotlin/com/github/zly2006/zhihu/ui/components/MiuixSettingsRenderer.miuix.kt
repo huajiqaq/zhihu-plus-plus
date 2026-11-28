@@ -50,7 +50,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -67,7 +67,6 @@ import top.yukonga.miuix.kmp.glass.glassSurface
 import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
 
 @Composable
@@ -111,7 +110,7 @@ internal actual object MiuixSettingsRenderer {
             Card(
                 insideMargin = PaddingValues(AppDimens.ElevationNone),
                 colors = CardDefaults.defaultColors(
-                    color = if (ThemeManager.isDarkTheme()) {
+                    color = if (LocalAppTheme.current.isDarkTheme) {
                         MiuixTheme.colorScheme.surfaceContainerHighest
                     } else {
                         MiuixTheme.colorScheme.surfaceContainer
@@ -224,7 +223,7 @@ internal actual object MiuixSettingsRenderer {
                 if (!rememberNavEntryOnTop()) return
                 val surface = glassSurface(
                     backdrop,
-                    GlassPopupDefaults.visuals(style = GlassDefaults.style(ThemeManager.isDarkTheme())),
+                    GlassPopupDefaults.visuals(style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme)),
                 )
                 val dropdownColors = DropdownDefaults.dropdownColors(
                     containerColor = Color.Transparent,
@@ -324,7 +323,7 @@ internal actual object MiuixSettingsRenderer {
 
     @Composable
     private fun settingChevron(enabled: Boolean) {
-        Icon(
+        AppIcon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             modifier = Modifier.size(AppDimens.SettingChevronSize),

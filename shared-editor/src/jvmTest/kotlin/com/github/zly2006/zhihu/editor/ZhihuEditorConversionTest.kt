@@ -18,10 +18,10 @@
 package com.github.zly2006.zhihu.editor
 
 import com.fleeksoft.ksoup.Ksoup
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class ZhihuEditorConversionTest {
     @Test

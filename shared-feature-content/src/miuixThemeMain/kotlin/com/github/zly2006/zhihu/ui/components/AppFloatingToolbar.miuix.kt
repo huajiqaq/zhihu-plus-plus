@@ -29,7 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import top.yukonga.miuix.kmp.basic.FloatingToolbar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -47,7 +47,7 @@ internal actual fun MiuixFloatingToolbar(
             fallbackContainer = colors.surfaceContainer,
             tint = colors.surfaceContainer.copy(alpha = AppDimens.GlassContainerAlpha),
             borderColor = colors.dividerLine,
-            isDark = ThemeManager.isDarkTheme(),
+            isDark = LocalAppTheme.current.isDarkTheme,
         ),
         color = appGlassContainerColor(colors.surfaceContainer),
         outSidePadding = PaddingValues(AppDimens.ElevationNone),

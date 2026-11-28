@@ -37,6 +37,7 @@ import com.github.zly2006.zhihu.account.applyIdentityHeaders
 import com.github.zly2006.zhihu.account.identitySuccessBody
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppSettingsPage
@@ -59,8 +60,8 @@ data class IdentityManagementState(
     val loading: Boolean = false,
     val switchingToAccountId: String? = null,
     val creating: Boolean = false,
-    val errorMessage: String? = null,
-    val operationError: Pair<String, String>? = null,
+    val errorMessage: (() -> String)? = null,
+    val operationError: Pair<String, () -> String>? = null,
 ) {
     /** 列表加载不占账号操作锁，本地切换、移除和添加入口不必等待远端列表。 */
     val busy: Boolean
@@ -116,7 +117,7 @@ fun IdentityManagementScreen() {
                         owner
                             .get("https://api.zhihu.com/people/account/list", ZhihuRequestProfile.Mobile) {
                                 applyIdentityHeaders(owner.load())
-                            }.identitySuccessBody("获取身份列表"),
+                            }.identitySuccessBody { SettingsStrings.fetchIdentities },
                     ),
                 ).data
         } catch (e: CancellationException) {
@@ -124,7 +125,7 @@ fun IdentityManagementScreen() {
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
             if (accountStore.client === owner) {
-                state = state.copy(loading = false, errorMessage = e.message ?: "获取身份列表失败")
+                state = state.copy(loading = false, errorMessage = { e.message ?: SettingsStrings.fetchIdentitiesFailed })
             }
             return
         }
@@ -140,7 +141,7 @@ fun IdentityManagementScreen() {
     }
 
     AppSettingsPage(
-        title = "身份管理",
+        title = SettingsStrings.identityManagement,
         onBack = navigator.onNavigateBack,
         backTag = "identity_management_back_button",
         modifier = Modifier.testTag(IDENTITY_MANAGEMENT_SCREEN_TAG),
@@ -173,13 +174,13 @@ fun IdentityManagementScreen() {
                 switchTarget = null
                 coroutineScope.launch {
                     runCatching {
-                        check(!state.busy) { "另一个账号操作正在进行" }
+                        check(!state.busy) { SettingsStrings.accountOperationBusy }
                         state = state.copy(switchingToAccountId = account.id, operationError = null)
                         try {
-                            require(account.id.isNotBlank()) { "目标账号不能为空" }
+                            require(account.id.isNotBlank()) { SettingsStrings.accountTargetEmpty }
                             val owner = accountClient
                             val oldSession = owner.load()
-                            check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { "账号已变更或需要先完成安全验证" }
+                            check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { SettingsStrings.accountChangedOrVerificationNeeded }
                             val response = owner.post(
                                 "https://api.zhihu.com/account/switch",
                                 ZhihuRequestProfile.Mobile,
@@ -191,7 +192,7 @@ fun IdentityManagementScreen() {
                             val result = accountStore.completeIdentityChange(
                                 owner,
                                 oldSession,
-                                response.identitySuccessBody("切换账号"),
+                                response.identitySuccessBody { SettingsStrings.switchAccount },
                                 account.id,
                             )
                             state = state.copy(
@@ -202,21 +203,21 @@ fun IdentityManagementScreen() {
                             throw e
                         } catch (e: Exception) {
                             currentCoroutineContext().ensureActive()
-                            if (accountStore.client !== accountClient) throw CancellationException("账号已切换")
+                            if (accountStore.client !== accountClient) throw CancellationException(SettingsStrings.accountChanged)
                             state = state.copy(
                                 switchingToAccountId = null,
-                                operationError = "identity:${account.id}" to (e.message ?: "切换账号失败"),
+                                operationError = "identity:${account.id}" to { e.message ?: SettingsStrings.switchAccountFailed },
                             )
                             throw e
                         }
                     }.onSuccess {
-                        userMessages.showShortMessage("已切换到 ${account.name}")
+                        userMessages.showShortMessage(SettingsStrings.switchedToAccount(account.name))
                         navigator.onNavigateBack()
                     }.onFailure {
                         if (it is CancellationException) throw it
                         currentCoroutineContext().ensureActive()
                         if (accountStore.client !== accountClient) return@onFailure
-                        userMessages.showLongMessage(it.message ?: "切换账号失败")
+                        userMessages.showLongMessage(it.message ?: SettingsStrings.switchAccountFailed)
                     }
                 }
             },
@@ -237,13 +238,13 @@ fun IdentityManagementScreen() {
                 showCreateDialog = false
                 coroutineScope.launch {
                     runCatching {
-                        check(!state.busy) { "另一个账号操作正在进行" }
-                        check(state.canCreateSubAccount) { "当前账号暂不能创建新账号" }
+                        check(!state.busy) { SettingsStrings.accountOperationBusy }
+                        check(state.canCreateSubAccount) { SettingsStrings.cannotCreateAccount }
                         state = state.copy(creating = true, operationError = null)
                         try {
                             val owner = accountClient
                             val oldSession = owner.load()
-                            check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { "账号已变更或需要先完成安全验证" }
+                            check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { SettingsStrings.accountChangedOrVerificationNeeded }
                             val response = owner.post(
                                 "https://api.zhihu.com/account/sub/register",
                                 ZhihuRequestProfile.Mobile,
@@ -253,7 +254,7 @@ fun IdentityManagementScreen() {
                             val result = accountStore.completeIdentityChange(
                                 owner,
                                 oldSession,
-                                response.identitySuccessBody("创建新账号"),
+                                response.identitySuccessBody { SettingsStrings.createAccount },
                             )
                             state = state.copy(
                                 accounts = state.accounts + result.account,
@@ -264,21 +265,21 @@ fun IdentityManagementScreen() {
                             throw e
                         } catch (e: Exception) {
                             currentCoroutineContext().ensureActive()
-                            if (accountStore.client !== accountClient) throw CancellationException("账号已切换")
+                            if (accountStore.client !== accountClient) throw CancellationException(SettingsStrings.accountChanged)
                             state = state.copy(
                                 creating = false,
-                                operationError = "create" to (e.message ?: "创建新账号失败"),
+                                operationError = "create" to { e.message ?: SettingsStrings.createAccountFailed },
                             )
                             throw e
                         }
                     }.onSuccess {
-                        userMessages.showLongMessage("新账号已创建并初始化，正在重新加载")
+                        userMessages.showLongMessage(SettingsStrings.accountCreatedReloading)
                         navigator.onNavigateBack()
                     }.onFailure {
                         if (it is CancellationException) throw it
                         currentCoroutineContext().ensureActive()
                         if (accountStore.client !== accountClient) return@onFailure
-                        userMessages.showLongMessage(it.message ?: "创建新账号失败")
+                        userMessages.showLongMessage(it.message ?: SettingsStrings.createAccountFailed)
                     }
                 }
             },
@@ -301,13 +302,13 @@ fun IdentityManagementScreen() {
                     if (accountStore.client !== owner) return@launch
                     try {
                         if (!accountStore.switchAccount(account.id) && accountStore.client === owner) {
-                            state = state.copy(operationError = "saved:${account.id}" to "登录凭据已失效，请重新添加这个账号")
+                            state = state.copy(operationError = "saved:${account.id}" to { SettingsStrings.savedLoginExpired })
                         }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         currentCoroutineContext().ensureActive()
-                        if (accountStore.client === owner) state = state.copy(operationError = "saved:${account.id}" to (e.message ?: "切换登录账号失败"))
+                        if (accountStore.client === owner) state = state.copy(operationError = "saved:${account.id}" to { e.message ?: SettingsStrings.switchSavedAccountFailed })
                     } finally {
                         if (accountStore.client === owner) state = state.copy(switchingToAccountId = null)
                     }
@@ -333,7 +334,7 @@ fun IdentityManagementScreen() {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    state = state.copy(operationError = "saved:${account.id}" to (e.message ?: "移除登录账号失败"))
+                    state = state.copy(operationError = "saved:${account.id}" to { e.message ?: SettingsStrings.removeSavedAccountFailed })
                     removeLoginAccount = null
                 }
             },

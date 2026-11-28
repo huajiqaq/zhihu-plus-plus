@@ -30,6 +30,11 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,11 +45,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.encodeToString
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RefreshKeepsLoadedItemsTest {
@@ -84,9 +84,9 @@ class RefreshKeepsLoadedItemsTest {
                 val environment = environment(client)
                 val model = object : BaseFeedViewModel() {
                     override val initialUrl = "https://example.invalid/feed"
+                    init { addDisplayItems(listOf(item("existing"))) }
                 }
                 try {
-                    model.displayItems.add(item("existing"))
                     val pull = launch { model.pullToRefresh(environment) }
                     runCurrent()
                     assertEquals(1, requests)

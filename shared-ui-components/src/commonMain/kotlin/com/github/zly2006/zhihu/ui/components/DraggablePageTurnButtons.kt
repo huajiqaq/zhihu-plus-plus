@@ -45,8 +45,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -68,6 +70,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.isPageTurnSupported
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -83,7 +88,6 @@ import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_FAB
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_GUIDE
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 enum class PageTurnCommand {
     PageUp,
@@ -94,23 +98,36 @@ enum class PageTurnCommand {
 
 /** 每条翻页命令交给最近注册且有效的滚动区域。 */
 class PageTurnDispatcher {
-    private val targets = mutableListOf<PageTurnTargetRegistration>()
+    private val targets = mutableStateListOf<PageTurnTargetRegistration>()
 
     var hasActiveTarget by mutableStateOf(false)
         private set
 
-    internal fun registerTarget(): PageTurnTargetRegistration {
-        val registration = PageTurnTargetRegistration(this)
+    internal fun registerTarget(isResumed: () -> Boolean, keyboardEnabled: () -> Boolean): PageTurnTargetRegistration {
+        val registration = PageTurnTargetRegistration(this, isResumed, keyboardEnabled)
         targets += registration
         hasActiveTarget = true
         return registration
     }
 
+    /** 键盘只交给最上层 RESUMED 目标；目标不接受键盘时不穿透到背景正文。 */
+    private val keyboardTarget: PageTurnTargetRegistration?
+        get() = targets.lastOrNull { it.isResumed() }
+            ?.takeIf { it.keyboardEnabled() }
+
+    internal val hasKeyboardTarget: Boolean
+        get() = keyboardTarget != null
+
+    internal fun dispatchFromKeyboard(command: PageTurnCommand): Boolean =
+        keyboardTarget?.commands?.trySend(PageTurnRequest(command, fromKeyboard = true))?.isSuccess == true
+
+    internal fun ownsKeyboard(registration: PageTurnTargetRegistration): Boolean = keyboardTarget === registration
+
     fun dispatch(command: PageTurnCommand): Boolean =
         targets
             .lastOrNull()
             ?.commands
-            ?.trySend(command)
+            ?.trySend(PageTurnRequest(command))
             ?.isSuccess == true
 
     internal fun unregisterTarget(registration: PageTurnTargetRegistration) {
@@ -120,10 +137,14 @@ class PageTurnDispatcher {
     }
 }
 
+internal data class PageTurnRequest(val command: PageTurnCommand, val fromKeyboard: Boolean = false)
+
 internal class PageTurnTargetRegistration(
     private val dispatcher: PageTurnDispatcher,
+    val isResumed: () -> Boolean,
+    val keyboardEnabled: () -> Boolean,
 ) {
-    val commands = Channel<PageTurnCommand>(Channel.BUFFERED)
+    val commands = Channel<PageTurnRequest>(Channel.BUFFERED)
     private var closed = false
 
     fun close() {
@@ -135,6 +156,9 @@ internal class PageTurnTargetRegistration(
 
 val LocalPageTurnDispatcher = staticCompositionLocalOf(::PageTurnDispatcher)
 
+/** 由支持硬件键盘的宿主在正文路由内启用，列表、设置和编辑页面默认不接收。 */
+internal val LocalPageTurnKeyboardEnabled = staticCompositionLocalOf<() -> Boolean> { { false } }
+
 /** 仅在所属页面活跃时注册目标，并在组合树协程作用域内消费命令。 */
 @Composable
 private fun PageTurnTargetRegistrationEffect(
@@ -143,6 +167,9 @@ private fun PageTurnTargetRegistrationEffect(
     onCommand: suspend (PageTurnTarget, PageTurnCommand) -> Unit,
 ): PageTurnTarget {
     val dispatcher = LocalPageTurnDispatcher.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+    val keyboardEnabled by rememberUpdatedState(LocalPageTurnKeyboardEnabled.current)
     val settings = rememberSettingsStore()
     val guideColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
     val target = remember(dispatcher, guideColor) { PageTurnTarget(settings, guideColor) }
@@ -170,8 +197,15 @@ private fun PageTurnTargetRegistrationEffect(
             if (scrolling && !target.pageTurnScrollInProgress) target.lastPageTurnDirection = 0
         }
     }
-    DisposableEffect(dispatcher, active) {
-        if (active) registration = dispatcher.registerTarget()
+    DisposableEffect(dispatcher, active, lifecycle) {
+        if (active) {
+            registration = dispatcher.registerTarget(
+                isResumed = {
+                    lifecycleState == Lifecycle.State.RESUMED && lifecycle.currentState == Lifecycle.State.RESUMED
+                },
+                keyboardEnabled = { keyboardEnabled() },
+            )
+        }
         onDispose {
             registration?.close()
             registration = null
@@ -179,7 +213,11 @@ private fun PageTurnTargetRegistrationEffect(
     }
     registration?.let { registeredTarget ->
         LaunchedEffect(registeredTarget) {
-            for (command in registeredTarget.commands) currentHandler(command)
+            for (request in registeredTarget.commands) {
+                if (!request.fromKeyboard || dispatcher.ownsKeyboard(registeredTarget)) {
+                    currentHandler(request.command)
+                }
+            }
         }
     }
     return target
@@ -212,11 +250,11 @@ fun DraggablePageTurnButtons(
         defaultBottomGap = 80.dp,
     ) { draggableModifier ->
         Column(modifier = draggableModifier) {
-            PageTurnButton(Icons.Default.KeyboardArrowUp, "上翻页", onPageUp, onLongPressUp, buttonSize, fabColor, iconTint)
+            PageTurnButton(Icons.Default.KeyboardArrowUp, WidgetsStrings.pageUp, onPageUp, onLongPressUp, buttonSize, fabColor, iconTint)
             Spacer(modifier = Modifier.height(gap))
             PageTurnButton(
                 Icons.Default.KeyboardArrowDown,
-                "下翻页",
+                WidgetsStrings.pageDown,
                 onPageDown,
                 onLongPressDown,
                 buttonSize,
@@ -253,7 +291,7 @@ private fun PageTurnButton(
             ),
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Icon(icon, contentDescription = description, tint = iconTint)
+            AppIcon(icon, contentDescription = description, tint = iconTint)
         }
     }
 }

@@ -42,12 +42,13 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.account.ZhihuAccounts
 import com.github.zly2006.zhihu.account.ZhihuIdentityAccount
 import com.github.zly2006.zhihu.account.ZhihuSavedAccount
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.requestLoginNavigation
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.SettingItem
 import com.github.zly2006.zhihu.ui.components.SettingItemGroup
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 internal val ZhihuSavedAccount.displayName: String
     get() = session.profile?.name?.takeIf { it.isNotBlank() } ?: session.username
@@ -77,10 +78,10 @@ internal fun IdentityManagementContent(
     state.errorMessage?.let { errorMessage ->
         SettingItemGroup {
             SettingItem(
-                title = { Text("加载失败") },
-                description = { Text(errorMessage) },
-                icon = { Icon(Icons.Default.ErrorOutline, null) },
-                endAction = { Icon(Icons.Default.Refresh, contentDescription = "重试") },
+                title = { Text(SettingsStrings.loadFailed) },
+                description = { Text(errorMessage()) },
+                icon = { AppIcon(Icons.Default.ErrorOutline, null) },
+                endAction = { AppIcon(Icons.Default.Refresh, contentDescription = SettingsStrings.retry) },
                 modifier = Modifier.testTag(IDENTITY_MANAGEMENT_RETRY_TAG),
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onRetry,
@@ -90,7 +91,7 @@ internal fun IdentityManagementContent(
 
     if (state.accounts.isNotEmpty()) {
         SettingItemGroup(
-            title = "当前手机号下的账号",
+            title = SettingsStrings.accountsForPhone,
         ) {
             state.accounts.forEachIndexed { index, account ->
                 val isCurrent = account.id == state.currentAccountId
@@ -101,13 +102,13 @@ internal fun IdentityManagementContent(
                         Column {
                             Text(
                                 when (account.accountType) {
-                                    1 -> "主账号"
-                                    2 -> "马甲号"
-                                    else -> "知乎账号"
+                                    1 -> SettingsStrings.primaryAccount
+                                    2 -> SettingsStrings.alternateAccount
+                                    else -> SettingsStrings.zhihuAccount
                                 },
                             )
                             state.operationError?.takeIf { it.first == "identity:${account.id}" }?.second?.let {
-                                Text(it, color = MaterialTheme.colorScheme.error)
+                                Text(it(), color = MaterialTheme.colorScheme.error)
                             }
                         }
                     },
@@ -124,11 +125,11 @@ internal fun IdentityManagementContent(
                         when {
                             isSwitching -> AppSpinner(size = 20.dp)
                             isCurrent -> Text(
-                                "当前登录",
+                                SettingsStrings.currentLogin,
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelLarge,
                             )
-                            else -> Icon(Icons.Default.SwitchAccount, contentDescription = "切换")
+                            else -> AppIcon(Icons.Default.SwitchAccount, contentDescription = SettingsStrings.switch)
                         }
                     },
                     modifier = Modifier.testTag("identityManagement.account.$index"),
@@ -144,10 +145,10 @@ internal fun IdentityManagementContent(
     } else if (!state.loading && state.errorMessage == null) {
         SettingItemGroup {
             SettingItem(
-                title = { Text("未找到可管理的账号") },
-                description = { Text("请确认当前登录状态后重试") },
-                icon = { Icon(Icons.Default.ErrorOutline, null) },
-                endAction = { Icon(Icons.Default.Refresh, contentDescription = "重试") },
+                title = { Text(SettingsStrings.noAccountsFound) },
+                description = { Text(SettingsStrings.checkLoginRetry) },
+                icon = { AppIcon(Icons.Default.ErrorOutline, null) },
+                endAction = { AppIcon(Icons.Default.Refresh, contentDescription = SettingsStrings.retry) },
                 modifier = Modifier.testTag(IDENTITY_MANAGEMENT_RETRY_TAG),
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onRetry,
@@ -158,23 +159,23 @@ internal fun IdentityManagementContent(
     run {
         val otherAccounts = savedAccounts.accounts.filterNot { it.id == savedAccounts.activeAccountId }
         SettingItemGroup(
-            title = "其他登录账号",
+            title = SettingsStrings.otherSavedAccounts,
         ) {
             otherAccounts.forEach { account ->
                 SettingItem(
                     title = { Text(account.displayName) },
                     description = {
                         Column {
-                            Text("切换到这个登录账号")
+                            Text(SettingsStrings.switchToSavedAccount)
                             state.operationError?.takeIf { it.first == "saved:${account.id}" }?.second?.let {
-                                Text(it, color = MaterialTheme.colorScheme.error)
+                                Text(it(), color = MaterialTheme.colorScheme.error)
                             }
                         }
                     },
-                    icon = { Icon(Icons.Default.SwitchAccount, null) },
+                    icon = { AppIcon(Icons.Default.SwitchAccount, null) },
                     endAction = {
                         AppIconButton(enabled = !state.busy && !sessionChangeBlocked, onClick = { onRemoveLoginAccountChange(account) }) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = "移除登录账号 ${account.displayName}")
+                            AppIcon(Icons.Default.DeleteOutline, contentDescription = SettingsStrings.removeSavedAccountAccessibility(account.displayName))
                         }
                     },
                     enabled = !state.busy && !sessionChangeBlocked,
@@ -182,8 +183,8 @@ internal fun IdentityManagementContent(
                 )
             }
             SettingItem(
-                title = { Text("添加其他手机号登录账号") },
-                icon = { Icon(Icons.AutoMirrored.Filled.Login, null) },
+                title = { Text(SettingsStrings.addPhoneAccount) },
+                icon = { AppIcon(Icons.AutoMirrored.Filled.Login, null) },
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = ::requestLoginNavigation,
             )
@@ -191,25 +192,25 @@ internal fun IdentityManagementContent(
 
         if (state.accounts.isNotEmpty()) {
             SettingItemGroup(
-                title = "新账号",
+                title = SettingsStrings.newAccount,
                 footer = {
                     Text(
                         if (state.canCreateSubAccount) {
-                            "新账号会先使用系统昵称完成初始化。昵称修改受知乎次数限制，本客户端不会自动改名。"
+                            SettingsStrings.newAccountInitialName
                         } else if (state.accounts.size >= 2) {
-                            "当前手机号下已经存在主账号和马甲号。"
+                            SettingsStrings.accountLimitReached
                         } else {
-                            "当前登录账号暂不满足创建新账号的条件。"
+                            SettingsStrings.accountCreationUnavailable
                         },
                     )
                 },
             ) {
                 SettingItem(
-                    title = { Text("创建新账号") },
+                    title = { Text(SettingsStrings.createAccount) },
                     description = state.operationError?.takeIf { it.first == "create" }?.second?.let { message ->
-                        { Text(message, color = MaterialTheme.colorScheme.error) }
+                        { Text(message(), color = MaterialTheme.colorScheme.error) }
                     },
-                    icon = { Icon(Icons.Default.Add, null) },
+                    icon = { AppIcon(Icons.Default.Add, null) },
                     modifier = Modifier.testTag(IDENTITY_MANAGEMENT_CREATE_TAG),
                     enabled = state.canCreateSubAccount && !state.busy && !sessionChangeBlocked,
                     endAction = {

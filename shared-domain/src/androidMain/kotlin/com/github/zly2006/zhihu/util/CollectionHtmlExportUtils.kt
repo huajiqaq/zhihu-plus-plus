@@ -17,11 +17,12 @@
 
 package com.github.zly2006.zhihu.util
 
-import kotlinx.coroutines.CancellationException
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 
 data class ResolvedCollectionHtmlExportItem(
     val htmlFileName: String,
@@ -64,7 +65,7 @@ suspend fun <T> exportCollectionItemsToZip(
         stagingDir.deleteRecursively()
     }
     if (!stagingDir.mkdirs()) {
-        throw IllegalStateException("无法创建导出缓存目录")
+        throw IllegalStateException(DomainStrings.exportCacheDirectoryFailed)
     }
 
     val totalCount = items.size
@@ -112,7 +113,7 @@ suspend fun <T> exportCollectionItemsToZip(
 
     val zipFile = if (successCount > 0) {
         if (!outputDir.exists() && !outputDir.mkdirs()) {
-            throw IllegalStateException("无法创建导出 ZIP 目录")
+            throw IllegalStateException(DomainStrings.exportZipDirectoryFailed)
         }
 
         File(outputDir, buildCollectionExportZipFileName(collectionTitle, timestampMillis)).also { file ->

@@ -53,6 +53,7 @@ import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.Topic
@@ -61,6 +62,7 @@ import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
 import com.github.zly2006.zhihu.reading.RegisterReadingQueueSource
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppTopBar
@@ -78,7 +80,6 @@ import com.github.zly2006.zhihu.viewmodel.feed.QuestionFeedViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val QUESTION_SCREEN_BACK_BUTTON_TAG = "question_screen_back_button"
 
@@ -155,6 +156,17 @@ fun QuestionScreen(
         }
     }
 
+    LaunchedEffect(viewModel, viewModel.pageGeneration, viewModel.completedPageCount, viewModel.isLoading) {
+        if (viewModel.completedPageCount > 0 &&
+            viewModel.displayItems.isEmpty() &&
+            viewModel.hasNextPage &&
+            !viewModel.isLoading &&
+            viewModel.errorMessage == null
+        ) {
+            viewModel.loadMore(paginationEnvironment)
+        }
+    }
+
     AppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -166,7 +178,7 @@ fun QuestionScreen(
                     try {
                         openWebUrl("https://www.zhihu.com/question/${question.questionId}/log")
                     } catch (e: Exception) {
-                        userMessages.showShortMessage("打开日志失败: ${e.message}")
+                        userMessages.showShortMessage(ContentStrings.openLogError(e.message))
                     }
                 },
                 onShare = {
@@ -220,11 +232,11 @@ fun QuestionScreen(
                                         viewModel.followQuestion(paginationEnvironment, nextFollowing)
                                         isFollowing = nextFollowing
                                         followerCount = (followerCount + if (isFollowing) 1 else -1).coerceAtLeast(0)
-                                        userMessages.showShortMessage(if (isFollowing) "已关注问题" else "已取消关注问题")
+                                        userMessages.showShortMessage(if (isFollowing) ContentStrings.questionFollowed else ContentStrings.questionUnfollowed)
                                     } catch (error: kotlinx.coroutines.CancellationException) {
                                         throw error
                                     } catch (error: Exception) {
-                                        userMessages.showShortMessage("关注操作失败：${error.message}")
+                                        userMessages.showShortMessage(ContentStrings.followError(error.message))
                                     }
                                 }
                             },
@@ -255,7 +267,7 @@ fun QuestionScreen(
                 },
             ) { item ->
                 FeedCard(
-                    item = item,
+                    item = item.localizedQuestionAnswer(),
                     readingQueueSourceId = answerReadingQueueSourceId,
                     thumbnailUrl = (item.feed?.target as? Feed.AnswerTarget)
                         ?.thumbnailInfo
@@ -308,7 +320,7 @@ private fun QuestionTopBar(
                 label = "question_top_bar_title",
             ) { shouldShowTitle ->
                 Text(
-                    text = if (shouldShowTitle) title else "问题",
+                    text = if (shouldShowTitle) title else ContentStrings.question,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -318,14 +330,14 @@ private fun QuestionTopBar(
         backTag = QUESTION_SCREEN_BACK_BUTTON_TAG,
         actions = {
             AppIconButton(onClick = onOpenLog, modifier = Modifier.testTag(QUESTION_VIEW_LOG_BUTTON_TAG)) {
-                Icon(Icons.Filled.History, contentDescription = "日志")
+                AppIcon(Icons.Filled.History, contentDescription = ContentStrings.questionLog)
             }
             AppIconButton(
                 onClick = onShare,
                 enabled = canShare,
                 modifier = Modifier.testTag(QUESTION_SHARE_BUTTON_TAG),
             ) {
-                Icon(Icons.Filled.Share, contentDescription = "分享")
+                AppIcon(Icons.Filled.Share, contentDescription = ContentStrings.share)
             }
         },
     )

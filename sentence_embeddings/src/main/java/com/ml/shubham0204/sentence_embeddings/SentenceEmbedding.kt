@@ -25,12 +25,12 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.providers.NNAPIFlags
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.nio.LongBuffer
 import java.util.EnumSet
 import kotlin.math.max
 import kotlin.math.sqrt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class SentenceEmbedding {
     private lateinit var hfTokenizer: HFTokenizer
@@ -56,6 +56,7 @@ class SentenceEmbedding {
         hfTokenizer = HFTokenizer(tokenizerBytes)
         try {
             ortEnvironment = OrtEnvironment.getEnvironment()
+            ortEnvironment.setTelemetry(false)
             OrtSession.SessionOptions().use { options ->
                 if (useFP16) options.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16, NNAPIFlags.CPU_DISABLED))
                 if (useXNNPack) options.addXnnpack(mapOf("intra_op_num_threads" to "2"))

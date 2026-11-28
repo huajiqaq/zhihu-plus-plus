@@ -17,19 +17,27 @@
 
 package com.github.zly2006.zhihu.data
 
+import com.github.zly2006.zhihu.i18n.CoreStrings
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class HttpFailureKind(
-    val label: String,
-) {
-    LOGIN_REQUIRED("需要登录"),
-    SESSION_EXPIRED("登录已失效"),
-    HUMAN_VERIFICATION("需要人工验证"),
-    FORBIDDEN("其他访问拒绝"),
+enum class HttpFailureKind {
+    LOGIN_REQUIRED,
+    SESSION_EXPIRED,
+    HUMAN_VERIFICATION,
+    FORBIDDEN,
+    ;
+
+    val label: String
+        get() = when (this) {
+            LOGIN_REQUIRED -> CoreStrings.failureLoginRequired
+            SESSION_EXPIRED -> CoreStrings.failureSessionExpired
+            HUMAN_VERIFICATION -> CoreStrings.failureHumanVerification
+            FORBIDDEN -> CoreStrings.failureForbidden
+        }
 }
 
 /** 请求时的状态与响应分类分别保存；本机有登录记录不代表服务端仍认可凭据。 */
@@ -69,39 +77,43 @@ fun isSensitiveRequestHeader(name: String): Boolean {
         key == "x-device-id"
 }
 
-fun HttpFailureRecord.redacted(): HttpFailureRecord = copy(
-    url = diagnosticDisplayUrl(url),
+fun HttpFailureRecord.redacted(): HttpFailureRecord = redacted("已隐藏", "无法显示的请求地址")
+
+private fun HttpFailureRecord.redacted(hidden: String, invalidUrl: String): HttpFailureRecord = copy(
+    url = diagnosticDisplayUrl(url, hidden, invalidUrl),
     headers = headers.mapValues { (name, values) ->
         values.map { value ->
             when {
-                isSensitiveRequestHeader(name) -> "已隐藏"
+                isSensitiveRequestHeader(name) -> hidden
                 value.startsWith("https://", ignoreCase = true) || value.startsWith("http://", ignoreCase = true) ->
-                    diagnosticDisplayUrl(value)
+                    diagnosticDisplayUrl(value, hidden, invalidUrl)
                 else -> value
             }
         }
     },
-    errorName = errorName?.let { "已隐藏" },
-    errorMessage = errorMessage?.let { "已隐藏" },
-    verificationUrl = verificationUrl?.let(::diagnosticDisplayUrl),
+    errorName = errorName?.let { hidden },
+    errorMessage = errorMessage?.let { hidden },
+    verificationUrl = verificationUrl?.let { diagnosticDisplayUrl(it, hidden, invalidUrl) },
 )
 
-fun HttpFailureRecord.feedbackText(): String = redacted().let { record ->
+fun HttpFailureRecord.feedbackText(): String = redacted(CoreStrings.redacted, CoreStrings.invalidRequestAddress).let { record ->
     buildString {
-        appendLine("遇到 HTTP 403，请作者检查接口是否需要更新。")
-        appendLine("请求来源：${record.source}")
-        appendLine("请求：${record.method} ${record.url}")
-        appendLine("响应分类：${record.kind.label}")
+        appendLine(CoreStrings.httpFeedbackIntro)
+        appendLine(CoreStrings.httpRequestSource(record.source))
+        appendLine(CoreStrings.httpRequest(record.method, record.url))
+        appendLine(CoreStrings.httpResponseKind(record.kind.label))
         appendLine(
-            "本机登录状态：${when (record.loggedIn) {
-                true -> "已登录"
-                false -> "未登录"
-                null -> "未知"
-            }}",
+            CoreStrings.httpLocalSignIn(
+                when (record.loggedIn) {
+                    true -> CoreStrings.httpSignedIn
+                    false -> CoreStrings.httpSignedOut
+                    null -> CoreStrings.httpUnknown
+                },
+            ),
         )
-        appendLine("可见请求头携带认证：${if (record.authenticatedRequest) "是" else "否"}")
-        record.errorCode?.let { appendLine("错误码：$it") }
-        appendLine("请求头（Token、Cookie、签名与地址参数已脱敏）：")
+        appendLine(CoreStrings.httpAuthHeader(if (record.authenticatedRequest) CoreStrings.httpYes else CoreStrings.httpNo))
+        record.errorCode?.let { appendLine(CoreStrings.httpErrorCode(it)) }
+        appendLine(CoreStrings.httpRedactedHeaders)
         record.headers.forEach { (name, values) -> values.forEach { appendLine("$name: $it") } }
     }
 }
@@ -124,8 +136,8 @@ fun redactDiagnosticText(text: String): String {
     }
 }
 
-private fun diagnosticDisplayUrl(rawUrl: String): String {
-    val url = runCatching { Url(rawUrl) }.getOrNull() ?: return "无法显示的请求地址"
+private fun diagnosticDisplayUrl(rawUrl: String, hidden: String = "已隐藏", invalidUrl: String = "无法显示的请求地址"): String {
+    val url = runCatching { Url(rawUrl) }.getOrNull() ?: return invalidUrl
     return URLBuilder()
         .apply {
             takeFrom(url)
@@ -135,7 +147,7 @@ private fun diagnosticDisplayUrl(rawUrl: String): String {
             // 查询参数也可能携带凭据；默认仅保留字段名，避免未知认证字段漏出。
             parameters.names().toTypedArray().forEach { name ->
                 parameters.remove(name)
-                parameters.append(name, "已隐藏")
+                parameters.append(name, hidden)
             }
         }.buildString()
 }

@@ -42,10 +42,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.RecordedVoiceComment
 import com.github.zly2006.zhihu.ui.components.VoiceCommentPlayer
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun VoiceCommentBubble(voice: DataHolder.Comment.CommentVoiceInfo, localVoice: RecordedVoiceComment?, player: VoiceCommentPlayer) {
@@ -67,9 +68,9 @@ internal fun VoiceCommentBubble(voice: DataHolder.Comment.CommentVoiceInfo, loca
                 }.padding(horizontal = 12.dp, vertical = 8.dp)
                 .testTag("comment_voice_${voice.voiceId}"),
         ) {
-            Icon(
+            AppIcon(
                 imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isPlaying) "暂停语音" else "播放语音",
+                contentDescription = if (isPlaying) CommentsStrings.pauseVoice else CommentsStrings.playVoice,
                 tint = if (canPlay) skin.onSurface else skin.disabledOnSurface,
                 modifier = Modifier.size(18.dp),
             )
@@ -82,7 +83,7 @@ internal fun VoiceCommentBubble(voice: DataHolder.Comment.CommentVoiceInfo, loca
             if (!player.isSupported) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "当前平台暂不支持播放",
+                    text = CommentsStrings.voicePlaybackUnavailable,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -90,7 +91,7 @@ internal fun VoiceCommentBubble(voice: DataHolder.Comment.CommentVoiceInfo, loca
         }
         if (voice.asrText.isNotBlank()) {
             Text(
-                text = if (showTranscription) voice.asrText else "转文字",
+                text = if (showTranscription) voice.asrText else CommentsStrings.showTranscription,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

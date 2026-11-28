@@ -37,8 +37,12 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccountProfileSnapshot
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
+import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccounts
+import com.github.zly2006.zhihu.account.ZhihuSavedAccount
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.editor.compileMdToZhihuHtml
@@ -54,9 +58,7 @@ import com.github.zly2006.zhihu.navigation.WriteAnswer
 import com.github.zly2006.zhihu.navigation.WriteArticle
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
-import com.github.zly2006.zhihu.theme.ThemeSnapshot
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import io.ktor.client.engine.mock.MockEngine
@@ -69,8 +71,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import org.junit.AfterClass
-import org.junit.BeforeClass
 import java.net.URLDecoder
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,6 +79,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import org.junit.AfterClass
+import org.junit.BeforeClass
 import kotlinx.io.files.Path as KotlinxPath
 
 @OptIn(ExperimentalTestApi::class)
@@ -187,15 +189,12 @@ class WriteCreationScreenTest {
                         ZhihuMain(
                             modifier = Modifier.requiredSize(1200.dp, 800.dp),
                             navHost = mainHost,
-                            mainTabNavigationTarget = null,
                             navigate = mainHost::open,
                             navigateContent = { destination, target ->
                                 target.open(destination)
                             },
                             enableLandscapeListDetail = true,
-                            setCurrentMainTabOpenFrom = {},
-                            consumeMainTabNavigationTarget = {},
-                            preferenceState = remember {
+                            tabsState = rememberZhihuMainTabsState(remember {
                                 ZhihuMainPreferenceState {
                                     ZhihuMainPreferenceSnapshot(
                                         tapToScrollToTopEnabled = false,
@@ -205,8 +204,7 @@ class WriteCreationScreenTest {
                                         startDestination = Daily,
                                     )
                                 }
-                            },
-                            isDarkTheme = false,
+                            }),
                             articleContent = { article ->
                                 val articleHost = checkNotNull(LocalArticleNavHost.current)
                                 SideEffect { detailHost = articleHost }
@@ -229,7 +227,7 @@ class WriteCreationScreenTest {
             assertEquals(mapOf("title" to title, "content" to expectedHtml, "copyright" to "public"), form(requests.single { it.url.encodedPath == "/articles/write" }))
             onNodeWithTag(WRITE_ARTICLE_PUBLISH_TAG).performClick()
             waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("操作失败").fetchSemanticsNodes().isNotEmpty() }
-            assertEquals(WriteArticle, host!!.top)
+            assertEquals(WriteArticle, host.top)
             assertTrue(desktopSettingsStore().getStringOrNull(key) != null)
             onNodeWithText("确定").performClick()
             onNodeWithTag(WRITE_ARTICLE_TITLE_TAG).assert(hasText(title))
@@ -238,15 +236,15 @@ class WriteCreationScreenTest {
             onNodeWithTag(WRITE_ARTICLE_PUBLISH_TAG).performClick()
             waitUntil(timeoutMillis = 5_000) { detailHost?.top is Article }
             waitForIdle()
-            assertEquals(listOf(MainTabs), host!!.backStack.toList())
+            assertEquals(listOf(MainTabs), host.backStack.toList())
             assertEquals(Article(title = title, type = ArticleType.Article, id = 9501), detailHost!!.top)
             onNodeWithText("已发表文章 9501").assertExists()
             val publish = requests.last { it.method == HttpMethod.Put }
             assertEquals(mapOf("title" to title, "content" to expectedHtml, "copyright_permission" to "need_review"), form(publish))
             assertEquals(null, desktopSettingsStore().getStringOrNull(key))
             runOnIdle {
-                detailHost!!.back()
-                host!!.open(WriteArticle)
+                detailHost.back()
+                host.open(WriteArticle)
             }
             onNodeWithTag(WRITE_ARTICLE_TITLE_TAG).assert(hasText(""))
             onNodeWithTag(WRITE_ARTICLE_CONTENT_TAG).assert(hasText(""))
@@ -316,7 +314,6 @@ class WriteCreationScreenTest {
         private val requests = CopyOnWriteArrayList<HttpRequestData>()
         private var responder: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData = { error("未配置创作请求") }
         private var originalHome: String? = null
-        private var originalTheme: ThemeSnapshot? = null
         private var directory: Path? = null
         private var store: ZhihuAccountStore? = null
 
@@ -324,18 +321,23 @@ class WriteCreationScreenTest {
         @JvmStatic
         fun setUpIsolatedAccount() {
             originalHome = System.getProperty("user.home")
-            originalTheme = ThemeManager.snapshot()
             val home = Files.createTempDirectory("zhihu-creation-ui-")
             directory = home
             System.setProperty("user.home", home.toString())
             val account = home.resolve("fixture-account.json")
-            Files.createDirectories(account.parent)
-            Files.writeString(account, """{"login":true,"username":"creation-ui-fixture","cookies":{"d_c0":"synthetic-device","z_c0":"synthetic-session","_xsrf":"synthetic-xsrf"},"profile":{"id":"creation-ui-fixture","name":"创作测试用户","urlToken":"creation-ui-fixture","userType":"people","avatarUrl":""}}""")
+            val repository = ZhihuAccountRepository(KotlinxPath(account.toString()))
+            val session = ZhihuAccountSession(
+                login = true,
+                username = PROFILE_ID,
+                cookies = mutableMapOf("d_c0" to "synthetic-device", "z_c0" to "synthetic-session", "_xsrf" to "synthetic-xsrf"),
+                profile = ZhihuAccountProfileSnapshot(PROFILE_ID, "创作测试用户", PROFILE_ID, "people", ""),
+            )
+            repository.saveAccounts(ZhihuAccounts(PROFILE_ID, listOf(ZhihuSavedAccount(PROFILE_ID, session))))
             val mock = MockEngine { request ->
                 requests += request
                 responder(request)
             }
-            val fixtureStore = ZhihuAccountStore(ZhihuAccountRepository(KotlinxPath(account.toString())), engine = mock)
+            val fixtureStore = ZhihuAccountStore(repository, engine = mock)
             store = fixtureStore
             assertEquals(PROFILE_ID, fixtureStore.session.profile?.id)
             assertSame(mock, fixtureStore.client.httpClient().engine)
@@ -353,7 +355,6 @@ class WriteCreationScreenTest {
         @JvmStatic
         fun tearDownIsolatedAccount() {
             store?.close()
-            originalTheme?.let(ThemeManager::load)
             if (originalHome == null) System.clearProperty("user.home") else System.setProperty("user.home", originalHome)
             directory?.toFile()?.deleteRecursively()
         }

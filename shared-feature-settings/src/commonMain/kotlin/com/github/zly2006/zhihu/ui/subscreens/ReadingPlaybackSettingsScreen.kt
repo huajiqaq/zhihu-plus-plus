@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.reading.READING_PREFERENCES_KEY
@@ -108,19 +109,31 @@ private const val DEFAULT_CUSTOM_QUEUE_LIMIT = 30
 fun ReadingPlaybackSettingsScreen(setting: String = "") {
     val settings = rememberSettingsStore()
     var preferences by remember(settings) { mutableStateOf(loadReadingPreferences(settings)) }
-    val transitionText = remember(settings) { TextFieldState(preferences.transitionText) }
+    val effectiveTransitionText = preferences.effectiveTransitionText
+    val transitionText = remember(settings) { TextFieldState(effectiveTransitionText) }
+    var synchronizedTransitionText by remember(settings) { mutableStateOf(effectiveTransitionText) }
     val scope = rememberCoroutineScope()
 
     fun persist(next: ReadingPreferences) {
-        val normalized = next.copy(transitionText = transitionText.text.toString()).normalized()
+        val normalized = next.normalized()
         preferences = normalized
         saveReadingPreferences(settings, normalized)
     }
 
     fun saveTransitionText() {
-        if (!transitionText.text.contentEquals(preferences.transitionText)) persist(preferences)
+        val text = transitionText.text.toString()
+        if (text != synchronizedTransitionText) {
+            synchronizedTransitionText = text
+            persist(preferences.copy(transitionText = text))
+        }
     }
 
+    LaunchedEffect(effectiveTransitionText) {
+        if (transitionText.text.contentEquals(synchronizedTransitionText)) {
+            synchronizedTransitionText = effectiveTransitionText
+            transitionText.setTextAndPlaceCursorAtEnd(effectiveTransitionText)
+        }
+    }
     LaunchedEffect(transitionText) {
         snapshotFlow { transitionText.text }.collect { saveTransitionText() }
     }
@@ -129,8 +142,9 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
             if (key == READING_PREFERENCES_KEY) {
                 scope.launch {
                     val saved = loadReadingPreferences(settings)
-                    if (saved.transitionText != preferences.transitionText && !transitionText.text.contentEquals(saved.transitionText)) {
-                        transitionText.setTextAndPlaceCursorAtEnd(saved.transitionText)
+                    if (transitionText.text.contentEquals(synchronizedTransitionText)) {
+                        synchronizedTransitionText = saved.effectiveTransitionText
+                        transitionText.setTextAndPlaceCursorAtEnd(synchronizedTransitionText)
                     }
                     preferences = saved
                 }
@@ -164,7 +178,7 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
     }
 
     AppSettingsPage(
-        title = "朗读与播放",
+        title = SettingsStrings.readingPlayback,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = READING_PLAYBACK_SETTINGS_BACK_BUTTON_TAG,
         highlightedKey = when {
@@ -177,12 +191,12 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
         scrollTag = READING_SETTINGS_SCROLL_TAG,
     ) {
         SettingItemGroup(
-            title = "朗读预览",
-            footer = { Text("更改在下次朗读时生效，不影响当前队列。") },
+            title = SettingsStrings.readAloudPreview,
+            footer = { Text(SettingsStrings.readAloudChangesNote) },
         ) {
             SettingItem(
-                title = { Text("当前朗读模板") },
-                description = { Text("大括号表示朗读时替换的动态内容，不包含条目过渡文本。") },
+                title = { Text(SettingsStrings.readingTemplate) },
+                description = { Text(SettingsStrings.readingTemplateDescription) },
                 settingKey = READING_PLAYBACK_TEMPLATE_PREVIEW_KEY,
                 bottomAction = {
                     SelectionContainer {
@@ -213,8 +227,8 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
             ?.first { it != ReadingTemplateField.Comments }
         /** 列表行不接收 settingKey，故深链定位到组。 */
         SettingItemGroup(
-            title = "朗读内容",
-            footer = { Text("用箭头调整朗读顺序；内容缺少标题、时间等字段时会自动跳过。") },
+            title = SettingsStrings.readingContent,
+            footer = { Text(SettingsStrings.readingContentFooter) },
             settingKey = READING_PLAYBACK_FIELD_ORDER_KEY,
         ) {
             AppSortableCheckList(
@@ -223,7 +237,7 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                         key = field.name,
                         title = field.displayName,
                         description = field.description,
-                        lockedReason = "评论条数为 0，至少保留一项其他内容".takeIf { field == lastReadableField },
+                        lockedReason = SettingsStrings.keepReadableField.takeIf { field == lastReadableField },
                     )
                 },
                 checkedKeys = enabledInOrder.map { it.name },
@@ -235,16 +249,16 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
 
         val publishedTimeEnabled = ReadingTemplateField.PublishedAt in preferences.enabledFields
         SettingItemGroup(
-            title = "发布时间",
+            title = SettingsStrings.publicationTime,
             footer = if (publishedTimeEnabled) {
                 null
             } else {
-                { Text("在“朗读内容”里勾选“发布时间”后，这些选项才会生效。") }
+                { Text(SettingsStrings.publicationTimeDisabled) }
             },
         ) {
             ChoiceSettingItem(
-                title = "时间形式",
-                description = "绝对时间沿用当前发布时间；相对时间朗读当前时间到最后编辑时间的间隔。",
+                title = SettingsStrings.timeFormat,
+                description = SettingsStrings.timeFormatDescription,
                 options = ReadingPublishedTimeMode.entries,
                 selected = preferences.publishedTimeMode,
                 label = { it.displayName },
@@ -254,8 +268,8 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                 settingKey = READING_PLAYBACK_PUBLISHED_TIME_MODE_KEY,
             )
             ChoiceSettingItem(
-                title = "相对时间精度",
-                description = "保留到所选的最小时间单位，更细的部分会省略。",
+                title = SettingsStrings.relativeTimePrecision,
+                description = SettingsStrings.relativeTimePrecisionDescription,
                 options = ReadingRelativeTimePrecision.entries,
                 selected = preferences.relativeTimePrecision,
                 label = { it.displayName },
@@ -269,20 +283,20 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
         val commentsEnabled = ReadingTemplateField.Comments in preferences.enabledFields
         val commentDetailsEnabled = commentsEnabled && preferences.commentCount > 0
         SettingItemGroup(
-            title = "评论",
+            title = SettingsStrings.comments,
             footer = {
                 Text(
                     if (commentsEnabled) {
-                        "条数大于 0 时才会请求评论数据。"
+                        SettingsStrings.commentsLoadNote
                     } else {
-                        "在“朗读内容”里勾选“评论区”后，这些选项才会生效。"
+                        SettingsStrings.commentsDisabled
                     },
                 )
             },
         ) {
             SettingItem(
-                title = { Text("朗读评论数量") },
-                description = { Text("每条内容最多朗读多少条评论，范围为 0-50；0 表示不加载评论。") },
+                title = { Text(SettingsStrings.readCommentCount) },
+                description = { Text(SettingsStrings.readCommentCountDescription) },
                 enabled = commentsEnabled,
                 settingKey = READING_PLAYBACK_COMMENT_COUNT_KEY,
                 bottomAction = {
@@ -293,7 +307,7 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                             preferences.commentCount
                         },
                         maxDigits = 2,
-                        labelText = "评论条数",
+                        labelText = SettingsStrings.commentCount,
                         enabled = commentsEnabled,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -303,8 +317,8 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                 },
             )
             SettingItemWithSwitch(
-                title = { Text("朗读评论作者") },
-                description = { Text("关闭后，每条评论只朗读序号和正文。") },
+                title = { Text(SettingsStrings.readCommentAuthor) },
+                description = { Text(SettingsStrings.readCommentAuthorDescription) },
                 checked = preferences.readCommentAuthor,
                 onCheckedChange = { persist(preferences.copy(readCommentAuthor = it)) },
                 enabled = commentDetailsEnabled,
@@ -312,8 +326,8 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                 settingKey = READING_PLAYBACK_COMMENT_AUTHOR_KEY,
             )
             ChoiceSettingItem(
-                title = "评论排序",
-                description = "按当前选择的热度或发布时间顺序读取评论。",
+                title = SettingsStrings.commentOrder,
+                description = SettingsStrings.commentOrderDescription,
                 options = ReadingCommentOrder.entries,
                 selected = preferences.commentOrder,
                 label = { it.displayName },
@@ -324,17 +338,17 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
             )
         }
 
-        SettingItemGroup(title = "连续播放") {
+        SettingItemGroup(title = SettingsStrings.continuousPlayback) {
             val presetIndex = queueLimitPresets.indexOf(preferences.queueLimit)
             val customSelected = presetIndex < 0
             SettingItem(
-                title = { Text("单次队列上限") },
-                description = { Text("包含当前内容，播完队列后停止。") },
+                title = { Text(SettingsStrings.queueLimit) },
+                description = { Text(SettingsStrings.queueLimitDescription) },
                 settingKey = READING_PLAYBACK_QUEUE_LIMIT_KEY,
                 bottomAction = {
                     Column(modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space12)) {
                         AppSegmentedControl(
-                            options = queueLimitPresets.map { "$it 条" } + "自定义",
+                            options = queueLimitPresets.map { SettingsStrings.queueItemCount(it) } + SettingsStrings.custom,
                             selectedIndex = if (customSelected) queueLimitPresets.size else presetIndex,
                             onSelect = { index ->
                                 val preset = queueLimitPresets.getOrNull(index)
@@ -358,7 +372,7 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                                     preferences.queueLimit
                                 },
                                 maxDigits = 3,
-                                labelText = "自定义上限（1-100 条）",
+                                labelText = SettingsStrings.customQueueLimit,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = AppDimens.Space8)
@@ -371,12 +385,12 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
         }
 
         SettingItemGroup(
-            title = "条目过渡",
-            footer = { Text("可用占位符：{index} 下一条序号，{total} 队列总数，{contentType} 内容类型，{title} 标题，{author} 作者。") },
+            title = SettingsStrings.itemTransition,
+            footer = { Text(SettingsStrings.transitionPlaceholders) },
         ) {
             SettingItem(
-                title = { Text("内容之间的过渡文本") },
-                description = { Text("仅在相邻条目之间朗读；留空即可关闭。") },
+                title = { Text(SettingsStrings.transitionBetweenItems) },
+                description = { Text(SettingsStrings.transitionDescription) },
                 settingKey = READING_PLAYBACK_TRANSITION_KEY,
                 bottomAction = {
                     AppTextField(
@@ -386,7 +400,7 @@ fun ReadingPlaybackSettingsScreen(setting: String = "") {
                             .padding(top = AppDimens.Space12)
                             .testTag(READING_SETTINGS_TRANSITION_TEXT_TAG),
                         lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3),
-                        labelText = "过渡文本",
+                        labelText = SettingsStrings.transitionText,
                     )
                 },
             )

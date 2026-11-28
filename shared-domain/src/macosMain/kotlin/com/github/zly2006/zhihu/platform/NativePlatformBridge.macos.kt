@@ -21,9 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.github.zly2006.zhihu.data.macosAppDataDirectoryPath
 import com.github.zly2006.zhihu.data.macosBackgroundUiDebugDataDirectoryPath
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.ui.subscreens.MACOS_QUIT_ON_WINDOW_CLOSE_PREFERENCE_KEY
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.io.RawSource
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -42,7 +45,13 @@ actual val platformName: String = "macOS"
 fun isMacosQuitOnWindowCloseEnabled(): Boolean =
     nativeSettingsStore("settings.properties").getBoolean(MACOS_QUIT_ON_WINDOW_CLOSE_PREFERENCE_KEY, false)
 
-actual val isAigcVoteSupported: Boolean = false
+actual val isAigcVoteSupported: Boolean = true
+
+actual val isPageTurnSupported: Boolean = true
+
+actual val isAnswerSwipeSupported: Boolean = true
+
+actual val defaultAnswerSwitchMode: String = "off"
 
 @Composable
 @OptIn(ExperimentalForeignApi::class)
@@ -50,7 +59,7 @@ actual fun rememberExternalUrlOpener(): ExternalUrlOpener = remember {
     object : ExternalUrlOpener {
         override fun invoke(url: String) {
             if (NSURL.URLWithString(url)?.let(NSWorkspace.sharedWorkspace::openURL) != true) {
-                showMacosUserMessage("系统无法打开此链接")
+                showMacosUserMessage(DomainStrings.systemOpenLinkFailed)
             }
         }
     }
@@ -81,7 +90,8 @@ internal actual fun rememberFilePicker(
     title: String,
     mimeTypes: List<String>,
     extensions: List<String>,
-    onPicked: (() -> Pair<String, RawSource>) -> Unit,
+    maxBytes: Int?,
+    onPicked: (suspend () -> Pair<String, RawSource>) -> Unit,
 ): () -> Unit = {
     val panel = NSOpenPanel.openPanel()
     panel.title = title
@@ -93,21 +103,27 @@ internal actual fun rememberFilePicker(
     }
 }
 
-internal data class MacosUserMessage(
+data class MacosUserMessage(
     val text: String,
     val duration: UserMessageDuration,
 )
 
-internal val macosUserMessages = Channel<MacosUserMessage>(capacity = Channel.UNLIMITED)
+private val macosUserMessageQueue = Channel<MacosUserMessage>(capacity = Channel.UNLIMITED)
+
+/** 非组合式的平台回调向当前消息宿主投递，不暴露队列的写入或关闭能力。 */
+val macosUserMessages: Flow<MacosUserMessage> = macosUserMessageQueue.receiveAsFlow()
 
 fun showMacosUserMessage(
     message: String,
     duration: UserMessageDuration = UserMessageDuration.Short,
 ) {
     println(message)
-    check(macosUserMessages.trySend(MacosUserMessage(message, duration)).isSuccess) {
+    check(macosUserMessageQueue.trySend(MacosUserMessage(message, duration)).isSuccess) {
         "macOS user message queue is unavailable"
     }
 }
+
+@Composable
+actual fun rememberUserMessageSink(): UserMessageSink = LocalWindowUserMessages.current
 
 actual val platformBottomBarItemLimit: Int? = null

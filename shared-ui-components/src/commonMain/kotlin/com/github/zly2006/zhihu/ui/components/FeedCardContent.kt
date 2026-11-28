@@ -60,6 +60,7 @@ import com.github.zly2006.zhihu.data.authorDestination
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.plainSearchText
 import com.github.zly2006.zhihu.data.sourceLabel
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -69,7 +70,6 @@ import com.github.zly2006.zhihu.ui.subscreens.PREF_FONT_SIZE
 import com.github.zly2006.zhihu.ui.subscreens.PREF_LINE_HEIGHT
 import com.github.zly2006.zhihu.util.cardText
 import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /**
  * 信息流卡片右上角的更多菜单。
@@ -89,9 +89,9 @@ internal fun FeedCardMenuBox(
             onClick = { onShowMenuChange(true) },
             modifier = Modifier.size(AppDimens.TouchTarget),
         ) {
-            Icon(
+            AppIcon(
                 imageVector = Icons.Default.MoreVert,
-                contentDescription = "更多选项",
+                contentDescription = WidgetsStrings.moreOptions,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(AppDimens.IconSizeCompact),
             )
@@ -102,7 +102,7 @@ internal fun FeedCardMenuBox(
         ) {
             menuItems { onShowMenuChange(false) }
             AppDropdownMenuItem(
-                text = { Text("外观设置") },
+                text = { Text(WidgetsStrings.appearanceSettings) },
                 onClick = {
                     onShowMenuChange(false)
                     navigator.onNavigate(Account.AppearanceSettings())
@@ -110,7 +110,7 @@ internal fun FeedCardMenuBox(
             )
             if (item.isQualityFiltered) {
                 AppDropdownMenuItem(
-                    text = { Text("调整质量屏蔽") },
+                    text = { Text(WidgetsStrings.adjustQualityFilter) },
                     onClick = {
                         onShowMenuChange(false)
                         navigator.onNavigate(Account.RecommendSettings(QUALITY_FILTER_MODE_PREFERENCE_KEY))
@@ -150,7 +150,7 @@ internal fun FeedCardContent(
     }
     if (item.isQualityFiltered) {
         Text(
-            text = item.content.orEmpty(),
+            text = (item.qualityFilterReason ?: item.content).orEmpty(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp).testTag("feed_quality_filter_reason"),
@@ -202,7 +202,7 @@ internal fun FeedCardContent(
                 Spacer(modifier = Modifier.width(AppDimens.FeedCardThumbnailSpacing))
                 AsyncImage(
                     model = thumbnailModel,
-                    contentDescription = "Thumbnail",
+                    contentDescription = WidgetsStrings.thumbnail,
                     modifier = Modifier
                         .padding(top = AppDimens.Space8)
                         .sizeIn(
@@ -214,7 +214,8 @@ internal fun FeedCardContent(
             }
         }
         PinFeedImages(images = visiblePinImages, modifier = Modifier.padding(top = AppDimens.Space8))
-        if (item.details.isNotEmpty() || (item.avatarSrc != null && item.authorName != null)) {
+        val details = item.displayDetails
+        if (details.isNotEmpty() || (item.avatarSrc != null && item.authorName != null)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space8),
                 verticalAlignment = Alignment.CenterVertically,
@@ -235,7 +236,7 @@ internal fun FeedCardContent(
                         ) {
                             AsyncImage(
                                 model = avatarSrc,
-                                contentDescription = "Avatar",
+                                contentDescription = WidgetsStrings.avatar,
                                 modifier = Modifier.clip(CircleShape).size(AppDimens.AvatarSizeSmall),
                             )
                             Spacer(Modifier.width(AppDimens.Space8))
@@ -254,9 +255,9 @@ internal fun FeedCardContent(
                             }
                         }
                     }
-                    if (item.details.isNotEmpty()) {
+                    if (details.isNotEmpty()) {
                         Text(
-                            text = item.feed.plainSearchText(item.details),
+                            text = item.feed.plainSearchText(details),
                             style = if (isMiuix) LocalAppSkinTokens.current.footnote2 else MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
@@ -264,7 +265,7 @@ internal fun FeedCardContent(
                         )
                     }
                 }
-                if (item.details.isNotEmpty()) {
+                if (details.isNotEmpty()) {
                     FeedCardMenuBox(item, showMenu, onShowMenuChange, menuItems)
                 }
             }
@@ -283,7 +284,7 @@ private fun PinFeedImages(
             val image = images.single()
             AsyncImage(
                 model = image.feedThumbnailUrl,
-                contentDescription = "想法图片 1/1",
+                contentDescription = WidgetsStrings.pinImagePosition(1, 1),
                 modifier = modifier
                     .fillMaxWidth(1f / 3f)
                     .aspectRatio(1f)
@@ -372,7 +373,7 @@ private fun PinFeedImage(
     ) {
         AsyncImage(
             model = image.feedThumbnailUrl,
-            contentDescription = "想法图片 ${index + 1}/$totalCount",
+            contentDescription = WidgetsStrings.pinImagePosition(index + 1, totalCount),
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )

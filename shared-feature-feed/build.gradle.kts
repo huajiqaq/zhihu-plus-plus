@@ -43,13 +43,11 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
-        val jvmAndAndroidMain by creating {
-            dependsOn(commonMain.get())
-        }
+        val jvmAndAndroidMain = create("jvmAndAndroidMain") { dependsOn(commonMain.get()) }
         androidMain.get().dependsOn(jvmAndAndroidMain)
         jvmMain.get().dependsOn(jvmAndAndroidMain)
         commonMain.dependencies {
-            api(project(":shared-ui-base"))
+            implementation(project(":shared-ui-base"))
             implementation(libs.jb.compose.runtime)
             implementation(libs.jb.compose.foundation)
             implementation(libs.material3)

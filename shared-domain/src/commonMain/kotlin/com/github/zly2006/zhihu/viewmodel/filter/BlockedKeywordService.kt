@@ -18,7 +18,7 @@
 package com.github.zly2006.zhihu.viewmodel.filter
 
 import com.fleeksoft.ksoup.Ksoup
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 
@@ -31,16 +31,15 @@ fun interface KeywordSemanticMatcher {
 }
 
 class BlockedKeywordService(
-    private val keywordDao: BlockedKeywordDao,
     private val recordDao: BlockedContentRecordDao,
     private val semanticMatcher: KeywordSemanticMatcher?,
 ) {
     suspend fun checkNLPBlockingWithWeight(
         content: FilterableContent,
+        keywords: List<BlockedKeyword>,
         threshold: Double = 0.8,
     ): Pair<Boolean, List<MatchedKeywordInfo>> {
-        val keywordsByScope = keywordDao
-            .getAllKeywords()
+        val keywordsByScope = keywords
             .filter { it.getKeywordTypeEnum() == KeywordType.NLP_SEMANTIC }
             .groupBy { it.getKeywordScopeEnum() }
         val matchedInfos = mutableListOf<MatchedKeywordInfo>()
@@ -95,7 +94,7 @@ class BlockedKeywordService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("BlockedKeywordService", "Failed to save blocked content record", e)
+            AppLog.e("BlockedKeywordService", "Failed to save blocked content record", e)
         }
     }
 }

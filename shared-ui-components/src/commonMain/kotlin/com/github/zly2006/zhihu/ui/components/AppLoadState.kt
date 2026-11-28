@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.viewmodel.LoadState
 
@@ -47,12 +48,12 @@ fun AppMetadataLoadState(
             modifier = Modifier.fillMaxWidth().padding(AppDimens.Space12),
         ) {
             androidx.compose.material3.Text(
-                text = if (hasContent) "更新失败：$errorMessage，已保留原内容" else "加载失败：$errorMessage",
+                text = if (hasContent) WidgetsStrings.updateFailedWithContent(errorMessage) else WidgetsStrings.loadFailedDetail(errorMessage),
                 color = tokens.error,
                 style = tokens.body2,
                 modifier = Modifier.testTag(errorTag),
             )
-            AppTextButton("重试", onRetry, modifier = Modifier.testTag(retryTag))
+            AppTextButton(WidgetsStrings.retry, onRetry, modifier = Modifier.testTag(retryTag))
         }
         isLoading -> Row(
             modifier = Modifier.fillMaxWidth().padding(AppDimens.Space12).testTag(loadingTag),
@@ -61,7 +62,7 @@ fun AppMetadataLoadState(
         ) {
             AppSpinner(size = AppDimens.InlineSpinnerSize)
             androidx.compose.material3.Text(
-                text = if (hasContent) "正在更新…" else "正在加载…",
+                text = if (hasContent) WidgetsStrings.updating else WidgetsStrings.loading,
                 color = tokens.onSurfaceVariantSummary,
                 style = tokens.body2,
             )
@@ -78,7 +79,7 @@ fun <T> AppLoadStateContent(
     state: LoadState<T>,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    failedTitle: String = "加载失败",
+    failedTitle: String = WidgetsStrings.loadFailed,
     isEmpty: (T) -> Boolean = { false },
     empty: @Composable () -> Unit = {},
     content: @Composable (T) -> Unit,
@@ -100,7 +101,7 @@ fun <T> AppLoadStateContent(
             modifier = modifier.testTag(APP_LOAD_STATE_FAILED_TAG),
             action = {
                 AppTextButton(
-                    text = "重试",
+                    text = WidgetsStrings.retry,
                     onClick = onRetry,
                     contentColor = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.onSurface else Color.Unspecified,
                 )

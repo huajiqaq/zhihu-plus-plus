@@ -71,6 +71,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.SegmentInfoMeta
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.markdown.SEGMENT_SELECTION_BLOCK_ATTRIBUTE
 import com.github.zly2006.zhihu.markdown.SegmentSelectionRange
 import com.github.zly2006.zhihu.markdown.expandPlainTextSegmentSelection
@@ -78,7 +79,6 @@ import com.github.zly2006.zhihu.markdown.validatePlainTextSegmentSelection
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.util.SegmentHighlightSpan
-import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.comment.SegmentCommentEvents
@@ -91,15 +91,18 @@ import com.hrm.markdown.parser.ast.Node
 import com.hrm.markdown.parser.ast.Paragraph
 import com.hrm.markdown.renderer.MarkdownSelectionActions
 import com.hrm.markdown.renderer.MarkdownSelectionInfo
+import io.ktor.client.call.body
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -107,8 +110,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 弹层须在选区子树外承载，避免跨窗口换算选择坐标。 */
 val LocalSegmentCommentHost = staticCompositionLocalOf<(SegmentCommentHolder) -> Unit> {
@@ -229,18 +230,18 @@ suspend fun createSegmentReactions(
     ranges: List<SegmentCreationRange>,
 ): List<Pair<SegmentCreationRange, String>> {
     if (environment.authenticatedCookies()["d_c0"].isNullOrBlank()) {
-        throw SegmentReactionException(SegmentReactionFailure.LOGIN_REQUIRED, "请先登录后操作段评")
+        throw SegmentReactionException(SegmentReactionFailure.LOGIN_REQUIRED, WidgetsStrings.segmentLoginRequired)
     }
     if (ranges.size > 1) {
-        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, "一次只能创建单段划线")
+        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, WidgetsStrings.singleParagraphOnly)
     }
     if (ranges.isEmpty()) return emptyList()
     if (target.contentId.isBlank() || target.contentType.isBlank()) {
-        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, "缺少 contentId 或 contentType")
+        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, WidgetsStrings.missingContentReference)
     }
     val range = ranges.single()
     if (range.text.length < 5) {
-        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, "请至少选择5个字后再喜欢或评论")
+        throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, WidgetsStrings.selectionTooShort)
     }
     val url = "https://www.zhihu.com/api/v4/reaction/${target.contentType}s/${target.contentId}/segment_reaction"
     try {
@@ -274,7 +275,7 @@ suspend fun createSegmentReactions(
         if (response.status != HttpStatusCode.OK && response.status != HttpStatusCode.Created) {
             throw SegmentReactionException(
                 SegmentReactionFailure.HTTP,
-                "创建划线失败: HTTP ${response.status.value}",
+                WidgetsStrings.highlightHttpError(response.status.value),
                 statusCode = response.status.value,
             )
         }
@@ -290,18 +291,18 @@ suspend fun createSegmentReactions(
             ?.contentOrNull
             ?.split(',')
             ?.firstOrNull { it.isNotBlank() }
-            ?: throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, "创建划线响应缺少 seg_id")
+            ?: throw SegmentReactionException(SegmentReactionFailure.MISSING_DATA, WidgetsStrings.highlightMissingId)
         return listOf(range to segId)
     } catch (error: CancellationException) {
         throw error
     } catch (error: ResponseException) {
         throw SegmentReactionException(
             SegmentReactionFailure.HTTP,
-            "创建划线失败: HTTP ${error.response.status.value}",
+            WidgetsStrings.highlightHttpError(error.response.status.value),
             statusCode = error.response.status.value,
         )
     } catch (error: IOException) {
-        throw SegmentReactionException(SegmentReactionFailure.NETWORK, "创建划线网络失败", cause = error)
+        throw SegmentReactionException(SegmentReactionFailure.NETWORK, WidgetsStrings.highlightNetworkError, cause = error)
     }
 }
 
@@ -473,15 +474,15 @@ fun buildSegmentSelectionMenuActions(
     onComment: ((String) -> Unit)?,
     onCancelLike: ((String) -> Unit)?,
 ): List<SegmentSelectionMenuItem> = buildList {
-    add(SegmentSelectionMenuItem("复制", onCopy))
-    add(SegmentSelectionMenuItem("全选", onSelectAll))
+    add(SegmentSelectionMenuItem(WidgetsStrings.copy, onCopy))
+    add(SegmentSelectionMenuItem(WidgetsStrings.selectAll, onSelectAll))
     if (liked && onCancelLike != null) {
-        add(SegmentSelectionMenuItem("取消喜欢") { onCancelLike(selectedText) })
+        add(SegmentSelectionMenuItem(WidgetsStrings.unlike) { onCancelLike(selectedText) })
     } else if (onLike != null) {
-        add(SegmentSelectionMenuItem("喜欢") { onLike(selectedText) })
+        add(SegmentSelectionMenuItem(WidgetsStrings.like) { onLike(selectedText) })
     }
     if (onComment != null) {
-        add(SegmentSelectionMenuItem("评论") { onComment(selectedText) })
+        add(SegmentSelectionMenuItem(WidgetsStrings.comment) { onComment(selectedText) })
     }
 }
 
@@ -604,11 +605,11 @@ fun SegmentHighlightInteractionHost(
                 },
                 onLikeClick = {
                     if (!accountStore.session.login) {
-                        onError("请先登录后操作段评")
+                        onError(WidgetsStrings.segmentLoginRequired)
                     } else {
                         coroutineScope.launch {
                             try {
-                                val updatedMeta = toggleSegmentLike(environment, selected.copy(meta = baseMeta ?: selectedMeta))
+                                val updatedMeta = toggleSegmentLike(environment, selected.copy(meta = baseMeta))
                                 metaStates[selectedKey] = updatedMeta
                                 if (updatedMeta.isLike) removedHighlights.remove(selectedKey)
                                 if (!updatedMeta.isLike &&
@@ -621,14 +622,14 @@ fun SegmentHighlightInteractionHost(
                             } catch (error: CancellationException) {
                                 throw error
                             } catch (error: Exception) {
-                                onError("段评操作失败：${error.message ?: "请重试"}")
+                                onError(WidgetsStrings.segmentActionFailed(error.message ?: WidgetsStrings.tryAgain))
                             }
                         }
                     }
                 },
                 onCommentClick = {
                     when {
-                        commentTarget == null -> onError("缺少段落定位，无法打开段评")
+                        commentTarget == null -> onError(WidgetsStrings.missingParagraphLocation)
                         onOpenQuotedComments != null -> onOpenQuotedComments(commentTarget)
                         else -> {
                             selectedHighlight = null
@@ -638,7 +639,7 @@ fun SegmentHighlightInteractionHost(
                     }
                 },
                 onCopyClick = {
-                    copyPlainText("segment_text", selected.displayText)
+                    copyPlainText(WidgetsStrings.highlightedPassage, selected.displayText)
                     selectedHighlight = null
                     showSegmentActionSheet(null)
                 },
@@ -659,9 +660,9 @@ suspend fun toggleSegmentLike(
     environment: PaginationEnvironment,
     highlight: SegmentHighlightSpan,
 ): SegmentInfoMeta {
-    check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { "请先登录后操作段评" }
-    val contentId = checkNotNull(highlight.contentId?.takeIf(String::isNotBlank)) { "缺少 contentId" }
-    val targetType = checkNotNull(highlight.contentType?.takeIf(String::isNotBlank)) { "缺少 contentType" }
+    check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { WidgetsStrings.segmentLoginRequired }
+    val contentId = checkNotNull(highlight.contentId?.takeIf(String::isNotBlank)) { WidgetsStrings.missingContentId }
+    val targetType = checkNotNull(highlight.contentType?.takeIf(String::isNotBlank)) { WidgetsStrings.missingContentType }
     val url = "https://www.zhihu.com/api/v4/reaction/${targetType}s/$contentId/segment_reaction"
 
     return if (highlight.meta.isLike) {
@@ -670,7 +671,7 @@ suspend fun toggleSegmentLike(
                 contentType(ContentType.Application.Json)
                 setBody(buildSegmentUnlikeBody(highlight))
             }.raiseForStatus()
-        check(response.status.value in 200..299) { "取消段评喜欢失败：HTTP ${response.status.value}" }
+        check(response.status.value in 200..299) { WidgetsStrings.segmentUnlikeHttpError(response.status.value) }
         updateSegmentMetaAfterUnlike(highlight)
     } else {
         val response = environment
@@ -678,10 +679,10 @@ suspend fun toggleSegmentLike(
                 contentType(ContentType.Application.Json)
                 setBody(buildSegmentLikeBody(highlight))
             }.raiseForStatus()
-        check(response.status.value in 200..299) { "喜欢段评失败：HTTP ${response.status.value}" }
+        check(response.status.value in 200..299) { WidgetsStrings.segmentLikeHttpError(response.status.value) }
         updateSegmentMetaAfterLike(
             highlight,
-            if (response.status == HttpStatusCode.NoContent) null else response.json() as? JsonObject,
+            if (response.status == HttpStatusCode.NoContent) null else response.body<JsonElement>() as? JsonObject,
         )
     }
 }
@@ -715,7 +716,7 @@ fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetS
             .padding(horizontal = 20.dp, vertical = 8.dp),
         content = {
             Text(
-                text = "划线片段",
+                text = WidgetsStrings.highlightedPassage,
                 modifier = Modifier.layoutId("title"),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -754,9 +755,9 @@ fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetS
                     containerColor = actionColors.containerColor,
                     contentColor = actionColors.contentColor,
                 ) {
-                    Icon(
+                    AppIcon(
                         imageVector = if (highlight.meta.isLike) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = if (highlight.meta.isLike) "取消喜欢" else "喜欢",
+                        contentDescription = if (highlight.meta.isLike) WidgetsStrings.unlike else WidgetsStrings.like,
                     )
                     Text(
                         text = highlight.meta.likeCount.toString(),
@@ -769,9 +770,9 @@ fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetS
                     containerColor = actionColors.containerColor,
                     contentColor = actionColors.contentColor,
                 ) {
-                    Icon(
+                    AppIcon(
                         imageVector = Icons.AutoMirrored.Outlined.Comment,
-                        contentDescription = "评论",
+                        contentDescription = WidgetsStrings.comment,
                     )
                     Text(
                         text = highlight.meta.commentCount.toString(),
@@ -779,9 +780,9 @@ fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetS
                     )
                 }
                 AppIconButton(onClick = state.onCopyClick) {
-                    Icon(
+                    AppIcon(
                         imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "复制内容",
+                        contentDescription = WidgetsStrings.copyContent,
                     )
                 }
             }
@@ -804,7 +805,7 @@ fun SegmentActionSheetContent(state: SegmentActionSheetState, sheetState: SheetS
         val naturalHeight = title.height + naturalTextHeight + actions.height + spacing * 2
         val needsPartialExpansion = sheetState != null && naturalHeight > constraints.maxHeight / 2
         val layoutHeight = if (needsPartialExpansion) constraints.maxHeight else naturalHeight.coerceAtMost(constraints.maxHeight)
-        val visibleHeight = if (needsPartialExpansion && sheetState != null) {
+        val visibleHeight = if (needsPartialExpansion) {
             val sheetOffset = runCatching { sheetState.requireOffset() }
                 .getOrDefault(constraints.maxHeight.toFloat())
             (constraints.maxHeight - sheetOffset.roundToInt()).coerceIn(
@@ -874,7 +875,6 @@ private fun Node.readableText(): String = when (this) {
     is com.hrm.markdown.parser.ast.HardLineBreak -> "\n"
     is ContainerNode -> children.readablePlainText()
     is com.hrm.markdown.parser.ast.LeafNode -> literal
-    else -> ""
 }
 
 private fun Document.segmentHighlights(): List<SegmentHighlightSpan> {

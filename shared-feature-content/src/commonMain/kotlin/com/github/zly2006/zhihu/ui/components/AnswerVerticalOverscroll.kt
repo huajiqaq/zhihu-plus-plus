@@ -76,12 +76,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel.CachedAnswerContent
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import kotlin.math.tanh
+import kotlinx.coroutines.launch
 
 /**
  * 上下 overscroll 切换回答容器。
@@ -325,7 +326,7 @@ fun AnswerVerticalOverscroll(
                 authorName = previousAnswer.authorName,
                 excerpt = previousAnswer.title,
                 avatarUrl = previousAnswer.authorAvatarUrl,
-                label = "${previousAnswer.sourceLabel}的上一个回答",
+                label = ContentStrings.previousAnswerFrom(previousAnswer.sourceLabel),
                 icon = Icons.Filled.ArrowUpward,
                 isTriggered = overscrollOffset.value >= triggerThresholdPx,
                 progress = progress,
@@ -342,7 +343,7 @@ fun AnswerVerticalOverscroll(
                 authorName = nextAnswer.authorName,
                 excerpt = nextAnswer.title,
                 avatarUrl = nextAnswer.authorAvatarUrl,
-                label = "${nextAnswer.sourceLabel}的下一个回答",
+                label = ContentStrings.nextAnswerFrom(nextAnswer.sourceLabel),
                 icon = Icons.Filled.ArrowDownward,
                 isTriggered = abs(overscrollOffset.value) >= triggerThresholdPx,
                 progress = progress,
@@ -405,7 +406,7 @@ private fun AnswerPreviewCard(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (isTriggered) "松手切换" else label,
+                    text = if (isTriggered) ContentStrings.releaseToSwitch else label,
                     style = MaterialTheme.typography.labelSmall,
                     color = contentColor,
                     fontWeight = if (isTriggered) FontWeight.Bold else FontWeight.Normal,
@@ -417,7 +418,7 @@ private fun AnswerPreviewCard(
                 if (avatarUrl.isNotEmpty()) {
                     AsyncImage(
                         model = avatarUrl,
-                        contentDescription = "头像",
+                        contentDescription = ContentStrings.avatar,
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape),

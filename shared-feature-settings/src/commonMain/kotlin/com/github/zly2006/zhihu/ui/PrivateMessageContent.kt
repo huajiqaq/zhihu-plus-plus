@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
 
 internal fun ZhihuPrivateMessage.displayContent(
@@ -35,7 +36,7 @@ internal fun ZhihuPrivateMessage.displayContent(
 ): AnnotatedString {
     val source = plugin?.excerpt?.takeIf(String::isNotBlank)
         ?: content.takeIf(String::isNotBlank)
-        ?: return AnnotatedString("暂不支持显示这条消息")
+        ?: return AnnotatedString(NotificationsStrings.privateUnsupported)
     val document = Ksoup.parseBodyFragment(source)
     val text = document.text()
 

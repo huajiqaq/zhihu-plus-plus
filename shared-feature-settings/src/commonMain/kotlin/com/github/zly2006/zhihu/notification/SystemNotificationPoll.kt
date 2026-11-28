@@ -20,21 +20,23 @@ package com.github.zly2006.zhihu.notification
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
-import com.github.zly2006.zhihu.util.jsonObject
 import com.github.zly2006.zhihu.util.raiseForStatus
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 internal data class SystemNotificationCheckpoint(
@@ -81,13 +83,13 @@ internal fun systemNotificationPageUrl(entry: String, candidate: String? = null)
             url.password.isNullOrEmpty() &&
             url.fragment.isEmpty() &&
             ((url.protocol == URLProtocol.HTTPS && url.port == 443) || (url.protocol == URLProtocol.HTTP && url.port == 80)),
-    ) { "通知分页地址不受信任" }
+    ) { NotificationsStrings.pageUntrusted }
     return url.toString().replaceFirst("http://", "https://")
 }
 
 /** 只借用现有 Mobile transport；不刷新票据、不创建客户端、不调用会自动标读的页面 ViewModel。 */
 internal suspend fun loadSystemNotificationPage(client: HttpClient, url: String): SystemNotificationPage =
-    ZhihuJson.decodeJson(client.get(url).raiseForStatus().jsonObject())
+    ZhihuJson.decodeJson(client.get(url).raiseForStatus().body<JsonObject>())
 
 /** 所有已启用时间线连续同步成功后才返回新检查点；异常、循环分页和取消均不产生部分进度。 */
 internal suspend fun pollSystemNotifications(
@@ -104,7 +106,7 @@ internal suspend fun pollSystemNotifications(
         var url = systemNotificationPageUrl(entry)
         while (true) {
             currentCoroutineContext().ensureActive()
-            check(visited.add(url)) { "通知分页未到达已有边界或末页" }
+            check(visited.add(url)) { NotificationsStrings.pageBoundaryMissing }
             val page = load(url)
             currentCoroutineContext().ensureActive()
             var overlaps = false
@@ -119,7 +121,7 @@ internal suspend fun pollSystemNotifications(
                 }
             }
             if (overlaps || page.paging.isEnd) break
-            check(page.paging.next.isNotBlank()) { "通知分页缺少下一页" }
+            check(page.paging.next.isNotBlank()) { NotificationsStrings.pageNextMissing }
             url = systemNotificationPageUrl(entry, page.paging.next)
         }
         seen[entry] = known + fetched

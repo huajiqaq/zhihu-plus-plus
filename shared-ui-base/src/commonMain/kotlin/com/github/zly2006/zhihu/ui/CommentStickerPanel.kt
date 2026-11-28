@@ -48,6 +48,7 @@ import com.github.zly2006.zhihu.editor.ZhihuImageUploadSource
 import com.github.zly2006.zhihu.editor.isImagePickerSupported
 import com.github.zly2006.zhihu.editor.rememberImagePickerLauncher
 import com.github.zly2006.zhihu.editor.uploadZhihuImage
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
@@ -134,11 +135,11 @@ internal fun rememberCommentStickerPanelState(
                         ZhihuImageUploadSource.Zim,
                     )
                     val token = uploaded.hash
-                        ?: throw IllegalStateException("未拿到图片 token")
+                        ?: throw IllegalStateException(CommentsStrings.imageTokenMissing)
                     val uploadedStickers = uploadCommentSticker(paginationEnvironment, token)
                     collectedStickers = (uploadedStickers + collectedStickers).distinctBy { it.id }
                     emojiEntry = EmojiPanelEntry.Favorites
-                    userMessages.showShortMessage("表情已上传")
+                    userMessages.showShortMessage(CommentsStrings.stickerUploaded)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: StickerAlreadyCollectedException) {
@@ -147,12 +148,12 @@ internal fun rememberCommentStickerPanelState(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
-                        userMessages.showShortMessage("刷新收藏失败，请重新打开表情面板")
+                        userMessages.showShortMessage(CommentsStrings.refreshStickersFailed)
                     }
                     emojiEntry = EmojiPanelEntry.Favorites
-                    userMessages.showShortMessage("该表情已在收藏中")
+                    userMessages.showShortMessage(CommentsStrings.stickerAlreadySaved)
                 } catch (e: Exception) {
-                    userMessages.showShortMessage("表情上传失败：${e.message}")
+                    userMessages.showShortMessage(CommentsStrings.stickerUploadFailed(e.message.orEmpty()))
                 } finally {
                     isUploadingSticker = false
                 }
@@ -172,7 +173,7 @@ internal fun rememberCommentStickerPanelState(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            userMessages.showShortMessage("表情分组加载失败，请重新打开表情面板")
+            userMessages.showShortMessage(CommentsStrings.stickerGroupsFailed)
         } finally {
             stickerGroupsLoading = false
         }
@@ -192,7 +193,7 @@ internal fun rememberCommentStickerPanelState(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    userMessages.showShortMessage("收藏表情加载失败，请重新打开表情面板")
+                    userMessages.showShortMessage(CommentsStrings.savedStickersFailed)
                 } finally {
                     emojiPanelLoading = false
                 }
@@ -214,7 +215,7 @@ internal fun rememberCommentStickerPanelState(
                         throw e
                     } catch (_: Exception) {
                         groupStickers = emptyList()
-                        userMessages.showShortMessage("贴纸加载失败，请重新打开表情面板")
+                        userMessages.showShortMessage(CommentsStrings.stickersLoadFailed)
                     } finally {
                         emojiPanelLoading = false
                     }
@@ -231,11 +232,11 @@ internal fun rememberCommentStickerPanelState(
                     sticker.id,
                 )
                 collectedStickers = collectedStickers - sticker
-                userMessages.showShortMessage("已取消收藏")
+                userMessages.showShortMessage(CommentsStrings.stickerUnsaved)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                userMessages.showShortMessage("取消收藏失败：${e.message}")
+                userMessages.showShortMessage(CommentsStrings.unsaveStickerFailed(e.message.orEmpty()))
             }
         }
     }
@@ -249,11 +250,11 @@ internal fun rememberCommentStickerPanelState(
                     listOf(sticker.copy(collected = true)) +
                         collectedStickers
                 ).distinctBy { it.id }
-                userMessages.showShortMessage("已收藏")
+                userMessages.showShortMessage(CommentsStrings.stickerSaved)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                userMessages.showShortMessage("收藏失败：${e.message}")
+                userMessages.showShortMessage(CommentsStrings.saveStickerFailed(e.message.orEmpty()))
             }
         }
     }
@@ -298,7 +299,7 @@ internal fun CommentScreenEmojiPanel(
             item(key = "default") {
                 EmojiPanelChip(
                     selected = panel.emojiEntry == EmojiPanelEntry.Default,
-                    label = "默认表情包",
+                    label = CommentsStrings.defaultEmojis,
                     onClick = { panel.emojiEntry = EmojiPanelEntry.Default },
                     testTag = COMMENT_EMOJI_TAB_TAG_PREFIX + "default",
                 )
@@ -306,7 +307,7 @@ internal fun CommentScreenEmojiPanel(
             item(key = "favorites") {
                 EmojiPanelChip(
                     selected = panel.emojiEntry == EmojiPanelEntry.Favorites,
-                    label = "收藏",
+                    label = CommentsStrings.saved,
                     icon = Icons.Filled.Favorite,
                     onClick = { panel.emojiEntry = EmojiPanelEntry.Favorites },
                     testTag = COMMENT_EMOJI_TAB_TAG_PREFIX + "favorites",
@@ -320,7 +321,7 @@ internal fun CommentScreenEmojiPanel(
                     selected = (panel.emojiEntry as? EmojiPanelEntry.Group)
                         ?.group
                         ?.id == group.id,
-                    label = group.title.ifBlank { "贴纸" },
+                    label = group.title.ifBlank { CommentsStrings.sticker },
                     onClick = { panel.emojiEntry = EmojiPanelEntry.Group(group) },
                     testTag = COMMENT_EMOJI_TAB_TAG_PREFIX + "group_${group.id}",
                 )
@@ -333,7 +334,7 @@ internal fun CommentScreenEmojiPanel(
                     selected = (panel.emojiEntry as? EmojiPanelEntry.Group)
                         ?.group
                         ?.id == group.id,
-                    label = group.title.ifBlank { "会员贴纸" },
+                    label = group.title.ifBlank { CommentsStrings.memberStickers },
                     isVip = true,
                     onClick = { panel.emojiEntry = EmojiPanelEntry.Group(group) },
                     testTag = COMMENT_EMOJI_TAB_TAG_PREFIX + "vip_${group.id}",

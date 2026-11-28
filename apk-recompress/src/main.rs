@@ -337,7 +337,6 @@ fn sign_apk_with_apksigner(config: &Config) -> Result<(), Box<dyn std::error::Er
         exit(1);
     }
 
-    // 使用apksigner签名APK
     println!("正在使用apksigner签名APK...");
     let output = Command::new(&config.apksigner_path)
         .arg("sign")
@@ -359,10 +358,8 @@ fn sign_apk_with_apksigner(config: &Config) -> Result<(), Box<dyn std::error::Er
     match output {
         Ok(result) => {
             if result.status.success() {
-                println!("APK签名成功！");
-
-                // 验证签名
                 verify_apk_signature(&config.output_apk, &config.apksigner_path)?;
+                println!("APK签名成功！");
             } else {
                 let error_msg = String::from_utf8_lossy(&result.stderr);
                 eprintln!("apksigner签名失败: {}", error_msg);
@@ -397,10 +394,12 @@ fn verify_apk_signature(apk_path: &str, apksigner_path: &str) -> Result<(), Box<
             } else {
                 let error_msg = String::from_utf8_lossy(&result.stderr);
                 eprintln!("APK签名验证失败: {}", error_msg);
+                return Err(format!("APK签名验证失败: {}", error_msg).into());
             }
         }
         Err(e) => {
             eprintln!("无法执行apksigner verify命令: {}", e);
+            return Err(e.into());
         }
     }
 

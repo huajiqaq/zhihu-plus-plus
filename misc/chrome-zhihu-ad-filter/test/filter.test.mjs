@@ -82,6 +82,7 @@ function findById(node, id) {
 const fakeDocument = {
   body: new FakeElement('body'),
   documentElement: new FakeElement('html'),
+  currentScript: {dataset: {filtered: 'Filtered: {title}', untitled: 'Untitled item'}},
   createElement: (tagName) => new FakeElement(tagName),
   getElementById(id) {
     return findById(this.body, id) || findById(this.documentElement, id);
@@ -188,7 +189,7 @@ const secondToast = toastContainer.children[1];
 const firstText = firstToast.children[1];
 const secondText = secondToast.children[1];
 
-assert.ok(firstText.textContent.includes('付费回答标题'), '第一条提示应包含被过滤回答的标题');
+assert.equal(firstText.textContent, 'Filtered: 付费回答标题', '只翻译提示，不翻译远端标题');
 assert.ok(secondText.textContent.includes('学堂文章标题'), '第二条提示应包含被过滤文章的标题');
 
 assert.equal(

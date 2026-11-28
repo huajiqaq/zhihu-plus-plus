@@ -19,13 +19,20 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>zh_CN</string>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+    </array>
     <key>CFBundleExecutable</key>
     <string>ZhihuPlusPlus</string>
     <key>CFBundleIdentifier</key>
     <string>com.github.zly2006.zhihu.macos</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleDisplayName</key>
+    <string>Zhihu++</string>
     <key>CFBundleName</key>
     <string>Zhihu++</string>
     <key>CFBundlePackageType</key>
@@ -35,7 +42,9 @@
     <key>CFBundleVersion</key>
     <string>@APP_VERSION_CODE@</string>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>14.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record voice comments you choose to send.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

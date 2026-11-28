@@ -17,14 +17,15 @@
 
 package com.github.zly2006.zhihu.viewmodel.local
 
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.viewmodel.local.LocalContentAffinity
 import com.github.zly2006.zhihu.viewmodel.local.LocalContentStats
 import com.github.zly2006.zhihu.viewmodel.local.LocalReasonPreference
 import com.github.zly2006.zhihu.viewmodel.local.LocalReasonStats
 import com.github.zly2006.zhihu.viewmodel.local.buildLocalRecommendationSignal
+import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
 
 class UserBehaviorAnalyzer(
     private val dao: LocalContentDao,
@@ -104,8 +105,8 @@ class UserBehaviorAnalyzer(
                     likeWeight = 0.35,
                     dislikeWeight = 0.45,
                     multiplierRange = 0.55..1.6,
-                    likedExplanation = "你最近更偏好这类来源",
-                    clickedExplanation = "你经常点开这类来源",
+                    likedExplanation = FeedStrings.preferredSource,
+                    clickedExplanation = FeedStrings.frequentSource,
                 )
                 LocalReasonPreference(multiplier = signal.multiplier, explanation = signal.explanation)
             },
@@ -118,8 +119,8 @@ class UserBehaviorAnalyzer(
                     likeWeight = 0.40,
                     dislikeWeight = 0.70,
                     multiplierRange = 0.15..1.8,
-                    likedExplanation = "你明确喜欢过类似内容",
-                    clickedExplanation = "你最近点开过类似内容",
+                    likedExplanation = FeedStrings.likedContent,
+                    clickedExplanation = FeedStrings.openedContent,
                 )
                 LocalContentAffinity(multiplier = signal.multiplier, explanation = signal.explanation)
             },

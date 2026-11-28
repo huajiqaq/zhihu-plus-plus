@@ -37,11 +37,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set Up JDK
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
-          distribution: 'zulu'
-          java-version: '21'
+          distribution: temurin
+          java-version: '25'
           problem-matcher: true
 
       - name: Prepare build inputs
@@ -75,78 +75,43 @@ jobs:
           esac
           echo "suffix=$os-$arch" >> "$GITHUB_OUTPUT"
 
-      - name: Build desktop distribution
-        if: runner.os != 'macOS'
-        shell: bash
-        run: ./gradlew ${{ inputs.args }} :desktopApp:packageReleaseDistributionForCurrentOS
-
-      - name: Package Windows MSI
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          mkdir -p desktopApp/build/upload
-          msi="$(find desktopApp/build/compose/binaries -name '*.msi' | head -n 1)"
-          test -n "$msi"
-          cp "$msi" "desktopApp/build/upload/zhihu++-desktop-${{ steps.desktop_suffix.outputs.suffix }}.msi"
-
-      - name: Package Linux AppImage
+      - name: Install Linux reading and AppImage build dependencies
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          mkdir -p desktopApp/build/upload
-          # Compose 的 TargetFormat.AppImage 只产出 jpackage 的 app-image 目录，
-          # 需要再用 appimagetool 封装成单文件 .AppImage
-          images_dir="$(find desktopApp/build/compose/binaries -type d -name app -mindepth 2 -maxdepth 2 | head -n 1)"
-          test -n "$images_dir"
-          app_dir="$(find "$images_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-          test -d "$app_dir/bin"
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libspeechd-dev libglib2.0-dev libjson-glib-dev \
+            speech-dispatcher speech-dispatcher-espeak-ng patchelf pax-utils
 
-          appdir="$RUNNER_TEMP/zhihu-appdir"
-          rm -rf "$appdir"
-          mkdir -p "$appdir/usr/share/icons/hicolor/512x512/apps"
-          cp -a "$app_dir/." "$appdir/"
+      - name: Build desktop release app-image
+        if: runner.os != 'macOS'
+        shell: bash
+        run: ./gradlew ${{ inputs.args }} :desktopApp:createReleaseDistributable
 
-          icon_name="com.github.zly2006.zhihu"
-          # 根目录那份是给 appimagetool 校验用的（它不认 hicolor 子目录），hicolor 那份用于安装后的桌面集成
-          cp desktopApp/src/main/resources/desktop-icon.png "$appdir/$icon_name.png"
-          cp desktopApp/src/main/resources/desktop-icon.png "$appdir/usr/share/icons/hicolor/512x512/apps/$icon_name.png"
-          ln -s "$icon_name.png" "$appdir/.DirIcon"
+      - name: Package Windows MSI with installer-owned notification registration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ARTIFACT_SUFFIX: ${{ steps.desktop_suffix.outputs.suffix }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'zhihu-release-msi'
+          & ./.github/scripts/package-windows-msi.ps1 `
+            -AppImage 'desktopApp/build/compose/binaries/main-release/app/Zhihu++' `
+            -OutputDirectory $output
+          New-Item -ItemType Directory -Path desktopApp/build/upload -Force | Out-Null
+          Copy-Item -Path (Join-Path $output '*.msi') -Destination "desktopApp/build/upload/zhihu++-desktop-$env:ARTIFACT_SUFFIX.msi"
 
-          launcher_name="$(basename "$(find "$appdir/bin" -maxdepth 1 -type f -perm -u+x | head -n 1)")"
-          test -n "$launcher_name"
-
-          cat > "$appdir/zhihu-plus-plus.desktop" <<EOF
-          [Desktop Entry]
-          Type=Application
-          Name=Zhihu++
-          Comment=自由、无广告的知乎第三方客户端
-          Exec=AppRun
-          Icon=$icon_name
-          Terminal=false
-          Categories=Network;
-          EOF
-
-          cat > "$appdir/AppRun" <<EOF
-          #!/bin/sh
-          HERE="\$(dirname "\$(readlink -f "\$0")")"
-          exec "\$HERE/bin/$launcher_name" "\$@"
-          EOF
-          chmod +x "$appdir/AppRun"
-
-          out="desktopApp/build/upload/zhihu++-desktop-${{ steps.desktop_suffix.outputs.suffix }}.AppImage"
-          abs_out="$PWD/$out"
-          appimagetool="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
-          appimagetool_version="1.9.1"
-          appimagetool_sha256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
-          curl -fsSL -o "$appimagetool" \
-            "https://github.com/AppImage/appimagetool/releases/download/$appimagetool_version/appimagetool-x86_64.AppImage"
-          printf '%s  %s\n' "$appimagetool_sha256" "$appimagetool" | sha256sum --check --status -
-          chmod +x "$appimagetool"
-          "$appimagetool" --appimage-extract-and-run "$appdir" "$abs_out"
-
-          # 产物自检：能 --appimage-extract 说明 squashfs 完整
-          (cd "$RUNNER_TEMP" && "$abs_out" --appimage-extract >/dev/null 2>&1)
-          rm -rf "$RUNNER_TEMP/squashfs-root"
+      - name: Package Linux AppImage with private reading libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ARTIFACT_SUFFIX: ${{ steps.desktop_suffix.outputs.suffix }}
+        run: |
+          python -I .github/scripts/package-linux-appimage.py \
+            --app-image 'desktopApp/build/compose/binaries/main-release/app/Zhihu++' \
+            --icon desktopApp/src/main/composeResources/drawable/desktop_icon.png \
+            --output "desktopApp/build/upload/zhihu++-desktop-$ARTIFACT_SUFFIX.AppImage"
 
       - name: Upload desktop package
         if: runner.os != 'macOS'
@@ -207,8 +172,8 @@ jobs:
       - name: Set Up JDK
         uses: actions/setup-java@v6
         with:
-          distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
-          java-version: '21'
+          distribution: temurin
+          java-version: '25'
           problem-matcher: true
       - name: Setup rust
         uses: actions-rust-lang/setup-rust-toolchain@v1

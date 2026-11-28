@@ -8,7 +8,7 @@ license: CC BY-NC-SA 4.0
 
 ## 环境
 
-使用用户允许的设备或模拟器。明确 `ANDROID_SERIAL`；远端设备的 ADB 和脚本在同一远端环境运行，不把远端启动检查接到本机 ADB。没有可用环境就报告阻塞，不擅自创建 AVD 或修改设备配置。
+仅使用获准的 AVD，设备边界见 [协作说明](../../../CLAUDE.md#构建与验证)。明确 `ANDROID_SERIAL`；远端 ADB 和脚本在同一远端环境运行，没有可用环境就报告阻塞。
 
 构建与安装见 [Android 部署](../launch-on-device/SKILL.md)。登录数据只在获准后恢复；不要把登录页截图当成业务页验证。
 
@@ -19,9 +19,9 @@ license: CC BY-NC-SA 4.0
 ```bash
 export ANDROID_SERIAL='<目标设备序列号>'
 python3 .agents/skills/ui-test/llm_test_helper.py dump
-python3 .agents/skills/ui-test/llm_test_helper.py find --desc '更多选项' --within-text '<卡片标题>'
+python3 .agents/skills/ui-test/llm_test_helper.py find --tag feed_card_more_btn --within-text '<卡片标题>'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --tag nav_tab_home
-python3 .agents/skills/ui-test/llm_test_helper.py tap --desc '更多选项' --within-text '<卡片标题>'
+python3 .agents/skills/ui-test/llm_test_helper.py tap --tag feed_card_more_btn --within-text '<卡片标题>'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --text '取消'
 python3 .agents/skills/ui-test/llm_test_helper.py tap --desc '返回'
 python3 .agents/skills/ui-test/llm_test_helper.py screenshot '<输出 PNG 路径>'
@@ -33,7 +33,7 @@ python3 .agents/skills/ui-test/llm_test_helper.py screenshot '<输出 PNG 路径
 
 - 优先使用稳定 tag，支持裸 tag 和 `<包名>:id/<tag>`。
 - 相同 tag 出现多次时，用 `--within-text` 限定卡片；仍有多个候选时加 `--index N`，从 0 开始。
-- 没有 tag 时使用显示文字或 contentDescription。`--desc` 不支持 index；歧义时换 tag 或文字定位。
+- 没有 tag 时使用显示文字或 contentDescription。`--within-text` 仅用于 tag；文字支持 `--index`，`--desc` 不支持这两个参数。歧义时换 tag 或文字定位。
 - 无标识可点击节点可用 `--text '' --index N`；N 是本次空文本候选的序号，不是整个 dump 的编号。
 - `[C]` 表示可点击，`[N]` 表示只读信息。弹窗出现时脚本尽量限定在弹窗内容内；先确认范围没有选错。
 - 歧义、找不到或越界都停止并重新检查，不静默选第一个，不使用旧截图的坐标。

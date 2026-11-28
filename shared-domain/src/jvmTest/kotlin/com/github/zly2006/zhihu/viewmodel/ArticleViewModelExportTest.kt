@@ -18,40 +18,224 @@
 package com.github.zly2006.zhihu.viewmodel
 
 import androidx.lifecycle.viewModelScope
+import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
+import com.github.zly2006.zhihu.platform.UserMessageSink
+import com.github.zly2006.zhihu.util.ArticleExportComment
+import com.github.zly2006.zhihu.util.ArticleExportData
+import com.github.zly2006.zhihu.util.buildArticleExportCommentsHtml
+import com.github.zly2006.zhihu.util.inlineArticleExportImagesForOfflineHtml
+import com.github.zly2006.zhihu.util.renderArticleExportHtml
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CopyableThrowable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
+import kotlinx.coroutines.withTimeout
 
 class ArticleViewModelExportTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun exportRemovesActiveContentWithoutLosingFormattingImagesMathOrFootnotes() = runTest {
+        val html = renderArticleExportHtml(
+            template = "<html><head><style>p { color: black }</style><script id='trusted'>/* local template */</script></head>" +
+                "<body><h1>{{title}}</h1>{{authorAvatar}}<main>{{bodyHtml}}</main>{{extraSections}}</body></html>",
+            exportData = ArticleExportData(
+                title = "标题 {{bodyHtml}}",
+                authorName = "作者",
+                authorBio = "简介",
+                authorAvatarSrc = "file:///synthetic-avatar.png",
+                voteUpCount = 0,
+                commentCount = 0,
+                content = """
+                    <script>untrusted()</script><style>@import 'https://example.invalid/style';</style>
+                    <form><input autofocus onfocus="untrusted()"></form>
+                    <iframe src="https://example.invalid/video" title="原视频"></iframe>
+                    <p id="body" onclick="untrusted()" style="background-color:#00ffff;background:url(file:///synthetic)">
+                        <strong>正文</strong><em>格式</em><a href="#ref-1">脚注</a>
+                        <a href="java&#x73;cript:untrusted()">不可执行链接</a>
+                    </p>
+                    <table><tr><td>表格</td></tr></table>
+                    <img id="photo" data-original="//example.invalid/photo.png" src="data:text/html,invalid" onerror="untrusted()">
+                    <img id="math" class="ee_img" eeimg="1" src="/equation?tex=x%5E2" style="vertical-align:-2px">
+                    <img src="content://synthetic/private"><img src="file:///synthetic/private">
+                    <img src="javascript:untrusted()"><img src="https://user:password@example.invalid/private">
+                    <sup data-draft-type="reference" data-numero="1" data-text="参考资料" data-url="/question/1">1</sup>
+                    <sup data-draft-type="reference" data-numero="2" data-text="保留说明" data-url="javascript:untrusted()">2</sup>
+                """.trimIndent(),
+            ),
+            extraSectionsHtml = buildArticleExportCommentsHtml(
+                listOf(ArticleExportComment("评论者", "<b>评论</b><img src='file:///synthetic'><script>untrusted()</script>", "日期", "javascript:untrusted()")),
+            ),
+        )
+        val document = Ksoup.parse(html)
+        assertEquals("trusted", document.select("script").single().id())
+        assertEquals(1, document.select("style").size, "保留受信模板，不保留正文样式表")
+        assertTrue(document.select("iframe, form, input, [onclick], [onerror], [srcset]").isEmpty())
+        assertEquals("标题 {{bodyHtml}}", document.selectFirst("h1")!!.text(), "内容不能触发第二轮模板替换")
+        assertEquals("正文", document.selectFirst("strong")!!.text())
+        assertEquals("表格", document.selectFirst("td")!!.text())
+        assertEquals("background-color:#00ffff", document.selectFirst("#body")!!.attr("style"))
+        assertEquals("https://example.invalid/photo.png", document.selectFirst("#photo")!!.attr("src"))
+        assertEquals("https://www.zhihu.com/equation?tex=x%5E2", document.selectFirst("#math")!!.attr("src"))
+        assertEquals("vertical-align:-2px", document.selectFirst("#math")!!.attr("style"))
+        assertEquals(2, document.select("img").size)
+        assertTrue(document.select("a").any { it.attr("href") == "#ref-1" })
+        assertTrue(document.select("a").any { it.attr("href") == "https://example.invalid/video" && it.text() == "原视频" })
+        assertFalse(document.select("a").first { it.text() == "不可执行链接" }.hasAttr("href"))
+        val references = document.select("sup[data-draft-type=reference]")
+        assertEquals("https://www.zhihu.com/question/1", references[0].attr("data-url"))
+        assertEquals("参考资料", references[0].attr("data-text"))
+        assertFalse(references[1].hasAttr("data-url"))
+        assertEquals("评论", document.selectFirst(".comment-content b")!!.text())
+
+        val requested = mutableListOf<String>()
+        val engine = MockEngine(
+            MockEngineConfig().apply {
+                dispatcher = StandardTestDispatcher(testScheduler)
+                addHandler { request ->
+                    val path = request.url.encodedPath
+                    requested += path
+                    if (path == "/still-open") {
+                        assertEquals("synthetic-only", request.headers[HttpHeaders.Authorization])
+                    } else {
+                        assertNull(request.headers[HttpHeaders.Authorization])
+                        assertNull(request.headers[HttpHeaders.Cookie])
+                    }
+                    when (path) {
+                        "/photo.png" -> respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://cdn.example.invalid/images/step"))
+                        "/images/step" -> respond("", HttpStatusCode.TemporaryRedirect, headersOf(HttpHeaders.Location, "../photo-ready.png"))
+                        "/broken" -> respond("", HttpStatusCode.NotFound)
+                        "/downgrade" -> respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "http://example.invalid/forbidden"))
+                        "/credentials" -> respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://synthetic:only@example.invalid/forbidden"))
+                        "/loop" -> respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "#again"))
+                        "/missing-location" -> respond("", HttpStatusCode.Found)
+                        "/slow-start" -> {
+                            delay(8_000)
+                            respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "/slow-end"))
+                        }
+                        else -> {
+                            if (path.startsWith("/hops/")) {
+                                val hop = path.substringAfterLast('/').toInt()
+                                if (hop < 6) {
+                                    return@addHandler respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "/hops/${hop + 1}"))
+                                }
+                            }
+                            if (path == "/photo-ready.png") assertEquals("cdn.example.invalid", request.url.host)
+                            if (path == "/slow-end") delay(8_000)
+                            respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/png"))
+                        }
+                    }
+                }
+            },
+        )
+        val client = HttpClient(engine) {
+            defaultRequest {
+                header(HttpHeaders.Authorization, "synthetic-only")
+                header(HttpHeaders.Cookie, "synthetic=only")
+            }
+        }
+        try {
+            val offline = Ksoup.parse(inlineArticleExportImagesForOfflineHtml(html, client))
+            assertTrue(offline.select("img").all { it.attr("src") == "data:image/png;base64,AQID" })
+            assertEquals(setOf("/photo.png", "/images/step", "/photo-ready.png", "/equation"), requested.toSet())
+            assertEquals("trusted", offline.select("script").single().id())
+
+            val withFailedImage = inlineArticleExportImagesForOfflineHtml(
+                html = "<p>首段</p><img src='https://example.invalid/photo.png'>" +
+                    "<img src='https://example.invalid/broken' alt='&lt;script&gt;not markup&lt;/script&gt;'><p>末段</p>",
+                httpClient = client,
+                replaceFailedImagesWithPlaceholder = true,
+            )
+            val withPlaceholder = Ksoup.parse(withFailedImage)
+            assertEquals("data:image/png;base64,AQID", withPlaceholder.select("img").single().attr("src"))
+            assertEquals("[${WidgetsStrings.imageLoadFailed}] <script>not markup</script>", withPlaceholder.select(".export-image-placeholder").single().text())
+            assertTrue(withPlaceholder.select("script").isEmpty(), "占位文字与 alt 不能变成可执行 HTML")
+            assertEquals(listOf("首段", "末段"), withPlaceholder.select("p").map { it.text() })
+            assertFalse(withFailedImage.contains("https://"), "失败图片不能回退为联网资源")
+            assertFailsWith<IllegalStateException>("普通离线 HTML 仍严格报告缺图") {
+                inlineArticleExportImagesForOfflineHtml("<img src='https://example.invalid/broken'>", client)
+            }
+            for (path in listOf("downgrade", "credentials", "loop", "missing-location", "hops/0")) {
+                requested.clear()
+                assertFailsWith<Exception>(path) {
+                    inlineArticleExportImagesForOfflineHtml("<img src='https://example.invalid/$path'>", client)
+                }
+                assertFalse("/forbidden" in requested)
+                assertFalse("/hops/6" in requested, "最多跟随五次重定向")
+                if (path == "loop") assertEquals(listOf("/loop"), requested)
+            }
+            val fiveHops = Ksoup.parse(inlineArticleExportImagesForOfflineHtml("<img src='https://example.invalid/hops/1'>", client))
+            assertEquals("data:image/png;base64,AQID", fiveHops.select("img").single().attr("src"))
+            val startedAt = testScheduler.currentTime
+            val timeout = assertFailsWith<IllegalStateException> {
+                inlineArticleExportImagesForOfflineHtml("<img src='https://example.invalid/slow-start'>", client)
+            }
+            assertEquals(DomainStrings.renderTimedOut, timeout.message)
+            assertEquals(15_000L, testScheduler.currentTime - startedAt, "重定向不能重置整张图片的下载预算")
+            val timedOutImage = Ksoup.parse(
+                inlineArticleExportImagesForOfflineHtml(
+                    "<img src='https://example.invalid/slow-start'><p>末段</p>",
+                    client,
+                    replaceFailedImagesWithPlaceholder = true,
+                ),
+            )
+            assertTrue(timedOutImage.select("img").isEmpty())
+            assertEquals("[${WidgetsStrings.imageLoadFailed}]", timedOutImage.select(".export-image-placeholder").single().text())
+            assertEquals("末段", timedOutImage.select("p").single().text())
+            assertFailsWith<TimeoutCancellationException>("外部期限取消不能转成图片占位") {
+                withTimeout(100) {
+                    inlineArticleExportImagesForOfflineHtml(
+                        "<img src='https://example.invalid/slow-start'>",
+                        client,
+                        replaceFailedImagesWithPlaceholder = true,
+                    )
+                }
+            }
+            client.get("https://example.invalid/still-open")
+            assertTrue("/still-open" in requested, "关闭图片 client 不得关闭共享 engine")
+        } finally {
+            client.close()
+            engine.close()
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun loadArticlePublishesLoadingAndErrorThenRetriesWithoutLosingCachedContent() = runTest {
@@ -151,7 +335,14 @@ class ArticleViewModelExportTest {
         ) {
             installZhihuCommonClientConfig(mutableMapOf(), "export-cancellation-test")
         }
-        val model = ArticleViewModel(Article(type = ArticleType.Article, id = 1L), client)
+        val messages = mutableListOf<String>()
+        val model = ArticleViewModel(
+            Article(type = ArticleType.Article, id = 1L),
+            client,
+            object : UserMessageSink {
+                override fun showShortMessage(message: String) { messages += message }
+            },
+        )
         var export: Job? = null
         try {
             for (failureStage in 0..2) {
@@ -243,22 +434,24 @@ class ArticleViewModelExportTest {
                 } else {
                     export.join()
                 }
-                val error = escapedError.await()
                 if (failureStage == 2) {
-                    assertSame(recycleError, error, "没有主异常时不能吞掉清理失败")
+                    assertFalse(escapedError.isCompleted, "已保存的产物不能因清理失败被报告为导出失败")
+                    assertTrue(messages.last().contains(DomainStrings.exportCleanupFailed), "清理失败必须有可见警告")
                     assertFalse(export.isCancelled)
                     assertEquals(true, completed)
                     assertEquals(1, saved)
+                    assertEquals(listOf(destroyError), recycleError.suppressedExceptions)
                 } else {
+                    val error = escapedError.await()
                     assertSame(originalCancellation.await(), error, "清理失败不能替换真实取消异常")
                     assertTrue(export.isCancelled)
                     assertNull(completed, "取消不能被报告为成功或普通失败")
                     assertEquals(0, saved)
+                    val expectedSuppressed = if (failureStage == 1) 2 else 1
+                    assertEquals(expectedSuppressed, error.suppressedExceptions.size)
+                    if (failureStage == 1) assertSame(recycleError, error.suppressedExceptions[0])
+                    assertSame(destroyError, error.suppressedExceptions.last())
                 }
-                val expectedSuppressed = if (failureStage == 1) 2 else 1
-                assertEquals(expectedSuppressed, error.suppressedExceptions.size)
-                if (failureStage == 1) assertSame(recycleError, error.suppressedExceptions[0])
-                assertSame(destroyError, error.suppressedExceptions.last())
                 assertEquals(if (failureStage == 0) 0 else 1, recycled)
                 assertEquals(1, destroyed, "回收抛错后仍必须进入实际主线程销毁")
             }

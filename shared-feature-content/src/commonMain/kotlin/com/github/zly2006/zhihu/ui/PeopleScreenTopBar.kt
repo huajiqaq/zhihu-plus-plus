@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Velocity
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.UserMessageSink
@@ -58,16 +59,16 @@ import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppMetadataLoadState
 import com.github.zly2006.zhihu.ui.components.AppTabRow
 import com.github.zly2006.zhihu.ui.components.AppTopBar
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -131,7 +132,7 @@ internal fun PeopleScreenTopBar(
             AppTopBar(
                 title = {
                     Text(
-                        text = if (collapsedFraction > 0.5f) viewModel.name.ifBlank { person.name } else "个人主页",
+                        text = if (collapsedFraction > 0.5f) viewModel.name.ifBlank { person.name } else ContentStrings.profile,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -144,7 +145,7 @@ internal fun PeopleScreenTopBar(
                             onClick = onSearch,
                             modifier = Modifier.testTag(PEOPLE_SCREEN_SEARCH_BUTTON_TAG),
                         ) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索 TA 的创作", tint = skin.onSurfaceVariantActions)
+                            AppIcon(Icons.Default.Search, contentDescription = ContentStrings.searchAuthorContent, tint = skin.onSurfaceVariantActions)
                         }
                     }
                     Box {
@@ -152,12 +153,12 @@ internal fun PeopleScreenTopBar(
                             onClick = { onShowActionsMenuChange(true) },
                             modifier = Modifier.testTag(PEOPLE_SCREEN_MORE_BUTTON_TAG),
                         ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多选项", tint = skin.onSurfaceVariantActions)
+                            AppIcon(Icons.Default.MoreVert, contentDescription = ContentStrings.moreOptions, tint = skin.onSurfaceVariantActions)
                         }
                         AppDropdownMenu(expanded = showActionsMenu, onDismissRequest = { onShowActionsMenuChange(false) }) {
                             AppDropdownMenuItem(
-                                text = { Text(if (viewModel.isBlocking) "取消拉黑" else "拉黑", color = skin.error) },
-                                leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = skin.error) },
+                                text = { Text(if (viewModel.isBlocking) ContentStrings.unblockUser else ContentStrings.blockUser, color = skin.error) },
+                                leadingIcon = { AppIcon(Icons.Default.Block, contentDescription = null, tint = skin.error) },
                                 modifier = Modifier.testTag(PEOPLE_SCREEN_BLOCK_BUTTON_TAG),
                                 onClick = {
                                     onShowActionsMenuChange(false)
@@ -165,9 +166,9 @@ internal fun PeopleScreenTopBar(
                                         coroutineScope.launch {
                                             try {
                                                 viewModel.toggleBlock(paginationEnvironment)
-                                                userMessages.showShortMessage("已取消拉黑")
+                                                userMessages.showShortMessage(ContentStrings.userUnblocked)
                                             } catch (error: Exception) {
-                                                userMessages.showShortMessage("操作失败: ${error.message}")
+                                                userMessages.showShortMessage(ContentStrings.operationError(error.message))
                                             }
                                         }
                                     } else {
@@ -176,37 +177,37 @@ internal fun PeopleScreenTopBar(
                                 },
                             )
                             AppDropdownMenuItem(
-                                text = { Text(if (viewModel.isBlockedInRecommendations) "取消屏蔽推荐" else "屏蔽推荐") },
-                                leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) },
+                                text = { Text(if (viewModel.isBlockedInRecommendations) ContentStrings.unblockRecommendations else ContentStrings.blockRecommendations) },
+                                leadingIcon = { AppIcon(Icons.Default.VisibilityOff, contentDescription = null) },
                                 modifier = Modifier.testTag(PEOPLE_SCREEN_RECOMMENDATION_BLOCK_BUTTON_TAG),
                                 onClick = {
                                     onShowActionsMenuChange(false)
                                     coroutineScope.launch {
                                         try {
                                             viewModel.toggleRecommendationBlock(paginationEnvironment)
-                                            userMessages.showShortMessage(if (viewModel.isBlockedInRecommendations) "已屏蔽推荐" else "已取消屏蔽推荐")
+                                            userMessages.showShortMessage(if (viewModel.isBlockedInRecommendations) ContentStrings.recommendationsBlocked else ContentStrings.recommendationsUnblocked)
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (error: Exception) {
-                                            userMessages.showShortMessage("操作失败: ${error.message}")
+                                            userMessages.showShortMessage(ContentStrings.operationError(error.message))
                                         }
                                     }
                                 },
                             )
                             AppDropdownMenuItem(
-                                text = { Text(if (viewModel.isBlockedAsQuestionAuthor) "取消屏蔽其提问" else "屏蔽其提问") },
-                                leadingIcon = { Icon(Icons.Default.QuestionAnswer, contentDescription = null) },
+                                text = { Text(if (viewModel.isBlockedAsQuestionAuthor) ContentStrings.unblockQuestions else ContentStrings.blockQuestions) },
+                                leadingIcon = { AppIcon(Icons.Default.QuestionAnswer, contentDescription = null) },
                                 modifier = Modifier.testTag(PEOPLE_SCREEN_QUESTION_AUTHOR_BLOCK_BUTTON_TAG),
                                 onClick = {
                                     onShowActionsMenuChange(false)
                                     coroutineScope.launch {
                                         try {
                                             viewModel.toggleQuestionAuthorBlock(paginationEnvironment)
-                                            userMessages.showShortMessage(if (viewModel.isBlockedAsQuestionAuthor) "已屏蔽其提问" else "已取消屏蔽其提问")
+                                            userMessages.showShortMessage(if (viewModel.isBlockedAsQuestionAuthor) ContentStrings.questionsBlocked else ContentStrings.questionsUnblocked)
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (error: Exception) {
-                                            userMessages.showShortMessage("操作失败: ${error.message}")
+                                            userMessages.showShortMessage(ContentStrings.operationError(error.message))
                                         }
                                     }
                                 },
@@ -234,7 +235,7 @@ internal fun PeopleScreenTopBar(
                                 try {
                                     viewModel.toggleFollow(paginationEnvironment)
                                 } catch (e: Exception) {
-                                    userMessages.showShortMessage("操作失败: ${e.message}")
+                                    userMessages.showShortMessage(ContentStrings.operationError(e.message))
                                 }
                             }
                         },

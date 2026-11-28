@@ -29,24 +29,30 @@ import com.github.zly2006.zhihu.data.AigcVoteReadEvent
 import com.github.zly2006.zhihu.data.AigcVoteReadEventsRequest
 import com.github.zly2006.zhihu.data.AigcVoteReadEventsResponse
 import com.github.zly2006.zhihu.data.AigcVoteReadEvidence
+import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.isAigcVoteSupported
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlin.reflect.KMutableProperty0
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.reflect.KMutableProperty0
-import kotlin.time.Clock
+import kotlinx.serialization.Serializable
 
 internal class ArticleAigcController(
     private val article: Article,
@@ -61,7 +67,7 @@ internal class ArticleAigcController(
     private val authorNameValue: () -> String,
     aigcVoteAvailableState: KMutableProperty0<Boolean>,
     aigcVoteLoadingState: KMutableProperty0<Boolean>,
-    aigcVoteErrorState: KMutableProperty0<String?>,
+    aigcVoteErrorState: KMutableProperty0<(() -> String)?>,
     aigcVoteCreditState: KMutableProperty0<Int>,
     aigcVoteProgressState: KMutableProperty0<Int>,
     aigcVoteCapState: KMutableProperty0<Int>,
@@ -122,7 +128,8 @@ internal class ArticleAigcController(
 
     fun isAigcFlagEvidenceReady(): Boolean = currentAigcReadEvidence().isEligibleForCredit()
 
-    fun loadAigcFlagStatus(environment: AigcVoteEnvironment) {
+    fun loadAigcFlagStatus(source: AigcVoteEnvironment) {
+        val environment = source.accountClient?.aigcVoteEnvironment ?: source
         aigcVoteAvailable = isAigcVoteSupported && environment.isAigcVoteEnabled()
         val voter = environment.aigcVoteVoter()
         aigcVoterName = voter?.name.orEmpty()
@@ -144,7 +151,8 @@ internal class ArticleAigcController(
                             parameter("voter_name", it.name)
                             it.urlToken?.takeIf(String::isNotBlank)?.let { token -> parameter("voter_url_token", token) }
                         }
-                    }.body<AigcVoteFlagStatusResponse>()
+                    }.requireAigcSuccess().body<AigcVoteFlagStatusResponse>()
+                if (environment.accountClient?.isCurrent == false) return@launch
                 aigcFlagged = response.myFlagged
                 aigcVoteCredit = response.credit
                 aigcVoteProgress = response.progress
@@ -156,15 +164,16 @@ internal class ArticleAigcController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to load AIGC vote status", e)
-                aigcVoteError = e.message ?: "AIGC 投票状态加载失败"
+                AppLog.e("ArticleViewModel", "Failed to load AIGC vote status", e)
+                aigcVoteError = { e.message ?: DomainStrings.aigcStatusFailed }
             } finally {
                 aigcVoteLoading = false
             }
         }
     }
 
-    fun syncAigcReadEventIfEligible(environment: AigcVoteEnvironment) {
+    fun syncAigcReadEventIfEligible(source: AigcVoteEnvironment) {
+        val environment = source.accountClient?.aigcVoteEnvironment ?: source
         aigcVoteAvailable = isAigcVoteSupported && environment.isAigcVoteEnabled()
         if (!aigcVoteAvailable || aigcReadSyncStarted || content.isBlank()) return
         val client = environment.aigcVoteHttpClient()
@@ -189,7 +198,8 @@ internal class ArticleAigcController(
                     .post("${environment.aigcVoteBaseUrl().trimEnd('/')}/v1/read-events:batch") {
                         contentType(ContentType.Application.Json)
                         setBody(AigcVoteReadEventsRequest(environment.aigcVoteClientId(), listOf(event.toRequestEvent())))
-                    }.body<AigcVoteReadEventsResponse>()
+                    }.requireAigcSuccess().body<AigcVoteReadEventsResponse>()
+                if (environment.accountClient?.isCurrent == false) return@launch
                 aigcVoteCredit = response.credit
                 aigcVoteProgress = response.progress
                 aigcVoteCap = response.cap
@@ -197,41 +207,42 @@ internal class ArticleAigcController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to sync AIGC read event", e)
-                aigcVoteError = e.message ?: "AIGC 阅读积分同步失败"
+                AppLog.e("ArticleViewModel", "Failed to sync AIGC read event", e)
+                aigcVoteError = { e.message ?: DomainStrings.aigcCreditSyncFailed }
                 aigcReadSyncStarted = false
             }
         }
     }
 
-    fun submitAigcFlag(environment: AigcVoteEnvironment) {
+    fun submitAigcFlag(source: AigcVoteEnvironment) {
+        val environment = source.accountClient?.aigcVoteEnvironment ?: source
         aigcVoteAvailable = isAigcVoteSupported && environment.isAigcVoteEnabled()
         if (!aigcVoteAvailable) {
-            aigcVoteError = "未配置 AIGC 投票服务"
-            userMessages.showShortMessage(aigcVoteError!!)
+            aigcVoteError = { DomainStrings.aigcNotConfigured }
+            aigcVoteError?.let { userMessages.showShortMessage(it()) }
             return
         }
         val client = environment.aigcVoteHttpClient()
         if (content.isBlank()) {
-            aigcVoteError = "正文尚未加载完成"
-            userMessages.showShortMessage(aigcVoteError!!)
+            aigcVoteError = { DomainStrings.articleNotReady }
+            aigcVoteError?.let { userMessages.showShortMessage(it()) }
             return
         }
         val voter = environment.aigcVoteVoter()
         aigcVoterName = voter?.name.orEmpty()
         if (voter == null) {
-            aigcVoteError = "需要登录后才能记名投票"
-            userMessages.showShortMessage(aigcVoteError!!)
+            aigcVoteError = { DomainStrings.aigcLoginNeeded }
+            aigcVoteError?.let { userMessages.showShortMessage(it()) }
             return
         }
         if (aigcVoteCredit <= 0 && !aigcFlagged && !aigcCreditBypassAvailable) {
-            aigcVoteError = "投票积分不足"
-            userMessages.showShortMessage(aigcVoteError!!)
+            aigcVoteError = { DomainStrings.aigcNoCredit }
+            aigcVoteError?.let { userMessages.showShortMessage(it()) }
             return
         }
         if (!aigcCreditBypassAvailable && !isAigcFlagEvidenceReady()) {
-            aigcVoteError = "需要继续阅读后才能标记"
-            userMessages.showShortMessage(aigcVoteError!!)
+            aigcVoteError = { DomainStrings.aigcReadMore }
+            aigcVoteError?.let { userMessages.showShortMessage(it()) }
             return
         }
 
@@ -266,7 +277,8 @@ internal class ArticleAigcController(
                                 evidence = submission.evidence.toFlagEvidence(),
                             ),
                         )
-                    }.body<AigcVoteFlagResponse>()
+                    }.requireAigcSuccess().body<AigcVoteFlagResponse>()
+                if (environment.accountClient?.isCurrent == false) return@launch
                 aigcFlagged = response.myFlagged
                 aigcVoteCredit = response.credit
                 aigcCreditBypassAvailable = response.creditBypassAvailable
@@ -274,13 +286,13 @@ internal class ArticleAigcController(
                 aigcCurrentVersionFlagCount = response.currentVersionFlagCount
                 aigcNamedVoters = response.voters
                 zhihuaiAigcSupportVoterCount = response.externalSource?.voterCount ?: 0
-                userMessages.showShortMessage("已标记疑似 AIGC")
+                userMessages.showShortMessage(DomainStrings.aigcFlagSaved)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "AIGC flag failed", e)
-                aigcVoteError = e.message ?: "AIGC 标记失败"
-                userMessages.showShortMessage("AIGC 标记失败: ${e.message}")
+                AppLog.e("ArticleViewModel", "AIGC flag failed", e)
+                aigcVoteError = { e.message ?: DomainStrings.aigcFlagFailed }
+                userMessages.showShortMessage(DomainStrings.aigcFlagFailedDetail(e.message.orEmpty()))
             } finally {
                 aigcVoteLoading = false
             }
@@ -310,4 +322,15 @@ internal class ArticleAigcController(
         ArticleType.Answer -> "answer"
         ArticleType.Article -> "article"
     }
+}
+
+@Serializable
+private data class AigcVoteServiceError(val error: String)
+
+/** 第三方服务失败不走知乎风控，保留 HTTP 状态及服务返回的业务原因。 */
+private suspend fun HttpResponse.requireAigcSuccess(): HttpResponse {
+    if (status.isSuccess()) return this
+    val responseBody = bodyAsText()
+    val detail = runCatching { ZhihuJson.json.decodeFromString<AigcVoteServiceError>(responseBody).error }.getOrNull()
+    throw IllegalStateException("HTTP ${status.value} ${status.description}" + detail?.let { ": $it" }.orEmpty())
 }

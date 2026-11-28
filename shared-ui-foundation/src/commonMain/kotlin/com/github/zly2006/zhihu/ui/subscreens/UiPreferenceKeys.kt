@@ -17,8 +17,6 @@
 
 package com.github.zly2006.zhihu.ui.subscreens
 
-import com.github.zly2006.zhihu.platform.SettingsStore
-
 const val TIQIAN_MARKDOWN_PREFERENCE_KEY = "tiqian_markdown"
 const val TIQIAN_MATH_FONT_PREFERENCE_KEY = "tiqian_math_font"
 const val APP_BLUR_PREFERENCE_KEY = "appBlurEnabled"
@@ -27,14 +25,3 @@ const val FEED_CARD_STYLE_PREFERENCE_KEY = "feedCardStyle"
 const val FLOATING_BOTTOM_BAR_PREFERENCE_KEY = "floatingBottomBar"
 const val FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY = "floatingBottomBarStyle"
 const val PAGE_TRANSITION_PREFERENCE_KEY = "pageTransitionStyle"
-
-/** 正式键优先；只迁入已有旧值，不写缺省值或删除旧键。 */
-fun migrateLegacyReadingPreferences(settings: SettingsStore) {
-    val keys = settings.allEntries().keys
-    if (TIQIAN_MARKDOWN_PREFERENCE_KEY !in keys && "duo3_tiqian_markdown" in keys) {
-        settings.putBoolean(TIQIAN_MARKDOWN_PREFERENCE_KEY, settings.getBoolean("duo3_tiqian_markdown", false))
-    }
-    if (TIQIAN_MATH_FONT_PREFERENCE_KEY !in keys && "duo3_tiqian_math_font" in keys) {
-        settings.putString(TIQIAN_MATH_FONT_PREFERENCE_KEY, settings.getString("duo3_tiqian_math_font", "lete"))
-    }
-}

@@ -19,6 +19,8 @@ package com.github.zly2006.zhihu.updater
 
 import com.github.zly2006.zhihu.account.DEFAULT_ZHIHU_USER_AGENT
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
+import com.github.zly2006.zhihu.i18n.ReaderStrings
+import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
 import com.github.zly2006.zhihu.util.HttpStatusException
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
@@ -31,12 +33,13 @@ enum class UpdateStep {
 
 /** 给用户看的失败原因：HTTP 错误只保留状态码和可以采取的动作，不显示整段响应体。 */
 fun describeUpdateFailure(error: Throwable): String = when (error) {
+    is ReaderDisplayFailure -> error.displayMessage()
     is HttpStatusException -> when (error.status.value) {
-        401 -> "GitHub Token 无效或已过期（HTTP 401），请在下方更新或清空 Token"
-        403, 429 -> "GitHub 访问受限（HTTP ${error.status.value}），可在下方填写 GitHub Token 后重试"
-        else -> "服务器返回 HTTP ${error.status.value} ${error.status.description}"
+        401 -> ReaderStrings.githubTokenInvalid
+        403, 429 -> ReaderStrings.githubAccessLimited(error.status.value)
+        else -> ReaderStrings.serverHttpError(error.status.value, error.status.description)
     }
-    else -> error.message?.takeIf { it.isNotBlank() } ?: error::class.simpleName ?: "未知错误"
+    else -> error.message?.takeIf { it.isNotBlank() } ?: error::class.simpleName ?: ReaderStrings.unknownError
 }
 
 /** 更新请求只借用账户 store 的 engine；独立客户端不安装 Cookie 存储，用完即关。 */

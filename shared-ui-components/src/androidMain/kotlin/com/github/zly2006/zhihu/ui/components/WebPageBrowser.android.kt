@@ -29,10 +29,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
 
 @Composable
-internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser = remember(initialUrl) { AndroidWebPageBrowser(initialUrl) }
+internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser? = remember(initialUrl) { AndroidWebPageBrowser(initialUrl) }
 
 private class AndroidWebPageBrowser(
     initialUrl: String,
@@ -79,7 +80,7 @@ private class AndroidWebPageBrowser(
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             if (!request.isForMainFrame || isWebPageUrl(request.url.toString())) return false
-                            errorMessage = "此链接不是 HTTP 或 HTTPS 网页"
+                            errorMessage = WidgetsStrings::notHttpAddress
                             return true
                         }
 
@@ -96,12 +97,16 @@ private class AndroidWebPageBrowser(
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                             if (request.isForMainFrame) {
                                 updateHistory(view, request.url.toString())
-                                errorMessage = "网页加载失败：${error.description}"
+                                val detail = error.description.toString()
+                                errorMessage = { WidgetsStrings.webLoadFailed(detail) }
                             }
                         }
 
                         override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
-                            if (request.isForMainFrame) errorMessage = "网页返回 HTTP ${errorResponse.statusCode}"
+                            if (request.isForMainFrame) {
+                                val status = errorResponse.statusCode
+                                errorMessage = { WidgetsStrings.webRequestFailed(status) }
+                            }
                         }
                     }
                     loadUrl(initialUrl)

@@ -18,23 +18,37 @@
 package com.github.zly2006.zhihu.desktop
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
+import com.github.zly2006.zhihu.account.createDesktopAccountStore
+import com.github.zly2006.zhihu.desktop.resources.Res
+import com.github.zly2006.zhihu.desktop.resources.desktop_icon
+import com.github.zly2006.zhihu.i18n.HostStrings
 import com.github.zly2006.zhihu.notification.LocalJvmNotificationWindow
+import com.github.zly2006.zhihu.notification.installPortableSystemNotifications
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
+import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.DesktopZhihuMain
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
+import com.github.zly2006.zhihu.ui.components.WindowUserMessageHost
+import org.jetbrains.compose.resources.painterResource
 
 fun main() {
     System.setProperty("java.awt.im.style", "below-the-spot")
-    val windows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
-    val instance = if (System.getProperty("os.name").startsWith("Linux", ignoreCase = true)) {
+    applySavedAppLanguage(platformSettingsStore())
+    val operatingSystem = System.getProperty("os.name")
+    val windows = operatingSystem.startsWith("Windows", ignoreCase = true)
+    val macos = operatingSystem.startsWith("Mac", ignoreCase = true)
+    if (windows || macos) installPortableSystemNotifications()
+    val instance = if (operatingSystem.startsWith("Linux", ignoreCase = true)) {
         try {
             DesktopNotificationInstance.tryAcquire()
         } catch (_: Exception) {
-            System.err.println("无法取得本机通知租约，已禁用此窗口的系统通知；应用仍可正常使用。")
+            System.err.println(HostStrings.notificationLeaseFailed)
             null
         }
     } else {
@@ -42,10 +56,12 @@ fun main() {
     }
     instance.use {
         application(exitProcessOnExit = false) {
+            val accountStore = remember { createDesktopAccountStore() }
+            DisposableEffect(accountStore) { onDispose(accountStore::close) }
             Window(
                 onCloseRequest = ::exitApplication,
-                title = "Zhihu++",
-                icon = painterResource("desktop-icon.png"),
+                title = HostStrings.appName,
+                icon = painterResource(Res.drawable.desktop_icon),
             ) {
                 val wakeWindow = remember(window) {
                     {
@@ -61,10 +77,15 @@ fun main() {
                         }
                     }
                 }
-                CompositionLocalProvider(LocalJvmNotificationWindow provides wakeWindow.takeIf { windows || instance != null }) {
+                CompositionLocalProvider(
+                    LocalZhihuAccountStore provides accountStore,
+                    LocalJvmNotificationWindow provides wakeWindow.takeIf { windows || macos || instance != null },
+                ) {
                     AppStartupSplash {
                         ZhihuTheme {
-                            DesktopZhihuMain()
+                            WindowUserMessageHost {
+                                DesktopZhihuMain()
+                            }
                         }
                     }
                 }

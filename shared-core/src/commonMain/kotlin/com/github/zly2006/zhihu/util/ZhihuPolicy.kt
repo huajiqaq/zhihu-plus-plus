@@ -17,10 +17,23 @@
 
 package com.github.zly2006.zhihu.util
 
+import com.github.zly2006.zhihu.i18n.CoreStrings
+
 data class ContinuousUsageReminder(
     val elapsedForegroundMs: Long,
-    val durationText: String,
-)
+) {
+    val durationText: String
+        get() {
+            val totalMinutes = (elapsedForegroundMs / 60_000L).coerceAtLeast(1L)
+            val hours = totalMinutes / 60L
+            val minutes = totalMinutes % 60L
+            return when {
+                hours == 0L -> CoreStrings.durationMinutes(minutes)
+                minutes == 0L -> CoreStrings.durationHours(hours)
+                else -> CoreStrings.durationHoursMinutes(CoreStrings.durationHours(hours), CoreStrings.durationMinutes(minutes))
+            }
+        }
+}
 
 class ContinuousUsageReminderPolicy(
     intervalMinutes: Int,
@@ -43,7 +56,6 @@ class ContinuousUsageReminderPolicy(
         lastReminderBucket = currentBucket
         return ContinuousUsageReminder(
             elapsedForegroundMs = elapsedForegroundMs,
-            durationText = formatDuration(elapsedForegroundMs),
         )
     }
 
@@ -62,18 +74,6 @@ class ContinuousUsageReminderPolicy(
         lastReminderBucket = 0
     }
 
-    private fun formatDuration(elapsedForegroundMs: Long): String {
-        val totalMinutes = (elapsedForegroundMs / ONE_MINUTE_MS).coerceAtLeast(1L)
-        val hours = totalMinutes / 60L
-        val minutes = totalMinutes % 60L
-
-        return when {
-            hours > 0L && minutes > 0L -> "${hours}小时${minutes}分钟"
-            hours > 0L -> "${hours}小时"
-            else -> "${minutes}分钟"
-        }
-    }
-
     companion object {
         private const val ONE_MINUTE_MS = 60_000L
 
@@ -85,30 +85,4 @@ class ContinuousUsageReminderPolicy(
             0
         }
     }
-}
-
-expect object Log {
-    fun d(
-        tag: String,
-        message: String,
-        throwable: Throwable? = null,
-    )
-
-    fun i(
-        tag: String,
-        message: String,
-        throwable: Throwable? = null,
-    )
-
-    fun w(
-        tag: String,
-        message: String,
-        throwable: Throwable? = null,
-    )
-
-    fun e(
-        tag: String,
-        message: String,
-        throwable: Throwable? = null,
-    )
 }

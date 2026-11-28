@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ad_label">Ad</string>
+    <string name="ad_with_action">%1$s Ad</string>
+    <string name="app_author">Developer</string>
+    <string name="app_author_badge">Zhihu++ developer</string>
+    <string name="app_name">Zhihu++</string>
+    <string name="compact_billions">%1$sB</string>
+    <string name="compact_millions">%1$sM</string>
+    <string name="compact_ten_thousands">%1$s × 10,000</string>
+    <string name="compact_thousands">%1$sK</string>
+    <string name="daily_date">%1$s-%2$s-%3$s</string>
+    <plurals name="days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <string name="deleted_content">This content has been deleted.</string>
+    <plurals name="duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <string name="duration_hours_minutes">%1$s %2$s</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="failure_forbidden">Other access denial</string>
+    <string name="failure_human_verification">Verification required</string>
+    <string name="failure_login_required">Sign-in required</string>
+    <string name="failure_session_expired">Session expired</string>
+    <string name="feed_answer_details">Answer · Upvotes: %1$d · Comments: %2$d</string>
+    <string name="feed_article_details">Article · Likes: %1$d · Comments: %2$d</string>
+    <string name="feed_pin_details">Pin · Likes: %1$d · Comments: %2$d</string>
+    <string name="feed_question_details">Question · Followers: %1$d · Answers: %2$d</string>
+    <string name="feed_video_details">Video · Likes: %1$d · Comments: %2$d</string>
+    <string name="filter_answer_rule">Answer rule: fewer than %1$d upvotes and you do not follow the author.</string>
+    <string name="filter_article_rule">Article rule: you do not follow the author, and the author has fewer than %1$d followers or the article has fewer than %2$d likes.</string>
+    <string name="filter_question_rule">Question rule: fewer than %1$d answers and fewer than %2$d followers.</string>
+    <string name="filter_video_rule">Video rule: fewer than %1$d author followers and fewer than %2$d likes.</string>
+    <plurals name="hours_ago">
+        <item quantity="one">%1$d hour ago</item>
+        <item quantity="other">%1$d hours ago</item>
+    </plurals>
+    <string name="http_auth_header">Authentication in visible request headers: %1$s</string>
+    <string name="http_error_code">Error code: %1$d</string>
+    <string name="http_feedback_intro">Received HTTP 403. Please check whether the API needs updating.</string>
+    <string name="http_local_sign_in">Local sign-in status: %1$s</string>
+    <string name="http_no">No</string>
+    <string name="http_redacted_headers">Request headers (tokens, cookies, signatures and URL parameters redacted):</string>
+    <string name="http_request">Request: %1$s %2$s</string>
+    <string name="http_request_source">Request source: %1$s</string>
+    <string name="http_response_kind">Response category: %1$s</string>
+    <string name="http_signed_in">Signed in</string>
+    <string name="http_signed_out">Signed out</string>
+    <string name="http_unknown">Unknown</string>
+    <string name="http_yes">Yes</string>
+    <string name="invalid_request_address">Request address unavailable</string>
+    <string name="just_now">Just now</string>
+    <plurals name="minutes_ago">
+        <item quantity="one">%1$d minute ago</item>
+        <item quantity="other">%1$d minutes ago</item>
+    </plurals>
+    <string name="recommend_android">Android recommendations</string>
+    <string name="recommend_android_hint">Use recommendations from the Zhihu Android app.</string>
+    <string name="recommend_local">Local recommendations</string>
+    <string name="recommend_local_hint">Rank recommendations using data on this device.</string>
+    <string name="recommend_mixed">Mixed recommendations</string>
+    <string name="recommend_mixed_hint">Combine Android and web recommendations and filter out paid Yánxǔan content.</string>
+    <string name="recommend_web">Web recommendations</string>
+    <string name="recommend_web_hint">Use recommendations from the Zhihu website.</string>
+    <string name="redacted">Redacted</string>
+    <string name="type_answer">Answer</string>
+    <string name="type_article">Article</string>
+    <string name="type_collection">Collection</string>
+    <string name="type_column">Column</string>
+    <string name="type_ebook">E-book</string>
+    <string name="type_other">Other</string>
+    <string name="type_person">User</string>
+    <string name="type_pin">Pin</string>
+    <string name="type_question">Question</string>
+    <string name="type_roundtable">Roundtable</string>
+    <string name="type_special">Feature</string>
+    <string name="type_topic">Topic</string>
+    <string name="type_video">Video</string>
+    <string name="unsupported_feed">This content is not supported.</string>
+</resources>

@@ -22,6 +22,7 @@ import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
@@ -50,16 +51,20 @@ import coil3.network.NetworkRequest
 import coil3.network.NetworkResponse
 import coil3.network.ktor3.asNetworkClient
 import coil3.request.crossfade
+import com.github.zly2006.zhihu.account.AndroidZhihuAccountOwner
 import com.github.zly2006.zhihu.account.InvalidRefreshTokenException
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
+import com.github.zly2006.zhihu.account.createAndroidAccountStore
 import com.github.zly2006.zhihu.data.AccountData
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
 import com.github.zly2006.zhihu.data.isZhihuRequestHost
 import com.github.zly2006.zhihu.data.redactDiagnosticText
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.HostStrings
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.NavDestination
-import com.github.zly2006.zhihu.navigation.TopLevelDestination
 import com.github.zly2006.zhihu.navigation.WebPage
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.navigation.resolveContent
@@ -71,12 +76,13 @@ import com.github.zly2006.zhihu.nlp.SentenceEmbeddingManager
 import com.github.zly2006.zhihu.notification.androidSystemNotifications
 import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
 import com.github.zly2006.zhihu.reading.ContentReadingService
-import com.github.zly2006.zhihu.theme.AndroidThemeSettings
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.AndroidArticleNavigationHandoff
 import com.github.zly2006.zhihu.ui.AndroidZhihuMain
 import com.github.zly2006.zhihu.ui.ZhihuMainNavigationCoordinator
+import com.github.zly2006.zhihu.ui.ZhihuMainTabsState
 import com.github.zly2006.zhihu.ui.components.AppHostlessAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
@@ -84,6 +90,7 @@ import com.github.zly2006.zhihu.ui.components.PageTurnCommand
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnFab
 import com.github.zly2006.zhihu.ui.components.getHighestQualityVideoUrl
+import com.github.zly2006.zhihu.ui.rememberZhihuMainTabsState
 import com.github.zly2006.zhihu.ui.subscreens.PREF_VOLUME_KEY_PAGE_TURN
 import com.github.zly2006.zhihu.updater.UpdateManager
 import com.github.zly2006.zhihu.util.ContinuousUsageReminderManager
@@ -99,21 +106,24 @@ import com.github.zly2006.zhihu.viewmodel.filter.androidKeywordWeightExtractor
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
 import io.ktor.http.Url
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 
 /** Coil 从 applicationContext 读取 factory，确保首次图片请求早于 Activity 创建时也使用应用配置。 */
-class ZhihuApplication :
+open class ZhihuApplication :
     Application(),
-    SingletonImageLoader.Factory {
+    SingletonImageLoader.Factory,
+    AndroidZhihuAccountOwner {
+    override val zhihuAccountStore by lazy { createAndroidAccountStore(this) }
     private val publicImageClient by lazy { HttpClient().asNetworkClient() }
 
     override fun onCreate() {
         super.onCreate()
+        applySavedAppLanguage(androidSettingsStore(this))
         val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Application.getProcessName()
         } else {
@@ -124,6 +134,11 @@ class ZhihuApplication :
         registerActivityLifecycleCallbacks(fatalErrors)
         Thread.setDefaultUncaughtExceptionHandler(fatalErrors)
         androidSystemNotifications(this)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        AppLocale.refreshSystemLanguage()
     }
 
     @OptIn(ExperimentalCoilApi::class)
@@ -138,8 +153,7 @@ class ZhihuApplication :
                         object : NetworkClient {
                             override suspend fun <T> executeRequest(request: NetworkRequest, block: suspend (NetworkResponse) -> T): T {
                                 val network = if (isZhihuRequestHost(Url(request.url).host)) {
-                                    com.github.zly2006.zhihu.account
-                                        .androidZhihuAccountStore(applicationContext)
+                                    androidZhihuAccountStore(applicationContext)
                                         .client
                                         .httpClient(useCookies = false)
                                         .asNetworkClient()
@@ -166,30 +180,32 @@ class ZhihuApplication :
     }
 }
 
-private const val UNSUPPORTED_LINK_MESSAGE_KEY = "unsupported_link_message"
+private const val UNSUPPORTED_LINK_URL_KEY = "unsupported_link_url"
 
 class MainActivity : ComponentActivity() {
-    private val unsupportedLinkMessage = mutableStateOf<String?>(null)
+    private val unsupportedLinkUrl = mutableStateOf<String?>(null)
 
     lateinit var history: LocalHistoryStorage
     val httpClient
-        get() = com.github.zly2006.zhihu.account
-            .androidZhihuAccountStore(this)
+        get() = androidZhihuAccountStore(this)
             .client
             .httpClient()
 
     /** 主栈持有页面访问 ID，与详情栏栈独立。 */
     lateinit var navHost: AppNavHost
+    lateinit var tabsState: ZhihuMainTabsState
+        internal set
     private lateinit var continuousUsageReminderManager: ContinuousUsageReminderManager
     private val pageTurnDispatcher = PageTurnDispatcher()
     private val navigationCoordinator = ZhihuMainNavigationCoordinator(
         mainHost = { navHost },
+        tabs = { tabsState },
         showMessage = { androidUserMessageSink(this).showShortMessage(it) },
         openVideo = { route, contentId, contentType ->
             CoroutineScope(Dispatchers.Main).launch {
                 val videoUrl = getHighestQualityVideoUrl(this@MainActivity, httpClient, route.id.toString(), contentId, contentType)
                 if (videoUrl == null) {
-                    androidUserMessageSink(this@MainActivity).showShortMessage("获取视频链接失败")
+                    androidUserMessageSink(this@MainActivity).showShortMessage(HostStrings.videoLinkFailed)
                     return@launch
                 }
                 startActivity(
@@ -202,19 +218,16 @@ class MainActivity : ComponentActivity() {
         },
         onRouteAccepted = { history.add(it) },
     )
-    val mainTabNavigationTarget: TopLevelDestination?
-        get() = navigationCoordinator.mainTabNavigationTarget
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdgeCompat()
         super.onCreate(savedInstanceState)
-        unsupportedLinkMessage.value = savedInstanceState?.getString(UNSUPPORTED_LINK_MESSAGE_KEY)
+        unsupportedLinkUrl.value = savedInstanceState?.getString(UNSUPPORTED_LINK_URL_KEY)
         clearShareImageCache(this)
         continuousUsageReminderManager = ContinuousUsageReminderManager(this)
         AccountData.loadData(this)
         history = LocalHistoryStorage()
-        AndroidThemeSettings.initialize(this)
         androidKeywordSemanticMatcher = NlpServiceKeywordSemanticMatcher
         androidKeywordWeightExtractor = KeywordWeightExtractor { text, topN ->
             NLPService.extractKeywordsWithWeight(text, topN)
@@ -234,7 +247,7 @@ class MainActivity : ComponentActivity() {
                 throw error
             } catch (_: Exception) {
                 if (androidZhihuAccountStore(this@MainActivity).client === accountClient) {
-                    androidUserMessageSink(this@MainActivity).showLongMessage("刷新登录状态失败，请稍后重试；若多次失败，请重新登录")
+                    androidUserMessageSink(this@MainActivity).showLongMessage(HostStrings.refreshLoginFailed)
                 }
             }
         }
@@ -254,7 +267,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 EmojiManager
-                    .initialize(this@MainActivity)
+                    .initialize(this@MainActivity, accountClient)
                 Log.i(TAG, "Emoji manager initialized")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize emoji manager", e)
@@ -263,21 +276,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             navHost = rememberAppNavHost(MainTabs)
+            tabsState = rememberZhihuMainTabsState()
             LaunchedEffect(navHost) {
                 if (intent.data != null || androidSystemNotifications(this@MainActivity).handles(intent)) handleIntentData(intent)
             }
             ZhihuTheme {
-                CompositionLocalProvider(LocalPageTurnDispatcher provides pageTurnDispatcher) {
+                CompositionLocalProvider(
+                    LocalZhihuAccountStore provides androidZhihuAccountStore(this@MainActivity),
+                    LocalPageTurnDispatcher provides pageTurnDispatcher,
+                ) {
                     Box(Modifier.semantics { testTagsAsResourceId = true }) {
                         AndroidZhihuMain(navHost = navHost)
                         PageTurnFab(dispatcher = pageTurnDispatcher)
-                        unsupportedLinkMessage.value?.let { message ->
+                        unsupportedLinkUrl.value?.let { url ->
                             AppHostlessAlertDialog(
-                                onDismissRequest = { unsupportedLinkMessage.value = null },
-                                title = { Text("不支持的链接") },
-                                text = { Text(message) },
+                                onDismissRequest = { unsupportedLinkUrl.value = null },
+                                title = { Text(HostStrings.unsupportedLink) },
+                                text = { Text(HostStrings.unrecognizedLink(url)) },
                                 confirmButton = {
-                                    AppTextButton(onClick = { unsupportedLinkMessage.value = null }) { Text("关闭") }
+                                    AppTextButton(onClick = { unsupportedLinkUrl.value = null }) { Text(HostStrings.actionClose) }
                                 },
                             )
                         }
@@ -295,8 +312,7 @@ class MainActivity : ComponentActivity() {
                 try {
                     UpdateManager.autoCheckForUpdate(
                         this@MainActivity,
-                        com.github.zly2006.zhihu.account
-                            .androidZhihuAccountStore(this@MainActivity)
+                        androidZhihuAccountStore(this@MainActivity)
                             .engine,
                     )
                 } catch (e: Exception) {
@@ -386,7 +402,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(UNSUPPORTED_LINK_MESSAGE_KEY, unsupportedLinkMessage.value)
+        outState.putString(UNSUPPORTED_LINK_URL_KEY, unsupportedLinkUrl.value)
         super.onSaveInstanceState(outState)
     }
 
@@ -405,7 +421,7 @@ class MainActivity : ComponentActivity() {
                 notifications.consumeClick(incomingIntent) { navigate(it, popup = true) }
             }.getOrDefault(false)
             if (hasPayload && !consumed) {
-                androidUserMessageSink(this).showShortMessage("通知已失效或所属账号已切换，请在消息页查看")
+                androidUserMessageSink(this).showShortMessage(HostStrings.notificationExpired)
             }
             return true
         }
@@ -425,7 +441,7 @@ class MainActivity : ComponentActivity() {
                 navigate(destination, popup = true)
             }
         } else {
-            unsupportedLinkMessage.value = redactDiagnosticText("无法识别链接：$data")
+            unsupportedLinkUrl.value = redactDiagnosticText(data.toString())
             incomingIntent.data = null
         }
         return true
@@ -438,14 +454,6 @@ class MainActivity : ComponentActivity() {
         popup: Boolean = false,
     ) {
         navigationCoordinator.navigate(route, targetHost, popup)
-    }
-
-    fun setCurrentMainTabOpenFrom(openFrom: String?) {
-        navigationCoordinator.setCurrentMainTabOpenFrom(openFrom)
-    }
-
-    fun consumeMainTabNavigationTarget(destination: TopLevelDestination) {
-        navigationCoordinator.consumeMainTabNavigationTarget(destination)
     }
 
     override fun onDestroy() {

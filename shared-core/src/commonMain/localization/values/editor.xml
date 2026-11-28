@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="choose_image">Choose image</string>
+    <string name="image_picker_not_supported">Image selection is not supported on %1$s yet</string>
+    <string name="image_read_failed">Could not read the selected image. Try again or choose another image.</string>
+    <string name="image_upload_http_failed">Image upload failed (HTTP %1$d)</string>
+    <string name="voice_upload_http_failed">Voice upload failed (HTTP %1$d)</string>
+    <string name="image_upload_token_missing">Zhihu requires this image to be uploaded again, but uploadToken is missing. imageId=%1$s, state=%2$s</string>
+    <string name="image_url_missing">Zhihu processed the image but did not return an image URL. imageId=%1$s</string>
+    <string name="image_hash_missing">Zhihu processed the image but did not return original_hash. imageId=%1$s</string>
+    <string name="oss_upload_id_invalid">Could not parse the OSS UploadId: %1$s</string>
+    <string name="oss_etag_missing">The OSS multipart upload did not return an ETag</string>
+    <string name="image_processing_failed">Zhihu could not process the image: %1$s, imageId=%2$s</string>
+    <string name="image_processing_timeout">Timed out waiting for Zhihu to process the image. imageId=%1$s</string>
+    <string name="unsupported_image_format">Unrecognized image format. Upload canceled.</string>
+    <string name="recording_file_empty">The recording file is empty</string>
+    <string name="recording_duration_invalid">The recording duration is invalid</string>
+    <string name="recording_mp4_required">The recording must first be converted to audio/mp4; other encodings will not be mislabeled as MP4.</string>
+    <string name="voice_upload_file_missing">Zhihu did not return audio upload file information</string>
+    <string name="voice_video_id_missing">Zhihu did not return an audio video_id</string>
+    <string name="voice_object_key_missing">Zhihu did not return an audio object_key</string>
+    <string name="voice_upload_credentials_missing">Zhihu did not return audio upload credentials</string>
+</resources>

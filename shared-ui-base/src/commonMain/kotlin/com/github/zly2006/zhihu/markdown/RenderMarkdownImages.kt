@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.platform.rememberImageGalleryOpener
 import com.github.zly2006.zhihu.platform.rememberImageSaver
 import com.github.zly2006.zhihu.platform.rememberImageSharer
@@ -155,11 +156,11 @@ fun RenderImage(
                         },
                     )
                 }.semantics {
-                    onClick(label = "查看原图") {
+                    onClick(label = ReaderStrings.viewOriginalImage) {
                         openGallery()
                         true
                     }
-                    onLongClick(label = "图片操作") {
+                    onLongClick(label = ReaderStrings.imageActions) {
                         windowPressPoint = null
                         windowImageBounds = imageCoordinates?.takeIf { it.isAttached }?.boundsInWindow()
                         expanded = true
@@ -200,28 +201,28 @@ internal fun MarkdownImageMenu(
             windowPressPoint = windowPressPoint,
         ) {
             AppDropdownMenuItem(
-                text = { Text("查看图片") },
+                text = { Text(ReaderStrings.viewImage) },
                 onClick = {
                     onDismiss()
                     onViewImage()
                 },
             )
             AppDropdownMenuItem(
-                text = { Text("在浏览器中打开") },
+                text = { Text(ReaderStrings.openInBrowser) },
                 onClick = {
                     onDismiss()
                     openSystemUrl(url)
                 },
             )
             AppDropdownMenuItem(
-                text = { Text("保存图片") },
+                text = { Text(ReaderStrings.saveImage) },
                 onClick = {
                     onDismiss()
                     saveImage(url)
                 },
             )
             AppDropdownMenuItem(
-                text = { Text("分享图片") },
+                text = { Text(ReaderStrings.shareImage) },
                 onClick = {
                     onDismiss()
                     shareImage(url)

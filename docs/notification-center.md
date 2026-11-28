@@ -49,6 +49,8 @@
 | Linux 桌面 | 进程运行时检查；使用支持 actions 的本机 `org.freedesktop.Notifications`，连接为 `unix:path`。点击唤醒原窗口，退出后不能恢复。 |
 | macOS 原生 `.app`、iOS | 应用可运行时检查；启动安装 `UNUserNotificationCenter` delegate，点击等待账号和导航就绪。挂起或退出不保证检查，不是 APNs；见 [iOS 宿主](../iosApp/README.md)。 |
 | Windows x64 签名安装的可选 MSIX | 进程运行时检查，原生宿主用 WinRT 投递；已投递通知可激活应用并在账号、导航就绪后消费回执，关闭期间不检查新消息。 |
-| Windows 普通 MSI、直接运行 JVM | 不启动系统通知检查，只提供应用内消息，无需额外注册。 |
+| Windows 普通 MSI | 通过正式 per-user 安装注册通知；未注册的 MSI、直接运行 JVM 或复制应用目录只提供应用内消息。 |
+| macOS JVM `.app` | 真实 `.app` 通过便携通知宿主接入；直接运行 JAR 不具备应用标识，不能替代安装。 |
+| Web | 仅页面可见时轮询；Service Worker 处理页面已投递通知与点击恢复，不在关页后抓取新消息。 |
 
-系统接受投递不代表用户已看到；勿扰、通道和窗口管理器可能影响显示或聚焦。
+系统接受投递不代表用户已看到；勿扰、通道和窗口管理器可能影响显示或聚焦。宿主安装条件、签名、Web Push 范围和待验收项统一见[平台能力与边界](platform-capabilities.md)。

@@ -20,11 +20,21 @@ package com.github.zly2006.zhihu.ui
 import com.github.zly2006.zhihu.navigation.AppNavEntry
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.NavDestination
+import com.github.zly2006.zhihu.navigation.WebPage
 import com.github.zly2006.zhihu.navigation.isDetailPaneDestination
 import com.github.zly2006.zhihu.navigation.isListPaneDestination
 import com.github.zly2006.zhihu.navigation.isSecondaryDetailDestination
 
 internal fun NavDestination.opensInDetailPane(): Boolean = isDetailPaneDestination() || isSecondaryDetailDestination()
+
+/** 在选栏、改写详情归属和入栈之前分流，当前页和浏览器前进历史都不变。 */
+internal fun navigateWithWebPageOpener(
+    openWebPage: ((String) -> Unit)?,
+    navigate: (NavDestination) -> Unit,
+): (NavDestination) -> Unit {
+    if (openWebPage == null) return navigate
+    return { page -> if (page is WebPage) openWebPage(page.url) else navigate(page) }
+}
 
 /**
  * 主栈中连续详情条目的来源列表；传入 [detailEntryId] 时，只为首个详情登记退场来源。

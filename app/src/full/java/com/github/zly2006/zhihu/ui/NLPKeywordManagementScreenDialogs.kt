@@ -35,6 +35,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppButton
@@ -57,10 +59,10 @@ internal fun NLPKeywordManagementRecordsSheet(
         BlocklistItemList(
             state = records,
             onRetry = onRetry,
-            description = "最近 ${BlockedContentRecord.MAX_RECORDS} 条被 NLP 语义屏蔽的内容，点开可查看匹配的短语。",
-            emptyTitle = "暂无 NLP 匹配记录",
-            clearTitle = { count -> "清空 $count 条 NLP 匹配记录？" },
-            clearSummary = "只删除这些记录，不影响屏蔽短语。清空后无法撤销。",
+            description = AndroidNlpStrings.recordsScope(BlockedContentRecord.MAX_RECORDS),
+            emptyTitle = SettingsStrings.nlpRecordsEmpty,
+            clearTitle = { count -> AndroidNlpStrings.clearRecordsTitle(count) },
+            clearSummary = SettingsStrings.nlpRecordsClearHint,
             onClearAll = onClearAll,
             itemKey = { it.id },
             modifier = Modifier.fillMaxHeight(0.8f),
@@ -89,15 +91,15 @@ internal fun PhraseDialog(
             Column {
                 AppTextField(
                     state = phrase,
-                    labelText = "短语",
+                    labelText = AndroidNlpStrings.phraseLabel,
                     lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 2),
-                    placeholder = "用空格分隔多个关键词，如：政治 敏感",
+                    placeholder = AndroidNlpStrings.phrasePlaceholder,
                     enabled = !submitting,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(AppDimens.Space8))
                 Text(
-                    "提示：用空格分隔多个关键词来表达与逻辑。例如：\"政治 敏感\" 将匹配同时包含这两个主题的内容。",
+                    AndroidNlpStrings.phraseHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -114,7 +116,7 @@ internal fun PhraseDialog(
             }
         },
         dismissButton = {
-            AppTextButton(text = "取消", onClick = onDismiss, enabled = !submitting)
+            AppTextButton(text = SettingsStrings.cancel, onClick = onDismiss, enabled = !submitting)
         },
     )
 }

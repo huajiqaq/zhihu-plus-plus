@@ -21,7 +21,10 @@ package com.github.zly2006.zhihu.notification
 
 import androidx.compose.runtime.Composable
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -54,8 +57,6 @@ import platform.UserNotifications.UNUserNotificationCenterDelegateProtocol
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 private const val RECEIPT_PREFIX = "zhihu-local-v1-"
 
@@ -83,7 +84,7 @@ fun AppleSystemNotificationHost(
 internal expect fun openAppleNotificationSettings()
 
 private object AppleSystemNotificationAdapter : RunningSystemNotificationAdapter {
-    override val availabilityDescription = "需要从应用打开并允许通知。退出或挂起应用后会暂停检查。"
+    override val availabilityDescription: String get() = NotificationsStrings.appleAvailability
     private val storage = AppleNotificationStorage()
 
     override fun activate(onClick: (String) -> Unit): AutoCloseable? = AppleNotificationCenter.activate(onClick)
@@ -135,7 +136,7 @@ private object AppleSystemNotificationAdapter : RunningSystemNotificationAdapter
                 if (error == null) {
                     continuation.resume(Unit)
                 } else {
-                    continuation.resumeWithException(IllegalStateException("无法请求系统通知权限（${error.code}）"))
+                    continuation.resumeWithException(IllegalStateException(NotificationsStrings.applePermissionError(error.code)))
                 }
             }
         }
@@ -149,15 +150,15 @@ private object AppleSystemNotificationAdapter : RunningSystemNotificationAdapter
     ) {
         require(isAppleNotificationReceipt(receipt))
         val content = UNMutableNotificationContent().apply {
-            setTitle("知乎++")
-            setBody("你有新的消息，点击查看")
+            setTitle(NotificationsStrings.appName)
+            setBody(NotificationsStrings.appleNewMessage)
             setSound(UNNotificationSound.defaultSound)
         }
         val request = UNNotificationRequest.requestWithIdentifier(receipt, content, null)
         AppleNotificationCenter.requireCenter().addNotificationRequest(request) { error ->
             /** completion 只表示系统接受请求，不能证明已经展示或送达。 */
             dispatch_async(dispatch_get_main_queue()) {
-                onComplete(error?.let { IllegalStateException("系统拒绝本地通知（${it.code}）") })
+                onComplete(error?.let { IllegalStateException(NotificationsStrings.appleDeliveryError(it.code)) })
             }
         }
     }
@@ -203,7 +204,7 @@ private object AppleNotificationCenter {
 
     fun requireCenter(): UNUserNotificationCenter {
         check(NSThread.isMainThread)
-        return checkNotNull(center?.takeIf { it.delegate === delegate }) { "当前应用无法使用 Apple 系统通知" }
+        return checkNotNull(center?.takeIf { it.delegate === delegate }) { NotificationsStrings.appleUnavailable }
     }
 
     fun activate(listener: (String) -> Unit): AutoCloseable? {

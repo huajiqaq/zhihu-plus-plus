@@ -19,21 +19,30 @@ package com.github.zly2006.zhihu.viewmodel.local
 
 import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
+import com.github.zly2006.zhihu.data.FeedFilterFacts
+import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.target
 import com.github.zly2006.zhihu.navigation.NavDestination
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.local.LocalReasonPreference
 import com.github.zly2006.zhihu.viewmodel.local.applyReasonDiversity
 import com.github.zly2006.zhihu.viewmodel.local.buildLocalRecommendationReason
 import com.github.zly2006.zhihu.viewmodel.local.parseLocalContentIdentity
 import com.github.zly2006.zhihu.viewmodel.local.scoreFeedTarget
 import com.github.zly2006.zhihu.viewmodel.local.toLocalContentIdentity
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 class LocalRecommendationEngine(
     private val dao: LocalContentDao,
@@ -134,7 +143,7 @@ class LocalRecommendationEngine(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("LocalRecommendationEngine", "Task execution failed: ${e.message}", e)
+                    AppLog.e("LocalRecommendationEngine", "Task execution failed: ${e.message}", e)
                 }
             }
     }
@@ -302,12 +311,28 @@ internal suspend fun waitForTaskCompletion(
 }
 
 internal fun createCrawlingResult(
-    feed: Feed,
+    element: JsonElement,
     taskId: Long,
     reason: CrawlingReason,
     scoreMultiplier: Double = 1.0,
+    accountId: String?,
 ): CrawlingResult? {
+    val feed = ZhihuJson.decodeJson<Feed>(element)
     val target = feed.target ?: return null
+    if (reason == CrawlingReason.FollowingUpvote && !isVoteupFeed(feed)) return null
+    val source = element.jsonObject["target"] as? JsonObject ?: return null
+    val votes = ZhihuJson.decodeJson<LocalVoteCounts>(source)
+    val author = (source["author"] as? JsonObject)?.let { ZhihuJson.decodeJson<LocalAuthorCounts>(it) }
+    val facts = FeedFilterFacts(
+        voteCount = when (target) {
+            is Feed.AnswerTarget, is Feed.ArticleTarget -> votes.voteupCount
+            is Feed.VideoTarget -> votes.voteCount
+            else -> null
+        }?.takeIf { it >= 0 },
+        authorId = target.author?.id?.takeIf(String::isNotBlank),
+        authorIsFollowing = author?.isFollowing?.takeIf { accountId != null },
+        authorFollowers = author?.followersCount?.takeIf { it >= 0 },
+    )
 
     return CrawlingResult(
         taskId = taskId,
@@ -317,7 +342,33 @@ internal fun createCrawlingResult(
         url = target.url,
         reason = reason,
         score = scoreFeedTarget(target) * scoreMultiplier,
+        filterFactsJson = if (facts == FeedFilterFacts()) null else Json.encodeToString(LocalFilterSnapshot(facts, accountId)),
     )
+}
+
+@Serializable
+private data class LocalVoteCounts(
+    val voteupCount: Int? = null,
+    val voteCount: Int? = null,
+)
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+private data class LocalAuthorCounts(
+    val isFollowing: Boolean? = null,
+    @JsonNames("followerCount") val followersCount: Int? = null,
+)
+
+@Serializable
+private data class LocalFilterSnapshot(
+    val facts: FeedFilterFacts,
+    val accountId: String?,
+)
+
+/** 候选库由设备共享，只有采集时的账号可使用当时的关注关系。 */
+internal fun CrawlingResult.filterFactsFor(accountId: String?): FeedFilterFacts? = filterFactsJson?.let {
+    val snapshot = ZhihuJson.json.decodeFromString<LocalFilterSnapshot>(it)
+    if (accountId != null && accountId == snapshot.accountId) snapshot.facts else snapshot.facts.copy(authorIsFollowing = null)
 }
 
 internal fun isVoteupFeed(feed: Feed): Boolean =

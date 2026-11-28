@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.editor
 
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
+import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -28,20 +29,19 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class ZhihuImageUploadTest {
     @Test
     fun gifMultipartPreservesPartOrderBeforePublishingProcessedMetadata() = runTest {
         val bytes = ByteArray(1024 * 1024 + 17) { (it % 251).toByte() }
-        val hash = com.github.zly2006.zhihu.util.ZhihuFetchSignature
-            .md5Hex(bytes)
+        val hash = ZhihuFetchSignature.md5Hex(bytes)
         val requests = mutableListOf<String>()
         val client = HttpClient(
             MockEngine { request ->

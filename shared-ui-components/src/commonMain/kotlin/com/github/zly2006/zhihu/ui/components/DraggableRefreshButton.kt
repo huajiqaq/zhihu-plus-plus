@@ -49,12 +49,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.subscreens.DEFAULT_FAB_OPACITY
 import com.github.zly2006.zhihu.ui.subscreens.PREF_FAB_OPACITY
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 未保存位置以 [Float.MAX_VALUE] 作贴边哨兵，避免绑定初始窗口尺寸。 */
 @Composable
@@ -67,7 +67,7 @@ fun DraggableRefreshButton(
     compact: Boolean = true,
     onClick: () -> Unit,
     content: @Composable () -> Unit = {
-        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+        AppIcon(Icons.Default.Refresh, contentDescription = WidgetsStrings.refresh)
     },
 ) {
     val settings = rememberSettingsStore()

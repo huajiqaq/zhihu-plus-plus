@@ -26,11 +26,11 @@ private val desktopLocalContentDatabase by lazy {
     )
 }
 
-actual fun getLocalContentDatabase(): LocalContentDatabase? = desktopLocalContentDatabase
+actual fun getLocalContentDatabase(): LocalContentDatabase = desktopLocalContentDatabase
 
-fun getLocalContentDatabase(databaseFile: File): LocalContentDatabase =
+fun getLocalContentDatabase(databaseFile: File): RoomLocalContentDatabase =
     buildLocalContentDatabase(
-        Room.databaseBuilder<LocalContentDatabase>(
+        Room.databaseBuilder<RoomLocalContentDatabase>(
             name = databaseFile.absolutePath,
         ),
     )

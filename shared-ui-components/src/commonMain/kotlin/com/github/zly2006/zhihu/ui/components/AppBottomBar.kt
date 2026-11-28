@@ -51,10 +51,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.subscreens.FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 导航项只携带展示与当前动作，目的地映射由调用方决定。 */
 class BottomBarItem(
@@ -110,7 +109,7 @@ fun AppBottomBar(
                                 fallbackContainer = surface,
                                 tint = surface.copy(alpha = 0.35f),
                                 borderColor = outline.copy(alpha = 0.2f),
-                                isDark = ThemeManager.isDarkTheme(),
+                                isDark = LocalAppTheme.current.isDarkTheme,
                             ).clip(shape),
                     ) {
                         navigation(Modifier)
@@ -143,7 +142,7 @@ private fun MaterialBottomBar(items: List<BottomBarItem>, modifier: Modifier, fl
                         selected = weight?.let { it > 0f } ?: item.selected,
                         onClick = item.onClick,
                         label = { Text(item.label) },
-                        icon = { Icon(item.icon, contentDescription = null) },
+                        icon = { AppIcon(item.icon, contentDescription = null) },
                         modifier = Modifier.bottomBarTab(item),
                         colors = if (weight == null) {
                             colors

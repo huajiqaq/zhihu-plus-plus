@@ -20,6 +20,8 @@ package com.github.zly2006.zhihu.viewmodel
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuVotersResponse
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.util.DisplayFailure
 
 suspend fun loadVotersPage(
     environment: ZhihuApiEnvironment,
@@ -28,7 +30,7 @@ suspend fun loadVotersPage(
     reset: Boolean,
 ): ZhihuVotersResponse {
     val url = (if (reset || nextUrl == null) initialUrl else nextUrl).replace("http://", "https://")
-    val response = environment.fetchJson(url, "") ?: error("赞同者信息为空")
+    val response = environment.fetchJson(url, "") ?: throw DisplayFailure { DomainStrings.votersEmptyResponse }
     return ZhihuJson.decodeJson(response)
 }
 

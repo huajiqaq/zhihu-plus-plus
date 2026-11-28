@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.navigation
 
 import io.ktor.http.Url
+import io.ktor.util.PlatformUtils
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import top.yukonga.miuix.kmp.nav.core.NavKey
@@ -41,17 +42,30 @@ data object EmptyDetail : NavDestination
 @Serializable
 data object Login : NavDestination
 
-/** 通用网页独立入栈；当前网址和站内浏览历史由该条目的浏览器持有。 */
+/** 原生宿主用独立网页条目持有浏览历史；Web 在新标签页打开，不占用应用返回栈。 */
 @Serializable
 data class WebPage(
     val url: String,
 ) : NavDestination
 
-fun isWebPageUrl(url: String): Boolean {
-    if (!url.startsWith("https://", ignoreCase = true) && !url.startsWith("http://", ignoreCase = true)) return false
+fun isWebPageUrl(url: String): Boolean = parseLink(url, allowAppLink = false, allowUserInfo = !PlatformUtils.IS_BROWSER) != null
+
+private val contactSchemes = setOf("mailto", "tel", "sms")
+
+fun isSystemContactUri(uri: String): Boolean = uri.substringBefore(':').lowercase() in contactSchemes
+
+private fun parseLink(url: String, allowAppLink: Boolean, allowUserInfo: Boolean): Url? {
+    if (!url.startsWith("https://", true) && !url.startsWith("http://", true) && !(allowAppLink && url.startsWith("zhihu://", true))) return null
     val authority = url.substringAfter("://").takeWhile { it != '/' && it != '?' && it != '#' }
-    if (authority.isEmpty() || authority.any { it.isWhitespace() || it == '\\' } || url.any { it.isISOControl() }) return false
-    return runCatching { Url(url).host.isNotBlank() }.getOrDefault(false)
+    if (authority.isEmpty() || (!allowUserInfo && '@' in authority) || authority.any { it.isWhitespace() || it == '\\' } || url.any { it.isISOControl() }) return null
+    return runCatching { Url(url) }.getOrNull()?.takeIf { it.host.isNotBlank() }
+}
+
+/** 先校验每层知乎跳转，再解析业务页或交给浏览器；保留外部地址原有的查询和片段。 */
+tailrec fun browserNavigationTarget(url: String): String? {
+    val parsed = parseLink(url, allowAppLink = true, allowUserInfo = false) ?: return null
+    val target = if (parsed.protocol.name != "zhihu" && parsed.host.removeSuffix(".").equals("link.zhihu.com", true)) parsed.parameters["target"] else null
+    return if (target == null) url else browserNavigationTarget(target)
 }
 
 @Serializable
@@ -160,9 +174,9 @@ data object Account : TopLevelDestination {
     @Serializable
     data object OpenSourceLicenses : NavDestination
 
-    /** 账号与登录维护入口；保留旧序列化名称以兼容已保存的导航状态。 */
+    /** 账号与登录维护入口。 */
     @Serializable
-    data object DeveloperSettings : NavDestination
+    data object AccountTools : NavDestination
 }
 
 @Serializable
@@ -379,15 +393,18 @@ fun NavDestination.withReadingQueueSource(sourceId: String?): NavDestination = w
 }
 
 /** 主动点击才为普通链接建立网页条目；被动探测仍只使用 [resolveContent]。 */
-fun resolveNavigationUrl(url: String): NavDestination? {
-    resolveContent(url)?.let { return it }
-    if (!isWebPageUrl(url)) return null
-    val parsed = Url(url)
-    val target = if (parsed.host.equals("link.zhihu.com", ignoreCase = true)) parsed.parameters["target"]?.takeIf(::isWebPageUrl) else null
-    return WebPage(target ?: url)
-}
+fun resolveNavigationUrl(url: String): NavDestination? = resolveUrl(url, webPageFallback = true)
 
-fun resolveContent(url: String): NavDestination? = runCatching { resolveContent(Url(url)) }.getOrNull()
+fun resolveContent(url: String): NavDestination? = resolveUrl(url, webPageFallback = false)
+
+private fun resolveUrl(url: String, webPageFallback: Boolean): NavDestination? {
+    val address = if (PlatformUtils.IS_BROWSER) browserNavigationTarget(url) ?: return null else url
+    val parsed = runCatching { Url(address) }.getOrNull() ?: return null
+    runCatching { resolveContent(parsed) }.getOrNull()?.let { return it }
+    if (!webPageFallback || !isWebPageUrl(address)) return null
+    val target = if (parsed.host.equals("link.zhihu.com", ignoreCase = true)) parsed.parameters["target"]?.takeIf(::isWebPageUrl) else null
+    return WebPage(target ?: address)
+}
 
 fun resolveContent(url: Url): NavDestination? {
     val segments = url.segments
@@ -427,7 +444,7 @@ fun resolveContent(url: Url): NavDestination? {
             ) {
                 return Notification.Entry(
                     entryName = segments[4],
-                    title = url.parameters["title"].orEmpty().ifBlank { "消息" },
+                    title = url.parameters["title"].orEmpty(),
                 )
             } else if (segments.size == 4 &&
                 segments[0] == "question" &&

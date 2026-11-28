@@ -17,24 +17,15 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
 /**
  * 内容打开事件。
  * 这是内容详情层面的已打开记录，用于回答切换/已读判断，不是 feed 曝光记录。
  */
-@Entity(
-    tableName = ContentOpenEvent.TABLE_NAME,
-    indices = [
-        Index(value = ["contentType", "contentId"]),
-        Index(value = ["openedAt"]),
-    ],
-)
+@Serializable
 data class ContentOpenEvent(
-    @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val contentType: String,
     val contentId: String,

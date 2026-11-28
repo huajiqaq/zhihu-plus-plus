@@ -58,16 +58,18 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
+import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppMetadataLoadState
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.util.formatCompactCount
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun QuestionOverviewContent(
@@ -127,7 +129,7 @@ internal fun QuestionOverviewContent(
                         .testTag(QUESTION_AUTHOR_TAG)
                         .clickable {
                             onNavigate(
-                                com.github.zly2006.zhihu.navigation.Person(
+                                Person(
                                     author.id,
                                     author.urlToken,
                                     author.name,
@@ -147,7 +149,7 @@ internal fun QuestionOverviewContent(
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     )
                     Text(
-                        text = "提问者 · ${author.name}",
+                        text = ContentStrings.questionAuthor(author.name),
                         style = LocalAppSkinTokens.current.body2,
                         color = LocalAppSkinTokens.current.onSurfaceVariantSummary,
                         modifier = Modifier.weight(1f),
@@ -175,7 +177,7 @@ internal fun QuestionOverviewContent(
         }
         if (items.isNotEmpty()) {
             Text(
-                text = "浏览更多回答",
+                text = ContentStrings.browseMoreAnswers,
                 style = LocalAppSkinTokens.current.footnote1,
                 color = LocalAppSkinTokens.current.onSurfaceVariantSummary,
                 modifier = Modifier.semantics { heading() },
@@ -213,17 +215,17 @@ private fun QuestionHeaderSection(
             verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            visitCount?.let { StatItem(icon = Icons.Outlined.Visibility, text = "${formatCompactCount(it)} 浏览") }
-            followerCount?.let { StatItem(icon = Icons.Outlined.Groups, text = "${formatCompactCount(it)} 关注") }
+            visitCount?.let { StatItem(icon = Icons.Outlined.Visibility, text = ContentStrings.compactViews(it, formatCompactCount(it))) }
+            followerCount?.let { StatItem(icon = Icons.Outlined.Groups, text = ContentStrings.compactFollowers(it, formatCompactCount(it))) }
             AppTextButton(
                 onClick = onShowComments,
                 contentColor = skin.onSurface,
                 contentPadding = PaddingValues(horizontal = AppDimens.Space4),
                 modifier = Modifier.testTag(QUESTION_COMMENTS_BUTTON_TAG),
             ) {
-                Icon(Icons.AutoMirrored.Filled.Comment, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
+                AppIcon(Icons.AutoMirrored.Filled.Comment, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
                 Spacer(Modifier.width(AppDimens.Space4))
-                Text(commentCount?.let { "${formatCompactCount(it)} 评论" } ?: "评论", style = skin.footnote1)
+                Text(commentCount?.let { ContentStrings.compactComments(it, formatCompactCount(it)) } ?: ContentStrings.comments, style = skin.footnote1)
             }
         }
     }
@@ -245,16 +247,16 @@ private fun QuestionPrimaryActions(
             onClick = onWriteAnswerClick,
             modifier = Modifier.width(IntrinsicSize.Max).heightIn(min = AppDimens.TouchTarget).testTag(QUESTION_WRITE_ANSWER_BUTTON_TAG),
         ) {
-            Icon(Icons.Filled.Edit, contentDescription = null)
+            AppIcon(Icons.Filled.Edit, contentDescription = null)
             Spacer(Modifier.width(AppDimens.Space8))
-            Text("写回答")
+            Text(ContentStrings.writeAnswer)
         }
         AppOutlinedButton(
             onClick = onFollowClick,
             modifier =
                 Modifier.width(IntrinsicSize.Max).heightIn(min = AppDimens.TouchTarget).testTag(QUESTION_FOLLOW_BUTTON_TAG).semantics {
                     selected = isFollowing
-                    contentDescription = if (isFollowing) "取消关注" else "关注问题"
+                    contentDescription = if (isFollowing) ContentStrings.unfollow else ContentStrings.followQuestion
                 },
             containerColor = if (isFollowing) {
                 MaterialTheme.colorScheme.tertiaryContainer
@@ -267,12 +269,12 @@ private fun QuestionPrimaryActions(
                 null
             },
         ) {
-            Icon(
+            AppIcon(
                 imageVector = if (isFollowing) Icons.Filled.Check else Icons.Filled.Add,
                 contentDescription = null,
             )
             Spacer(Modifier.width(8.dp))
-            Text(if (isFollowing) "已关注" else "关注问题")
+            Text(if (isFollowing) ContentStrings.following else ContentStrings.followQuestion)
         }
     }
 }
@@ -284,7 +286,7 @@ private fun StatItem(icon: ImageVector, text: String, modifier: Modifier = Modif
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier,
     ) {
-        Icon(
+        AppIcon(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(AppDimens.IconSizeSmall),

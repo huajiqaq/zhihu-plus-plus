@@ -17,7 +17,10 @@
 
 package com.github.zly2006.zhihu.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.Daily
@@ -46,7 +50,10 @@ import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.notification.AppleSystemNotificationHost
 import com.github.zly2006.zhihu.platform.rememberExternalUrlOpener
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.reading.ReadingPlayerHost
+import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
+import com.github.zly2006.zhihu.ui.components.PageTurnFab
 import com.github.zly2006.zhihu.ui.subscreens.navDestinationFromName
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
@@ -59,7 +66,16 @@ fun MacosZhihuMain(
     onNotificationOpen: () -> Unit = {},
     windowChrome: MacosWindowChromeHost? = null,
 ) {
+    ReadingPlayerHost { MacosMainContent(onNotificationOpen, windowChrome) }
+}
+
+@Composable
+private fun MacosMainContent(
+    onNotificationOpen: () -> Unit,
+    windowChrome: MacosWindowChromeHost?,
+) {
     val navHost = rememberAppNavHost(MainTabs)
+    val pageTurnDispatcher = remember { PageTurnDispatcher() }
     val accountStore = rememberZhihuAccountStore()
     val accounts by accountStore.accountsState.collectAsState()
     val accountSession = accounts.session
@@ -68,7 +84,7 @@ fun MacosZhihuMain(
     val openExternalUrl = rememberExternalUrlOpener()
     val userMessages = rememberUserMessageSink()
     val preferenceState = rememberZhihuMainPreferenceState()
-    var currentMainTabDestination by remember { mutableStateOf(preferenceState.startDestination) }
+    val tabsState = rememberZhihuMainTabsState(preferenceState)
     var accountSheetVisible by remember { mutableStateOf(false) }
 
     fun navigateToMainTabs(clearRouteStack: Boolean = false) {
@@ -95,7 +111,7 @@ fun MacosZhihuMain(
                     }.getOrNull()
                 }
                 if (videoUrl == null) {
-                    userMessages.showMessage("获取视频链接失败")
+                    userMessages.showMessage(AppStrings.videoLoadFailed)
                 } else {
                     openExternalUrl(videoUrl)
                 }
@@ -103,9 +119,10 @@ fun MacosZhihuMain(
         },
     )
     val currentShowMessage by rememberUpdatedState<(String) -> Unit>({ userMessages.showMessage(it) })
-    val navigationCoordinator = remember(navHost) {
+    val navigationCoordinator = remember(navHost, tabsState) {
         ZhihuMainNavigationCoordinator(
             mainHost = { navHost },
+            tabs = { tabsState },
             showMessage = { currentShowMessage(it) },
             openVideo = { video, contentId, contentType -> currentOpenVideo(video, contentId, contentType) },
             onRouteAccepted = { accountSheetVisible = false },
@@ -121,76 +138,75 @@ fun MacosZhihuMain(
                 navigationCoordinator.navigate(it)
             },
         ) {
-            ZhihuMain(
-                modifier = modifier,
-                navHost = navHost,
-                mainTabNavigationTarget = navigationCoordinator.mainTabNavigationTarget,
-                navigate = { navigationCoordinator.navigate(it) },
-                navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
-                enableLandscapeListDetail = true,
-                setCurrentMainTabOpenFrom = navigationCoordinator::setCurrentMainTabOpenFrom,
-                consumeMainTabNavigationTarget = navigationCoordinator::consumeMainTabNavigationTarget,
-                preferenceState = preferenceState,
-                isDarkTheme = ThemeManager.isDarkTheme(),
-                showMainNavigationBar = windowChrome == null,
-                showHomeTopActions = windowChrome == null,
-                onCurrentMainTabDestinationChange = { currentMainTabDestination = it },
-                accountSheetVisible = accountSheetVisible,
-                onDismissAccountSheet = { accountSheetVisible = false },
-                articleContent = { article: Article ->
-                    val articleViewModel: ArticleViewModel = viewModel {
-                        ArticleViewModel(article, httpClient, userMessages)
-                    }
-                    ArticleScreen(article, articleViewModel)
-                },
-            )
+            CompositionLocalProvider(LocalPageTurnDispatcher provides pageTurnDispatcher) {
+                Box(modifier.fillMaxSize()) {
+                    ZhihuMain(
+                        navHost = navHost,
+                        tabsState = tabsState,
+                        navigate = { navigationCoordinator.navigate(it) },
+                        navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
+                        enableLandscapeListDetail = true,
+                        showMainNavigationBar = windowChrome == null,
+                        showHomeTopActions = windowChrome == null,
+                        accountSheetVisible = accountSheetVisible,
+                        onDismissAccountSheet = { accountSheetVisible = false },
+                        articleContent = { article: Article ->
+                            val articleViewModel: ArticleViewModel = viewModel {
+                                ArticleViewModel(article, httpClient, userMessages)
+                            }
+                            ArticleScreen(article, articleViewModel)
+                        },
+                    )
+                    PageTurnFab(dispatcher = pageTurnDispatcher)
+                }
+            }
         }
     }
 
     if (windowChrome == null) {
         content(Modifier)
     } else {
-        val selectedMainTabDestination = currentMainTabDestination.takeUnless { navHost.top == OnlineHistoryRoute }
+        val selectedMainTabDestination = tabsState.currentDestination.takeUnless { navHost.top == OnlineHistoryRoute }
         val navigationItems = preferenceState.selectedBottomBarItemKeys.mapNotNull { destinationName ->
             val destination = navDestinationFromName(destinationName)
             val action = {
                 accountSheetVisible = false
                 if (destination == OnlineHistory) {
                     if (navHost.top != OnlineHistoryRoute) {
-                        navigationCoordinator.requestMainTab(null)
+                        tabsState.requestTab(null)
                         navigationCoordinator.navigate(OnlineHistoryRoute)
                     }
                 } else {
-                    navigationCoordinator.requestMainTab(destination)
+                    tabsState.requestTab(destination)
                     navigateToMainTabs(clearRouteStack = true)
                 }
             }
             when (destination) {
-                Home -> MacosWindowNavigationItem(Home.name, "首页", "house", "内容", Home == selectedMainTabDestination, action)
-                Follow -> MacosWindowNavigationItem(Follow.name, "关注", "person.2", "内容", Follow == selectedMainTabDestination, action)
-                HotList -> MacosWindowNavigationItem(HotList.name, "热榜", "flame", "内容", HotList == selectedMainTabDestination, action)
-                Daily -> MacosWindowNavigationItem(Daily.name, "日报", "newspaper", "内容", Daily == selectedMainTabDestination, action)
+                Home -> MacosWindowNavigationItem(Home.name, AppStrings.home, "house", AppStrings.contentSection, Home == selectedMainTabDestination, action)
+                Follow -> MacosWindowNavigationItem(Follow.name, AppStrings.following, "person.2", AppStrings.contentSection, Follow == selectedMainTabDestination, action)
+                HotList -> MacosWindowNavigationItem(HotList.name, AppStrings.trending, "flame", AppStrings.contentSection, HotList == selectedMainTabDestination, action)
+                Daily -> MacosWindowNavigationItem(Daily.name, AppStrings.daily, "newspaper", AppStrings.contentSection, Daily == selectedMainTabDestination, action)
                 OnlineHistory -> MacosWindowNavigationItem(
                     OnlineHistory.name,
-                    "历史",
+                    AppStrings.history,
                     "clock.arrow.circlepath",
-                    "资料",
+                    AppStrings.librarySection,
                     navHost.top == OnlineHistoryRoute,
                     action,
                 )
                 MyCollections -> MacosWindowNavigationItem(
                     MyCollections.name,
-                    "收藏",
+                    AppStrings.collections,
                     "bookmark",
-                    "资料",
+                    AppStrings.librarySection,
                     MyCollections == selectedMainTabDestination,
                     action,
                 )
                 Account -> MacosWindowNavigationItem(
                     Account.name,
-                    "账号",
+                    AppStrings.account,
                     "person.crop.circle",
-                    "账号",
+                    AppStrings.account,
                     Account == selectedMainTabDestination,
                     action,
                 )
@@ -203,19 +219,19 @@ fun MacosZhihuMain(
                 trailingToolbarItems = listOf(
                     MacosWindowToolbarItem(
                         identifier = "account",
-                        label = "账号与设置",
+                        label = AppStrings.accountSettings,
                         systemSymbolName = "person.crop.circle",
                         action = { accountSheetVisible = true },
                     ),
                     MacosWindowToolbarItem(
                         identifier = "search",
-                        label = "搜索",
+                        label = AppStrings.search,
                         systemSymbolName = "magnifyingglass",
                         action = { navigationCoordinator.navigate(Search()) },
                     ),
                     MacosWindowToolbarItem(
                         identifier = "notifications",
-                        label = "通知",
+                        label = AppStrings.notifications,
                         systemSymbolName = "bell",
                         action = { navigationCoordinator.navigate(Notification) },
                     ),

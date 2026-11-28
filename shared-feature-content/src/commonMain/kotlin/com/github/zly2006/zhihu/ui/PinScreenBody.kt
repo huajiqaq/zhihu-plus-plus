@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.ui.components.AppButton
@@ -90,12 +91,12 @@ internal fun PinScreenErrorContent(
         verticalArrangement = Arrangement.Center,
     ) {
         AppEmptyState(
-            title = "想法加载失败",
+            title = ContentStrings.pinLoadFailed,
             description = errorMessage,
             modifier = Modifier.testTag(PIN_SCREEN_ERROR_TAG),
             action = {
                 AppButton(
-                    text = "重试",
+                    text = ContentStrings.retry,
                     onClick = onRetry,
                     modifier = Modifier.testTag(PIN_SCREEN_RETRY_TAG),
                 )
@@ -142,7 +143,7 @@ internal fun PinScreenOverlays(
 
     VotersSheet(
         show = showVoters,
-        title = "${formatCompactCount(likeCount)} 人赞同了该想法",
+        title = ContentStrings.pinLikes(likeCount, formatCompactCount(likeCount)),
         voters = voters,
         isLoading = votersLoading,
         errorMessage = votersError,

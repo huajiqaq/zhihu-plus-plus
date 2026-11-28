@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,15 +77,19 @@ import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.flattenFeeds
 import com.github.zly2006.zhihu.data.pinSummaryText
 import com.github.zly2006.zhihu.data.toDisplayItem
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
+import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Topic
 import com.github.zly2006.zhihu.navigation.WritePin
+import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppMetadataLoadState
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
@@ -102,6 +107,7 @@ import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.rememberShareActionExecutor
 import com.github.zly2006.zhihu.util.raiseForStatus
+import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.deleteSigned
@@ -116,7 +122,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val TOPIC_SCREEN_BACK_BUTTON_TAG = "topic_screen_back_button"
 
@@ -145,27 +150,36 @@ data class TopicDetail(
 )
 
 enum class TopicFeedTab(
-    val title: String,
+    private val titleText: () -> String,
 ) {
-    Discussion("讨论"),
-    Ideas("想法"),
-    Unanswered("待回答"),
+    Discussion({ ContentStrings.discussion }),
+    Ideas({ ContentStrings.posts }),
+    Unanswered({ ContentStrings.unanswered }),
+    ;
+
+    val title: String get() = titleText()
 }
 
 enum class TopicDiscussionSort(
-    val title: String,
+    private val titleText: () -> String,
 ) {
-    Essence("精华"),
-    Hot("最热"),
-    Timeline("最新"),
+    Essence({ ContentStrings.essence }),
+    Hot({ ContentStrings.hottest }),
+    Timeline({ ContentStrings.latest }),
+    ;
+
+    val title: String get() = titleText()
 }
 
 enum class TopicIdeasSort(
-    val title: String,
+    private val titleText: () -> String,
     val endpoint: String,
 ) {
-    Hot("最热", "pin-hot"),
-    Latest("最新", "pin-new"),
+    Hot({ ContentStrings.hottest }, "pin-hot"),
+    Latest({ ContentStrings.latest }, "pin-new"),
+    ;
+
+    val title: String get() = titleText()
 }
 
 @Serializable
@@ -215,6 +229,16 @@ class TopicViewModel(
     var detail by mutableStateOf(initialDetail)
         private set
     val items = mutableStateListOf<FeedDisplayItem>()
+    private val pinTargets = mutableMapOf<String, TopicPinTarget>()
+
+    fun localizedItem(item: FeedDisplayItem): FeedDisplayItem {
+        val target = pinTargets[item.stableKey] ?: return item
+        return item.copy(
+            title = target.title.ifBlank { ContentStrings.pin },
+            details = ContentStrings.pinDetails(target.counter.applaud, target.counter.comment),
+        )
+    }
+
     var selectedTab by mutableStateOf(TopicFeedTab.Discussion)
         private set
     var discussionSort by mutableStateOf(TopicDiscussionSort.Hot)
@@ -230,6 +254,9 @@ class TopicViewModel(
     var isDetailLoading by mutableStateOf(false)
         private set
     private var nextUrl: String? = null
+    private val fetchedPageUrls = mutableSetOf<String>()
+    var completedPageCount by mutableIntStateOf(0)
+        private set
     var isEnd by mutableStateOf(false)
         private set
     private var requestGeneration = 0L
@@ -257,7 +284,7 @@ class TopicViewModel(
             val json = environment.fetchJson(
                 "https://www.zhihu.com/api/v5.1/topics/$topicId",
                 "name,excerpt,avatar_url,followers_count,questions_count,is_following,topic_id,total_pv,discuss_count",
-            ) ?: error("话题详情响应为空")
+            ) ?: error(ContentStrings.topicDetailEmptyResponse)
             val loadedDetail = ZhihuJson.decodeJson(TopicDetail.serializer(), json)
             currentCoroutineContext().ensureActive()
             if (generation != detailLoadGeneration || environment.httpClient() !== client) {
@@ -268,7 +295,7 @@ class TopicViewModel(
             throw error
         } catch (error: Exception) {
             if (generation == detailLoadGeneration && environment.httpClient() === client) {
-                detailErrorMessage = error.message?.takeIf(String::isNotBlank) ?: "话题信息加载失败"
+                detailErrorMessage = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.topicLoadFailed
             }
         } finally {
             if (generation == detailLoadGeneration) {
@@ -285,6 +312,8 @@ class TopicViewModel(
         isLoading = false
         selectedTab = tab
         items.clear()
+        pinTargets.clear()
+        fetchedPageUrls.clear()
         errorMessage = null
         nextUrl = null
         isEnd = false
@@ -299,6 +328,8 @@ class TopicViewModel(
         isLoading = false
         discussionSort = sort
         items.clear()
+        pinTargets.clear()
+        fetchedPageUrls.clear()
         errorMessage = null
         nextUrl = null
         isEnd = false
@@ -313,6 +344,8 @@ class TopicViewModel(
         isLoading = false
         ideasSort = sort
         items.clear()
+        pinTargets.clear()
+        fetchedPageUrls.clear()
         errorMessage = null
         nextUrl = null
         isEnd = false
@@ -328,36 +361,45 @@ class TopicViewModel(
         try {
             val url = nextUrl ?: topicFeedUrl(topicId, selectedTab, discussionSort, ideasSort)
             val json = environment.fetchJson(url, "data[*].content,excerpt,target.author.badge_v2")
-                ?: error("话题内容响应为空")
+                ?: error(ContentStrings.topicContentEmptyResponse)
+            currentCoroutineContext().ensureActive()
             if (generation != requestGeneration) return
             val responseItems = (json["data"] as? JsonArray).orEmpty()
-            val loadedItems = if (selectedTab == TopicFeedTab.Ideas) {
-                decodeTopicPinFeeds(json)
+            val decodedItems = if (selectedTab == TopicFeedTab.Ideas) {
+                decodeTopicPinFeeds(json) { item, target -> pinTargets[item.stableKey] = target }
             } else {
                 val feeds = responseItems.mapNotNull { element ->
                     runCatching { ZhihuJson.decodeJson<Feed>(element) }.getOrNull()
                 }
                 feeds.flattenFeeds().map { it.toDisplayItem(enableQualityFilter = false) }
             }
-            if (responseItems.isNotEmpty() && loadedItems.isEmpty()) {
-                error("话题内容解码失败：服务端返回 ${responseItems.size} 项，但没有可显示内容")
+            if (responseItems.isNotEmpty() && decodedItems.isEmpty()) {
+                error(ContentStrings.topicContentDecodeError(responseItems.size))
+            }
+            val loadedItems = if (selectedTab == TopicFeedTab.Discussion) {
+                val settings = FeedDisplaySettings(platformSettingsStore())
+                decodedItems.mapNotNull(settings::applyQualityFilter)
+            } else {
+                decodedItems
             }
             loadedItems.forEach { item ->
                 if (items.none { it.stableKey == item.stableKey }) items += item
             }
             val paging = json["paging"]?.let { ZhihuJson.decodeJson<TopicPaging>(it) }
-            val rawNext = paging?.next
+            val rawNext = paging?.next?.takeIf(String::isNotBlank)
             nextUrl = rawNext?.let(::normalizeTopicPagingUrl)
+            fetchedPageUrls += url
             isEnd = if (rawNext != null && nextUrl == null) {
-                errorMessage = "服务端返回了不受信任的分页地址，已停止加载"
+                errorMessage = ContentStrings.untrustedPagingUrl
                 true
             } else {
-                paging?.isEnd ?: true
+                paging?.isEnd != false || nextUrl == null || nextUrl in fetchedPageUrls
             }
+            completedPageCount++
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (generation == requestGeneration) {
-                errorMessage = error.message ?: error::class.simpleName ?: "未知错误"
+                errorMessage = error.message ?: error::class.simpleName ?: ContentStrings.unknownError
             }
         } finally {
             if (generation == requestGeneration) isLoading = false
@@ -387,7 +429,7 @@ class TopicViewModel(
     }
 
     suspend fun setFollowing(environment: ZhihuApiEnvironment, following: Boolean): Result<Unit> {
-        val current = detail ?: return Result.failure(IllegalStateException("话题详情尚未加载"))
+        val current = detail ?: return Result.failure(IllegalStateException(ContentStrings.topicDetailsNotLoaded))
         if (isFollowingChanging || current.isFollowing == following) return Result.success(Unit)
         isFollowingChanging = true
         detail = current.copy(
@@ -423,21 +465,22 @@ fun topicFeedUrl(
     TopicFeedTab.Unanswered -> "https://www.zhihu.com/api/v5.1/topics/$topicId/feeds/top_question/v2?limit=20&offset=0"
 }
 
-fun decodeTopicPinFeeds(json: kotlinx.serialization.json.JsonObject): List<FeedDisplayItem> =
+fun decodeTopicPinFeeds(
+    json: kotlinx.serialization.json.JsonObject,
+    onDecoded: (FeedDisplayItem, TopicPinTarget) -> Unit = { _, _ -> },
+): List<FeedDisplayItem> =
     (json["data"] as? JsonArray).orEmpty().mapNotNull { element ->
         runCatching { ZhihuJson.decodeJson<TopicPinFeed>(element) }.getOrNull()?.target?.let { target ->
             val pinId = target.id.content.toLongOrNull() ?: return@let null
             FeedDisplayItem(
-                title = target.title.ifBlank { "想法" },
+                title = target.title.ifBlank { ContentStrings.pin },
                 summary = target.plainContent.ifBlank { target.excerpt.ifBlank { target.content.pinSummaryText() } }.takeIf(String::isNotBlank),
-                details = "想法 · ${target.counter.applaud} 赞 · ${target.counter.comment} 评论",
+                details = ContentStrings.pinDetails(target.counter.applaud, target.counter.comment),
                 feed = null,
-                navDestinationJson = com.github.zly2006.zhihu.navigation
-                    .Pin(pinId)
-                    .toFeedDisplayItemNavDestinationJson(),
+                destination = Pin(pinId),
                 avatarSrc = target.author.avatarUrl,
                 authorName = target.author.name,
-            )
+            ).also { onDecoded(it, target) }
         }
     }
 
@@ -485,11 +528,23 @@ fun TopicScreen(topic: Topic) {
         }
     }
 
+    LaunchedEffect(viewModel, viewModel.completedPageCount, viewModel.isLoading) {
+        if (viewModel.selectedTab == TopicFeedTab.Discussion &&
+            viewModel.completedPageCount > 0 &&
+            viewModel.items.isEmpty() &&
+            !viewModel.isEnd &&
+            !viewModel.isLoading &&
+            viewModel.errorMessage == null
+        ) {
+            viewModel.loadMore(environment)
+        }
+    }
+
     AppScaffold(
         modifier = Modifier.testTag(TOPIC_SCREEN_TAG),
         topBar = {
             AppCompactTopBar(
-                title = viewModel.detail?.name?.ifBlank { topic.name } ?: topic.name.ifBlank { "话题" },
+                title = viewModel.detail?.name?.ifBlank { topic.name } ?: topic.name.ifBlank { ContentStrings.topic },
                 onBack = navigator.onNavigateBack,
                 backTag = TOPIC_SCREEN_BACK_BUTTON_TAG,
                 actions = {
@@ -499,7 +554,7 @@ fun TopicScreen(topic: Topic) {
                             val loadedTopic = topic.copy(name = viewModel.detail?.name ?: topic.name)
                             handleShareAction(loadedTopic, settings, executeShareAction) { showShareDialog = true }
                         },
-                    ) { Icon(Icons.Default.Share, contentDescription = "分享") }
+                    ) { AppIcon(Icons.Default.Share, contentDescription = ContentStrings.share) }
                 },
             )
         },
@@ -532,7 +587,7 @@ fun TopicScreen(topic: Topic) {
                         onFollowingChange = { following ->
                             scope.launch {
                                 viewModel.setFollowing(environment, following).onFailure {
-                                    messages.showShortMessage("${if (following) "关注" else "取消关注"}失败：${it.message}")
+                                    messages.showShortMessage(if (following) ContentStrings.followFailed(it.message) else ContentStrings.unfollowFailed(it.message))
                                 }
                             }
                         },
@@ -585,7 +640,7 @@ fun TopicScreen(topic: Topic) {
                 }
             },
         ) { item ->
-            FeedCard(item = item, modifier = Modifier.testTag("topic_feed_${item.stableKey}"))
+            FeedCard(item = viewModel.localizedItem(item), modifier = Modifier.testTag("topic_feed_${item.stableKey}"))
         }
     }
     val loadedTopic = topic.copy(name = viewModel.detail?.name ?: topic.name)
@@ -621,7 +676,7 @@ private fun TopicHeader(
         Row(verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
                 model = detail?.avatarUrl,
-                contentDescription = "话题头像",
+                contentDescription = ContentStrings.topicAvatar,
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(AppDimens.MediaCornerRadius))
@@ -631,17 +686,17 @@ private fun TopicHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = detail?.name?.ifBlank { destination.name } ?: destination.name,
-                    style = com.github.zly2006.zhihu.theme.LocalAppSkinTokens.current.headline2,
-                    color = com.github.zly2006.zhihu.theme.LocalAppSkinTokens.current.onSurface,
+                    style = LocalAppSkinTokens.current.headline2,
+                    color = LocalAppSkinTokens.current.onSurface,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(4.dp))
                 when {
                     detail != null -> Text(
                         text = listOfNotNull(
-                            detail.totalPv.takeIf(String::isNotBlank)?.let { "${formatTopicCount(it)} 浏览" },
-                            detail.discussCount.takeIf(String::isNotBlank)?.let { "${formatTopicCount(it)} 讨论" },
-                        ).joinToString(" · ").ifBlank { "话题" },
+                            detail.totalPv.takeIf(String::isNotBlank)?.let { ContentStrings.topicViews(formatTopicCount(it)) },
+                            detail.discussCount.takeIf(String::isNotBlank)?.let { ContentStrings.topicDiscussions(formatTopicCount(it)) },
+                        ).joinToString(" · ").ifBlank { ContentStrings.topic },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -664,19 +719,19 @@ private fun TopicHeader(
                 verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
             ) {
                 TopicStat(
-                    label = "关注",
+                    label = ContentStrings.followers,
                     value = formatTopicCount(detail.followersCount.toString()),
                 )
                 TopicStat(
-                    label = "问题",
+                    label = ContentStrings.questionsAsked,
                     value = formatTopicCount(detail.questionsCount.toString()),
                 )
                 TopicStat(
-                    label = "浏览",
+                    label = ContentStrings.views,
                     value = detail.totalPv.takeIf(String::isNotBlank)?.let(::formatTopicCount) ?: "—",
                 )
                 TopicStat(
-                    label = "讨论",
+                    label = ContentStrings.discussion,
                     value = detail.discussCount.takeIf(String::isNotBlank)?.let(::formatTopicCount) ?: "—",
                 )
             }
@@ -717,7 +772,7 @@ private fun TopicHeader(
                 if (isFollowingChanging) {
                     AppSpinner()
                 } else {
-                    Text(if (isFollowing) "已关注" else "关注话题")
+                    Text(if (isFollowing) ContentStrings.following else ContentStrings.followTopic)
                 }
             }
             AppOutlinedButton(
@@ -727,7 +782,7 @@ private fun TopicHeader(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
-                Text("发想法")
+                Text(ContentStrings.writePin)
             }
         }
     }
@@ -815,12 +870,12 @@ private fun TopicIntroduction(
                         .padding(end = 4.dp)
                         .testTag(TOPIC_INTRODUCTION_TOGGLE_TAG),
             ) {
-                Icon(
+                AppIcon(
                     imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(if (isExpanded) "收起简介" else "展开简介")
+                Text(if (isExpanded) ContentStrings.collapseDescription else ContentStrings.expandDescription)
             }
         }
     }

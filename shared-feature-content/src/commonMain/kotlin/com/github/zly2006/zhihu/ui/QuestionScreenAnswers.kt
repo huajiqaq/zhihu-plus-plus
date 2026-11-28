@@ -44,11 +44,27 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
+import com.github.zly2006.zhihu.util.formatRelativeTime
+
+/** 缓存保留原始数据，日期与计数只在展示时按当前语言格式化。 */
+internal fun FeedDisplayItem.localizedQuestionAnswer(): FeedDisplayItem {
+    val target = feed?.target as? Feed.AnswerTarget ?: return this
+    return copy(
+        authorName = target.author?.name ?: ContentStrings.unknownAuthor,
+        details = listOfNotNull(
+            target.displayDetails,
+            target.createdTime.takeIf { it > 0 }?.let(::formatRelativeTime),
+        ).joinToString(" · "),
+    )
+}
 
 @Composable
 internal fun QuestionAnswerStrip(
@@ -65,7 +81,8 @@ internal fun QuestionAnswerStrip(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
         ) {
-            items(items, key = { it.stableKey }) { item ->
+            items(items, key = { it.stableKey }) { sourceItem ->
+                val item = sourceItem.localizedQuestionAnswer()
                 AppCard(
                     modifier = Modifier.width(previewWidth).testTag("question_answer_strip_${item.stableKey}"),
                     onClick = { onSelect(item) },
@@ -116,7 +133,8 @@ internal fun QuestionAnswerStrip(
                             )
                         }
                         Text(
-                            text = item.summary.orEmpty().ifBlank { item.title },
+                            text = if (item.isQualityFiltered) item.qualityFilterReason.orEmpty() else item.summary.orEmpty().ifBlank { item.title },
+                            modifier = if (item.isQualityFiltered) Modifier.testTag("feed_quality_filter_reason") else Modifier,
                             style = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.footnote1 else MaterialTheme.typography.bodySmall,
                             color = if (settingSkinIsMiuix()) {
                                 LocalAppSkinTokens.current.onSurfaceVariantSummary

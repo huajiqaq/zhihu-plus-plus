@@ -15,7 +15,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
+import buildlogic.configureAndroidVariant
 import buildlogic.configureAppleTargets
+import buildlogic.configureIosVariant
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -32,14 +36,6 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
         val miuixThemeMain =
             create("miuixThemeMain") {
                 dependsOn(commonMain.get())
@@ -49,9 +45,11 @@ kotlin {
                     implementation(libs.miuix.ui)
                 }
             }
-        androidFull.dependsOn(miuixThemeMain)
+        androidMain { configureAndroidVariant(miuixThemeMain) }
+        wasmJsMain { dependsOn(miuixThemeMain) }
         jvmMain.get().dependsOn(miuixThemeMain)
-        findByName("appleMain")?.dependsOn(miuixThemeMain)
+        findByName("macosMain")?.dependsOn(miuixThemeMain)
+        findByName("iosMain")?.configureIosVariant(miuixThemeMain)
         commonMain.dependencies {
             api(project(":shared-domain"))
             implementation(libs.jb.compose.runtime)

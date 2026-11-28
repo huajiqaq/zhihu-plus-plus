@@ -60,7 +60,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * RULES/HIDE 是 Android 的真实分页策略；JVM 固定 OFF，不能用测试环境 getter 改写生产策略。
+ * RULES/HIDE 使用真实保存设置，合成环境不改写生产默认策略。
  * 合成响应经公开的 pullToRefresh 入口；设置只改本用例的质量键并在 finally 恢复，不加载账户、数据库或发送真实请求。
  */
 @RunWith(AndroidJUnit4::class)
@@ -75,13 +75,13 @@ class HomeFollowStructuralAdvertisementRegressionTest {
             assertEquals(syntheticMoments().size + 1, model.allData.size)
             assertTrue(model.allData.last() is AdvertisementFeed)
             assertEquals(syntheticMoments().size, model.displayItems.size)
-            assertTrue(model.displayItems.toTypedArray().contentEquals(model.latestLoadedDisplayItems.value.toTypedArray()))
+            assertEquals(1, model.completedPageCount)
             val answer = model.displayItems.first()
             assertTrue(answer.feed?.target is Feed.AnswerTarget)
             assertEquals("合成低赞回答", answer.title)
             assertTrue(answer.isQualityFiltered)
             assertTrue(answer.isFiltered)
-            assertEquals("规则：回答；赞数 < 10，未关注作者", answer.content)
+            assertEquals("规则：回答；赞数 < 10，未关注作者", answer.qualityFilterReason)
             assertFalse(model.displayItems.last().isQualityFiltered)
             assertEquals("https://www.zhihu.com/api/v3/moments?limit=10&desktop=true", environment.requestedUrlWithoutInclude())
         }

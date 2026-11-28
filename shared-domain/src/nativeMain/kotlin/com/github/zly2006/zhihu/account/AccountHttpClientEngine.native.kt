@@ -17,7 +17,22 @@
 
 package com.github.zly2006.zhihu.account
 
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.darwin.Darwin
+import kotlinx.cinterop.ExperimentalForeignApi
 
 internal actual val accountHttpClientEngineFactory: HttpClientEngineFactory<*> = Darwin
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun createDirectHttpClient(configure: HttpClientConfig<*>.() -> Unit): HttpClient = HttpClient(Darwin) {
+    configure()
+    followRedirects = false
+    engine {
+        configureSession {
+            setHTTPCookieStorage(null)
+            setURLCredentialStorage(null)
+        }
+    }
+}

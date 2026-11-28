@@ -49,6 +49,7 @@ import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.withReadingQueueSource
@@ -58,6 +59,7 @@ import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.LocalSelectedContentDestination
 import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.subscreens.FEED_CARD_STYLE_PREFERENCE_KEY
+import io.ktor.util.PlatformUtils
 
 const val FEED_CARD_PREVIEW_TAG = "feed_card_preview"
 const val FEED_CARD_PREVIEW_OPEN_TAG = "feed_card_preview_open"
@@ -95,9 +97,10 @@ fun FeedCard(
             ImageRequest
                 .Builder(imageContext)
                 .data(it)
-                // 样本图片在 off 上用默认 UA 返回 403，浏览器 UA 可正常返回原图。
-                .httpHeaders(NetworkHeaders.Builder().set("User-Agent", "Mozilla/5.0").build())
-                .build()
+                .apply {
+                    /** 部分缩略图拒绝非浏览器 UA；Web 由浏览器设置该请求头。 */
+                    if (!PlatformUtils.IS_BROWSER) httpHeaders(NetworkHeaders.Builder().set("User-Agent", "Mozilla/5.0").build())
+                }.build()
         }
     }
     val showFeedThumbnail by rememberObservedSetting(settings, "showFeedThumbnail") {
@@ -118,7 +121,7 @@ fun FeedCard(
                 if (contentUrl?.startsWith("http") == true) {
                     uriHandler.openUri(contentUrl)
                 } else {
-                    userMessages.showMessage("暂不支持打开该内容", UserMessageDuration.Short)
+                    userMessages.showMessage(WidgetsStrings.unsupportedContent, UserMessageDuration.Short)
                 }
             }
         }

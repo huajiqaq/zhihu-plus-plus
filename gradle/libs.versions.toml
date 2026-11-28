@@ -1,5 +1,5 @@
 [versions]
-jvm = "21"
+jvm = "25"
 kotlin = "2.4.21"
 agp = "9.5.3"
 compileSdk = "37"
@@ -39,7 +39,10 @@ workManager = "2.12.0"
 splashScreen = "1.2.0"
 appcompat = "1.7.1"
 media = "1.7.1"
-onnxruntime = "1.26.0"
+onnxruntime = "1.32.0"
+onnxRuntimeJvm = "1.23.2"
+onnxRuntimeWeb = "1.31.1"
+nobleHashes = "2.4.0"
 junit = "4.13.2"
 androidxTestJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
@@ -50,6 +53,11 @@ tiqianMath = "0.1.0-SNAPSHOT"
 tiqianMarkdown = "0.1.0-SNAPSHOT"
 openjfx = "21.0.13.1"
 dbusJava = "5.2.2"
+javacv = "1.5.14"
+javacpp = "1.5.14"
+ffmpeg = "8.1.2-1.5.14"
+ffmpegWasm = "0.12.10"
+openhtmltopdf = "1.1.126"
 
 [libraries]
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashScreen" }
@@ -120,6 +128,7 @@ androidx-work-runtime = { group = "androidx.work", name = "work-runtime", versio
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+onnxruntime-jvm = { group = "com.microsoft.onnxruntime", name = "onnxruntime", version.ref = "onnxRuntimeJvm" }
 junit4 = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
@@ -143,6 +152,14 @@ openjfx-controls = { group = "org.openjfx", name = "javafx-controls", version.re
 openjfx-web = { group = "org.openjfx", name = "javafx-web", version.ref = "openjfx" }
 openjfx-swing = { group = "org.openjfx", name = "javafx-swing", version.ref = "openjfx" }
 openjfx-media = { group = "org.openjfx", name = "javafx-media", version.ref = "openjfx" }
+javacv = { group = "org.bytedeco", name = "javacv", version.ref = "javacv" }
+javacpp = { group = "org.bytedeco", name = "javacpp", version.ref = "javacpp" }
+ffmpeg = { group = "org.bytedeco", name = "ffmpeg", version.ref = "ffmpeg" }
+openhtmltopdf-pdfbox = { group = "io.github.openhtmltopdf", name = "openhtmltopdf-pdfbox", version.ref = "openhtmltopdf" }
+openhtmltopdf-svg-support = { group = "io.github.openhtmltopdf", name = "openhtmltopdf-svg-support", version.ref = "openhtmltopdf" }
+
+[bundles]
+javafx = ["openjfx-base", "openjfx-graphics", "openjfx-controls", "openjfx-web", "openjfx-swing", "openjfx-media"]
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

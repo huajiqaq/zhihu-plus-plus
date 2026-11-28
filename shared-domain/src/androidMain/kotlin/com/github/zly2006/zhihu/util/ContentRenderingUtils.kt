@@ -35,6 +35,7 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.em
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -54,7 +55,7 @@ fun saveBitmapToGallery(
         relativePath = Environment.DIRECTORY_PICTURES + "/Zhihu++",
     ) { outputStream ->
         if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)) {
-            throw IllegalStateException("Failed to encode image")
+            throw IllegalStateException(DomainStrings.imageEncodeFailed)
         }
     }
 }
@@ -103,11 +104,11 @@ private fun saveImageToMediaStore(
         MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     }
     val imageUri = resolver.insert(collection, contentValues)
-        ?: throw IllegalStateException("Failed to create MediaStore entry")
+        ?: throw IllegalStateException(DomainStrings.mediaCreateFailed)
 
     try {
         resolver.openOutputStream(imageUri)?.use(writeImage)
-            ?: throw IllegalStateException("Failed to open MediaStore output stream")
+            ?: throw IllegalStateException(DomainStrings.mediaWriteFailed)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             contentValues.clear()
@@ -163,9 +164,9 @@ suspend fun saveImageToGallery(
             displayName = fileName,
             bytes = bytes,
         )
-        userMessages.showShortMessage("图片已保存到相册")
+        userMessages.showShortMessage(DomainStrings.imageSaved)
     } catch (e: Exception) {
-        userMessages.showShortMessage("保存失败: ${e.message}")
+        userMessages.showShortMessage(DomainStrings.imageSaveFailed(e.message.orEmpty()))
     }
 }
 
@@ -192,9 +193,9 @@ suspend fun shareImage(
             type = "image/jpeg"
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(shareIntent, "分享图片"))
+        context.startActivity(Intent.createChooser(shareIntent, DomainStrings.shareImage))
     } catch (e: Exception) {
-        userMessages.showShortMessage("分享失败: ${e.message}")
+        userMessages.showShortMessage(DomainStrings.imageShareFailed(e.message.orEmpty()))
     }
 }
 

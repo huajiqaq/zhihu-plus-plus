@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.SettingItemWithSwitch
@@ -46,21 +47,21 @@ internal fun WriteAnswerSettingsSheet(
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         Text(
-            text = "回答设置",
+            text = ContentStrings.answerSettings,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding, vertical = 8.dp),
         )
         Text(
-            text = "生成目录选项对图文和 Markdown 两种编辑模式均有效。",
+            text = ContentStrings.tocModesHelp,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding),
         )
         Spacer(Modifier.height(16.dp))
         SettingItemWithSwitch(
-            title = { Text("生成目录") },
+            title = { Text(ContentStrings.generateToc) },
             description = {
-                Text("适合长回答，知乎会根据标题生成目录结构。")
+                Text(ContentStrings.tocHelp)
             },
             checked = tocEnabled,
             onCheckedChange = onTocEnabledChange,

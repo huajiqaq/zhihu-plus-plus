@@ -17,7 +17,6 @@
 
 package com.github.zly2006.zhihu.account
 
-import com.github.zly2006.zhihu.data.ZhihuJson
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -25,8 +24,12 @@ import kotlinx.io.readString
 import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+
+private val accountFileJson = Json { encodeDefaults = true }
 
 const val DEFAULT_ZHIHU_USER_AGENT =
     "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/540.0 (KHTML, like Gecko) Ubuntu/10.10 Chrome/9.1.0.0 Safari/540.0"
@@ -83,31 +86,18 @@ class ZhihuAccountRepository(
     fun loadAccounts(): ZhihuAccounts {
         if (!SystemFileSystem.exists(file)) return ZhihuAccounts()
         val text = SystemFileSystem.source(file).buffered().use { it.readString() }
-        if (text.isBlank()) return ZhihuAccounts()
-        return runCatching {
-            val json = ZhihuJson.json
-            val element = json.parseToJsonElement(text)
-            val loaded = if (element is JsonObject && "accounts" in element) {
-                json.decodeFromString<ZhihuAccounts>(text)
-            } else {
-                val session = json.decodeFromString<ZhihuAccountSession>(text)
-                if (session.login) {
-                    val id = session.accountSlotId()
-                    ZhihuAccounts(id, listOf(ZhihuSavedAccount(id, session)))
-                } else {
-                    ZhihuAccounts()
-                }
-            }
-            loaded.copy(
-                accounts = loaded.accounts.map { account ->
-                    val session = account.session
-                    val profile = session.profile ?: session.self?.let { raw ->
-                        runCatching { ZhihuJson.decodeJson<ZhihuAccountProfileSnapshot>(raw) }.getOrNull()?.takeIf { it.id.isNotBlank() }
-                    }
-                    if (profile == session.profile) account else account.copy(session = session.copy(profile = profile))
-                },
-            )
-        }.getOrDefault(ZhihuAccounts())
+        return try {
+            val element = accountFileJson.parseToJsonElement(text)
+            require(element is JsonObject && element["accounts"] is JsonArray)
+            val loaded = accountFileJson.decodeFromString<ZhihuAccounts>(text)
+            val ids = loaded.accounts.map { it.id }
+            require(ids.all(String::isNotBlank) && ids.size == ids.toSet().size)
+            require(loaded.activeAccountId == null || loaded.activeAccountId in ids)
+            loaded
+        } catch (_: IllegalArgumentException) {
+            // 解析器异常可能含凭据片段；拒绝启动账号 store，不能降为空账号后覆盖原文件。
+            throw IllegalStateException("账号文件格式无效或不受支持；原文件未更改")
+        }
     }
 
     fun saveAccounts(accounts: ZhihuAccounts) {
@@ -116,7 +106,7 @@ class ZhihuAccountRepository(
         val temporary = Path(directory, file.name + ".tmp")
         try {
             SystemFileSystem.sink(temporary).buffered().use { sink ->
-                sink.writeString(ZhihuJson.json.encodeToString(accounts))
+                sink.writeString(accountFileJson.encodeToString(accounts))
             }
             SystemFileSystem.atomicMove(temporary, file)
         } finally {

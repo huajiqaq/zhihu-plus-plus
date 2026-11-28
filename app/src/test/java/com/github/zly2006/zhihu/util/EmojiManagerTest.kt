@@ -22,7 +22,6 @@ import android.content.ContextWrapper
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
 import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.account.replaceAndroidZhihuAccountStoreForTesting
 import com.github.zly2006.zhihu.data.ZhihuJson
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -31,14 +30,14 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
-import java.nio.file.Files
 
 class EmojiManagerTest {
     @Test
@@ -92,14 +91,13 @@ class EmojiManagerTest {
                     userAgent = "emoji-http-test",
                 ),
             )
-            replaceAndroidZhihuAccountStoreForTesting(store)
             val mapping = File(directory, "emoji_mapping.json").apply { writeText("""{"[旧表情]":"emoji_123.png"}""") }
             val version = File(directory, "emoji_version.txt").apply { writeText("1") }
             val emoji = File(directory, "emojis/emoji_123.png").apply {
                 check(parentFile!!.mkdirs())
                 writeBytes(byteArrayOf(1, 2, 3))
             }
-            EmojiManager.initialize(context)
+            EmojiManager.initialize(context, store.client)
             assertEquals(listOf(groupsUrl, detailUrl), requests)
             assertEquals("12", version.readText())
             assertEquals(
@@ -107,13 +105,13 @@ class EmojiManagerTest {
                 ZhihuJson.json.decodeFromString<Map<String, String>>(mapping.readText()),
             )
             assertEquals(listOf("[测试]"), EmojiManager.placeholders.value)
-            EmojiManager.initialize(context)
+            EmojiManager.initialize(context, store.client)
             assertEquals(2, requests.size)
 
             remoteVersion = 12
             resetInitialization()
             requests.clear()
-            EmojiManager.initialize(context)
+            EmojiManager.initialize(context, store.client)
             assertEquals(listOf(groupsUrl), requests)
             assertEquals(emoji.absolutePath, EmojiManager.getEmojiPath("[测试]"))
             val savedMapping = mapping.readText()
@@ -121,7 +119,7 @@ class EmojiManagerTest {
             failGroups = true
             resetInitialization()
             requests.clear()
-            EmojiManager.initialize(context)
+            EmojiManager.initialize(context, store.client)
             assertEquals(listOf(groupsUrl), requests)
             assertEquals(savedMapping, mapping.readText())
             assertEquals("12", version.readText())
@@ -134,7 +132,7 @@ class EmojiManagerTest {
                 requests.clear()
                 cancelledUrl = url
                 try {
-                    EmojiManager.initialize(context)
+                    EmojiManager.initialize(context, store.client)
                     throw AssertionError("表情请求取消必须向调用方传播")
                 } catch (_: CancellationException) {
                     assertEquals(if (url == groupsUrl) listOf(groupsUrl) else listOf(groupsUrl, detailUrl), requests)
@@ -145,7 +143,7 @@ class EmojiManagerTest {
             cancelledUrl = null
             detailVersion = 14
             requests.clear()
-            EmojiManager.initialize(context)
+            EmojiManager.initialize(context, store.client)
             assertEquals(listOf(groupsUrl, detailUrl), requests)
             assertEquals("14", version.readText())
 
@@ -153,7 +151,7 @@ class EmojiManagerTest {
             requests.clear()
             replaceOwner = { store.replaceSession(store.session.copy(username = "replacement-emoji-account")) }
             try {
-                EmojiManager.initialize(context)
+                EmojiManager.initialize(context, store.client)
                 throw AssertionError("旧账号的分组响应不能继续刷新缓存")
             } catch (_: CancellationException) {
                 assertEquals(listOf(groupsUrl), requests)
@@ -162,7 +160,6 @@ class EmojiManagerTest {
             }
         } finally {
             resetInitialization()
-            replaceAndroidZhihuAccountStoreForTesting(null)
             store.close()
             check(directory.deleteRecursively())
         }

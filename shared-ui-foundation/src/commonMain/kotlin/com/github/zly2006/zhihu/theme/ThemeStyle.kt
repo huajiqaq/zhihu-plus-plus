@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.theme
 
 import androidx.compose.runtime.compositionLocalOf
+import com.github.zly2006.zhihu.i18n.ThemeStrings
 
 /** 皮肤只影响呈现，不承载业务状态。 */
 enum class ThemeStyle(
@@ -56,18 +57,20 @@ val LocalMiuixStyle = compositionLocalOf { MiuixStyle.Default }
 
 /** 仅用于 Material 动态配色，不替换 Miuix 原生色表。 */
 enum class ThemePaletteStyle(
-    val displayName: String,
+    private val paletteName: () -> String,
 ) {
-    TONAL_SPOT("均衡"),
-    NEUTRAL("中性"),
-    VIBRANT("鲜明"),
-    EXPRESSIVE("表现力"),
-    RAINBOW("彩虹"),
-    FRUIT_SALAD("果彩"),
-    MONOCHROME("单色"),
-    FIDELITY("保真"),
-    CONTENT("内容"),
+    TONAL_SPOT(ThemeStrings::paletteTonalSpot),
+    NEUTRAL(ThemeStrings::paletteNeutral),
+    VIBRANT(ThemeStrings::paletteVibrant),
+    EXPRESSIVE(ThemeStrings::paletteExpressive),
+    RAINBOW(ThemeStrings::paletteRainbow),
+    FRUIT_SALAD(ThemeStrings::paletteFruitSalad),
+    MONOCHROME(ThemeStrings::paletteMonochrome),
+    FIDELITY(ThemeStrings::paletteFidelity),
+    CONTENT(ThemeStrings::paletteContent),
     ;
+
+    val displayName: String get() = paletteName()
 
     val supportedColorSpecs: List<ThemeColorSpec>
         get() = when (this) {

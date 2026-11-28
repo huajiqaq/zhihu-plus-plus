@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.ZhihuIdentityAccount
 import com.github.zly2006.zhihu.account.ZhihuSavedAccount
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppCheckbox
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -48,16 +49,16 @@ internal fun IdentityManagementSwitchDialog(
 ) {
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("切换账号") },
+        title = { Text(SettingsStrings.switchAccount) },
         text = {
-            Text("将切换到“${account.name}”。之后的推荐、内容和互动行为都属于该账号。")
+            Text(SettingsStrings.switchAccountConfirmation(account.name))
         },
         confirmButton = {
             AppTextButton(
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onConfirm,
             ) {
-                Text("切换")
+                Text(SettingsStrings.switch)
             }
         },
         dismissButton = {
@@ -65,7 +66,7 @@ internal fun IdentityManagementSwitchDialog(
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onCancel,
             ) {
-                Text("取消")
+                Text(SettingsStrings.cancel)
             }
         },
     )
@@ -84,13 +85,13 @@ internal fun IdentityManagementCreateDialog(
 ) {
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("新账号使用规则") },
+        title = { Text(SettingsStrings.newAccountRules) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "您即将创建的新账号，与当前账号共用同一手机号，为两个相互独立的账号身份。" +
-                        "新账号拥有独立的昵称、头像与个人主页，账号之间的内容、数据、互动行为完全隔离。" +
-                        "两个账号均需遵守社区规范与用户协议，任一账号存在违规行为，可能影响同一手机号下其他账号的使用权限。",
+                    SettingsStrings.newAccountRulesPhone +
+                        SettingsStrings.newAccountRulesData +
+                        SettingsStrings.newAccountRulesConduct,
                 )
                 Row(
                     modifier = Modifier
@@ -108,7 +109,7 @@ internal fun IdentityManagementCreateDialog(
                         enabled = !state.busy && !sessionChangeBlocked,
                         onCheckedChange = null,
                     )
-                    Text("我已知悉创建机会有限，创建后将立即切换")
+                    Text(SettingsStrings.acceptAccountRules)
                 }
             }
         },
@@ -118,7 +119,7 @@ internal fun IdentityManagementCreateDialog(
                 enabled = acceptedCreateRules && !state.busy && !sessionChangeBlocked,
                 onClick = onConfirm,
             ) {
-                Text("同意并创建")
+                Text(SettingsStrings.agreeAndCreate)
             }
         },
         dismissButton = {
@@ -126,7 +127,7 @@ internal fun IdentityManagementCreateDialog(
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onCancel,
             ) {
-                Text("取消")
+                Text(SettingsStrings.cancel)
             }
         },
     )
@@ -144,19 +145,19 @@ internal fun IdentityManagementSavedSwitchDialog(
 ) {
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("切换登录账号") },
-        text = { Text("将切换到“${account.displayName}”。") },
+        title = { Text(SettingsStrings.switchSavedAccount) },
+        text = { Text(SettingsStrings.switchSavedAccountConfirmation(account.displayName)) },
         confirmButton = {
             AppTextButton(
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onConfirm,
             ) {
-                Text("切换")
+                Text(SettingsStrings.switch)
             }
         },
         dismissButton = {
             AppTextButton(onClick = onCancel) {
-                Text("取消")
+                Text(SettingsStrings.cancel)
             }
         },
     )
@@ -174,19 +175,19 @@ internal fun IdentityManagementRemoveDialog(
 ) {
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("移除登录账号") },
-        text = { Text("将从本机删除“${account.displayName}”的登录凭据，不会注销知乎账号。") },
+        title = { Text(SettingsStrings.removeSavedAccount) },
+        text = { Text(SettingsStrings.removeSavedAccountConfirmation(account.displayName)) },
         confirmButton = {
             AppTextButton(
                 enabled = !state.busy && !sessionChangeBlocked,
                 onClick = onConfirm,
             ) {
-                Text("移除")
+                Text(SettingsStrings.remove)
             }
         },
         dismissButton = {
             AppTextButton(onClick = onCancel) {
-                Text("取消")
+                Text(SettingsStrings.cancel)
             }
         },
     )

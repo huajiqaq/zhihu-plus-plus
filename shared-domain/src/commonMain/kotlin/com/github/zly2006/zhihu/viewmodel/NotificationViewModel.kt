@@ -34,20 +34,22 @@ import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessagePage
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.WriteAnswerChooser
 import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.matchNotificationType
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.ZhihuMessageBodyEncryptor
-import com.github.zly2006.zhihu.util.jsonObject
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuMobileRequest
 import com.github.zly2006.zhihu.viewmodel.comment.RootCommentViewModel.Companion.submitCommentUrl
 import com.github.zly2006.zhihu.viewmodel.comment.buildSubmitCommentBody
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -61,28 +63,37 @@ import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.formUrlEncode
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.reflect.KType
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.reflect.KType
-import kotlin.reflect.typeOf
 
 enum class MobileNotificationCategory(
     val entryName: String,
-    val detailTitle: String,
-    private val alternateTitle: String = detailTitle,
+    private val matchTitle: String,
+    private val alternateTitle: String = matchTitle,
 ) {
     Comment("comment", "评论转发@", "评论与转发"),
     Like("like", "赞同喜欢", "赞同与感谢"),
     Favorite("favlist_me", "收藏了我"),
     Follow("follow", "关注订阅", "关注"),
     ;
+
+    val detailTitle: String
+        get() = when (this) {
+            Comment -> DomainStrings.notificationComments
+            Like -> DomainStrings.notificationLikes
+            Favorite -> DomainStrings.notificationSaves
+            Follow -> DomainStrings.notificationFollows
+        }
 
     val readAllUrl: String
         get() = "$MOBILE_NOTIFICATION_TIMELINE_URL/$entryName/actions/readall"
@@ -96,7 +107,7 @@ enum class MobileNotificationCategory(
             if (entry != null) return entries.find { it.entryName == entry.entryName }
             entries.find { it.entryName == item.id }?.let { return it }
             val title = item.content?.title?.takeIf(String::isNotBlank) ?: item.detailTitle
-            return entries.find { it.detailTitle == title || it.alternateTitle == title }
+            return entries.find { it.matchTitle == title || it.alternateTitle == title }
         }
     }
 }
@@ -209,7 +220,7 @@ class NotificationViewModel :
         val generation = pagingGeneration
         try {
             val url = lastPaging?.next ?: initialUrl
-            val json = requestForAccount(environment, client, url.replace("http://", "https://")).raiseForStatus().jsonObject()
+            val json = requestForAccount(environment, client, url.replace("http://", "https://")).raiseForStatus().body<JsonObject>()
             currentCoroutineContext().ensureActive()
             if (generation != pagingGeneration || !isCurrentAccount(environment, client)) return
             val page = ZhihuJson.decodeJson<MobileNotificationMessageOverview>(json)
@@ -245,7 +256,7 @@ class NotificationViewModel :
                 isRefreshPending = false
             } else {
                 val existingIds = allData.mapTo(mutableSetOf()) { it.stableId }
-                processResponse(
+                commitPage(
                     environment,
                     pageData.filter { existingIds.add(it.stableId) },
                     rawData,
@@ -272,7 +283,7 @@ class NotificationViewModel :
                 currentCoroutineContext().ensureActive()
                 if (!isCurrentAccount(environment, client)) return false
                 if (!response.status.isSuccess()) {
-                    Log.e("NotificationViewModel", "Failed to mark ${category.entryName} notifications as read: ${response.status}")
+                    AppLog.e("NotificationViewModel", "Failed to mark ${category.entryName} notifications as read: ${response.status}")
                     succeeded = false
                 } else {
                     categoryUnreadCounts[category] = 0
@@ -286,7 +297,7 @@ class NotificationViewModel :
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (!isCurrentAccount(environment, client)) return false
-                Log.e("NotificationViewModel", "Failed to mark ${category.entryName} notifications as read", e)
+                AppLog.e("NotificationViewModel", "Failed to mark ${category.entryName} notifications as read", e)
                 succeeded = false
             }
         }
@@ -350,7 +361,7 @@ class NotificationTimelineViewModel(
                 contentType(ContentType.Application.Json)
                 setBody(target.article.buildSubmitCommentBody(text, target.commentId))
             }
-            response.status.isSuccess() && ZhihuJson.decodeJson<DataHolder.Comment>(response.jsonObject()).id.isNotBlank()
+            response.status.isSuccess() && ZhihuJson.decodeJson<DataHolder.Comment>(response.body<JsonObject>()).id.isNotBlank()
         }
     }
 
@@ -383,7 +394,7 @@ class NotificationTimelineViewModel(
             val notificationEnvironment = environment as? NotificationEnvironment
                 ?: error("NotificationSettingsStore is required for notification pagination")
             val url = lastPaging?.next ?: initialUrl
-            val json = requestForAccount(environment, client, url.replace("http://", "https://")).raiseForStatus().jsonObject()
+            val json = requestForAccount(environment, client, url.replace("http://", "https://")).raiseForStatus().body<JsonObject>()
             currentCoroutineContext().ensureActive()
             if (generation != pagingGeneration || !isCurrentAccount(environment, client)) return
             val rawData = json["data"]?.jsonArray ?: JsonArray(emptyList())
@@ -404,8 +415,7 @@ class NotificationTimelineViewModel(
             if (lastPaging == null) markedAsRead = false
             val existingIds = if (isRefreshPending) mutableSetOf() else allData.mapTo(mutableSetOf()) { it.stableId }
             val newItems = data.filter { existingIds.add(it.stableId) }
-            processResponse(environment, if (markedAsRead) newItems.map { it.asRead() } else newItems, rawData)
-            lastPaging = paging
+            commitPage(environment, if (markedAsRead) newItems.map { it.asRead() } else newItems, rawData, paging)
 
             if (!markedAsRead && notificationEnvironment.notificationSettingsStore.getAutoMarkAsReadEnabled()) {
                 try {
@@ -416,12 +426,12 @@ class NotificationTimelineViewModel(
                     if (markedAsRead) {
                         allData.indices.forEach { i -> if (allData[i].isUnread) allData[i] = allData[i].asRead() }
                     } else {
-                        Log.e("NotificationTimelineViewModel", "Failed to mark $entryName notifications as read: ${response.status}")
+                        AppLog.e("NotificationTimelineViewModel", "Failed to mark $entryName notifications as read: ${response.status}")
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     if (generation == pagingGeneration && isCurrentAccount(environment, client)) {
-                        Log.e("NotificationTimelineViewModel", "Failed to mark $entryName notifications as read", e)
+                        AppLog.e("NotificationTimelineViewModel", "Failed to mark $entryName notifications as read", e)
                     }
                 }
             }
@@ -493,8 +503,21 @@ class PrivateMessageViewModel(
         if (content.isBlank() || isSending || !isCurrentAccount(environment, client)) return false
 
         isSending = true
-        errorMessage = null
+        errorText = null
         return try {
+            val owner = environment.accountClient
+            if (owner?.accountStore?.usesBrowserSession == true) {
+                val body = owner.sendBrowserMessage(peerId, content)
+                currentCoroutineContext().ensureActive()
+                if (!isCurrentAccount(environment, client)) return false
+                val message = ZhihuJson.decodeJson<ZhihuPrivateMessage>(ZhihuJson.json.parseToJsonElement(body))
+                if (message.id.isBlank()) throw DisplayFailure { DomainStrings.messageUnconfirmed }
+                if (allData.none { it.stableId == message.stableId }) {
+                    allData.add(0, message)
+                    pendingSentIds.add(message.stableId)
+                }
+                return true
+            }
             val encryptedBody = run {
                 val form = Parameters
                     .build {
@@ -521,7 +544,7 @@ class PrivateMessageViewModel(
                 val responseText = response.bodyAsText()
                 currentCoroutineContext().ensureActive()
                 if (!isCurrentAccount(environment, client)) return false
-                errorMessage = runCatching {
+                val serverMessage = runCatching {
                     ZhihuJson.json
                         .parseToJsonElement(responseText)
                         .jsonObject["error"]
@@ -529,8 +552,10 @@ class PrivateMessageViewModel(
                         ?.get("message")
                         ?.jsonPrimitive
                         ?.content
-                }.getOrNull() ?: "发送失败（${response.status.value}）"
-                Log.e("PrivateMessageViewModel", "Failed to send private message: ${response.status}, $errorMessage")
+                }.getOrNull()
+                val status = response.status.value
+                errorText = { serverMessage ?: DomainStrings.messageSendStatus(status) }
+                AppLog.e("PrivateMessageViewModel", "Failed to send private message: ${response.status}, $errorMessage")
                 false
             } else {
                 val message = ZhihuJson.decodeJson<ZhihuPrivateMessage>(
@@ -538,7 +563,7 @@ class PrivateMessageViewModel(
                 )
                 currentCoroutineContext().ensureActive()
                 if (!isCurrentAccount(environment, client)) return false
-                require(message.id.isNotBlank()) { "发送未获服务端确认" }
+                if (message.id.isBlank()) throw DisplayFailure { DomainStrings.messageUnconfirmed }
                 if (allData.none { it.stableId == message.stableId }) {
                     allData.add(0, message)
                     pendingSentIds.add(message.stableId)
@@ -548,8 +573,8 @@ class PrivateMessageViewModel(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (!isCurrentAccount(environment, client)) return false
-            Log.e("PrivateMessageViewModel", "Failed to send private message", e)
-            errorMessage = e.message ?: "发送失败"
+            AppLog.e("PrivateMessageViewModel", "Failed to send private message", e)
+            errorText = { e.message ?: DomainStrings.messageSendFailed }
             false
         } finally {
             if (isCurrentAccount(environment, client)) isSending = false
@@ -572,7 +597,7 @@ class PrivateMessageViewModel(
 
             while (true) {
                 val json = requestForAccount(environment, client, pageUrl.replace("http://", "https://"))
-                    .jsonObject()
+                    .body<JsonObject>()
                 currentCoroutineContext().ensureActive()
                 if (generation != refreshGeneration || !isCurrentAccount(environment, client)) return
                 val page = ZhihuJson.decodeJson<ZhihuPrivateMessagePage>(json)
@@ -615,7 +640,7 @@ class PrivateMessageViewModel(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (generation == refreshGeneration && isCurrentAccount(environment, client)) {
-                Log.e("PrivateMessageViewModel", "Failed to refresh latest private messages", e)
+                AppLog.e("PrivateMessageViewModel", "Failed to refresh latest private messages", e)
             }
         } finally {
             if (generation == refreshGeneration && isCurrentAccount(environment, client)) isRefreshingLatest = false
@@ -635,14 +660,14 @@ class PrivateMessageViewModel(
                 val peerRequest = if (peer == null) {
                     async {
                         requestForAccount(environment, client, "$MOBILE_PRIVATE_MESSAGE_USER_URL/$peerId")
-                            .jsonObject()
+                            .body<JsonObject>()
                     }
                 } else {
                     null
                 }
                 val pageRequest = async {
                     requestForAccount(environment, client, (lastPaging?.next ?: initialUrl).replace("http://", "https://"))
-                        .jsonObject()
+                        .body<JsonObject>()
                 }
 
                 val json = pageRequest.await()
@@ -661,8 +686,8 @@ class PrivateMessageViewModel(
                         refreshPage.data.none { it.stableId in synchronizedIds }
                     ) {
                         val nextUrl = refreshPage.paging.next
-                        check(nextUrl.isNotBlank() && visitedUrls.add(nextUrl)) { "私信分页未补齐，请重试" }
-                        val nextJson = requestForAccount(environment, client, nextUrl.replace("http://", "https://")).jsonObject()
+                        if (nextUrl.isBlank() || !visitedUrls.add(nextUrl)) throw DisplayFailure { DomainStrings.messageMissingPage }
+                        val nextJson = requestForAccount(environment, client, nextUrl.replace("http://", "https://")).body<JsonObject>()
                         currentCoroutineContext().ensureActive()
                         if (generation != pagingGeneration || !isCurrentAccount(environment, client)) return@coroutineScope
                         refreshPage = ZhihuJson.decodeJson<ZhihuPrivateMessagePage>(nextJson)
@@ -686,8 +711,7 @@ class PrivateMessageViewModel(
                     pendingSentIds.removeAll(refreshData.map { it.stableId }.toSet())
                 } else {
                     val existingIds = allData.mapTo(mutableSetOf()) { it.stableId }
-                    processResponse(environment, page.data.filter { existingIds.add(it.stableId) }, rawData)
-                    lastPaging = page.paging
+                    commitPage(environment, page.data.filter { existingIds.add(it.stableId) }, rawData, page.paging)
                     pendingSentIds.removeAll(page.data.map { it.stableId }.toSet())
                 }
 
@@ -701,7 +725,7 @@ class PrivateMessageViewModel(
                     }.onFailure { error ->
                         if (error is CancellationException) throw error
                         if (generation == pagingGeneration && isCurrentAccount(environment, client)) {
-                            Log.e("PrivateMessageViewModel", "Failed to load private-message peer", error)
+                            AppLog.e("PrivateMessageViewModel", "Failed to load private-message peer", error)
                         }
                     }
                 }

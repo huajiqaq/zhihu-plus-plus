@@ -19,18 +19,17 @@ package com.github.zly2006.zhihu.nlp
 
 import android.util.Log
 import com.hankcs.hanlp.HanLP
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object NLPService {
     private const val TAG = "NLPService"
     private const val MAX_KEYWORD_CANDIDATES = 60
     private const val KEYWORD_CANDIDATE_MULTIPLIER = 5
-    private const val MMR_LAMBDA = 0.65
     private const val MAX_EMBEDDING_TEXT_LENGTH = 2048
     private const val MIN_KEYWORD_LENGTH = 2
     private const val MAX_SEGMENT_COUNT = 48
@@ -52,7 +51,7 @@ object NLPService {
         val candidates = generateKeywordCandidates(text, topN)
         if (candidates.isEmpty()) return emptyList()
 
-        val mmrResult = selectKeywordsWithMMR(text, candidates, topN)
+        val mmrResult = selectKeywordCandidatesWithMmr(text, candidates, topN, ::encodeTextOrNull)
         if (mmrResult.isNotEmpty()) return mmrResult
 
         val fallback = candidates.take(topN)
@@ -130,50 +129,6 @@ object NLPService {
             .mapNotNull { it?.trim() }
             .filter { it.length >= MIN_KEYWORD_LENGTH }
             .distinct()
-    }
-
-    private suspend fun selectKeywordsWithMMR(
-        text: String,
-        candidates: List<String>,
-        topN: Int,
-    ): List<KeywordWithWeight> {
-        val documentEmbedding = encodeTextOrNull(text) ?: return emptyList()
-        val limitedCandidates = candidates.take(min(candidates.size, MAX_KEYWORD_CANDIDATES))
-        if (limitedCandidates.isEmpty()) return emptyList()
-
-        val candidateEmbeddings = buildMap {
-            for (candidate in limitedCandidates) {
-                val embedding = encodeTextOrNull(candidate)
-                if (embedding != null) put(candidate, embedding)
-            }
-        }
-        if (candidateEmbeddings.isEmpty()) return emptyList()
-
-        val remaining = candidateEmbeddings.toMutableMap()
-        val selected = mutableListOf<KeywordWithWeight>()
-        while (selected.size < topN && remaining.isNotEmpty()) {
-            var bestKey: String? = null
-            var bestRelevance = 0.0
-            var bestScore = Double.NEGATIVE_INFINITY
-            remaining.forEach { (word, embedding) ->
-                val relevance = cosineSimilarity(documentEmbedding, embedding)
-                val redundancy = selected.maxOfOrNull { keyword ->
-                    val otherEmbedding = candidateEmbeddings[keyword.keyword]
-                    if (otherEmbedding != null) cosineSimilarity(embedding, otherEmbedding) else 0.0
-                } ?: 0.0
-                val score = MMR_LAMBDA * relevance - (1 - MMR_LAMBDA) * redundancy
-                if (score > bestScore) {
-                    bestScore = score
-                    bestKey = word
-                    bestRelevance = relevance
-                }
-            }
-
-            val keyword = bestKey ?: break
-            selected.add(KeywordWithWeight(keyword, cosineToScore(bestRelevance)))
-            remaining.remove(keyword)
-        }
-        return selected
     }
 
     private suspend fun encodeTextOrNull(text: String): FloatArray? {

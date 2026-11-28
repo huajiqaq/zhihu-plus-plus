@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="save">Save</string>
+    <string name="save_failed">Could not save</string>
+    <string name="enter_text">Enter some text</string>
+    <string name="no_keywords_extracted">No keywords could be extracted</string>
+    <string name="extraction_failed">Could not extract keywords</string>
+    <string name="blocked_phrases_scope">Blocked phrases: %1$s</string>
+    <string name="phrases_empty">No NLP blocking phrases</string>
+    <string name="phrases_empty_hint">Extract keywords above, or choose “Add manually”.</string>
+    <plurals name="clear_phrases_title">
+        <item quantity="one">Clear %1$d NLP blocking phrase in this scope?</item>
+        <item quantity="other">Clear %1$d NLP blocking phrases in this scope?</item>
+    </plurals>
+    <string name="clear_phrases_hint">Only NLP phrases in the current scope will be cleared. Other scopes and exact keywords are unaffected. This cannot be undone; export your rules first if you need a backup.</string>
+    <string name="model_loaded">Model loaded</string>
+    <string name="model_load_failed">Could not load the model</string>
+    <string name="model_unloaded">Model unloaded</string>
+    <string name="phrase_added_detail">Phrase added: %1$s</string>
+    <string name="phrase_added">Phrase added</string>
+    <string name="phrase_updated">Phrase updated</string>
+    <string name="add_phrase_title">Add an NLP phrase manually</string>
+    <string name="transformer_model">Transformer model</string>
+    <string name="model_status_unloaded">Status: not loaded</string>
+    <string name="model_status_loading">Status: loading</string>
+    <string name="model_status_ready">Status: ready</string>
+    <string name="model_status_failed">Status: could not load</string>
+    <string name="model_status_downloading">Status: downloading %1$s%%</string>
+    <string name="processing_unload_unavailable">A keyword task is running. Unloading is temporarily unavailable.</string>
+    <string name="load_model">Load model</string>
+    <string name="about_blocking">Uses natural language processing to combine keywords into phrases with AND logic. For example, “politics sensitive” matches content covering both topics.</string>
+    <string name="threshold_hint">Higher thresholds make matching stricter; lower thresholds allow looser matches.</string>
+    <string name="extract_keywords">Extract keywords</string>
+    <string name="input_text">Input text</string>
+    <string name="input_placeholder">Paste feed content or enter any text</string>
+    <string name="extracting">Extracting…</string>
+    <string name="extracted_keywords">Extracted keywords</string>
+    <string name="combine_and_add">Combine into a phrase and add</string>
+    <string name="combine_hint">All keywords will be joined with spaces into a single phrase.</string>
+    <plurals name="records_count">
+        <item quantity="one">The latest %1$d semantically blocked item and its matching phrases</item>
+        <item quantity="other">The latest %1$d semantically blocked items and their matching phrases</item>
+    </plurals>
+    <string name="records_hint">Semantically blocked content and matching phrases</string>
+    <plurals name="phrase_details">
+        <item quantity="one">%1$d keyword · Added %2$s</item>
+        <item quantity="other">%1$d keywords · Added %2$s</item>
+    </plurals>
+    <string name="edit_phrase_accessibility">Edit phrase “%1$s”</string>
+    <string name="delete_phrase_accessibility">Delete phrase “%1$s”</string>
+    <string name="add_manually">Add manually</string>
+    <plurals name="records_scope">
+        <item quantity="one">The latest %1$d item blocked by NLP semantic matching. Open it to view matching phrases.</item>
+        <item quantity="other">The latest %1$d items blocked by NLP semantic matching. Open an item to view matching phrases.</item>
+    </plurals>
+    <plurals name="clear_records_title">
+        <item quantity="one">Clear %1$d NLP match record?</item>
+        <item quantity="other">Clear %1$d NLP match records?</item>
+    </plurals>
+    <string name="phrase_label">Phrase</string>
+    <string name="phrase_placeholder">Separate keywords with spaces, e.g. politics sensitive</string>
+    <string name="phrase_hint">Separate keywords with spaces to express AND logic. For example, “politics sensitive” matches content covering both topics.</string>
+    <string name="excerpt">Excerpt</string>
+    <string name="top_matched_keywords">Matching keywords (top 3)</string>
+    <string name="delete_record">Delete record</string>
+    <string name="model_context_missing">The model’s application context has not been initialized</string>
+    <string name="required_model_file_missing">Required model file not found: %1$s</string>
+    <string name="local_model_corrupted">Local file %1$s is corrupted, and its remote version could not be verified</string>
+    <string name="download_size_mismatch">Downloaded file %1$s has the wrong size: expected %2$d bytes, got %3$d bytes</string>
+</resources>

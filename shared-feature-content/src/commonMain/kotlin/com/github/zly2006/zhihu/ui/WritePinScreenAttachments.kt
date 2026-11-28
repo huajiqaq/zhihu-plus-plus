@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.editor.UploadedZhihuImage
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.rememberMarkdownImageModel
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -81,7 +82,7 @@ internal fun WritePinImageList(
         verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
     ) {
         Text(
-            text = "图片 ${images.size}/$PIN_IMAGE_LIMIT",
+            text = ContentStrings.imageCountLimit(images.size, PIN_IMAGE_LIMIT),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -97,7 +98,7 @@ internal fun WritePinImageList(
                 AppCard(modifier = Modifier.width(AppDimens.Space120)) {
                     AsyncImage(
                         model = rememberMarkdownImageModel(image.url),
-                        contentDescription = "想法图片 ${index + 1}",
+                        contentDescription = ContentStrings.pinImageNumber(index + 1),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxWidth().height(AppDimens.Space64),
                     )
@@ -106,7 +107,7 @@ internal fun WritePinImageList(
                         verticalArrangement = Arrangement.spacedBy(AppDimens.Space4),
                     ) {
                         Text(
-                            text = "图片 ${index + 1}",
+                            text = ContentStrings.imageNumber(index + 1),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -117,7 +118,7 @@ internal fun WritePinImageList(
                         )
                     }
                     AppTextButton(
-                        text = "删除图片 ${index + 1}",
+                        text = ContentStrings.deleteImageNumber(index + 1),
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { onRemoveImage(index) },
                         enabled = !isSubmitting,

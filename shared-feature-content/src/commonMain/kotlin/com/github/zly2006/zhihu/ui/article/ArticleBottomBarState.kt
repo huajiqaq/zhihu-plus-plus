@@ -36,8 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
+import kotlinx.coroutines.flow.collectLatest
 
 @Stable
 internal class ArticleBottomBarState {

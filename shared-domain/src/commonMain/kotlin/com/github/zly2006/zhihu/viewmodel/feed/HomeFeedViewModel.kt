@@ -17,35 +17,32 @@
 
 package com.github.zly2006.zhihu.viewmodel.feed
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
-import com.github.zly2006.zhihu.data.AdvertisementFeed
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.data.ZhihuPaging
 import com.github.zly2006.zhihu.data.displayExcerpt
-import com.github.zly2006.zhihu.data.flattenFeeds
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.questionAuthor
 import com.github.zly2006.zhihu.data.target
 import com.github.zly2006.zhihu.filter.RemoteHistorySync
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.platform.platformSettingsStore
-import com.github.zly2006.zhihu.util.Log
-import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
-import com.github.zly2006.zhihu.viewmodel.HomeFeedFilterResult
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.ContentDetailProvider
 import com.github.zly2006.zhihu.viewmodel.filter.ContentType
 import com.github.zly2006.zhihu.viewmodel.filter.ContentViewRecord
-import com.github.zly2006.zhihu.viewmodel.filter.FeedDisplayFilterPipeline
-import com.github.zly2006.zhihu.viewmodel.filter.ForegroundReadFilterPipeline
-import com.github.zly2006.zhihu.viewmodel.filter.extractTopicIds
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
-import com.github.zly2006.zhihu.viewmodel.filter.toFeedFilterSettings
-import com.github.zly2006.zhihu.viewmodel.getOrFetchContentDetail
+import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
@@ -54,11 +51,13 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.supervisorScope
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonArray
 
 suspend fun resolveFeedBlockAuthorInfo(
     feedItem: FeedDisplayItem,
@@ -103,7 +102,7 @@ suspend fun resolveFeedQuestionAuthorInfo(
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
-        Log.e("HomeFeedViewModel", "Failed to resolve feed question author from question detail", error)
+        AppLog.e("HomeFeedViewModel", "Failed to resolve feed question author from question detail", error)
         null
     }
     return questionDetail
@@ -134,16 +133,6 @@ suspend fun resolveFeedKeywordBlockingContent(
     }
 }
 
-fun removeFeedItemsByBlockedTopic(
-    viewModel: BaseFeedViewModel,
-    topicId: String,
-) {
-    viewModel.displayItems.removeAll { item ->
-        val raw = item.raw
-        raw != null && extractTopicIds(raw)?.any { topic -> topic == topicId } == true
-    }
-}
-
 private suspend fun resolveFeedBlockContentDetail(
     feedItem: FeedDisplayItem,
     contentDetailProvider: ContentDetailProvider?,
@@ -162,100 +151,127 @@ interface HomeFeedInteractionViewModel {
 }
 
 class HomeFeedViewModel(
-    val remoteHistory: RemoteHistorySync = RemoteHistorySync(),
-) : BaseFeedViewModel(),
-    HomeFeedInteractionViewModel {
+    val mode: RecommendationMode = RecommendationMode.WEB,
+    remoteHistory: RemoteHistorySync = RemoteHistorySync(),
+) : HomeFeedStateViewModel(remoteHistory), HomeFeedInteractionViewModel {
+    private class PendingPage(val page: HomeFeedPage, val generation: Int, val client: HttpClient, val environment: PaginationEnvironment) {
+        var preview by mutableStateOf<List<FeedDisplayItem>>(emptyList())
+        var previewRevision by mutableIntStateOf(-1)
+    }
+
+    private class SourceState(val source: HomeFeedSource) {
+        var paging: ZhihuPaging? by mutableStateOf(null)
+        var failure: Exception? by mutableStateOf(null)
+        var pending: PendingPage? by mutableStateOf(null)
+    }
+
+    private val sources = when (mode) {
+        RecommendationMode.WEB -> listOf(SourceState(WebHomeFeedSource))
+        RecommendationMode.ANDROID -> listOf(SourceState(MobileHomeFeedSource))
+        RecommendationMode.MIXED -> listOf(SourceState(MobileHomeFeedSource), SourceState(WebHomeFeedSource))
+        RecommendationMode.LOCAL -> error("Local recommendations have their own loader")
+    }
     private val reportedTouchedItems = hashSetOf<Pair<String, String>>()
-    private var filterJob: Job? = null
+    private var sourceClient: HttpClient? = null
+    private var publicationOrder by mutableStateOf<List<String>>(emptyList())
 
-    override val initialUrl: String
-        get() = "https://api.zhihu.com/topstory/recommend"
+    // 候选是来源请求的临时投影；确认列表、快照和分页仍只有 Base 的单一所有者。
+    override val displayItems: List<FeedDisplayItem>
+        get() {
+            val previews = sources.filter {
+                !isRefreshPending || it.failure == null || committedDisplayItems.isEmpty()
+            }.mapNotNull { it.pending }.filter {
+                it.previewRevision == filterPolicyRevision && requestIsCurrent(it.environment, it.generation, it.client)
+            }.flatMap { it.preview }
+            if (isRefreshPending && previews.isEmpty()) return committedDisplayItems
+            val confirmed = if (isRefreshPending) emptyList() else committedDisplayItems
+            return inPublicationOrder(confirmed + previews)
+        }
 
-    init {
-        allowGuestAccess = true
-    }
-
-    public override suspend fun fetchFeeds(environment: PaginationEnvironment) {
-        val generation = pagingGeneration
-        val client = environment.httpClient()
-        markItemsAsTouched(environment)
-        if (generation != pagingGeneration || environment.httpClient() !== client) return
-        super.fetchFeeds(environment)
-        if (generation != pagingGeneration || environment.httpClient() !== client) return
-        val pendingFilter = filterJob
-        if (pendingFilter?.isActive == true) {
-            isLoading = true
-            try {
-                pendingFilter.join()
-            } finally {
-                if (generation == pagingGeneration && environment.httpClient() === client && filterJob === pendingFilter) isLoading = false
-            }
+    private fun inPublicationOrder(items: List<FeedDisplayItem>): List<FeedDisplayItem> {
+        val remaining = items.distinctBy { it.stableKey }.associateBy { it.stableKey }.toMutableMap()
+        return buildList {
+            publicationOrder.forEach { key -> remaining.remove(key)?.let { add(it) } }
+            addAll(remaining.values)
         }
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray) {
-        val generation = pagingGeneration
+    override val initialUrl: String get() = sources.first().source.initialUrl
+    override val isEnd: Boolean get() = sources.all { it.paging?.isEnd == true }
+    override val hasNextPage: Boolean get() = sources.any { it.paging?.let { page -> !page.isEnd && page.next.isNotBlank() } == true }
+
+    init { allowGuestAccess = mode == RecommendationMode.WEB }
+
+    override fun loadMore(environment: PaginationEnvironment) {
         val client = environment.httpClient()
-        if (isRefreshPending) {
-            allData.clear()
-            debugData.clear()
-            isRefreshPending = false
+        if (sourceClient != null && sourceClient !== client) resetForRefresh()
+        sourceClient = client
+        super.loadMore(environment)
+    }
+
+    override suspend fun fetchFeeds(environment: PaginationEnvironment) {
+        val generation = pageGeneration
+        val client = environment.httpClient()
+        sourceClient = client
+        if (mode != RecommendationMode.ANDROID) markItemsAsTouched(environment)
+        if (!requestIsCurrent(environment, generation, client)) return
+        val failedSources = sources.filter { it.failure != null }
+        val requestedSources = failedSources.ifEmpty { sources.filter { it.paging?.isEnd != true } }
+        if (failedSources.isEmpty() || publicationOrder.isEmpty()) {
+            publicationOrder = if (isRefreshPending) emptyList() else committedDisplayItems.map { it.stableKey }
         }
-        allData.addAll(data)
-        debugData.addAll(rawData)
-
-        filterJob = viewModelScope.launch {
-            try {
-                val displaySettings = FeedDisplaySettings(platformSettingsStore())
-                val filterSettings = platformSettingsStore().toFeedFilterSettings()
-                val loadedItems = data
-                    .flattenFeeds()
-                    .map { feed -> createDisplayItem(displaySettings, feed) }
-                val newItems = loadedItems.filterNot {
-                    (it.feed is AdvertisementFeed && !displaySettings.reverseBlock) ||
-                        (it.isQualityFiltered && displaySettings.qualityFilterMode == QualityFilterMode.HIDE)
-                }
-
-                val reverseBlock = displaySettings.reverseBlock
-                remoteHistory.awaitRecentPage()
-                if (generation != pagingGeneration || environment.httpClient() !== client) return@launch
-                val foregroundItems = ForegroundReadFilterPipeline(filterSettings).filter(newItems)
-                if (generation != pagingGeneration || environment.httpClient() !== client) return@launch
-                if (!reverseBlock) {
-                    withContext(Dispatchers.Main) {
-                        if (generation == pagingGeneration && environment.httpClient() === client) addDisplayItems(foregroundItems)
+        // 每个来源的页保留到过滤成功；重试不能推进已经成功的另一来源。
+        supervisorScope {
+            requestedSources.map { state ->
+                async {
+                    try {
+                        val pending = state.pending ?: run {
+                            val page = state.source.load(environment, state.paging?.next ?: state.source.initialUrl)
+                            currentCoroutineContext().ensureActive()
+                            if (!requestIsCurrent(environment, generation, client)) return@async
+                            PendingPage(page, generation, client, environment).also { state.pending = it }
+                        }
+                        val page = pending.page
+                        state.failure = null
+                        publishHomePage(
+                            environment, generation, client, page.items, page.data, page.rawData,
+                            foreground = true,
+                            preview = { items, revision ->
+                                if (state.pending === pending && requestIsCurrent(environment, generation, client)) {
+                                    publicationOrder = (publicationOrder + items.map { it.stableKey }).distinct()
+                                    pending.preview = items
+                                    pending.previewRevision = revision
+                                }
+                            },
+                        ) {
+                            // 确认只精化首次显示的位置，不能把先完成过滤的来源移到前面。
+                            replaceDisplayItems(inPublicationOrder(committedDisplayItems))
+                            publicationOrder = (publicationOrder + committedDisplayItems.map { it.stableKey }).distinct()
+                            state.paging = page.paging
+                            state.failure = null
+                            state.pending = null
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        if (requestIsCurrent(environment, generation, client)) {
+                            state.failure = error
+                            try {
+                                if (state.source === MobileHomeFeedSource) environment.handleMobileHomeFeedFailure(error)
+                                else environment.handleFetchFailure("HomeFeedViewModel", error)
+                            } catch (reportError: CancellationException) {
+                                throw reportError
+                            } catch (reportError: Exception) {
+                                AppLog.e("HomeFeedViewModel", "Failed to report source failure", reportError)
+                            }
+                        }
                     }
                 }
-
-                val filteredItems = FeedDisplayFilterPipeline(
-                    settings = filterSettings,
-                    contentDetailProvider = ContentDetailProvider { destination ->
-                        if (environment.isLoggedIn) environment.getOrFetchContentDetail(destination) else null
-                    },
-                ).filter(foregroundItems)
-                if (generation != pagingGeneration || environment.httpClient() !== client) return@launch
-                if (reverseBlock) {
-                    addDisplayItems(filteredItems)
-                }
-
-                val filterResult = HomeFeedFilterResult(
-                    foregroundItems = foregroundItems,
-                    filteredItems = filteredItems,
-                    reverseBlock = reverseBlock,
-                )
-
-                withContext(Dispatchers.Main) {
-                    if (generation == pagingGeneration && environment.httpClient() === client) {
-                        displayItems.replaceHomeFeedItemsWithFilteredResult(filterResult)
-                        latestLoadedDisplayItems.value = filterResult.filteredItems
-                        completedPageCount++
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (generation == pagingGeneration && environment.httpClient() === client) errorHandle(e)
-            }
+            }.awaitAll()
+        }
+        if (requestIsCurrent(environment, generation, client)) {
+            if (sources.all { it.pending == null }) publicationOrder = emptyList()
+            sources.firstNotNullOfOrNull { it.failure }?.let(::errorHandle)
         }
     }
 
@@ -306,7 +322,7 @@ class HomeFeedViewModel(
     ) {
         try {
             if (environment.authenticatedCookies()["d_c0"] == null) return
-            val currentTouchItems = displayItems
+            val currentTouchItems = committedDisplayItems
                 .asSequence()
                 .filterNot { it.isFiltered }
                 .mapNotNull { it.feed?.target }
@@ -335,7 +351,7 @@ class HomeFeedViewModel(
                 if (response.status.isSuccess()) {
                     reportedTouchedItems.addAll(untouchedItemSet)
                 } else {
-                    Log.e("Browse-Touch", response.bodyAsText())
+                    AppLog.e("Browse-Touch", response.bodyAsText())
                 }
             }
         } catch (e: CancellationException) {
@@ -346,10 +362,9 @@ class HomeFeedViewModel(
     }
 
     override fun resetForRefresh() {
-        // 前一轮的异步过滤不能在新一轮刷新后重新写回旧卡片。
-        filterJob?.cancel()
-        filterJob = null
-        reportedTouchedItems.clear()
         super.resetForRefresh()
+        sources.forEach { it.paging = null; it.failure = null; it.pending = null }
+        publicationOrder = emptyList()
+        reportedTouchedItems.clear()
     }
 }

@@ -35,7 +35,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Pause
@@ -62,9 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -72,13 +69,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ReadingStrings
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.reading.ReadingPlaybackStatus
 import com.github.zly2006.zhihu.reading.ReadingPlayerState
 import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val READING_PLAYER_BAR_TAG = "reading_player_bar"
 const val READING_PLAYER_COMPACT_TAG = "reading_player_compact"
@@ -158,7 +155,7 @@ fun ReadingPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = state.errorMessage?.let { "朗读失败：$it" } ?: buildString {
+                            text = state.errorMessage?.let { ReadingStrings.playbackFailed(it) } ?: buildString {
                                 append(state.currentIndex + 1)
                                 append(" / ")
                                 append(state.queue.size)
@@ -189,22 +186,22 @@ fun ReadingPlayerBar(
                         enabled = state.canPlayPrevious,
                         modifier = Modifier.testTag(READING_PLAYER_PREVIOUS_TAG),
                     ) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = "上一条")
+                        AppIcon(Icons.Default.SkipPrevious, contentDescription = ReadingStrings.previous)
                     }
                     AppFilledTonalIconButton(
                         onClick = onTogglePlayPause,
                         modifier = Modifier
                             .testTag(READING_PLAYER_TOGGLE_TAG)
                             .semantics {
-                                contentDescription = if (state.isActivelyPlaying) "暂停朗读" else "继续朗读"
+                                contentDescription = if (state.isActivelyPlaying) ReadingStrings.pauseReading else ReadingStrings.resumeReading
                             },
                     ) {
                         when (state.status) {
                             ReadingPlaybackStatus.Initializing,
                             ReadingPlaybackStatus.Loading,
                             -> AppSpinner(size = 22.dp)
-                            ReadingPlaybackStatus.Playing -> Icon(Icons.Default.Pause, contentDescription = null)
-                            else -> Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            ReadingPlaybackStatus.Playing -> AppIcon(Icons.Default.Pause, contentDescription = null)
+                            else -> AppIcon(Icons.Default.PlayArrow, contentDescription = null)
                         }
                     }
                     AppIconButton(
@@ -212,19 +209,19 @@ fun ReadingPlayerBar(
                         enabled = state.canPlayNext,
                         modifier = Modifier.testTag(READING_PLAYER_NEXT_TAG),
                     ) {
-                        Icon(Icons.Default.SkipNext, contentDescription = "下一条")
+                        AppIcon(Icons.Default.SkipNext, contentDescription = ReadingStrings.next)
                     }
                     AppIconButton(
                         onClick = onStop,
                         modifier = Modifier.testTag(READING_PLAYER_STOP_TAG),
                     ) {
-                        Icon(Icons.Default.Stop, contentDescription = "停止朗读")
+                        AppIcon(Icons.Default.Stop, contentDescription = ReadingStrings.stopReading)
                     }
                     AppIconButton(
                         onClick = onOpenQueue,
                         modifier = Modifier.testTag(READING_PLAYER_QUEUE_TAG),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "播放列表")
+                        AppIcon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = ReadingStrings.queue)
                     }
                 }
             }
@@ -244,7 +241,7 @@ fun CompactReadingPlayerButton(
         modifier = modifier
             .testTag(READING_PLAYER_COMPACT_TAG)
             .semantics {
-                contentDescription = "展开朗读播放器，当前进度 $progress"
+                contentDescription = ReadingStrings.expandPlayer(state.currentIndex + 1, state.queue.size)
             },
         preferenceName = "readingPlayerCompact",
         initiallyOnLeft = true,
@@ -252,7 +249,7 @@ fun CompactReadingPlayerButton(
         onClick = onExpand,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
+            AppIcon(
                 Icons.Default.Headphones,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
@@ -284,8 +281,8 @@ private fun ReadingPlaybackSpeedMenu(
             modifier = Modifier
                 .testTag(READING_PLAYER_SPEED_TAG)
                 .semantics {
-                    contentDescription = "播放速度"
-                    stateDescription = "当前 ${currentLabel.replace("×", " 倍")}"
+                    contentDescription = ReadingStrings.playbackSpeed
+                    stateDescription = ReadingStrings.speedDescription(currentLabel.removeSuffix("×"))
                 },
             shape = CircleShape,
             color = MaterialTheme.colorScheme.secondaryContainer,
@@ -296,7 +293,7 @@ private fun ReadingPlaybackSpeedMenu(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
+                AppIcon(
                     Icons.Default.Speed,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
@@ -314,7 +311,9 @@ private fun ReadingPlaybackSpeedMenu(
                 expanded = false
                 onDismissRequest()
             },
-            options = readingPlaybackSpeedOptions.map { it.second },
+            options = readingPlaybackSpeedOptions.map { (value, label) ->
+                AppSelectionOption(label, readingPlayerSpeedOptionTag(value))
+            },
             selectedIndex = readingPlaybackSpeedOptions.indexOfFirst { abs(it.first - speed) < 0.001f },
             onSelect = { index ->
                 expanded = false
@@ -324,34 +323,7 @@ private fun ReadingPlaybackSpeedMenu(
             modifier = Modifier
                 .testTag(READING_PLAYER_SPEED_MENU_TAG)
                 .exportTestTagsForUiAutomation(),
-        ) {
-            readingPlaybackSpeedOptions.forEach { (option, label) ->
-                val isSelected = abs(option - speed) < 0.001f
-                AppDropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        expanded = false
-                        onSpeedChange(option)
-                    },
-                    trailingIcon = if (isSelected) {
-                        {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = "当前速度",
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier
-                        .testTag(readingPlayerSpeedOptionTag(option))
-                        .semantics {
-                            selected = isSelected
-                            role = Role.RadioButton
-                        },
-                )
-            }
-        }
+        )
     }
 }
 
@@ -381,7 +353,7 @@ fun ReadingQueueSheet(
         ) {
             Column {
                 Text(
-                    text = "播放列表",
+                    text = ReadingStrings.queue,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -395,8 +367,8 @@ fun ReadingQueueSheet(
                 onClick = onOpenSettings,
                 modifier = Modifier.testTag(READING_QUEUE_SETTINGS_TAG),
             ) {
-                Icon(Icons.Default.Settings, contentDescription = null)
-                Text("朗读设置")
+                AppIcon(Icons.Default.Settings, contentDescription = null)
+                Text(ReadingStrings.readingSettings)
             }
         }
         LazyColumn(
@@ -431,11 +403,11 @@ fun ReadingQueueSheet(
                     icon = {
                         if (isCurrent) {
                             if (state.status == ReadingPlaybackStatus.Paused) {
-                                Icon(Icons.Default.PauseCircle, contentDescription = "当前已暂停")
+                                AppIcon(Icons.Default.PauseCircle, contentDescription = ReadingStrings.paused)
                             } else {
-                                Icon(
+                                AppIcon(
                                     Icons.Default.GraphicEq,
-                                    contentDescription = if (state.isActivelyPlaying) "正在朗读" else "当前条目",
+                                    contentDescription = if (state.isActivelyPlaying) ReadingStrings.readingNow else ReadingStrings.currentItem,
                                 )
                             }
                         } else {

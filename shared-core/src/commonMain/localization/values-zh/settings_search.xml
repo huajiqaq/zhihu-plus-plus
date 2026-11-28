@@ -1,0 +1,549 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="appearance_app_language">
+        <item>语言</item>
+        <item>界面语言</item>
+        <item>Language</item>
+        <item>English</item>
+        <item>中文</item>
+        <item>简体中文</item>
+        <item>system</item>
+        <item>跟随系统</item>
+        <item>Simplified Chinese</item>
+        <item>system default</item>
+    </string-array>
+    <string-array name="appearance_bottom_sheet_corners">
+        <item>评论圆角</item>
+        <item>popup</item>
+        <item>直角</item>
+    </string-array>
+    <string-array name="appearance_night_mode">
+        <item>夜间模式</item>
+        <item>深色模式</item>
+        <item>暗色模式</item>
+        <item>浅色模式</item>
+        <item>跟随系统</item>
+        <item>night mode</item>
+        <item>dark theme</item>
+        <item>light theme</item>
+        <item>system default</item>
+    </string-array>
+    <string-array name="appearance_dynamic_color">
+        <item>动态颜色</item>
+        <item>壁纸取色</item>
+        <item>主题色</item>
+        <item>Monet</item>
+        <item>dynamic color</item>
+        <item>wallpaper color</item>
+        <item>theme color</item>
+    </string-array>
+    <string-array name="appearance_palette_style">
+        <item>颜色风格</item>
+        <item>palette</item>
+        <item>expressive</item>
+    </string-array>
+    <string-array name="appearance_color_spec">
+        <item>颜色算法</item>
+        <item>spec 2025</item>
+    </string-array>
+    <string-array name="appearance_amoled">
+        <item>纯黑</item>
+        <item>OLED</item>
+    </string-array>
+    <string-array name="appearance_landscape_list_detail">
+        <item>双栏</item>
+        <item>分栏</item>
+        <item>平板</item>
+        <item>横屏</item>
+    </string-array>
+    <string-array name="appearance_font_scale">
+        <item>字体大小</item>
+        <item>内容字体</item>
+        <item>正文字号</item>
+        <item>font size</item>
+        <item>text size</item>
+    </string-array>
+    <string-array name="appearance_feed_card_style">
+        <item>卡片</item>
+        <item>分割线</item>
+        <item>分隔线</item>
+        <item>列表样式</item>
+    </string-array>
+    <string-array name="appearance_show_feed_thumbnail">
+        <item>图片</item>
+        <item>封面</item>
+    </string-array>
+    <string-array name="appearance_show_refresh_fab">
+        <item>刷新按钮</item>
+        <item>浮动按钮</item>
+    </string-array>
+    <string-array name="appearance_title_auto_hide">
+        <item>标题栏</item>
+    </string-array>
+    <string-array name="appearance_button_skip_answer">
+        <item>下一个回答</item>
+    </string-array>
+    <string-array name="appearance_answer_switch_mode">
+        <item>手势</item>
+        <item>上下滑动</item>
+        <item>左右滑动</item>
+        <item>切换回答</item>
+    </string-array>
+    <string-array name="appearance_page_turn_volume">
+        <item>电纸书</item>
+        <item>翻页</item>
+    </string-array>
+    <string-array name="appearance_page_turn_switch_answer">
+        <item>电纸书</item>
+        <item>翻页</item>
+        <item>上一个回答</item>
+        <item>下一个回答</item>
+    </string-array>
+    <string-array name="appearance_page_turn_fab">
+        <item>电纸书</item>
+        <item>翻页</item>
+    </string-array>
+    <string-array name="appearance_page_turn_distance">
+        <item>电纸书</item>
+        <item>翻页</item>
+        <item>重叠</item>
+    </string-array>
+    <string-array name="appearance_page_turn_guide">
+        <item>电纸书</item>
+        <item>翻页</item>
+        <item>引导线</item>
+    </string-array>
+    <string-array name="appearance_content_end_marker">
+        <item>电纸书</item>
+        <item>翻页</item>
+        <item>阅读结束</item>
+        <item>内容末尾</item>
+    </string-array>
+    <string-array name="appearance_answer_double_tap_action">
+        <item>双击</item>
+    </string-array>
+    <string-array name="appearance_bottom_bar">
+        <item>启动默认页面</item>
+        <item>底部栏</item>
+        <item>主页</item>
+        <item>首页</item>
+        <item>关注</item>
+        <item>日报</item>
+        <item>热榜</item>
+        <item>历史</item>
+        <item>浏览历史</item>
+        <item>收藏</item>
+        <item>收藏夹</item>
+        <item>账号</item>
+        <item>回到顶部</item>
+        <item>双击刷新</item>
+        <item>自动隐藏底栏</item>
+    </string-array>
+    <string-array name="appearance_share_action">
+        <item>复制链接</item>
+        <item>分享链接</item>
+        <item>分享按钮</item>
+    </string-array>
+    <string-array name="appearance_show_search_hot_search">
+        <item>热搜</item>
+    </string-array>
+    <string-array name="appearance_show_search_history">
+        <item>搜索记录</item>
+        <item>历史记录</item>
+        <item>清除搜索历史</item>
+    </string-array>
+    <string-array name="navigation_page_transition">
+        <item>动画</item>
+        <item>转场</item>
+        <item>侧滑</item>
+        <item>AOSP</item>
+        <item>返回手势</item>
+        <item>预测性返回</item>
+        <item>预测式返回</item>
+        <item>back gesture</item>
+        <item>predictive back</item>
+    </string-array>
+    <string-array name="appearance_app_blur">
+        <item>模糊</item>
+        <item>玻璃</item>
+        <item>背景</item>
+    </string-array>
+    <string-array name="appearance_floating_bottom_bar">
+        <item>底栏</item>
+        <item>浮动</item>
+        <item>悬浮</item>
+        <item>导航栏</item>
+    </string-array>
+    <string-array name="appearance_floating_bottom_bar_style">
+        <item>Apple</item>
+        <item>苹果</item>
+        <item>液态玻璃</item>
+        <item>底栏样式</item>
+        <item>折射</item>
+    </string-array>
+    <string-array name="reading_content_and_home">
+        <item>正文排版</item>
+        <item>提椠</item>
+        <item>Markdown</item>
+        <item>排版恢复默认</item>
+        <item>重置排版</item>
+    </string-array>
+    <string-array name="reading_tiqian_markdown">
+        <item>提椠</item>
+        <item>Markdown</item>
+        <item>正文渲染</item>
+        <item>排版引擎</item>
+    </string-array>
+    <string-array name="reading_tiqian_math_font">
+        <item>公式</item>
+        <item>数学字体</item>
+        <item>Lete</item>
+        <item>STIX</item>
+    </string-array>
+    <string-array name="playback_preview">
+        <item>朗读预览</item>
+        <item>模板</item>
+    </string-array>
+    <string-array name="playback_fields">
+        <item>朗读</item>
+        <item>标题</item>
+        <item>作者</item>
+        <item>时间</item>
+        <item>顺序</item>
+    </string-array>
+    <string-array name="playback_published_time_mode">
+        <item>发布时间</item>
+        <item>相对时间</item>
+        <item>绝对时间</item>
+    </string-array>
+    <string-array name="playback_relative_time_precision">
+        <item>发布时间</item>
+        <item>相对时间</item>
+        <item>精度</item>
+    </string-array>
+    <string-array name="playback_comments">
+        <item>评论</item>
+        <item>朗读</item>
+    </string-array>
+    <string-array name="playback_comment_author">
+        <item>评论</item>
+        <item>作者</item>
+    </string-array>
+    <string-array name="playback_comment_order">
+        <item>评论</item>
+        <item>排序</item>
+        <item>热度</item>
+    </string-array>
+    <string-array name="playback_queue">
+        <item>队列</item>
+        <item>连续播放</item>
+        <item>朗读</item>
+    </string-array>
+    <string-array name="playback_transition">
+        <item>过渡</item>
+        <item>条目过渡</item>
+        <item>朗读</item>
+    </string-array>
+    <string-array name="recommend_recommendation_mode">
+        <item>推荐来源</item>
+        <item>Web 推荐</item>
+        <item>Android 推荐</item>
+        <item>本地推荐</item>
+        <item>混合推荐</item>
+    </string-array>
+    <string-array name="recommend_quality_filter_mode">
+        <item>低质量</item>
+        <item>屏蔽规则</item>
+        <item>隐藏</item>
+        <item>low quality filter</item>
+        <item>blocking rules</item>
+    </string-array>
+    <string-array name="recommend_enable_keyword_blocking">
+        <item>关键词</item>
+        <item>屏蔽词</item>
+        <item>keyword filter</item>
+        <item>blocked words</item>
+    </string-array>
+    <string-array name="recommend_enable_user_blocking">
+        <item>作者屏蔽</item>
+        <item>屏蔽用户</item>
+    </string-array>
+    <string-array name="recommend_enable_topic_blocking">
+        <item>话题屏蔽</item>
+        <item>屏蔽话题</item>
+    </string-array>
+    <string-array name="recommend_topic_blocking_threshold">
+        <item>主题阈值</item>
+    </string-array>
+    <string-array name="recommend_block_zhihu_ad_platform">
+        <item>广告</item>
+    </string-array>
+    <string-array name="recommend_block_zhihu_school">
+        <item>学堂</item>
+    </string-array>
+    <string-array name="recommend_block_we_chat_official_account">
+        <item>微信</item>
+    </string-array>
+    <string-array name="recommend_block_paid_content">
+        <item>盐选</item>
+        <item>付费</item>
+    </string-array>
+    <string-array name="recommend_blocklist">
+        <item>黑名单</item>
+        <item>屏蔽词</item>
+        <item>问题关键词</item>
+        <item>回答关键词</item>
+        <item>作用范围</item>
+        <item>屏蔽用户</item>
+        <item>屏蔽话题</item>
+        <item>blacklist</item>
+        <item>blocklist</item>
+    </string-array>
+    <string-array name="recommend_blocklist_semantic">
+        <item>NLP</item>
+        <item>语义屏蔽</item>
+        <item>离线模型</item>
+        <item>相似度阈值</item>
+        <item>semantic</item>
+        <item>offline model</item>
+    </string-array>
+    <string-array name="recommend_blocked_history">
+        <item>过滤记录</item>
+    </string-array>
+    <string-array name="system_github_token">
+        <item>限速</item>
+        <item>更新检查</item>
+        <item>令牌</item>
+    </string-array>
+    <string-array name="system_check_nightly_updates">
+        <item>每日构建</item>
+    </string-array>
+    <string-array name="system_allow_telemetry">
+        <item>统计</item>
+        <item>隐私</item>
+        <item>数据收集</item>
+        <item>使用数据</item>
+    </string-array>
+    <string-array name="system_aigc_marking">
+        <item>AI</item>
+        <item>AIGC</item>
+    </string-array>
+    <string-array name="system_reminder">
+        <item>连续使用</item>
+        <item>休息提醒</item>
+    </string-array>
+    <string-array name="system_macos_quit_on_window_close">
+        <item>macOS</item>
+        <item>退出应用</item>
+        <item>关闭窗口</item>
+        <item>退出程序</item>
+    </string-array>
+    <string-array name="notification_auto_mark_as_read">
+        <item>已读</item>
+        <item>标记已读</item>
+    </string-array>
+    <string-array name="notification_unread_badge">
+        <item>角标</item>
+        <item>红点</item>
+        <item>未读数</item>
+        <item>notification badge</item>
+        <item>unread count</item>
+    </string-array>
+    <string-array name="notification_reset_read_records">
+        <item>已读</item>
+        <item>清除已读</item>
+        <item>重置</item>
+        <item>公告</item>
+        <item>作者想法</item>
+    </string-array>
+    <string-array name="notification_system_notifications">
+        <item>系统通知</item>
+        <item>后台通知</item>
+        <item>通知权限</item>
+        <item>通知通道</item>
+        <item>system notifications</item>
+        <item>background notifications</item>
+        <item>notification permission</item>
+        <item>notification channels</item>
+    </string-array>
+    <string-array name="notification_system_category">
+        <item>系统通知</item>
+        <item>订阅</item>
+        <item>后台通知</item>
+    </string-array>
+    <string-array name="appearance_ui_theme_style">
+        <item>皮肤</item>
+        <item>Miuix</item>
+        <item>HyperOS</item>
+        <item>Material</item>
+        <item>M3E</item>
+    </string-array>
+    <string-array name="appearance_miuix_style">
+        <item>Miuix</item>
+        <item>OS3</item>
+        <item>OS4</item>
+        <item>OS 3</item>
+        <item>OS 4</item>
+        <item>HyperOS3</item>
+        <item>HyperOS4</item>
+        <item>HyperOS 3</item>
+        <item>HyperOS 4</item>
+        <item>子风格</item>
+    </string-array>
+    <string-array name="appearance_custom_color">
+        <item>主题色</item>
+        <item>强调色</item>
+        <item>颜色</item>
+        <item>theme color</item>
+        <item>accent color</item>
+    </string-array>
+    <string-array name="appearance_background_color">
+        <item>背景色</item>
+        <item>背景</item>
+    </string-array>
+    <string-array name="appearance_browser_toolbar_color">
+        <item>浏览器</item>
+        <item>工具栏颜色</item>
+    </string-array>
+    <string-array name="appearance_show_create_fab">
+        <item>发布</item>
+        <item>创作</item>
+        <item>加号</item>
+    </string-array>
+    <string-array name="appearance_fab_opacity">
+        <item>悬浮按钮</item>
+        <item>透明度</item>
+        <item>FAB</item>
+    </string-array>
+    <string-array name="navigation_start_destination">
+        <item>启动页</item>
+        <item>默认页面</item>
+    </string-array>
+    <string-array name="navigation_tap_scroll_to_top">
+        <item>回到顶部</item>
+        <item>双击刷新</item>
+    </string-array>
+    <string-array name="navigation_auto_hide_bottom_bar">
+        <item>隐藏底栏</item>
+        <item>自动隐藏</item>
+    </string-array>
+    <string-array name="reading_line_height">
+        <item>行距</item>
+        <item>排版</item>
+    </string-array>
+    <string-array name="reading_block_spacing">
+        <item>段落间距</item>
+        <item>排版</item>
+    </string-array>
+    <string-array name="reading_answer_switch_sensitivity">
+        <item>灵敏度</item>
+        <item>切换回答</item>
+        <item>手势</item>
+    </string-array>
+    <string-array name="recommend_auto_refresh_home_on_startup">
+        <item>启动刷新</item>
+        <item>首页刷新</item>
+    </string-array>
+    <string-array name="recommend_threshold_quality">
+        <item>质量过滤</item>
+        <item>阈值</item>
+        <item>低质量</item>
+    </string-array>
+    <string-array name="recommend_clear_exposure_records">
+        <item>曝光</item>
+        <item>智能过滤</item>
+        <item>重置</item>
+    </string-array>
+    <string-array name="account_identity">
+        <item>切换账号</item>
+        <item>身份</item>
+        <item>多账号</item>
+        <item>移除账号</item>
+    </string-array>
+    <string-array name="developer_page">
+        <item>Cookie</item>
+        <item>导入 Cookie</item>
+        <item>验证登录</item>
+        <item>刷新 Token</item>
+        <item>刷新Token</item>
+        <item>登录维护</item>
+        <item>403</item>
+        <item>unhuman</item>
+        <item>网络诊断</item>
+        <item>网络请求诊断</item>
+        <item>安全验证</item>
+        <item>人工验证</item>
+    </string-array>
+    <string-array name="about_webdav">
+        <item>备份</item>
+        <item>恢复</item>
+        <item>同步</item>
+        <item>坚果云</item>
+    </string-array>
+    <string-array name="about_webdav_check_connection">
+        <item>WebDAV</item>
+        <item>连接</item>
+        <item>坚果云</item>
+    </string-array>
+    <string-array name="about_licenses">
+        <item>许可证</item>
+    </string-array>
+    <string-array name="appearance_webview_render">
+        <item>WebView</item>
+        <item>旧版渲染器</item>
+        <item>网页渲染</item>
+    </string-array>
+    <string-array name="appearance_auto_hide_article_bottom_bar">
+        <item>自动隐藏工具栏</item>
+        <item>底部工具栏</item>
+        <item>回答工具栏</item>
+    </string-array>
+    <string-array name="appearance_pin_answer_date">
+        <item>固定日期</item>
+        <item>回答时间</item>
+        <item>发布时间</item>
+    </string-array>
+    <string-array name="recommend_login_for_recommendation">
+        <item>登录</item>
+        <item>推荐登录</item>
+        <item>游客推荐</item>
+    </string-array>
+    <string-array name="recommend_enable_content_filter">
+        <item>智能过滤</item>
+        <item>内容去重</item>
+        <item>已读内容</item>
+        <item>看过的内容</item>
+    </string-array>
+    <string-array name="recommend_filter_followed_user_content">
+        <item>已关注用户</item>
+        <item>已关注作者</item>
+        <item>关注内容过滤</item>
+    </string-array>
+    <string-array name="recommend_reverse_block">
+        <item>反向屏蔽</item>
+        <item>仅显示屏蔽内容</item>
+        <item>反转过滤</item>
+    </string-array>
+    <string-array name="notification_display_in_app_notifications">
+        <item>应用内通知</item>
+        <item>通知类别</item>
+        <item>消息类型</item>
+    </string-array>
+    <string-array name="notification_like_answer">
+        <item>喜欢了你的回答</item>
+        <item>回答获赞</item>
+    </string-array>
+    <string-array name="notification_like_comment">
+        <item>喜欢了你的评论</item>
+        <item>评论获赞</item>
+    </string-array>
+    <string-array name="notification_reply_comment">
+        <item>回复了你的评论</item>
+        <item>评论回复</item>
+    </string-array>
+    <string-array name="notification_invite_answer">
+        <item>邀请你回答问题</item>
+        <item>回答邀请</item>
+    </string-array>
+    <string name="system_notifications_summary">管理通知类别与本机权限；进入通知设置可查看当前设备的可用状态和后台投递限制。</string>
+</resources>

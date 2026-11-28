@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.items
@@ -34,24 +35,43 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.data.decodeFeedNavDestinationOrNull
+import com.github.zly2006.zhihu.data.encodeStoredNavDestination
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
+import com.github.zly2006.zhihu.platform.rememberImageGalleryOpener
 import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
+import com.github.zly2006.zhihu.ui.components.CommentScreenComponent
+import com.github.zly2006.zhihu.ui.components.ContentSkeleton
 import com.github.zly2006.zhihu.ui.components.PageTurnTarget
+import com.github.zly2006.zhihu.ui.components.PaginatedList
 import com.github.zly2006.zhihu.ui.components.RecordedVoiceComment
+import com.github.zly2006.zhihu.ui.components.SkeletonLayout
 import com.github.zly2006.zhihu.ui.components.VoiceCommentPlayer
 import com.github.zly2006.zhihu.ui.components.pageTurnContentEndMarker
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.comment.BaseCommentViewModel
+import com.github.zly2006.zhihu.viewmodel.comment.CommentForwardList
+import kotlinx.coroutines.launch
 
 /** 评论列表区：首屏加载、加载失败、空列表和正常列表。 */
 @Composable
@@ -59,6 +79,7 @@ internal fun CommentScreenList(
     viewModel: BaseCommentViewModel,
     paginationEnvironment: PaginationEnvironment,
     activeCommentItem: CommentItem?,
+    readOnly: Boolean,
     sentenceMode: Boolean,
     activeListState: LazyListState,
     pageTurnTarget: PageTurnTarget,
@@ -78,26 +99,23 @@ internal fun CommentScreenList(
         onRefresh = { viewModel.refresh(paginationEnvironment) },
         modifier = modifier,
     ) {
+        val isEmpty = viewModel.allData.isEmpty()
+        val emptyRoot = activeCommentItem == null && isEmpty
+        val errorMessage = if (isEmpty && viewModel.commentClosedMessage != null) null else viewModel.errorMessage
+        val onRetry = { viewModel.retry(paginationEnvironment) }
         when {
-            viewModel.isLoading && viewModel.allData.isEmpty() -> {
+            emptyRoot && errorMessage != null -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    AppSpinner()
+                    CommentListLoadError(errorMessage, onRetry)
                 }
             }
 
-            viewModel.errorMessage != null && viewModel.allData.isEmpty() -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(viewModel.errorMessage!!, color = MaterialTheme.colorScheme.error)
-                        AppTextButton(onClick = { viewModel.retry(paginationEnvironment) }, modifier = Modifier.testTag("comment_load_retry")) { Text("重试") }
-                    }
-                }
-            }
-
-            activeCommentItem == null && viewModel.allData.isEmpty() -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(viewModel.commentClosedMessage ?: if (sentenceMode) "当前列表暂无片段评论" else "暂无评论")
-                }
+            emptyRoot -> {
+                EmptyCommentListContent(
+                    viewModel = viewModel,
+                    emptyText = if (sentenceMode) CommentsStrings.noSentenceComments else CommentsStrings.noComments,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
 
             else -> {
@@ -126,6 +144,7 @@ internal fun CommentScreenList(
                             ) {
                                 CommentScreenRow(
                                     commentItem = activeCommentItem,
+                                    readOnly = readOnly,
                                     allowDelete = false,
                                     showChildPreview = false,
                                     voicePreviewPlayer = voicePreviewPlayer,
@@ -138,12 +157,8 @@ internal fun CommentScreenList(
                                     onDeleteComment = onDeleteComment,
                                 ) { }
                                 HorizontalDivider()
-                                if (viewModel.allData.isEmpty()) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Text(
-                                            "暂无回复",
-                                        )
-                                    }
+                                if (isEmpty && errorMessage == null) {
+                                    EmptyCommentListContent(viewModel, CommentsStrings.noReplies, Modifier.fillMaxWidth())
                                 }
                             }
                         }
@@ -164,10 +179,11 @@ internal fun CommentScreenList(
                                         dampingRatio = Spring.DampingRatioMediumBouncy,
                                     ),
                                 ).testTag("comment_row_${dto.id}"),
-                            onReply = { onCommentClick(commentItem) },
+                            onReply = { onCommentClick(commentItem) }.takeIf { !readOnly || activeCommentItem == null },
                         ) {
                             CommentScreenRow(
                                 commentItem = commentItem,
+                                readOnly = readOnly,
                                 showChildPreview = activeCommentItem == null,
                                 voicePreviewPlayer = voicePreviewPlayer,
                                 submittedVoices = submittedVoices,
@@ -181,12 +197,9 @@ internal fun CommentScreenList(
                         }
                     }
 
-                    if (viewModel.errorMessage != null && viewModel.allData.isNotEmpty()) {
+                    if (errorMessage != null) {
                         item(key = "comment_load_error") {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                Text(viewModel.errorMessage!!, color = MaterialTheme.colorScheme.error)
-                                AppTextButton(onClick = { viewModel.retry(paginationEnvironment) }, modifier = Modifier.testTag("comment_load_retry")) { Text("重试") }
-                            }
+                            CommentListLoadError(errorMessage, onRetry)
                         }
                     }
                     if (viewModel.isEnd && viewModel.allData.isNotEmpty()) {
@@ -207,6 +220,72 @@ internal fun CommentScreenList(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyCommentListContent(viewModel: BaseCommentViewModel, emptyText: String, modifier: Modifier) {
+    /** 首帧和自动续读非终止空页之间，isLoading 都可能为 false。 */
+    if (viewModel.isEnd) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(viewModel.commentClosedMessage ?: emptyText)
+        }
+    } else {
+        Box(modifier = modifier) { ContentSkeleton(layout = SkeletonLayout.Comment) }
+    }
+}
+
+@Composable
+private fun CommentListLoadError(message: String, onRetry: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Text(message, color = MaterialTheme.colorScheme.error)
+        AppTextButton(onClick = onRetry, modifier = Modifier.testTag("comment_load_retry")) { Text(CommentsStrings.retry) }
+    }
+}
+
+@Composable
+internal fun CommentScreenForwardList(
+    forwards: CommentForwardList,
+    listState: LazyListState,
+    pageTurnTarget: PageTurnTarget,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val loadMore: () -> Unit = { scope.launch { forwards.loadMore() } }
+    val readOnly = rememberZhihuAccountStore().usesBrowserSession
+    val gallery = rememberImageGalleryOpener()
+    var targetKey by rememberSaveable(forwards) { mutableStateOf<String?>(null) }
+    var showComments by rememberSaveable(forwards) { mutableStateOf(false) }
+    var authorPolicy by rememberSaveable(forwards) { mutableStateOf(false) }
+    val target = remember(targetKey) { targetKey?.let(::decodeFeedNavDestinationOrNull) }
+    val panelStates = key(forwards) { rememberSaveableStateHolder() }
+    if (target != null) {
+        panelStates.SaveableStateProvider(target.commentThreadKey()) {
+            CommentScreenComponent(
+                showComments = showComments,
+                onDismiss = { showComments = false },
+                content = target,
+                isZhPlusAuthorContent = authorPolicy,
+            )
+        }
+    }
+    PaginatedList(
+        items = forwards.items,
+        key = { it.id },
+        listState = listState,
+        modifier = modifier.fillMaxWidth().pageTurnViewportWithGuide(pageTurnTarget).testTag("comment_forward_list"),
+        isLoading = { forwards.isLoading },
+        initialLoadingContent = { ContentSkeleton(layout = SkeletonLayout.Comment) },
+        isEnd = { forwards.isEnd },
+        loadError = { forwards.errorMessage },
+        onLoadMore = loadMore,
+        onRetry = loadMore,
+    ) { forward ->
+        CommentForwardCard(forward, readOnly, gallery) { thread ->
+            targetKey = thread.encodeStoredNavDestination()
+            authorPolicy = forward.author?.id == DataHolder.ZH_PLUS_AUTHOR_USER_ID
+            showComments = true
         }
     }
 }

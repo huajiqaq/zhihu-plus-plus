@@ -17,12 +17,13 @@
 
 package com.github.zly2006.zhihu.navigation
 
-import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 
 class AppNavHostTest {
     @Test
@@ -36,6 +37,7 @@ class AppNavHostTest {
         host.open(answer)
         assertNotEquals(first, host.topEntryId)
         host.open(answer)
+        val forwardEntry = host.pageEntries.last()
         assertEquals(listOf(MainTabs, answer, person, answer, answer), host.backStack)
         assertTrue(host.back())
         assertTrue(host.back())
@@ -46,5 +48,10 @@ class AppNavHostTest {
         host.open(MainTabs)
         assertEquals(listOf(MainTabs), host.backStack)
         assertFalse(host.back())
+        host.restore(forwardEntry)
+        assertEquals(forwardEntry.id, host.topEntryId)
+        assertEquals(answer, host.top)
+        assertFailsWith<IllegalArgumentException> { host.restore(forwardEntry) }
+        assertFailsWith<IllegalArgumentException> { host.restore(AppNavEntry.Root("other-root", MainTabs)) }
     }
 }

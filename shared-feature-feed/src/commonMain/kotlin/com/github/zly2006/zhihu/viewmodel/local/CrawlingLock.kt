@@ -38,4 +38,4 @@ internal suspend fun withCrawlingLock(databasePath: String, block: suspend () ->
     }
 }
 
-internal expect fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable?
+internal expect suspend fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable?

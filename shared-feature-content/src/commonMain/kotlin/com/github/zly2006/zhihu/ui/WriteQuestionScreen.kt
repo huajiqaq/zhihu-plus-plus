@@ -50,7 +50,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import com.github.zly2006.zhihu.account.accountIdentityKey
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
+import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.WriteQuestion
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -150,7 +152,7 @@ fun WriteQuestionScreen(destination: WriteQuestion) {
         persistDraft(draft)
         val trimmedTitle = draft.title.trim()
         if (trimmedTitle.length < 5) {
-            userMessages.showShortMessage("问题标题至少 5 个字")
+            userMessages.showShortMessage(ContentStrings.questionTitleMinLength)
             return
         }
         val submittedTitle = trimmedTitle.let {
@@ -180,16 +182,15 @@ fun WriteQuestionScreen(destination: WriteQuestion) {
                 draftPublished = true
                 settings.remove(draftKey)
                 localDraftSaved = false
-                userMessages.showShortMessage("问题已发布")
+                userMessages.showShortMessage(ContentStrings.questionPublished)
                 navigator.onNavigateBack()
                 navigator.onNavigate(
-                    com.github.zly2006.zhihu.navigation
-                        .Question(questionId, submittedTitle),
+                    Question(questionId, submittedTitle),
                 )
             }.onFailure { e ->
                 if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                 if (account.client !== accountClient) return@onFailure
-                errorMessage = buildWriteOperationErrorMessage("发布问题失败", e)
+                errorMessage = buildWriteOperationErrorMessage(ContentStrings.questionPublishFailed, e)
             }
             isSubmitting = false
         }
@@ -203,20 +204,20 @@ fun WriteQuestionScreen(destination: WriteQuestion) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val requiredWidth = with(LocalDensity.current) {
                     (
-                        textMeasurer.measure("提出问题", style = titleStyle, softWrap = false).size.width +
-                            textMeasurer.measure("发布问题", style = if (settingSkinIsMiuix()) skin.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
+                        textMeasurer.measure(ContentStrings.askQuestion, style = titleStyle, softWrap = false).size.width +
+                            textMeasurer.measure(ContentStrings.publishQuestion, style = if (settingSkinIsMiuix()) skin.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
                     ).toDp()
                 } + AppDimens.TouchTarget + AppDimens.PageHorizontalPadding * 2 + AppDimens.Space24 * 2
                 val separateAction = maxWidth < requiredWidth
                 Column {
                     AppCompactTopBar(
-                        title = "提出问题",
+                        title = ContentStrings.askQuestion,
                         onBack = navigator.onNavigateBack,
                         backTag = WRITE_QUESTION_BACK_BUTTON_TAG,
                         actions = {
                             if (!separateAction) {
                                 AppButton(
-                                    text = if (isSubmitting) "发布中…" else "发布问题",
+                                    text = if (isSubmitting) ContentStrings.publishingEllipsis else ContentStrings.publishQuestion,
                                     onClick = { submit() },
                                     enabled = !isSubmitting,
                                     modifier = Modifier.testTag(WRITE_QUESTION_PUBLISH_TAG),
@@ -227,7 +228,7 @@ fun WriteQuestionScreen(destination: WriteQuestion) {
                     if (separateAction) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space4), horizontalArrangement = Arrangement.End) {
                             AppButton(
-                                text = if (isSubmitting) "发布中…" else "发布问题",
+                                text = if (isSubmitting) ContentStrings.publishingEllipsis else ContentStrings.publishQuestion,
                                 onClick = { submit() },
                                 enabled = !isSubmitting,
                                 modifier = Modifier.testTag(WRITE_QUESTION_PUBLISH_TAG),
@@ -250,28 +251,28 @@ fun WriteQuestionScreen(destination: WriteQuestion) {
             AppTextField(
                 state = title,
                 enabled = !isSubmitting,
-                placeholder = "问题标题（至少 5 个字）",
-                labelText = "问题标题",
+                placeholder = ContentStrings.questionTitleHint,
+                labelText = ContentStrings.questionTitle,
                 modifier = Modifier.fillMaxWidth().testTag(WRITE_QUESTION_TITLE_TAG),
             )
             if (localDraftSaved) {
-                Text("草稿保存在本机", style = skin.footnote2, color = skin.onSurfaceVariantSummary)
+                Text(ContentStrings.draftSavedLocally, style = skin.footnote2, color = skin.onSurfaceVariantSummary)
             }
             Text(
-                "补充说明（可选）",
+                ContentStrings.optionalDetails,
                 style = skin.body2,
                 color = skin.onSurfaceVariantSummary,
             )
             AppTextField(
                 state = detail,
                 enabled = !isSubmitting,
-                placeholder = "背景、条件与你的尝试……",
+                placeholder = ContentStrings.questionDetailsHint,
                 lineLimits = TextFieldLineLimits.MultiLine(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
                     .testTag(WRITE_QUESTION_DETAIL_TAG)
-                    .semantics { contentDescription = "补充说明（可选）" },
+                    .semantics { contentDescription = ContentStrings.optionalDetails },
             )
         }
     }

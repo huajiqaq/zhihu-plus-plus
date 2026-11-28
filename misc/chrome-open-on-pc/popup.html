@@ -16,18 +16,18 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Zhihu++ 在电脑打开</title>
+    <title data-i18n="extensionName">Zhihu++</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="header">Zhihu++ 在电脑打开</div>
-    <div id="status">正在打开最新内容…</div>
+    <div class="header" data-i18n="extensionName"></div>
+    <div id="status" data-i18n="opening" role="status"></div>
     <div id="hint"></div>
-    <button id="login" type="button" hidden>去登录知乎</button>
+    <button id="login" data-i18n="login" type="button" hidden></button>
     <script src="popup.js"></script>
 </body>
 </html>

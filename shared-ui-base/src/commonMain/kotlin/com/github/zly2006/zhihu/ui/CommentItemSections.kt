@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
@@ -74,6 +75,7 @@ import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.RecordedVoiceComment
@@ -82,7 +84,6 @@ import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun CommentItemHeader(
@@ -101,7 +102,7 @@ internal fun CommentItemHeader(
             fontSize = 16.sp,
             modifier = Modifier
                 .testTag("comment_author_${commentData.id}")
-                .clickable(onClickLabel = "打开个人主页") { onNavigate(authorPerson) },
+                .clickable(onClickLabel = CommentsStrings.openProfile) { onNavigate(authorPerson) },
         )
 
         val authorTag = comment.item.authorTag
@@ -119,7 +120,7 @@ internal fun CommentItemHeader(
         if (replyToAuthor != null) {
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                "回复",
+                CommentsStrings.reply,
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -211,7 +212,7 @@ internal fun CommentItemText(
         }
         if (canExpand) {
             AppTextButton(
-                text = if (isContentExpanded) "收起" else "展开",
+                text = if (isContentExpanded) CommentsStrings.collapse else CommentsStrings.expand,
                 onClick = onToggleExpanded,
                 modifier = Modifier.align(Alignment.BottomStart).testTag("comment_expand_$commentId"),
             )
@@ -243,7 +244,7 @@ internal fun ColumnScope.CommentItemMedia(
                             modifier = Modifier
                                 .size(120.dp)
                                 .clip(RoundedCornerShape(6.dp)),
-                            contentDescription = "评论贴纸",
+                            contentDescription = CommentsStrings.commentSticker,
                         )
                     }
                 }
@@ -263,6 +264,7 @@ internal fun ColumnScope.CommentItemMedia(
 @Composable
 internal fun CommentItemActions(
     comment: CommentItem,
+    readOnly: Boolean,
     showMoreMenu: Boolean,
     onShowMoreMenu: () -> Unit,
     onDismissMoreMenu: () -> Unit,
@@ -272,7 +274,7 @@ internal fun CommentItemActions(
     likeCount: Int,
     isLikeLoading: Boolean,
     toggleLike: () -> Unit,
-    onChildCommentClick: (CommentItem) -> Unit,
+    onChildCommentClick: ((CommentItem) -> Unit)?,
 ) {
     val commentData = comment.item
     Box {
@@ -280,9 +282,9 @@ internal fun CommentItemActions(
             onClick = onShowMoreMenu,
             modifier = Modifier.size(24.dp).testTag("comment_more_button_${commentData.id}"),
         ) {
-            Icon(
+            AppIcon(
                 Icons.Default.MoreVert,
-                contentDescription = "更多操作",
+                contentDescription = CommentsStrings.moreActions,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -294,22 +296,24 @@ internal fun CommentItemActions(
             renderInRootScaffold = false,
         ) {
             if (onDelete != null) {
+                val deleteColor = if (readOnly) LocalAppSkinTokens.current.disabledOnSurface else MaterialTheme.colorScheme.error
                 AppDropdownMenuItem(
                     modifier = Modifier.testTag("comment_delete_menu_item_${commentData.id}"),
-                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                    enabled = !readOnly,
+                    text = { Text(CommentsStrings.delete, color = deleteColor) },
                     leadingIcon = {
-                        Icon(
+                        AppIcon(
                             Icons.Default.Delete,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
+                            tint = deleteColor,
                         )
                     },
                     onClick = onDelete,
                 )
             }
             AppDropdownMenuItem(
-                text = { Text("举报") },
-                leadingIcon = { Icon(Icons.Filled.Report, contentDescription = null) },
+                text = { Text(CommentsStrings.report) },
+                leadingIcon = { AppIcon(Icons.Filled.Report, contentDescription = null) },
                 onClick = onReport,
             )
         }
@@ -324,12 +328,12 @@ internal fun CommentItemActions(
         val actionContentColor = if (settingSkinIsMiuix()) tokens.onSurface else tokens.onSurfaceVariantActions
         AppButton(
             onClick = toggleLike,
-            enabled = !isLikeLoading,
+            enabled = !readOnly && !isLikeLoading,
             modifier = Modifier
                 .testTag("comment_like_button_${commentData.id}")
                 .semantics {
-                    contentDescription = if (isLiked) "取消喜欢" else "喜欢"
-                    stateDescription = if (isLiked) "已喜欢，$likeCount" else "$likeCount"
+                    contentDescription = if (isLiked) CommentsStrings.unlike else CommentsStrings.like
+                    stateDescription = if (isLiked) CommentsStrings.likedCount(likeCount) else "$likeCount"
                     selected = isLiked
                 },
             shape = ButtonGroupDefaults.connectedLeadingButtonShape,
@@ -337,7 +341,7 @@ internal fun CommentItemActions(
             contentColor = if (isLiked) tokens.onPrimary else actionContentColor,
             contentPadding = PaddingValues(horizontal = AppDimens.Space12),
         ) {
-            Icon(
+            AppIcon(
                 if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
@@ -350,16 +354,17 @@ internal fun CommentItemActions(
             )
         }
         AppButton(
-            onClick = { onChildCommentClick(comment) },
+            onClick = { onChildCommentClick?.invoke(comment) },
+            enabled = onChildCommentClick != null,
             modifier = Modifier.testTag("comment_reply_button_${commentData.id}"),
             shape = ButtonGroupDefaults.connectedTrailingButtonShape,
             containerColor = tokens.surfaceContainerHigh,
             contentColor = actionContentColor,
             contentPadding = PaddingValues(horizontal = AppDimens.Space12),
         ) {
-            Icon(
+            AppIcon(
                 Icons.AutoMirrored.Outlined.Comment,
-                contentDescription = "回复",
+                contentDescription = if (readOnly && onChildCommentClick != null) CommentsStrings.viewReplies else CommentsStrings.reply,
                 modifier = Modifier.size(16.dp),
             )
             if (commentData.childCommentCount > 0) {

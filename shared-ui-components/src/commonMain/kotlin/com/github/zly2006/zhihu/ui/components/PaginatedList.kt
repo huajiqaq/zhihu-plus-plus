@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.rememberObservedSetting
@@ -132,6 +133,7 @@ fun <T> PaginatedList(
     isLoading: () -> Boolean,
     loadError: () -> String?,
     onRetry: () -> Unit,
+    initialLoadingContent: (@Composable () -> Unit)? = null,
     itemContent: @Composable LazyItemScope.(T) -> Unit,
 ) {
     val displayedItems = items.toList()
@@ -187,15 +189,20 @@ fun <T> PaginatedList(
             when {
                 error != null -> {
                     AppEmptyState(
-                        title = "加载失败",
+                        title = WidgetsStrings.loadFailed,
                         description = error,
-                        action = { AppTextButton("重试", onRetry) },
+                        action = { AppTextButton(WidgetsStrings.retry, onRetry) },
                     )
+                }
+                loading && displayedItems.isEmpty() && initialLoadingContent != null -> {
+                    if (LocalPullToRefreshViewModel.current?.isPullToRefresh != true && !LocalPullToRefreshIndicatorVisible.current) {
+                        initialLoadingContent()
+                    }
                 }
                 loading -> (footer ?: ProgressIndicatorFooter).invoke(listState)
                 ended && displayedItems.isEmpty() -> {
                     AppEmptyState(
-                        title = "暂无内容",
+                        title = WidgetsStrings.emptyContent,
                         modifier = Modifier.padding(top = AppDimens.Space24),
                     )
                 }
@@ -207,7 +214,7 @@ fun <T> PaginatedList(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "已经到底啦",
+                            text = WidgetsStrings.endOfList,
                             textAlign = TextAlign.Center,
                         )
                     }

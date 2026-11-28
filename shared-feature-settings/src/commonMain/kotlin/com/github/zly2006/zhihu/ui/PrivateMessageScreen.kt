@@ -80,6 +80,8 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.account.accountIdentityKey
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.ZhihuPrivateMessage
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.resolveNavigationUrl
@@ -88,6 +90,7 @@ import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
 import com.github.zly2006.zhihu.ui.components.AppScaffold
@@ -98,15 +101,13 @@ import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.util.formatFullDateTime
 import com.github.zly2006.zhihu.util.formatRelativeTime
 import com.github.zly2006.zhihu.viewmodel.PrivateMessageViewModel
+import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val PRIVATE_MESSAGE_BACK_BUTTON_TAG = "private_message_back_button"
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalTime::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrivateMessageScreen(destination: Notification.Message) {
     val navigator = LocalNavigator.current
@@ -167,7 +168,7 @@ fun PrivateMessageScreen(destination: Notification.Message) {
         modifier = Modifier.fillMaxSize(),
         topBar = {
             AppCompactTopBar(
-                title = peerName.ifBlank { "私信" },
+                title = peerName.ifBlank { NotificationsStrings.privateTitle },
                 onBack = navigator.onNavigateBack,
                 backTag = PRIVATE_MESSAGE_BACK_BUTTON_TAG,
                 centered = true,
@@ -201,8 +202,8 @@ fun PrivateMessageScreen(destination: Notification.Message) {
                         modifier = Modifier
                             .weight(1f)
                             .testTag("private_message_input"),
-                        placeholder = "发私信",
-                        labelText = "私信内容",
+                        placeholder = NotificationsStrings.privatePlaceholder,
+                        labelText = NotificationsStrings.privateContentLabel,
                         enabled = !viewModel.isSending,
                         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 4),
                         shape = RoundedCornerShape(AppDimens.InputCornerRadius),
@@ -222,16 +223,16 @@ fun PrivateMessageScreen(destination: Notification.Message) {
                                     }
                                     listState.requestScrollToItem(0)
                                 } else {
-                                    userMessages.showMessage(viewModel.errorMessage ?: "发送失败")
+                                    userMessages.showMessage(viewModel.errorMessage ?: NotificationsStrings.sendFailed)
                                 }
                             }
                         },
                         enabled = draft.text.isNotBlank() && !viewModel.isSending,
                         modifier = Modifier.testTag("private_message_send"),
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.AutoMirrored.Outlined.Send,
-                            contentDescription = "发送",
+                            contentDescription = NotificationsStrings.send,
                             tint = if (draft.text.isNotBlank()) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -317,7 +318,7 @@ private fun PrivateMessageBubble(
         if (incoming) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimaryContainer
     }
     val linkColor = bubbleContentColor
-    val displayText = remember(message.content, message.plugin, linkColor, navigator) {
+    val displayText = remember(message.content, message.plugin, linkColor, navigator, AppLocale.current) {
         message.displayContent(linkColor) { url ->
             resolveNavigationUrl(url)?.let(navigator.onNavigate)
         }
@@ -377,7 +378,7 @@ private fun PrivateMessageBubble(
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier
                                 .commentSelectionWorkaround()
-                                .semantics { stateDescription = if (incoming) "收到的私信" else "发出的私信" }
+                                .semantics { stateDescription = if (incoming) NotificationsStrings.privateIncoming else NotificationsStrings.privateOutgoing }
                                 .padding(
                                     horizontal = AppDimens.Space14,
                                     vertical = AppDimens.Space10,

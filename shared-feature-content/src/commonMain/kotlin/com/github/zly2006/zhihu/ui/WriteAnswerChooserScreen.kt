@@ -53,6 +53,7 @@ import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -92,13 +93,13 @@ const val WRITE_ANSWER_CHOOSER_SEARCH_TAG = "write_answer_chooser_search"
 const val WRITE_ANSWER_CHOOSER_RETRY_TAG = "write_answer_chooser_retry"
 
 internal enum class WriteAnswerChoiceTab(
-    val title: String,
+    private val titleText: () -> String,
     val endpoint: String,
     val tag: String,
 ) {
-    Invite("邀请", "https://api.zhihu.com/notifications/v3/timeline/entry/invite", "write_answer_tab_invite"),
-    Recommended("推荐", "https://api.zhihu.com/creators/question_route/notification_related/recommended", "write_answer_tab_recommended"),
-    Hot("人气", "https://api.zhihu.com/creators/question_route/notification_related/hot", "write_answer_tab_hot"),
+    Invite({ ContentStrings.invitations }, "https://api.zhihu.com/notifications/v3/timeline/entry/invite", "write_answer_tab_invite"),
+    Recommended({ ContentStrings.recommended }, "https://api.zhihu.com/creators/question_route/notification_related/recommended", "write_answer_tab_recommended"),
+    Hot({ ContentStrings.popular }, "https://api.zhihu.com/creators/question_route/notification_related/hot", "write_answer_tab_hot"),
     ;
 
     val initialUrl: String
@@ -106,6 +107,8 @@ internal enum class WriteAnswerChoiceTab(
             Invite -> "$endpoint?invite_with_time_slice=1&limit=20"
             else -> "$endpoint?offset=0"
         }
+
+    val title: String get() = titleText()
 }
 
 internal data class WriteAnswerChoice(
@@ -115,10 +118,13 @@ internal data class WriteAnswerChoice(
     val questionDetail: String = "",
     val hasAnswer: Boolean = false,
     val existingAnswer: Article? = null,
+    val sourceQuestion: Feed.QuestionTarget? = null,
 ) {
     init {
         require(questionId > 0 && title.isNotBlank())
     }
+
+    val displaySummary: String get() = sourceQuestion?.displayDetails ?: summary
 
     val answerDestination: NavDestination?
         get() = existingAnswer ?: if (hasAnswer) null else WriteAnswer(questionId, title, questionDetail)
@@ -134,7 +140,7 @@ internal fun decodeWriteAnswerChoices(
     raw: JsonObject,
     tab: WriteAnswerChoiceTab,
 ): WriteAnswerChoicesPage {
-    val data = raw["data"] as? JsonArray ?: error("问题列表响应缺少 data")
+    val data = raw["data"] as? JsonArray ?: error(ContentStrings.questionListMissingData)
     val items = data
         .mapNotNull { element ->
             val item = element as? JsonObject ?: return@mapNotNull null
@@ -165,14 +171,15 @@ internal fun decodeWriteAnswerChoices(
                     title = question.title,
                     summary = question.detailsText,
                     questionDetail = question.detail,
+                    sourceQuestion = question,
                 )
             }
         }.distinctBy { it.questionId }
     if (items.isEmpty() && data.any { ((it as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull != "empty" }) {
-        error("问题列表解码失败：服务端返回 ${data.size} 项，但没有合法问题")
+        error(ContentStrings.questionListDecodeError(data.size))
     }
     val paging = raw["paging"]?.let { ZhihuJson.decodeJson<ZhihuPaging>(it) }
-        ?: error("问题列表响应缺少 paging")
+        ?: error(ContentStrings.questionListMissingPaging)
     return WriteAnswerChoicesPage(items, paging)
 }
 
@@ -202,7 +209,7 @@ internal class WriteAnswerChoicesViewModel(
         isLoading = true
         loadJob = viewModelScope.launch {
             try {
-                val raw = environment.fetchJson(url, "") ?: error("问题列表响应为空")
+                val raw = environment.fetchJson(url, "") ?: error(ContentStrings.questionListEmptyResponse)
                 val page = decodeWriteAnswerChoices(raw, tab)
                 // 分页只接受当前标签的官方 HTTPS endpoint，且不能原地循环或泄漏凭据到外站。
                 val next = if (page.paging.isEnd) {
@@ -217,7 +224,7 @@ internal class WriteAnswerChoicesViewModel(
                             parsed.user.isNullOrEmpty() &&
                             parsed.password.isNullOrEmpty() &&
                             page.paging.next != url,
-                    ) { "服务端返回了无效的分页地址，已停止加载" }
+                    ) { ContentStrings.invalidPagingUrl }
                     page.paging.next
                 }
                 if (requestGeneration != generation) return@launch
@@ -231,7 +238,7 @@ internal class WriteAnswerChoicesViewModel(
                 throw error
             } catch (error: Exception) {
                 if (requestGeneration == generation) {
-                    errorMessage = error.message?.takeIf(String::isNotBlank) ?: "问题加载失败，请重试"
+                    errorMessage = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.questionLoadFailedRetry
                 }
             } finally {
                 if (requestGeneration == generation) isLoading = false
@@ -282,20 +289,20 @@ fun WriteAnswerChooserScreen(args: WriteAnswerChooser) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val requiredWidth = with(LocalDensity.current) {
                     (
-                        textMeasurer.measure("回答问题", style = titleStyle, softWrap = false).size.width +
-                            textMeasurer.measure("搜索问题", style = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
+                        textMeasurer.measure(ContentStrings.answerQuestions, style = titleStyle, softWrap = false).size.width +
+                            textMeasurer.measure(ContentStrings.searchQuestions, style = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
                     ).toDp()
                 } + AppDimens.TouchTarget + AppDimens.PageHorizontalPadding * 2 + AppDimens.Space24 * 2
                 val separateAction = maxWidth < requiredWidth
                 Column {
                     AppCompactTopBar(
-                        title = "回答问题",
+                        title = ContentStrings.answerQuestions,
                         onBack = navigator.onNavigateBack,
                         backTag = WRITE_ANSWER_CHOOSER_BACK_TAG,
                         actions = {
                             if (!separateAction) {
                                 AppTextButton(
-                                    text = "搜索问题",
+                                    text = ContentStrings.searchQuestions,
                                     onClick = { navigator.onNavigate(Search()) },
                                     modifier = Modifier.testTag(WRITE_ANSWER_CHOOSER_SEARCH_TAG),
                                 )
@@ -305,7 +312,7 @@ fun WriteAnswerChooserScreen(args: WriteAnswerChooser) {
                     if (separateAction) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = AppDimens.PageHorizontalPadding), horizontalArrangement = Arrangement.End) {
                             AppTextButton(
-                                text = "搜索问题",
+                                text = ContentStrings.searchQuestions,
                                 onClick = { navigator.onNavigate(Search()) },
                                 modifier = Modifier.testTag(WRITE_ANSWER_CHOOSER_SEARCH_TAG),
                             )
@@ -332,22 +339,22 @@ fun WriteAnswerChooserScreen(args: WriteAnswerChooser) {
                         when {
                             model.isLoading || (!model.hasLoaded && model.errorMessage == null) -> AppSpinner(Modifier.testTag("write_answer_chooser_loading"))
                             model.errorMessage != null -> AppEmptyState(
-                                title = "问题加载失败",
+                                title = ContentStrings.questionLoadFailed,
                                 description = model.errorMessage,
                                 action = {
                                     AppButton(
-                                        text = "重试",
+                                        text = ContentStrings.retry,
                                         onClick = { model.retry(environment) },
                                         modifier = Modifier.testTag(WRITE_ANSWER_CHOOSER_RETRY_TAG),
                                     )
                                 },
                             )
                             else -> AppEmptyState(
-                                title = if (model.tab == WriteAnswerChoiceTab.Invite) "暂无回答邀请" else "暂无可回答的问题",
-                                description = "可以切换标签，或使用顶部的「搜索问题」寻找问题",
+                                title = if (model.tab == WriteAnswerChoiceTab.Invite) ContentStrings.noAnswerInvitations else ContentStrings.noQuestionsToAnswer,
+                                description = ContentStrings.answerChooserEmptyHelp,
                                 action = {
                                     AppTextButton(
-                                        text = "重新加载",
+                                        text = ContentStrings.reload,
                                         onClick = { model.refresh(environment) },
                                         modifier = Modifier.testTag(WRITE_ANSWER_CHOOSER_RETRY_TAG),
                                     )
@@ -387,14 +394,14 @@ fun WriteAnswerChooserScreen(args: WriteAnswerChooser) {
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = Ksoup.parse(choice.summary).text(),
+                                        text = Ksoup.parse(choice.displaySummary).text(),
                                         modifier = Modifier.weight(1f).padding(end = AppDimens.Space8),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     val destination = choice.answerDestination
                                     AppButton(
-                                        text = if (choice.hasAnswer || choice.existingAnswer != null) "查看回答" else "写回答",
+                                        text = if (choice.hasAnswer || choice.existingAnswer != null) ContentStrings.viewAnswer else ContentStrings.writeAnswer,
                                         enabled = destination != null,
                                         onClick = { destination?.let(navigator.onNavigate) },
                                         modifier = Modifier.testTag("write_answer_action:${choice.questionId}"),

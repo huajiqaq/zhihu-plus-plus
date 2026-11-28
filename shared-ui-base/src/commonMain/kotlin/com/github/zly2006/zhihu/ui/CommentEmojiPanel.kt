@@ -60,16 +60,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppChip
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.comment.CommentSticker
 import com.github.zly2006.zhihu.viewmodel.comment.CommentStickerGroup
 import kotlin.math.min
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 sealed interface EmojiPanelEntry {
     data object Default : EmojiPanelEntry
@@ -91,7 +92,7 @@ internal fun DefaultCommentEmojiGrid(
     if (emojis.isEmpty()) {
         Box(modifier, contentAlignment = Alignment.Center) {
             Text(
-                text = "暂无可用表情",
+                text = CommentsStrings.noEmojis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -145,7 +146,7 @@ internal fun EmojiPanelChip(
         },
         leadingIcon = if (icon != null) {
             {
-                Icon(
+                AppIcon(
                     imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.size(AppDimens.IconSizeSmall),
@@ -195,7 +196,7 @@ internal fun FavoritesStickerPanel(
             span = { GridItemSpan(maxLineSpan) },
         ) {
             Text(
-                text = "收藏的表情包",
+                text = CommentsStrings.savedStickers,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(vertical = 4.dp),
             )
@@ -217,7 +218,7 @@ internal fun FavoritesStickerPanel(
             span = { GridItemSpan(maxLineSpan) },
         ) {
             Text(
-                text = "推荐表情",
+                text = CommentsStrings.recommendedStickers,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(vertical = 4.dp),
             )
@@ -251,12 +252,12 @@ private fun StickerUploadTile(
         if (isUploading) {
             AppSpinner(size = 18.dp)
         } else {
-            Icon(
+            AppIcon(
                 Icons.Default.Add,
-                contentDescription = "上传表情",
+                contentDescription = CommentsStrings.uploadSticker,
                 modifier = Modifier.size(18.dp),
             )
-            Text("上传", style = MaterialTheme.typography.labelSmall)
+            Text(CommentsStrings.upload, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -287,7 +288,7 @@ internal fun StickerGrid(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "暂无贴纸",
+                        text = CommentsStrings.noStickers,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -327,7 +328,7 @@ private fun StickerCell(
         ) {
             AsyncImage(
                 model = sticker.thumbnailUrl,
-                contentDescription = sticker.title.ifBlank { "贴纸" },
+                contentDescription = sticker.title.ifBlank { CommentsStrings.sticker },
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
             )

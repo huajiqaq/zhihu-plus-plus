@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
@@ -64,7 +65,7 @@ internal fun PinPollCard(
             modifier = Modifier.padding(16.dp),
         ) {
             Text(
-                text = poll.title.ifBlank { "想法投票" },
+                text = poll.title.ifBlank { ContentStrings.pinPoll },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -95,7 +96,7 @@ internal fun PinPollCard(
                             modifier = Modifier.weight(1f),
                         )
                         if (votingOptionId == option.id) {
-                            Text("提交中...")
+                            Text(ContentStrings.submittingDots)
                         }
                     }
                 }
@@ -103,7 +104,7 @@ internal fun PinPollCard(
             }
             if (errorMessage != null) {
                 Text(
-                    text = "投票失败: $errorMessage",
+                    text = ContentStrings.voteError(errorMessage),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -168,14 +169,14 @@ private fun PinPollResultRow(
             )
             if (option.isSelected) {
                 Text(
-                    text = "已选",
+                    text = ContentStrings.selected,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
-                text = "${option.votingCount} 票",
+                text = ContentStrings.voteCount(option.votingCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

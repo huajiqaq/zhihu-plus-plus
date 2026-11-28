@@ -25,41 +25,35 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.desktop.copyDesktopPlainText
-import com.github.zly2006.zhihu.desktop.defaultDesktopAccountStore
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
 import com.github.zly2006.zhihu.desktop.desktopZhihuDownloadsDir
 import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.desktopNotificationSettingsStore
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.buildArticleExportFileName
 import com.github.zly2006.zhihu.util.buildCollectionExportZipFileName
 import com.github.zly2006.zhihu.util.sanitizeArticleExportFileNamePart
+import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
-import java.awt.image.BufferedImage
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import javax.imageio.IIOImage
-import javax.imageio.ImageIO
-import javax.imageio.ImageWriteParam
-import javax.swing.JEditorPane
-import javax.swing.SwingUtilities
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.github.zly2006.zhihu.util.buildOfflineArticleExportHtml as buildSharedOfflineArticleExportHtml
 
 private val desktopContentFilterDb by lazy { getContentFilterDatabase() }
 
 class DesktopPaginationEnvironment(
     override val notificationSettingsStore: NotificationSettingsStore = desktopNotificationSettingsStore(),
-    private val store: ZhihuAccountStore = defaultDesktopAccountStore,
+    private val store: ZhihuAccountStore,
     override val allowGuestAccess: Boolean = false,
 ) : PaginationEnvironment,
     CollectionContentEnvironment,
@@ -84,7 +78,7 @@ class DesktopPaginationEnvironment(
         tag: String?,
         error: Exception,
     ) {
-        Log.e(tag ?: "PaginationViewModel", "Failed to fetch feeds", error)
+        AppLog.e(tag ?: "PaginationViewModel", "Failed to fetch feeds", error)
     }
 
     override fun setPlainTextClipboard(
@@ -100,14 +94,11 @@ class DesktopPaginationEnvironment(
     override suspend fun isQuestionAuthorBlocked(userId: String): Boolean =
         contentFilterDb.blockedQuestionAuthorDao().isUserBlocked(userId)
 
-    override fun blockedUserIds(): Set<String> =
-        runBlocking {
-            contentFilterDb
-                .blockedUserDao()
-                .getAllUsers()
-                .map { it.userId }
-                .toSet()
-        }
+    override suspend fun blockedUserIds(): Set<String> = contentFilterDb
+        .blockedUserDao()
+        .getAllUsers()
+        .map { it.userId }
+        .toSet()
 
     override suspend fun addBlockedUser(
         userId: String,
@@ -132,7 +123,7 @@ class DesktopPaginationEnvironment(
         avatarUrl: String?,
     ) {
         contentFilterDb.blockedQuestionAuthorDao().insertUser(
-            com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor(
+            BlockedQuestionAuthor(
                 userId = userId,
                 userName = userName,
                 urlToken = urlToken,
@@ -169,31 +160,26 @@ class DesktopPaginationEnvironment(
     override fun requestImageExportPermission() = Unit
 
     override fun loadExportAssetText(fileName: String): String =
-        checkNotNull(javaClass.classLoader?.getResourceAsStream(fileName)) { "导出资源缺失：$fileName" }
+        checkNotNull(javaClass.classLoader?.getResourceAsStream(fileName)) { DomainStrings.missingExportAsset(fileName) }
             .bufferedReader(Charsets.UTF_8)
             .use { it.readText() }
 
-    override fun saveHtmlToDownloads(
-        displayName: String,
-        htmlContent: String,
-    ): String {
-        val downloadsDir = desktopZhihuDownloadsDir()
-        val file = File(downloadsDir, displayName)
-        file.writeText(htmlContent)
-        return file.absolutePath
-    }
+    override suspend fun exportHtml(
+        content: DataHolder.Content,
+        includeAppAttribution: Boolean,
+    ): ArticleExportResult = exportDesktopHtml(content, includeAppAttribution)
 
-    override fun saveImageToMediaStore(
-        displayName: String,
-        bitmap: Any,
-    ) {
-        val downloadsDir = desktopZhihuDownloadsDir()
-        val file = File(downloadsDir, displayName)
-        writeJpegImage(file, (bitmap as BufferedImage).toJpegImage())
-    }
+    override suspend fun exportPdf(
+        content: DataHolder.Content,
+        includeAppAttribution: Boolean,
+    ): ArticleExportResult = exportDesktopPdf(content, includeAppAttribution)
 
-    override fun articleImageExportRenderer(): ArticleImageExportRenderer =
-        DesktopArticleExportRenderer()
+    override suspend fun exportImage(
+        content: DataHolder.Content,
+        includeAppAttribution: Boolean,
+        extraSectionsHtml: String,
+        includeComments: Boolean,
+    ): ArticleExportResult = exportDesktopImage(content, includeAppAttribution, extraSectionsHtml, includeComments)
 
     override suspend fun exportCollectionItemsToHtmlZip(
         collectionTitle: String,
@@ -214,10 +200,10 @@ class DesktopPaginationEnvironment(
             stagingDir.deleteRecursively()
         }
         if (!stagingDir.mkdirs()) {
-            throw IllegalStateException("无法创建导出缓存目录")
+            throw IllegalStateException(DomainStrings.exportCacheDirectoryFailed)
         }
 
-        val outputDir = desktopZhihuDownloadsDir("无法创建导出 ZIP 目录")
+        val outputDir = desktopZhihuDownloadsDir(DomainStrings.exportZipDirectoryFailed)
         val exportHttpClient = httpClient()
 
         var processedCount = 0
@@ -262,7 +248,7 @@ class DesktopPaginationEnvironment(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 failedCount++
-                Log.e("CollectionContentViewModel", "Failed to export collection item: ${item.content.title}", e)
+                AppLog.e("CollectionContentViewModel", "Failed to export collection item: ${item.content.title}", e)
             } finally {
                 processedCount++
                 emitProgress()
@@ -271,7 +257,7 @@ class DesktopPaginationEnvironment(
 
         val zipFile = if (successCount > 0) {
             if (!outputDir.exists() && !outputDir.mkdirs()) {
-                throw IllegalStateException("无法创建导出 ZIP 目录")
+                throw IllegalStateException(DomainStrings.exportZipDirectoryFailed)
             }
             File(outputDir, buildCollectionExportZipFileName(collectionTitle, timestampMillis)).also { file ->
                 if (file.exists()) {
@@ -293,113 +279,8 @@ class DesktopPaginationEnvironment(
     }
 
     override suspend fun handleCollectionExportFailure(error: Exception) {
-        Log.e("CollectionContentViewModel", "Failed to export collection HTML zip", error)
+        AppLog.e("CollectionContentViewModel", "Failed to export collection HTML zip", error)
     }
-}
-
-private data class DesktopPreparedExportContent(
-    val htmlContent: String,
-) : PreparedArticleExportContent
-
-private class DesktopArticleExportRenderer : ArticleImageExportRenderer {
-    override suspend fun prepareExportWebView(
-        htmlContent: String,
-        timeoutMs: Long,
-    ): PreparedArticleExportContent = DesktopPreparedExportContent(htmlContent)
-
-    override suspend fun captureExportBitmap(preparedWebView: PreparedArticleExportContent): Any =
-        withContext(Dispatchers.IO) {
-            preparedWebView as DesktopPreparedExportContent
-            renderHtmlToImage(preparedWebView.htmlContent)
-        }
-
-    override suspend fun destroyExportWebView(preparedWebView: PreparedArticleExportContent) = Unit
-
-    override fun recycleExportBitmap(bitmap: Any) = Unit
-
-    private fun renderHtmlToImage(htmlContent: String): BufferedImage = runOnSwingThread {
-        val viewportWidthPx = 900
-        val editorPane = JEditorPane("text/html", htmlContent).apply {
-            isEditable = false
-            putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
-            setSize(viewportWidthPx, Int.MAX_VALUE / 4)
-        }
-        val preferredSize = editorPane.preferredSize
-        val contentHeightPx = preferredSize.height.coerceAtLeast(1)
-        editorPane.setSize(viewportWidthPx, contentHeightPx)
-        editorPane.validate()
-
-        BufferedImage(
-            viewportWidthPx,
-            contentHeightPx,
-            BufferedImage.TYPE_INT_ARGB,
-        ).also { image ->
-            val graphics = image.createGraphics()
-            try {
-                graphics.color = java.awt.Color.WHITE
-                graphics.fillRect(0, 0, viewportWidthPx, contentHeightPx)
-                editorPane.paint(graphics)
-            } finally {
-                graphics.dispose()
-            }
-        }
-    }
-}
-
-private fun BufferedImage.toJpegImage(): BufferedImage {
-    if (type == BufferedImage.TYPE_INT_RGB) {
-        return this
-    }
-    return BufferedImage(width, height, BufferedImage.TYPE_INT_RGB).also { image ->
-        val graphics = image.createGraphics()
-        try {
-            graphics.color = java.awt.Color.WHITE
-            graphics.fillRect(0, 0, width, height)
-            graphics.drawImage(this, 0, 0, null)
-        } finally {
-            graphics.dispose()
-        }
-    }
-}
-
-private fun writeJpegImage(file: File, image: BufferedImage) {
-    val writers = ImageIO.getImageWritersByFormatName("jpg")
-    if (!writers.hasNext()) {
-        throw IllegalStateException("No JPEG writer available")
-    }
-    val writer = writers.next()
-    ImageIO.createImageOutputStream(file).use { output ->
-        writer.output = output
-        try {
-            val params = writer.defaultWriteParam
-            if (params.canWriteCompressed()) {
-                params.compressionMode = ImageWriteParam.MODE_EXPLICIT
-                params.compressionQuality = 0.80f
-            }
-            writer.write(null, IIOImage(image, null, null), params)
-        } finally {
-            writer.dispose()
-        }
-    }
-}
-
-private fun <T> runOnSwingThread(block: () -> T): T {
-    if (SwingUtilities.isEventDispatchThread()) {
-        return block()
-    }
-
-    var value: Any? = null
-    var error: Throwable? = null
-    SwingUtilities.invokeAndWait {
-        try {
-            value = block()
-        } catch (throwable: Throwable) {
-            error = throwable
-        }
-    }
-    error?.let { throw it }
-    @Suppress("UNCHECKED_CAST")
-    return value as T
 }
 
 private suspend fun CollectionItem.resolveDesktopExportContent(

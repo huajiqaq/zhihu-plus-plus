@@ -12,17 +12,16 @@
 查调用方时覆盖所有共享模块，不只搜 `shared`：
 
 ```bash
-rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g '!**/build/**'
+rg '<组件名或 preference key>' app shared* desktopApp macosApp iosApp webApp -g '*.kt' -g '*.swift' -g '!**/build/**'
 ```
 
 ## 导航与启动
 
 - 新增目标先检查 `NavDestination` 和宿主的路由注册；页面使用宿主提供的导航入口，不另建返回栈。
-- 当前 `NavDestination` 实现 `NavKey`；主栈根为 `MainTabs`，详情栏根为 `EmptyDetail`。`OnlineHistoryRoute` 是普通页面，不是主 pager 页。
-- 业务目标相同不意味着同一次进入；保留页面实例、ViewModel、保存状态和返回上下文，不按业务 ID 删除已有实例。
+- 业务目标相同不意味着同一次进入；保留页面实例、ViewModel、保存状态和返回上下文，不按业务 ID 删除已有实例，不用时间窗口掩盖未经确认的重复导航。
 - `bottom_bar_items`、`startDestination` 和账号快捷入口尊重用户保存的选择，不为了迁移改变默认值、顺序或在线历史的进入方式。
 - 平台入口继续承担外链解析、历史记录和来源信息。新增 deep link 同时检查 Android intent、剪贴板与桌面入口。
-- 点开链接用 `resolveNavigationUrl`：已支持的知乎内容进原生页，其他 HTTP(S) 链接进 `WebPage`。明确要求网页视图时直接用 `rememberWebViewUrlOpener`；只有「在浏览器打开」使用系统浏览器。被动识别剪贴板仍用 `resolveContent`，不要自动打开普通网页。
+- 点开链接用 `resolveNavigationUrl`：已支持的知乎内容进应用内页面，其他 HTTP(S) 链接按宿主打开。原生宿主使用 `WebPage` 或显式的 `rememberWebViewUrlOpener`，选择「在浏览器打开」才交给系统浏览器；[Web 宿主](../webApp/README.md#页面地址)打开新标签，不改变应用内导航历史。被动识别剪贴板仍用 `resolveContent`，不要自动打开普通网页。
 - 返回沿用现有宿主。详情、弹层和主 tab 的返回优先级分别核对，不叠加会重复退栈的 handler。
 - 大屏按实际栏位和布局边界处理转场，不能裁切或压暗另一栏；窄宽切换保留阅读实例与来源上下文。
 - 分隔线拖动时预览栏宽，松手后保存 `landscape_list_pane_ratio`。窗口变化按当前可用宽度换算，不把单栏或窄窗口的临时宽度写回设置。
@@ -32,27 +31,18 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 
 ## 设置
 
-| 页面 | 内容 |
-| --- | --- |
-| 外观 | 皮肤、明暗、配色、AMOLED、玻璃与悬浮控件 |
-| 导航与交互 | 启动页、底栏、分栏、返回、分享和搜索行为 |
-| 阅读与排版 | 排版预览、字号/行高/段间距、正文渲染、回答切换；电纸书翻页为子页 |
-| 朗读与播放 | 朗读预览、内容顺序、时间与评论、队列 |
-| 推荐与信息流 | 推荐来源、信息流样式与刷新 |
-| 内容过滤 | 质量、去重、屏蔽规则、记录与维护 |
-
 - 复用 `AppSettingsPage` 和 `SettingItem*`。跳转行有箭头；开关和选择行由控件表达状态，整行保持可操作。
 - 设置读取使用现有可观察绑定。需确认后保存的输入仍持有草稿，不改成每次按键立即写入。
 - 新增或移动设置时核对 key、默认值、运行时读取、父项禁用、设置搜索和 `settingKey` 高亮。目标被隐藏时跳到父项，不跳到空白位置。
 - 父项禁用时，行内分段控件和按钮也禁用；不只改说明文字。恢复备份不覆盖本机连接信息和凭据。
 - `themeMode`、`uiThemeStyle`、`bottom_bar_items`、`startDestination` 等状态只从权威设置读取，平台 toolbar 不维护另一份选择。
-- 提椠使用 `tiqian_markdown`、`tiqian_math_font`。主壳初始化时仅在正式键缺失且旧 `duo3_*` 键存在时迁入；两套键并存以正式键为准，不删除旧键或用默认值覆盖显式选择。
+- 提椠只读取正式设置键 `tiqian_markdown`、`tiqian_math_font`。
 - 账号设置按“账号与安全／显示与阅读／内容与隐私／系统／关于”分组，账号与登录维护不依赖开发者模式。手机底栏默认主页、关注、日报；历史从账号面板进入，不占手机底栏位置。其余可选项目保留用户选择，没有主页时须保留账号设置出口。
 
 ## 皮肤与共享组件
 
-- Lite 只编译 Material 3 Expressive 主题，但保留 miuix-nav 和共享玻璃。Full、JVM 和 Apple 目标保留双皮肤；Lite 读取旧 `MIUIX` 偏好时降级显示，不删除用户偏好。
-- Miuix 实现放在 `miuixThemeMain`，Lite 提供对应 actual。共享页面通过 `App*` 和 `LocalAppSkinTokens` 取控件、颜色与字阶，不直接依赖 miuix theme/basic/popup。
+- Android Lite 与 iOS Lite 只提供 Material 3 Expressive 主题，保留共享导航、布局与玻璃所需组件；不能把“无可选 Miuix 皮肤”等同于“无 Miuix 依赖”。移动端 Full、桌面和 Web 可切换 Material 与 Miuix；Lite 读取 `MIUIX` 偏好时显示 Material，不删除用户偏好。包型与实现状态见[平台能力与边界](platform-capabilities.md)。
+- 可选皮肤按构建变体装配，Lite 提供对应 actual。共享页面通过 `App*` 和 `LocalAppSkinTokens` 取控件、颜色与字阶，不直接依赖 miuix theme/basic/popup。
 - API 与平台能力以版本目录、上游 lock 及源码为准；参考镜像保留出处与许可，不当作运行实现。
 - 主题根的组合位置保持不变，换肤只更新值，避免重建导航和浮层状态。两套皮肤共用业务状态，不复制页面或 ViewModel。
 - Miuix 的「HyperOS 风格」通过独立 `miuixStyle` 偏好选择 HyperOS 3 / 4，默认 HyperOS 3。明暗、配色与玻璃仍独立；关闭玻璃或设备不支持渲染时保留可用控件，不改写已保存的风格。HyperOS 4 在共享呈现入口采用已发布玻璃组件；复杂标题、复合菜单及导航标签不能为更换材质而丢失。
@@ -90,7 +80,8 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 
 - 完整标题、作者、正文和操作区共用阅读列，最大宽度 720dp；双栏阅读列靠所在栏起点，单栏居中。图片和悬浮控件按实际 pane 与遮挡范围避让。
 - 长标题展开时完整测量，收起状态按组件契约显示。不为新增按钮把原标题或正文改成省略号。
-- 加载、失败和成功空态分开。刷新与追加失败保留已有内容；旧请求或异步过滤不能回写新一轮状态。
+- 加载、失败和成功空态分开。首屏无内容时保留低成本处理后的渐进展示，详情、NLP 等耗时过滤随后更新；不要为统一提交而让页面等待全部过滤。候选展示不等于游标、缓存和曝光已确认，反向过滤等特殊模式沿用自身契约。
+- 刷新与追加失败保留已有内容；旧请求或异步过滤不能回写新一轮状态。重构不擅自改变原有的分阶段显示、单项失败容错和重试反馈。
 - 下拉刷新使用业务层的同一加载真值，在刷新回调首次挂起前同步发布刷新状态，避免控件先回弹再进入加载；不另建计时状态镜像。
 - 触摸拖拽、鼠标滚轮和键盘滚动按各自输入路径验证，短内容也单独核对 overscroll；框架默认效果与自定义效果只保留一份，不用触摸结果代替桌面输入验收。
 - 正文字号、行高、段间距变化不需要重建 AST。WebView 正文仅保留兼容，不接新阅读功能。
@@ -101,6 +92,6 @@ rg '<组件名或 preference key>' app shared* desktopApp macosApp -g '*.kt' -g 
 
 ## 验证与参考
 
-按 [测试维护方法](testing-maintenance.md) 选择最小检查，覆盖受影响的共享消费者、平台 actual、皮肤和变体。布局核对真实截图与语义中的展开/收起、大字号及末项可达性；交互确认目标状态。
+按[测试与 CI 职责](testing-maintenance.md)选最小检查，仅覆盖受影响的平台、皮肤与交互。设备操作和独立可用性评审的入口见[协作说明](../CLAUDE.md#构建与验证)，一次页面验收不自动变成永久测试。
 
-设备流程见 [UI 测试](../.agents/skills/ui-test/SKILL.md)，macOS 使用 [后台调试](../.agents/skills/background-ui-debug/SKILL.md)。原生规范查看 [Miuix](https://github.com/compose-miuix-ui/miuix) 和 [Material Components](https://github.com/material-components/material-components-android) 的对应版本；变体见 [KMP Android 构建](kmp-android-variants.md)。
+原生规范查看 [Miuix](https://github.com/compose-miuix-ui/miuix) 和 [Material Components](https://github.com/material-components/material-components-android) 的对应版本；变体见 [KMP Android 构建](kmp-android-variants.md)。

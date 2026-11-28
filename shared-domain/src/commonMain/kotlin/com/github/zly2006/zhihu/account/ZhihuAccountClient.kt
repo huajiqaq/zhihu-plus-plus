@@ -26,6 +26,7 @@ import com.github.zly2006.zhihu.data.Http403Log
 import com.github.zly2006.zhihu.data.HttpFailureKind
 import com.github.zly2006.zhihu.data.HttpFailureRecord
 import com.github.zly2006.zhihu.data.RecoverableTicketRequest
+import com.github.zly2006.zhihu.data.ZHIHU_ME_URL
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.fetchVerifiedZhihuSession
 import com.github.zly2006.zhihu.data.installZhihuCommonClientConfig
@@ -33,20 +34,27 @@ import com.github.zly2006.zhihu.data.installZhihuMobileClientProfile
 import com.github.zly2006.zhihu.data.isZhihuRequestHost
 import com.github.zly2006.zhihu.data.resolveVerificationUrl
 import com.github.zly2006.zhihu.data.toCookieHeaderString
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.ZHIHU_WEB_ZSE93
 import com.github.zly2006.zhihu.util.ZhihuCredentialRefresher
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import com.github.zly2006.zhihu.util.isZhihuLoginRiskControl
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
+import com.github.zly2006.zhihu.viewmodel.AccountAigcVoteEnvironment
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.api.SendingRequest
 import io.ktor.client.plugins.api.SetupRequest
 import io.ktor.client.plugins.api.createClientPlugin
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -63,25 +71,102 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import io.ktor.http.isSuccess
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.AttributeKey
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.files.Path
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 enum class ZhihuRequestProfile { Web, Mobile }
+
+enum class BrowserSessionStatus { Unchecked, MissingBridge, Guest, Authenticated, Expired, Denied, Unavailable }
+
+internal interface BrowserAccountEngine : HttpClientEngine {
+    suspend fun sendMessage(owner: ZhihuAccountClient, receiverId: String, content: String): String =
+        throw BrowserBridgeException(BrowserSessionStatus.Denied)
+}
+
+internal class BrowserBridgeException(
+    val status: BrowserSessionStatus,
+    historyGrantExpired: Boolean = false,
+) : DisplayFailure({
+        when (status) {
+            BrowserSessionStatus.MissingBridge -> DomainStrings.bridgeMissing
+            BrowserSessionStatus.Guest -> DomainStrings.bridgeGuest
+            BrowserSessionStatus.Expired -> if (historyGrantExpired) DomainStrings.browserHistoryGrantExpired else DomainStrings.bridgeExpired
+            BrowserSessionStatus.Denied -> DomainStrings.bridgeDenied
+            else -> DomainStrings.bridgeUnavailable
+        }
+    })
+
+/** 请求已交给浏览器网络层，但没有可确认的业务结果；调用方必须先核对，不能自动重发。 */
+class BrowserMutationUncertain : IllegalStateException("请求可能已生效，但未收到可确认的结果。请先在知乎核对；不会自动重发。")
+
+/** 业务桥在提交写入之前拒绝请求；区别于可能已生效的未知结果。 */
+class BrowserBusinessRequestRejected(message: String) : IllegalStateException(message)
+
+internal class BrowserVerificationRequired : DisplayFailure({ AccountStrings.verificationRequiredTitle })
+
+internal val browserRequestOwner = AttributeKey<ZhihuAccountClient>("ZhihuBrowserRequestOwner")
+internal val anonymousBrowserRead = AttributeKey<Unit>("ZhihuAnonymousBrowserRead")
+internal val mobileBrowserRead = AttributeKey<Unit>("ZhihuMobileBrowserRead")
+internal val browserHistoryOwner = AttributeKey<String>("ZhihuBrowserHistoryOwner")
+
+private fun browserProjection(status: Int, body: String, limit: Int): JsonObject {
+    if (status == 200 && body.length <= limit) {
+        (runCatching { Json.parseToJsonElement(body) }.getOrNull() as? JsonObject)?.let { return it }
+    }
+    throw BrowserBridgeException(BrowserSessionStatus.Denied)
+}
+
+/** 具名交互只接收脚本投影的单个布尔值，不把上游错误或网页提供的字符串当作授权。 */
+internal fun browserActionFlag(status: Int, body: String, field: String): Boolean = when (browserProjection(status, body, 64).takeIf { it.size == 1 }?.get(field)) {
+    JsonPrimitive(true) -> true
+    JsonPrimitive(false) -> false
+    else -> throw BrowserBridgeException(BrowserSessionStatus.Denied)
+}
+
+private val browserQrDisplayLink = Regex("""https://www\.zhihu\.com/account/scan/login/[A-Za-z0-9_-]{1,256}""")
+
+/** 只交给 UI 可本地绘制的官方链接和状态；附带查询、原始票据或其他响应字段均不通过。 */
+internal fun browserQrProjection(op: String, status: Int, body: String): JsonObject {
+    val data = browserProjection(status, body, if (op == "loginQrStart") 576 else 64)
+    val state = (data["state"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val valid = when (op) {
+        "loginQrStart" -> when (state) {
+            "ready" -> {
+                val link = data["link"] as? JsonPrimitive
+                data.size == 2 && link?.isString == true && browserQrDisplayLink.matches(link.content)
+            }
+            "official", "cancelled" -> data.size == 1
+            else -> false
+        }
+        "loginQrPoll" -> data.size == 1 && state in setOf("waiting", "scanned", "confirmed", "expired")
+        else -> false
+    }
+    if (!valid) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+    return data
+}
 
 enum class SessionExpiryPrompt { ACTIVE, SHOWING, DISMISSED }
 
@@ -90,9 +175,11 @@ data class SessionExpiryState(
     val serverMessage: String? = null,
 )
 
-class ZhihuLoginRequiredException : IllegalStateException("此功能需要登录，请先登录")
+class ZhihuLoginRequiredException : IllegalStateException() {
+    override val message: String get() = DomainStrings.loginRequired
+}
 
-internal val requestCookiesKey = io.ktor.util.AttributeKey<Map<String, String>>("ZhihuSignedRequestCookies")
+internal val requestCookiesKey = AttributeKey<Map<String, String>>("ZhihuSignedRequestCookies")
 
 class ZhihuAccountClient internal constructor(
     internal val accountStore: ZhihuAccountStore,
@@ -108,16 +195,76 @@ class ZhihuAccountClient internal constructor(
     val isCurrent: Boolean
         get() = !closed.value && accountState.value.activeAccountId == accountId
     private val credentialRefresher = accountStore.credentialRefresherFor(accountId)
+    private val aigcVoteEnvironmentDelegate = lazy { AccountAigcVoteEnvironment(this) }
+    internal val aigcVoteEnvironment: AccountAigcVoteEnvironment
+        get() = sessionLock.withLock {
+            check(isCurrent) { "账号客户端已失效" }
+            aigcVoteEnvironmentDelegate.value
+        }
 
-    suspend fun refreshCredentials(force: Boolean = false): Boolean = accountStore.commentIdentities.withOriginal(accountId) {
-        credentialRefresher.refresh(this, force)
+    suspend fun refreshCredentials(force: Boolean = false): Boolean = !accountStore.usesBrowserSession &&
+        accountStore.commentIdentities.withOriginal(accountId) {
+            credentialRefresher.refresh(this, force)
+        }
+
+    private val pendingBrowserVerification = if (accountStore.usesBrowserSession) MutableStateFlow<BrowserVerification?>(null) else null
+    val browserVerification = pendingBrowserVerification?.asStateFlow()
+
+    /** 操作只属于发出 challenge 的 client 和这一轮验证；URL、session 均由本标签页脚本持有。 */
+    inner class BrowserVerification internal constructor(
+        private val openPage: () -> Boolean,
+        private val checkPage: suspend () -> Boolean,
+    ) {
+        var opened by mutableStateOf(false)
+            private set
+        var checking by mutableStateOf(false)
+            private set
+
+        fun open(): Boolean = sessionLock.withLock {
+            if (!isCurrent || pendingBrowserVerification?.value !== this || checking) return@withLock false
+            openPage().also { if (it) opened = true }
+        }
+
+        suspend fun check(): Boolean {
+            currentCoroutineContext().ensureActive()
+            sessionLock.withLock {
+                if (!isCurrent || pendingBrowserVerification?.value !== this || !opened || checking) return false
+                checking = true
+            }
+            return try {
+                val verified = checkPage()
+                currentCoroutineContext().ensureActive()
+                sessionLock.withLock { verified && isCurrent && pendingBrowserVerification?.compareAndSet(this, null) == true }
+            } finally {
+                sessionLock.withLock { checking = false }
+            }
+        }
+
+        fun dismiss() {
+            pendingBrowserVerification?.compareAndSet(this, null)
+        }
+    }
+
+    internal fun reportBrowserVerification(openPage: () -> Boolean, checkPage: suspend () -> Boolean) = sessionLock.withLock {
+        if (isCurrent) pendingBrowserVerification?.value = BrowserVerification(openPage, checkPage)
+    }
+
+    private fun HttpClientConfig<*>.installBrowserReads(anonymous: Boolean = false, mobile: Boolean = false, verifiedId: String? = null) {
+        followRedirects = false
+        install(ContentNegotiation) { json(ZhihuJson.json) }
+        defaultRequest {
+            attributes.put(browserRequestOwner, this@ZhihuAccountClient)
+            if (anonymous) attributes.put(anonymousBrowserRead, Unit)
+            if (mobile) attributes.put(mobileBrowserRead, Unit)
+            if (verifiedId != null) attributes.put(browserHistoryOwner, verifiedId)
+        }
     }
 
     private val mutableVerificationState = MutableStateFlow(HumanVerificationState())
     val verificationState: StateFlow<HumanVerificationState> = mutableVerificationState.asStateFlow()
 
     fun reportHumanVerification(url: String?, candidateCookies: Map<String, String>? = null) {
-        if (closed.value) return
+        if (closed.value || accountStore.usesBrowserSession) return
         val trusted = resolveVerificationUrl(Url("https://www.zhihu.com/account/unhuman"), url) ?: return
         mutableVerificationState.update {
             if (!closed.value && it.phase == HumanVerificationPhase.ACTIVE) {
@@ -240,7 +387,7 @@ class ZhihuAccountClient internal constructor(
 
     suspend fun reportHttpFailure(record: HttpFailureRecord, candidateCookies: Map<String, String>? = null) {
         val url = runCatching { Url(record.url) }.getOrNull() ?: return
-        if ((url.protocol != io.ktor.http.URLProtocol.HTTP && url.protocol != io.ktor.http.URLProtocol.HTTPS) ||
+        if ((url.protocol != URLProtocol.HTTP && url.protocol != URLProtocol.HTTPS) ||
             !isZhihuRequestHost(url.host)
         ) {
             return
@@ -271,6 +418,10 @@ class ZhihuAccountClient internal constructor(
         }
     }
     private val client = HttpClient(engine) {
+        if (accountStore.usesBrowserSession) {
+            installBrowserReads(verifiedId = accountId)
+            return@HttpClient
+        }
         installZhihuCommonClientConfig(
             cookies,
             userAgent,
@@ -290,7 +441,7 @@ class ZhihuAccountClient internal constructor(
 
     private val anonymousCookies = mutableMapOf<Triple<String, String, String>, AnonymousCookie>()
     private var anonymousInitialization: CompletableDeferred<Unit>? = null
-    private val activeRequests = mutableSetOf<kotlinx.coroutines.Job>()
+    private val activeRequests = mutableSetOf<Job>()
     private val anonymousCookieStorage = object : CookiesStorage {
         override suspend fun addCookie(requestUrl: Url, cookie: Cookie) = sessionLock.withLock {
             if (!isCurrent || requestUrl.protocol != URLProtocol.HTTPS || !isZhihuRequestHost(requestUrl.host)) return@withLock
@@ -370,20 +521,24 @@ class ZhihuAccountClient internal constructor(
                 .get("https://www.zhihu.com/signin?next=%2F") {
                     header(HttpHeaders.Referrer, "https://www.zhihu.com/")
                 }.raiseForStatus()
-            check(signin.status.isSuccess()) { "匿名网页初始化拒绝重定向（HTTP ${signin.status.value}）" }
-            if (signin.request.url.isZhihuLoginRiskControl()) error("匿名访问需要完成知乎安全验证")
+            if (!signin.status.isSuccess()) {
+                val code = signin.status.value
+                throw DisplayFailure { DomainStrings.guestRedirectHttp(code) }
+            }
+            if (signin.request.url.isZhihuLoginRiskControl()) throw DisplayFailure { DomainStrings.guestVerification }
             val device = transport
                 .post("https://www.zhihu.com/udid") {
                     header(HttpHeaders.Referrer, "https://www.zhihu.com/signin")
                     header(HttpHeaders.Origin, "https://www.zhihu.com")
                 }.raiseForStatus()
-            check(device.status.isSuccess()) { "匿名网页初始化拒绝重定向（HTTP ${device.status.value}）" }
+            if (!device.status.isSuccess()) {
+                val code = device.status.value
+                throw DisplayFailure { DomainStrings.guestRedirectHttp(code) }
+            }
             currentCoroutineContext().ensureActive()
             if (!isCurrent) throw CancellationException("匿名客户端已关闭")
-            if (device.request.url.isZhihuLoginRiskControl()) error("匿名访问需要完成知乎安全验证")
-            check(anonymousCookieStorage.get(Url("https://www.zhihu.com/")).any { it.name == "d_c0" && it.value.isNotBlank() }) {
-                "匿名网页初始化失败：知乎未返回设备 Cookie，请重试"
-            }
+            if (device.request.url.isZhihuLoginRiskControl()) throw DisplayFailure { DomainStrings.guestVerification }
+            if (anonymousCookieStorage.get(Url("https://www.zhihu.com/")).none { it.name == "d_c0" && it.value.isNotBlank() }) throw DisplayFailure { DomainStrings.guestNoDeviceCookie }
             initialization.complete(Unit)
         } catch (error: Throwable) {
             sessionLock.withLock {
@@ -399,6 +554,10 @@ class ZhihuAccountClient internal constructor(
 
     private val guestClient = lazy {
         HttpClient(client.engine) {
+            if (accountStore.usesBrowserSession) {
+                installBrowserReads(anonymous = true)
+                return@HttpClient
+            }
             installZhihuCommonClientConfig(
                 cookies,
                 userAgent,
@@ -426,6 +585,10 @@ class ZhihuAccountClient internal constructor(
     }
     private val mobileClient = lazy {
         HttpClient(client.engine) {
+            if (accountStore.usesBrowserSession) {
+                installBrowserReads(mobile = true)
+                return@HttpClient
+            }
             installZhihuCommonClientConfig(
                 cookies,
                 userAgent.ifBlank { DEFAULT_ZHIHU_USER_AGENT },
@@ -441,6 +604,10 @@ class ZhihuAccountClient internal constructor(
     }
     private val guestMobileClient = lazy {
         HttpClient(client.engine) {
+            if (accountStore.usesBrowserSession) {
+                installBrowserReads(anonymous = true, mobile = true)
+                return@HttpClient
+            }
             installZhihuCommonClientConfig(
                 cookies,
                 userAgent.ifBlank { DEFAULT_ZHIHU_USER_AGENT },
@@ -462,6 +629,7 @@ class ZhihuAccountClient internal constructor(
     }
 
     fun save(session: ZhihuAccountSession) = sessionLock.withLock {
+        accountStore.requireNativeAccount()
         check(isCurrent) { "ZhihuAccountClient 已关闭" }
         require(load().hasSameIdentityAs(session)) {
             "ZhihuAccountClient 只能刷新同一账号的 session；切换身份必须替换 client"
@@ -485,7 +653,13 @@ class ZhihuAccountClient internal constructor(
 
     fun httpClient(profile: ZhihuRequestProfile, useCookies: Boolean = true): HttpClient = sessionLock.withLock {
         check(isCurrent) { "ZhihuAccountClient 已关闭" }
-        if (!load().login && !useCookies) {
+        if (accountStore.usesBrowserSession) {
+            if (profile == ZhihuRequestProfile.Mobile) {
+                if (useCookies) mobileClient.value else guestMobileClient.value
+            } else {
+                if (useCookies) client else guestClient.value
+            }
+        } else if (!load().login && !useCookies) {
             if (profile == ZhihuRequestProfile.Mobile) throw ZhihuLoginRequiredException()
             anonymousWebClient.value
         } else if (profile == ZhihuRequestProfile.Mobile) {
@@ -496,6 +670,27 @@ class ZhihuAccountClient internal constructor(
     }
 
     fun mobileHomeFeedHttpClient(useCookies: Boolean = true): HttpClient = httpClient(ZhihuRequestProfile.Mobile, useCookies)
+
+    /** 浏览器私信只交结构化业务值；加密、签名和凭据归具名请求桥。 */
+    suspend fun sendBrowserMessage(receiverId: String, content: String): String {
+        check(isCurrent) { "账号客户端已失效" }
+        val bridge = accountStore.engine as? BrowserAccountEngine ?: error("当前账号不是浏览器会话")
+        return bridge.sendMessage(this, receiverId, content)
+    }
+
+    /** 导出等跨多个请求的操作属于当前 client；切号关闭时取消整条流水线。 */
+    internal suspend fun <T> withCurrentOwnerOperation(block: suspend () -> T): T = coroutineScope {
+        val operation = currentCoroutineContext().job
+        sessionLock.withLock {
+            if (!isCurrent) throw CancellationException(DomainStrings.accountChangedReopen)
+            activeRequests += operation
+        }
+        try {
+            coroutineScope { block() }
+        } finally {
+            sessionLock.withLock { activeRequests -= operation }
+        }
+    }
 
     /** POST 前捕获本机会话的标读观察者；仅服务端确认成功后调用返回的单次回调。 */
     fun beginNotificationReadAll(entryName: String): () -> Unit = accountStore.beginNotificationReadAll(this, entryName)
@@ -517,7 +712,7 @@ class ZhihuAccountClient internal constructor(
         useCookies: Boolean,
         block: suspend HttpRequestBuilder.() -> Unit,
     ): HttpResponse {
-        val anonymous = !load().login && !useCookies
+        val anonymous = !accountStore.usesBrowserSession && !load().login && !useCookies
         val transport = httpClient(profile, useCookies)
         val job = currentCoroutineContext().job
         sessionLock.withLock {
@@ -531,6 +726,7 @@ class ZhihuAccountClient internal constructor(
                 this.method = method
                 block()
                 currentCoroutineContext().ensureActive()
+                if (accountStore.usesBrowserSession) return@request
                 val snapshot = if (anonymous) {
                     anonymousCookieStorage.get(this.url.build()).associate { it.name to it.value }
                 } else {
@@ -593,6 +789,10 @@ class ZhihuAccountClient internal constructor(
     suspend fun delete(url: String, profile: ZhihuRequestProfile = ZhihuRequestProfile.Web, block: suspend HttpRequestBuilder.() -> Unit = {}): HttpResponse = request(url, HttpMethod.Delete, profile, block = block)
 
     suspend fun refreshAndSaveProfile(): ZhihuAccountSession? {
+        if (accountStore.usesBrowserSession) {
+            if (!isCurrent) throw CancellationException("账号客户端已关闭")
+            return if (accountStore.refreshBrowserSession() == BrowserSessionStatus.Authenticated) accountStore.session else null
+        }
         val current = load()
         val refreshed = fetchVerifiedZhihuSession(client, current.cookies, current.userAgent) ?: return null
         return sessionLock.withLock {
@@ -616,6 +816,7 @@ class ZhihuAccountClient internal constructor(
 
     override fun close() = sessionLock.withLock {
         if (!closed.compareAndSet(false, true)) return@withLock
+        pendingBrowserVerification?.value = null
         mutableExpiryPrompt.value = SessionExpiryState(SessionExpiryPrompt.DISMISSED)
         mutableLoginPrompt.value = SessionExpiryPrompt.DISMISSED
         mutableVerificationState.value = HumanVerificationState(HumanVerificationPhase.DISMISSED)
@@ -623,6 +824,22 @@ class ZhihuAccountClient internal constructor(
         activeRequests.toList().forEach { it.cancel(CancellationException("请求期间账号已切换")) }
         activeRequests.clear()
         anonymousCookies.clear()
+        if (aigcVoteEnvironmentDelegate.isInitialized()) aigcVoteEnvironmentDelegate.value.close()
+        if (accountStore.usesBrowserSession) {
+            client.coroutineContext.job.cancel()
+            if (guestClient.isInitialized()) {
+                guestClient.value.coroutineContext.job
+                    .cancel()
+            }
+            if (mobileClient.isInitialized()) {
+                mobileClient.value.coroutineContext.job
+                    .cancel()
+            }
+            if (guestMobileClient.isInitialized()) {
+                guestMobileClient.value.coroutineContext.job
+                    .cancel()
+            }
+        }
         if (anonymousWebClient.isInitialized()) {
             anonymousWebClient.value.coroutineContext.job
                 .cancel(CancellationException("匿名客户端已关闭"))
@@ -636,7 +853,7 @@ class ZhihuAccountClient internal constructor(
 }
 
 class ZhihuAccountStore(
-    repository: ZhihuAccountRepository,
+    repository: ZhihuAccountRepository?,
     engine: HttpClientEngine? = null,
 ) : AutoCloseable {
     internal val sessionLock = reentrantLock()
@@ -678,16 +895,22 @@ class ZhihuAccountStore(
 
     private val credentialRefreshers = mutableMapOf<String?, ZhihuCredentialRefresher>()
     val commentIdentities = CommentIdentities(this)
+
+    // 传入 engine 即移交所有权；会话只借用，换账号不关闭，store 统一释放。
+    val engine: HttpClientEngine = engine ?: accountHttpClientEngineFactory.create()
+    val usesBrowserSession: Boolean = this.engine is BrowserAccountEngine
     internal val accountState = try {
+        require((repository == null) == usesBrowserSession) { "浏览器会话不能绑定本地账号文件" }
         ZhihuAccountState(repository)
     } catch (error: Throwable) {
-        runCatching { engine?.close() }.exceptionOrNull()?.let { if (it !== error) error.addSuppressed(it) }
+        runCatching { this.engine.close() }.exceptionOrNull()?.let { if (it !== error) error.addSuppressed(it) }
         throw error
     }
 
-    // 传入engine即移交所有权；会话只借用，换账号不关闭，store统一释放。
-    val engine: HttpClientEngine = engine ?: accountHttpClientEngineFactory.create()
-    val http403Log = Http403Log(Path(repository.directory, "network-diagnostics", "http403.json"))
+    val http403Log = Http403Log(repository?.let { Path(it.directory, "network-diagnostics", "http403.json") })
+    private val browserProbe = Mutex()
+    private val mutableBrowserStatus = MutableStateFlow(BrowserSessionStatus.Unchecked)
+    val browserSessionStatus: StateFlow<BrowserSessionStatus> = mutableBrowserStatus.asStateFlow()
     private val closed = MutableStateFlow(false)
     private var mutableClient by mutableStateOf(
         try {
@@ -706,6 +929,58 @@ class ZhihuAccountStore(
     val client: ZhihuAccountClient
         get() = sessionLock.withLock { mutableClient }
 
+    /** 只有经本标签页授权的 /me 能建立浏览器身份；账号文件、网页声明和旧会话均不能替代。 */
+    suspend fun refreshBrowserSession(): BrowserSessionStatus = browserProbe.withLock {
+        check(usesBrowserSession && !closed.value) { "没有可用的浏览器账号会话" }
+        val owner = client
+        var profile: ZhihuAccountProfileSnapshot? = null
+        val result = try {
+            val response = owner.httpClient().get(ZHIHU_ME_URL)
+            if (response.status == HttpStatusCode.OK) {
+                profile = ZhihuJson
+                    .decodeJson<ZhihuAccountProfileSnapshot>(ZhihuJson.json.parseToJsonElement(response.bodyAsText()))
+                    .takeIf { it.id.isNotBlank() && it.name.isNotBlank() && !it.id.all { c -> c == '0' } }
+                if (profile != null) BrowserSessionStatus.Authenticated else BrowserSessionStatus.Denied
+            } else {
+                BrowserSessionStatus.Unavailable
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: BrowserVerificationRequired) {
+            currentCoroutineContext().ensureActive()
+            if (!owner.isCurrent) throw CancellationException("浏览器账号状态检查已取消")
+            // 验证不是 /me 身份结果：不宣布登录成功，也不把已验证账号换成访客。
+            return@withLock BrowserSessionStatus.Unavailable
+        } catch (e: BrowserBridgeException) {
+            e.status
+        } catch (_: Exception) {
+            BrowserSessionStatus.Unavailable
+        }
+        currentCoroutineContext().ensureActive()
+        sessionLock.withLock {
+            if (!owner.isCurrent || closed.value) throw CancellationException("浏览器账号状态检查已取消")
+            val status = if (result == BrowserSessionStatus.Guest && (session.login || mutableBrowserStatus.value == BrowserSessionStatus.Expired)) {
+                BrowserSessionStatus.Expired
+            } else {
+                result
+            }
+            // 请求失败不等于退出登录；只有 /me 确认身份或明确失效才更换账号所有者。
+            if (status == BrowserSessionStatus.Authenticated || status == BrowserSessionStatus.Guest || status == BrowserSessionStatus.Expired) {
+                if (session.profile?.id != profile?.id) {
+                    replaceClient { accountState.setBrowserProfile(profile) }
+                } else if (session.profile != profile) {
+                    accountState.setBrowserProfile(profile)
+                }
+            }
+            mutableBrowserStatus.value = status
+            status
+        }
+    }
+
+    internal fun requireNativeAccount() {
+        if (usesBrowserSession) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+    }
+
     fun save(session: ZhihuAccountSession) = sessionLock.withLock {
         check(!closed.value) { "ZhihuAccountStore 已关闭" }
         if (this.session.hasSameIdentityAs(session)) {
@@ -716,6 +991,7 @@ class ZhihuAccountStore(
     }
 
     fun replaceSession(session: ZhihuAccountSession) = sessionLock.withLock {
+        requireNativeAccount()
         replaceClient {
             accountState.saveCurrent(session, reauthenticated = true)
             credentialRefreshers.remove(accountState.value.activeAccountId)
@@ -723,6 +999,7 @@ class ZhihuAccountStore(
     }
 
     fun clear() = sessionLock.withLock {
+        requireNativeAccount()
         val removedId = accountState.value.activeAccountId
         replaceClient { accountState.removeCurrent() }
         credentialRefreshers.remove(removedId)
@@ -730,6 +1007,7 @@ class ZhihuAccountStore(
     }
 
     suspend fun switchAccount(id: String): Boolean {
+        requireNativeAccount()
         val owner = mutableClient
         if (owner.verificationState.value.blocksSessionChange) return false
         if (id == accountState.value.activeAccountId) return true
@@ -737,7 +1015,7 @@ class ZhihuAccountStore(
             val saved = accountState.value.accounts
                 .firstOrNull { it.id == id }
                 ?.session ?: return@withOriginal null
-            val verified = verifyCandidateSession(saved.cookies.toMutableMap(), saved.userAgent) ?: return@withOriginal null
+            val verified = verifyCandidateSession(owner, saved.cookies.toMutableMap(), saved.userAgent) ?: return@withOriginal null
             saved to verified
         } ?: return false
         currentCoroutineContext().ensureActive()
@@ -759,6 +1037,7 @@ class ZhihuAccountStore(
     }
 
     fun removeAccount(id: String) = sessionLock.withLock {
+        requireNativeAccount()
         check(!closed.value) { "ZhihuAccountStore 已关闭" }
         commentIdentities.checkCanChangeAccounts()
         credentialRefreshers.remove(id)
@@ -770,13 +1049,18 @@ class ZhihuAccountStore(
         }
     }
 
-    suspend fun login(cookies: MutableMap<String, String>): Boolean {
-        val owner = mutableClient
-        if (owner.verificationState.value.blocksSessionChange) return false
-        val session = verifyCandidateSession(cookies) ?: return false
-        currentCoroutineContext().ensureActive()
+    /** owner 必须来自登录交互开始时；迟到的扫码或网页回调不能借用新会话提交。 */
+    suspend fun login(owner: ZhihuAccountClient, cookies: MutableMap<String, String>): Boolean {
+        requireNativeAccount()
+        val userAgent = sessionLock.withLock {
+            if (!canCompleteLogin(owner)) return false
+            session.userAgent
+        }
+        val session = verifyCandidateSession(owner, cookies, userAgent) ?: return false
+        val requestContext = currentCoroutineContext()
         return sessionLock.withLock {
-            if (closed.value || mutableClient !== owner || owner.verificationState.value.blocksSessionChange) return@withLock false
+            requestContext.ensureActive()
+            if (!canCompleteLogin(owner)) return@withLock false
             replaceClient {
                 accountState.selectOrAdd(session)
                 credentialRefreshers.remove(accountState.value.activeAccountId)
@@ -785,18 +1069,22 @@ class ZhihuAccountStore(
         }
     }
 
-    suspend fun login(token: ZhihuMobileLoginToken): Boolean {
-        val owner = mutableClient
-        if (owner.verificationState.value.blocksSessionChange) return false
-        val session = verifyCandidateSession(token.cookies.toMutableMap())?.copy(
+    suspend fun login(owner: ZhihuAccountClient, token: ZhihuMobileLoginToken): Boolean {
+        requireNativeAccount()
+        val userAgent = sessionLock.withLock {
+            if (!canCompleteLogin(owner)) return false
+            session.userAgent
+        }
+        val session = verifyCandidateSession(owner, token.cookies.toMutableMap(), userAgent)?.copy(
             mobileAccessToken = token.accessToken,
             mobileRefreshToken = token.refreshToken,
             mobileTokenType = token.tokenType,
             mobileTokenExpiresAt = token.expiresAt,
         ) ?: return false
-        currentCoroutineContext().ensureActive()
+        val requestContext = currentCoroutineContext()
         return sessionLock.withLock {
-            if (closed.value || mutableClient !== owner || owner.verificationState.value.blocksSessionChange) return@withLock false
+            requestContext.ensureActive()
+            if (!canCompleteLogin(owner)) return@withLock false
             replaceClient {
                 accountState.selectOrAdd(session)
                 credentialRefreshers.remove(accountState.value.activeAccountId)
@@ -804,6 +1092,9 @@ class ZhihuAccountStore(
             true
         }
     }
+
+    private fun canCompleteLogin(owner: ZhihuAccountClient): Boolean = !closed.value &&
+        mutableClient === owner && owner.isCurrent && !owner.verificationState.value.blocksSessionChange
 
     suspend fun completeIdentityChange(
         owner: ZhihuAccountClient,
@@ -811,12 +1102,13 @@ class ZhihuAccountStore(
         body: String,
         expectedAccountId: String? = null,
     ): ZhihuIdentityChangeResult {
+        requireNativeAccount()
         sessionLock.withLock {
-            check(client === owner && owner.isCurrent && !owner.verificationState.value.blocksSessionChange) { "账号已变更或需要先完成安全验证" }
+            if (client !== owner || !owner.isCurrent || owner.verificationState.value.blocksSessionChange) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
         }
         val token = ZhihuJson.decodeJson<ZhihuIdentityToken>(ZhihuJson.json.parseToJsonElement(body))
-        check(token.accessToken.isNotBlank()) { "服务器未返回新账号凭证" }
-        check(token.cookie["z_c0"].isNullOrBlank().not()) { "服务器未返回新账号 Cookie" }
+        if (token.accessToken.isBlank()) throw DisplayFailure { DomainStrings.newAccountNoToken }
+        if (token.cookie["z_c0"].isNullOrBlank()) throw DisplayFailure { DomainStrings.newAccountNoCookie }
         val newCookies = oldSession.cookies.toMutableMap().apply { putAll(token.cookie) }
         val client = createAccountHttpClient(
             newCookies,
@@ -835,11 +1127,11 @@ class ZhihuAccountStore(
             }
             val rawProfile = ZhihuJson.json
                 .parseToJsonElement(
-                    response.identitySuccessBody("初始化新账号"),
+                    response.identitySuccessBody { DomainStrings.initializeAccount },
                 ).jsonObject
             val profile = ZhihuJson.decodeJson<ZhihuIdentityProfile>(rawProfile)
-            check(profile.id.isNotBlank() && profile.name.isNotBlank()) { "服务器返回的账号资料不完整" }
-            check(expectedAccountId == null || profile.id == expectedAccountId) { "服务器返回的账号与目标账号不一致" }
+            if (profile.id.isBlank() || profile.name.isBlank()) throw DisplayFailure { DomainStrings.serverProfileIncomplete }
+            if (expectedAccountId != null && profile.id != expectedAccountId) throw DisplayFailure { DomainStrings.serverAccountMismatch }
             val nextSession = oldSession.copy(
                 login = true,
                 username = profile.name,
@@ -859,7 +1151,7 @@ class ZhihuAccountStore(
             )
             currentCoroutineContext().ensureActive()
             sessionLock.withLock {
-                check(this.client === owner && owner.isCurrent && !owner.verificationState.value.blocksSessionChange) { "账号已变更或需要先完成安全验证" }
+                if (this.client !== owner || !owner.isCurrent || owner.verificationState.value.blocksSessionChange) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
                 replaceSession(nextSession)
             }
             ZhihuIdentityChangeResult(
@@ -920,10 +1212,10 @@ class ZhihuAccountStore(
     }
 
     private suspend fun verifyCandidateSession(
+        owner: ZhihuAccountClient,
         cookies: MutableMap<String, String>,
-        userAgent: String = session.userAgent,
+        userAgent: String,
     ): ZhihuAccountSession? {
-        val owner = mutableClient
         val client = createAccountHttpClient(
             cookies,
             userAgent,
@@ -939,7 +1231,7 @@ class ZhihuAccountStore(
 
     private fun replaceClient(updateAccounts: () -> Unit) = sessionLock.withLock {
         check(!closed.value) { "ZhihuAccountStore 已关闭" }
-        check(!mutableClient.verificationState.value.blocksSessionChange) { "请先完成安全验证并确认重启提示" }
+        if (mutableClient.verificationState.value.blocksSessionChange) throw DisplayFailure { DomainStrings.verifyBeforeSwitch }
         commentIdentities.checkCanChangeAccounts()
         // 先使旧 client 失效，再发布新会话；否则关闭前完成的旧响应可能写入新账号。
         mutableClient.close()
@@ -966,11 +1258,21 @@ class ZhihuAccountStore(
 }
 
 internal class ZhihuAccountState(
-    private val repository: ZhihuAccountRepository,
+    private val repository: ZhihuAccountRepository?,
 ) {
-    val state = MutableStateFlow(repository.loadAccounts())
+    val state = MutableStateFlow(repository?.loadAccounts() ?: ZhihuAccounts())
     val value: ZhihuAccounts
         get() = state.value
+
+    fun setBrowserProfile(profile: ZhihuAccountProfileSnapshot?) {
+        check(repository == null)
+        state.value = if (profile == null) {
+            ZhihuAccounts()
+        } else {
+            val session = ZhihuAccountSession(login = true, username = profile.name, profile = profile, userAgent = "")
+            ZhihuAccounts(profile.id, listOf(ZhihuSavedAccount(profile.id, session)))
+        }
+    }
 
     fun saveCurrent(session: ZhihuAccountSession, reauthenticated: Boolean = false) {
         val current = value
@@ -1003,7 +1305,7 @@ internal class ZhihuAccountState(
 
     fun updateAccount(account: ZhihuSavedAccount) {
         val current = value
-        check(current.accounts.any { it.id == account.id }) { "该账号已退出登录" }
+        if (current.accounts.none { it.id == account.id }) throw DisplayFailure { DomainStrings.accountSignedOut }
         persist(current.copy(accounts = current.accounts.map { if (it.id == account.id) account else it }))
     }
 
@@ -1027,7 +1329,7 @@ internal class ZhihuAccountState(
     }
 
     fun select(id: String, session: ZhihuAccountSession) {
-        require(value.accounts.any { it.id == id }) { "找不到要切换的登录账号" }
+        require(value.accounts.any { it.id == id }) { DomainStrings.switchAccountMissing }
         persist(
             value.copy(
                 activeAccountId = id,
@@ -1047,6 +1349,7 @@ internal class ZhihuAccountState(
     }
 
     private fun persist(accounts: ZhihuAccounts) {
+        val repository = checkNotNull(repository) { "浏览器不保存本地账号" }
         if (accounts.accounts.isEmpty() && accounts.guestCookies.isEmpty()) {
             repository.clear()
         } else {
@@ -1061,12 +1364,11 @@ fun createAccountHttpClient(
     userAgent: String,
     engine: HttpClientEngine,
     onFailure: suspend (HttpFailureRecord) -> Unit = {},
-): HttpClient = HttpClient(engine) {
-    installZhihuCommonClientConfig(
-        cookies,
-        userAgent,
-        onFailure = onFailure,
-    )
+): HttpClient {
+    if (engine is BrowserAccountEngine) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+    return HttpClient(engine) {
+        installZhihuCommonClientConfig(cookies, userAgent, onFailure = onFailure)
+    }
 }
 
 internal val ZhihuAccountSession.canRenewCredentials: Boolean
@@ -1085,4 +1387,6 @@ internal expect val accountHttpClientEngineFactory: HttpClientEngineFactory<*>
 val LocalZhihuAccountStore = staticCompositionLocalOf<ZhihuAccountStore?> { null }
 
 @Composable
-expect fun rememberZhihuAccountStore(): ZhihuAccountStore
+fun rememberZhihuAccountStore(): ZhihuAccountStore = checkNotNull(LocalZhihuAccountStore.current) {
+    "宿主必须提供当前应用的账号 store"
+}

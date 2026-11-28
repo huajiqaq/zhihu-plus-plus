@@ -22,9 +22,6 @@ import android.content.Context
 import com.github.zly2006.zhihu.account.DEFAULT_ZHIHU_USER_AGENT
 import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
-import com.github.zly2006.zhihu.account.currentAndroidZhihuAccountStore
-import com.github.zly2006.zhihu.data.Person
-import com.github.zly2006.zhihu.data.ZhihuJson
 
 @SuppressLint("StaticFieldLeak")
 object AccountData {
@@ -36,13 +33,10 @@ object AccountData {
         val self: Person? = null,
     )
 
-    fun loadData(context: Context): Data {
-        androidZhihuAccountStore(context)
-        return data
-    }
+    fun loadData(context: Context): Data = androidZhihuAccountStore(context).session.toAndroidData()
 
     val data: Data
-        get() = currentAndroidZhihuAccountStore().session.toAndroidData()
+        get() = androidZhihuAccountStore(currentAndroidApplicationContext()).session.toAndroidData()
 
     private fun ZhihuAccountSession.toAndroidData(): Data = Data(
         login = login,

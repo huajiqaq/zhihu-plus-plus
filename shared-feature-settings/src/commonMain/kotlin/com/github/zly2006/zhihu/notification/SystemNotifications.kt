@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.notification
 
 import androidx.compose.runtime.Composable
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -28,12 +29,15 @@ data class SystemNotificationStatus(
     val appNotificationsEnabled: Boolean = false,
     val enabledTypes: Set<NotificationType> = emptySet(),
     val blockedChannels: Set<NotificationType> = emptySet(),
-    val error: String? = null,
+    private val errorText: (() -> String)? = null,
     /** 不具备后台检查仍可支持应用运行期间的系统通知。 */
     val backgroundPollingAvailable: Boolean = false,
     /** 平台不可用原因或投递限制，不能据此推断权限、后台能力或冷启动支持。 */
-    val availabilityDescription: String? = null,
-)
+    private val availabilityText: (() -> String?)? = null,
+) {
+    val error: String? get() = errorText?.invoke()
+    val availabilityDescription: String? get() = availabilityText?.invoke()
+}
 
 /** 系统订阅是本机授权，不从可备份的应用内通知偏好恢复。 */
 interface SystemNotificationControl {
@@ -52,8 +56,15 @@ internal object UnsupportedSystemNotifications : SystemNotificationControl {
     override val status: StateFlow<SystemNotificationStatus> = MutableStateFlow(SystemNotificationStatus())
 
     override fun setTypeEnabled(type: NotificationType, enabled: Boolean): Nothing =
-        throw UnsupportedOperationException("此平台暂不支持系统通知")
+        throw SystemNotificationUnavailableException { NotificationsStrings.systemUnsupported }
 
     override fun openSystemSettings(): Nothing =
-        throw UnsupportedOperationException("此平台暂不支持系统通知")
+        throw SystemNotificationUnavailableException { NotificationsStrings.systemUnsupported }
+}
+
+/** 保留平台不可用原因，在当前语言下展示，而不重新申请通知租约。 */
+internal class SystemNotificationUnavailableException(
+    private val text: () -> String,
+) : UnsupportedOperationException() {
+    override val message: String get() = text()
 }

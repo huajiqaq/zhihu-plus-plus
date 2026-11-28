@@ -130,15 +130,25 @@ internal class MacosNativeToolbarController(
         leadingActions: List<MacosNativeToolbarAction>,
         trailingActions: List<MacosNativeToolbarAction>,
     ) {
+        val previous = this.leadingActions + this.trailingActions
         this.leadingActions = leadingActions
         this.trailingActions = trailingActions
+        for (action in leadingActions + trailingActions) {
+            val old = previous.firstOrNull { it.identifier == action.identifier }
+            if (old != null && old.label == action.label && old.systemSymbolName == action.systemSymbolName) continue
+            toolbar.items.filterIsInstance<NSToolbarItem>().firstOrNull { it.itemIdentifier == action.identifier }?.updatePresentation(action)
+        }
     }
 
-    private fun buttonItem(action: MacosNativeToolbarAction): NSToolbarItem = NSToolbarItem(action.identifier).apply {
+    private fun NSToolbarItem.updatePresentation(action: MacosNativeToolbarAction) {
         label = action.label
         paletteLabel = action.label
         toolTip = action.label
         image = NSImage.imageWithSystemSymbolName(action.systemSymbolName, action.label)
+    }
+
+    private fun buttonItem(action: MacosNativeToolbarAction): NSToolbarItem = NSToolbarItem(action.identifier).apply {
+        updatePresentation(action)
         target = this@MacosNativeToolbarController
         this.action = NSSelectorFromString("selectAction:")
         visibilityPriority = NSToolbarItemVisibilityPriorityHigh

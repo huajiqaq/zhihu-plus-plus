@@ -20,5 +20,3 @@ package com.github.zly2006.zhihu.platform
 actual val isLiteVariant: Boolean = true
 
 actual val isBlocklistNlpSupported: Boolean = false
-
-actual val includesFullVariantLicenses: Boolean = false

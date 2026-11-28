@@ -43,19 +43,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppChip
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.viewmodel.feed.SearchContentType
 import com.github.zly2006.zhihu.viewmodel.feed.SearchFilters
 import com.github.zly2006.zhihu.viewmodel.feed.SearchSortOption
 import com.github.zly2006.zhihu.viewmodel.feed.SearchTimeRange
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun SearchFilterEntry(filters: SearchFilters, onClick: () -> Unit) {
@@ -80,12 +81,12 @@ internal fun SearchFilterEntry(filters: SearchFilters, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.FilterList, contentDescription = null, tint = if (activeCount > 0) skin.primary else skin.onSurface)
+            AppIcon(Icons.Default.FilterList, contentDescription = null, tint = if (activeCount > 0) skin.primary else skin.onSurface)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppDimens.Space2)) {
-                Text(if (activeCount > 0) "筛选 · $activeCount" else "筛选", style = skin.main)
+                Text(if (activeCount > 0) FeedStrings.activeFilters(activeCount) else FeedStrings.filters, style = skin.main)
                 Text("${filters.sort.label} · ${filters.contentType.label} · ${filters.timeRange.label}", style = skin.footnote1, color = skin.onSurfaceVariantSummary)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = skin.onSurfaceVariantActions)
+            AppIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = skin.onSurfaceVariantActions)
         }
     }
 }
@@ -116,18 +117,18 @@ internal fun SearchFilterMenu(
                 .padding(horizontal = AppDimens.PageHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(AppDimens.Space16),
         ) {
-            Text("筛选搜索结果", style = skin.title3)
-            SearchFilterGroup("排序") {
+            Text(FeedStrings.filterResults, style = skin.title3)
+            SearchFilterGroup(FeedStrings.sortOrder) {
                 SearchSortOption.entries.forEach { option ->
                     AppChip(option.label, filters.sort == option, { onFiltersChange(filters.copy(sort = option)) }, modifier = Modifier.heightIn(min = AppDimens.TouchTarget).testTag("search_filter_sort_${option.name}"))
                 }
             }
-            SearchFilterGroup("内容类型") {
+            SearchFilterGroup(FeedStrings.contentType) {
                 SearchContentType.entries.forEach { type ->
                     AppChip(type.label, filters.contentType == type, { onFiltersChange(filters.copy(contentType = type)) }, modifier = Modifier.heightIn(min = AppDimens.TouchTarget).testTag("search_filter_type_${type.name}"))
                 }
             }
-            SearchFilterGroup("时间范围") {
+            SearchFilterGroup(FeedStrings.timeRange) {
                 SearchTimeRange.entries.forEach { range ->
                     AppChip(range.label, filters.timeRange == range, { onFiltersChange(filters.copy(timeRange = range)) }, modifier = Modifier.heightIn(min = AppDimens.TouchTarget).testTag("search_filter_time_${range.name}"))
                 }
@@ -140,9 +141,9 @@ internal fun SearchFilterMenu(
             verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            AppTextButton("重置", { onFiltersChange(SearchFilters()) }, enabled = filters != SearchFilters(), modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_reset"))
-            AppOutlinedButton("取消", onDismissRequest, modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_cancel"))
-            AppButton("应用筛选", onApply, modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_apply"))
+            AppTextButton(FeedStrings.reset, { onFiltersChange(SearchFilters()) }, enabled = filters != SearchFilters(), modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_reset"))
+            AppOutlinedButton(FeedStrings.cancel, onDismissRequest, modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_cancel"))
+            AppButton(FeedStrings.applyFilters, onApply, modifier = Modifier.width(IntrinsicSize.Max).testTag("search_filter_apply"))
         }
     }
 }

@@ -41,19 +41,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.zly2006.zhihu.data.feedbackText
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.navigation.requestLoginNavigation
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.RegisterOverlayBlur
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -63,23 +71,23 @@ fun AccountVerificationDialogs(
     visible: Boolean = true,
     onLogin: () -> Unit = ::requestLoginNavigation,
 ) {
+    val browser = client.browserVerification
+    if (browser != null) {
+        if (!visible) return
+        val verification by key(client) { browser.collectAsState() }
+        verification?.let {
+            key(it) { BrowserVerificationDialog(it) }
+            return
+        }
+    }
     val state by client.verificationState.collectAsState()
     val loginPrompt by client.loginPrompt.collectAsState()
-    val feedback by client.http403Log.pendingFeedback.collectAsState()
-    val copyText = rememberPlainTextClipboard()
-    val url = state.url
-    val initialCookies = remember(client, url) { state.candidateCookies ?: client.load().cookies.toMap() }
-    val changedCookies = remember(client, url) { mutableMapOf<String, String>() }
-    var completing by remember(client, url) { mutableStateOf(false) }
-    var completionError by remember(client, url) { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    if (!visible) return
-    if (loginPrompt == SessionExpiryPrompt.SHOWING && state.phase == HumanVerificationPhase.ACTIVE) {
+    if (visible && loginPrompt == SessionExpiryPrompt.SHOWING && state.phase == HumanVerificationPhase.ACTIVE) {
         AppDialog(
-            title = "此内容需要登录",
-            summary = "知乎要求登录后才能查看当前内容，其他允许匿名访问的页面仍可浏览。",
-            confirmText = "去登录",
-            dismissText = "稍后",
+            title = AccountStrings.loginRequiredTitle,
+            summary = AccountStrings.loginRequiredSummary,
+            confirmText = AccountStrings.loginGo,
+            dismissText = AccountStrings.later,
             onConfirm = {
                 client.dismissLoginRequirement()
                 onLogin()
@@ -89,14 +97,25 @@ fun AccountVerificationDialogs(
         )
         return
     }
+    if (browser != null) return
+
+    val feedback by client.http403Log.pendingFeedback.collectAsState()
+    val copyText = rememberPlainTextClipboard()
+    val url = state.url
+    val initialCookies = remember(client, url) { state.candidateCookies ?: client.load().cookies.toMap() }
+    val changedCookies = remember(client, url) { mutableMapOf<String, String>() }
+    var completing by remember(client, url) { mutableStateOf(false) }
+    var completionError by remember(client, url) { mutableStateOf<(() -> String)?>(null) }
+    val scope = rememberCoroutineScope()
+    if (!visible) return
 
     if (!isLoginRiskControlSupported &&
         (state.phase == HumanVerificationPhase.PROMPT || state.phase == HumanVerificationPhase.VERIFYING)
     ) {
         AppDialog(
-            title = "当前平台不支持安全验证",
-            summary = "知乎要求完成安全验证后才能继续。当前平台无法打开验证页面，请完全退出应用后使用支持验证的平台。",
-            confirmText = "无法在当前平台完成",
+            title = AccountStrings.verificationUnsupportedTitle,
+            summary = AccountStrings.verificationUnsupportedSummary,
+            confirmText = AccountStrings.verificationUnsupportedConfirm,
             confirmEnabled = false,
             onConfirm = {},
             onDismissRequest = {},
@@ -107,9 +126,9 @@ fun AccountVerificationDialogs(
 
     when (state.phase) {
         HumanVerificationPhase.PROMPT -> AppDialog(
-            title = "需要安全验证",
-            summary = "知乎要求完成人工安全验证，验证前无法继续使用。完成后需完全退出并重新打开应用。",
-            confirmText = "去验证",
+            title = AccountStrings.verificationRequiredTitle,
+            summary = AccountStrings.verificationRequiredSummary,
+            confirmText = AccountStrings.verificationGo,
             confirmEnabled = !url.isNullOrBlank(),
             onConfirm = client::beginHumanVerification,
             onDismissRequest = {},
@@ -118,9 +137,9 @@ fun AccountVerificationDialogs(
         HumanVerificationPhase.VERIFYING -> {
             if (url.isNullOrBlank()) {
                 AppDialog(
-                    title = "无法打开安全验证",
-                    summary = "未取得可用的验证地址，请完全退出应用后重新打开。验证前无法继续使用。",
-                    confirmText = "缺少验证地址",
+                    title = AccountStrings.verificationOpenFailed,
+                    summary = AccountStrings.verificationUrlMissingSummary,
+                    confirmText = AccountStrings.verificationUrlMissing,
                     confirmEnabled = false,
                     onConfirm = {},
                     onDismissRequest = {},
@@ -140,12 +159,12 @@ fun AccountVerificationDialogs(
                             if (automaticallyVerified) {
                                 client.completeHumanVerification(changedCookies)
                             } else if (!client.confirmHumanVerification(changedCookies)) {
-                                completionError = "知乎尚未确认验证通过，请先完成页面中的验证。"
+                                completionError = { AccountStrings.verificationNotConfirmed }
                             }
                         } catch (error: CancellationException) {
                             throw error
                         } catch (_: Exception) {
-                            completionError = "未能确认或保存验证信息，请重试。"
+                            completionError = { AccountStrings.verificationSaveFailed }
                         } finally {
                             completing = false
                         }
@@ -163,7 +182,7 @@ fun AccountVerificationDialogs(
             ) {
                 AppScaffold(
                     modifier = Modifier.fillMaxSize().exportTestTagsForUiAutomation().testTag("human_verification_page"),
-                    topBar = { AppCompactTopBar(title = "知乎安全验证") },
+                    topBar = { AppCompactTopBar(title = AccountStrings.verificationTitle) },
                     bottomBar = {
                         FlowRow(
                             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(AppDimens.Space12),
@@ -171,7 +190,7 @@ fun AccountVerificationDialogs(
                             verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
                         ) {
                             AppButton(
-                                text = if (completing) "正在确认…" else "我已完成验证",
+                                text = if (completing) AccountStrings.verificationConfirming else AccountStrings.verificationDone,
                                 enabled = !completing,
                                 onClick = { complete(automaticallyVerified = false) },
                                 modifier = Modifier.testTag("human_verification_complete"),
@@ -181,13 +200,13 @@ fun AccountVerificationDialogs(
                 ) { innerPadding ->
                     Column(Modifier.fillMaxSize().padding(innerPadding)) {
                         Text(
-                            "请完成知乎页面中的验证；成功后会提示重启。未自动识别时，可点击“我已完成验证”。",
+                            AccountStrings.verificationInstructions,
                             modifier = Modifier.padding(horizontal = AppDimens.Space12, vertical = AppDimens.Space8),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         completionError?.let {
                             Text(
-                                it,
+                                it(),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(horizontal = AppDimens.Space12),
                             )
@@ -214,26 +233,85 @@ fun AccountVerificationDialogs(
             }
         }
         HumanVerificationPhase.RESTART_REQUIRED -> AppDialog(
-            title = "请重启应用",
-            summary = "安全验证已通过，首次 403 记录已自动清空。请完全退出应用后重新打开，使验证信息生效。",
-            confirmText = "知道了",
+            title = AccountStrings.restartTitle,
+            summary = AccountStrings.verificationRestartSummary,
+            confirmText = AccountStrings.acknowledge,
             onConfirm = client::acknowledgeVerificationRestart,
             onDismissRequest = {},
             modifier = Modifier.testTag("human_verification_restart"),
         )
         HumanVerificationPhase.ACTIVE, HumanVerificationPhase.DISMISSED -> feedback?.let { first ->
             AppDialog(
-                title = "遇到 403 了",
-                summary = "知乎拒绝了这次请求。请将首次 403 信息反馈给作者，以便检查并更新接口。\n仅保留首次记录，Token、Cookie、签名和地址参数已脱敏。403 也可能与登录或安全验证有关，不一定是接口失效。",
-                confirmText = "复制脱敏信息",
+                title = AccountStrings.http403Title,
+                summary = AccountStrings.http403Summary,
+                confirmText = AccountStrings.http403Copy,
                 onConfirm = {
-                    copyText("首次403反馈", first.feedbackText())
+                    copyText(AccountStrings.http403Clipboard, first.feedbackText())
                     client.http403Log.dismissFeedback()
                 },
-                dismissText = "稍后",
+                dismissText = AccountStrings.later,
                 onDismissRequest = client.http403Log::dismissFeedback,
                 modifier = Modifier.testTag("http403_feedback_prompt"),
             )
         }
     }
+}
+
+@Composable
+private fun BrowserVerificationDialog(verification: ZhihuAccountClient.BrowserVerification) {
+    val scope = rememberCoroutineScope()
+    var failure by remember { mutableStateOf<(() -> String)?>(null) }
+
+    fun dismiss() {
+        scope.cancel()
+        verification.dismiss()
+    }
+
+    AppAlertDialog(
+        onDismissRequest = ::dismiss,
+        modifier = Modifier.testTag("web_verification_prompt"),
+        title = { Text(AccountStrings.verificationRequiredTitle) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppDimens.Space8)) {
+                Text(AccountStrings.webChallengeInstructions)
+                AppButton(
+                    text = AccountStrings.webChallengeOpen,
+                    onClick = {
+                        if (verification.open()) failure = null else failure = { AccountStrings.webChallengeOpenFailed }
+                    },
+                    enabled = !verification.checking,
+                    modifier = Modifier.testTag("web_verification_open"),
+                )
+                failure?.let {
+                    Text(it(), Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            AppTextButton(
+                text = if (verification.checking) AccountStrings.verificationConfirming else AccountStrings.webChallengeAuthorized,
+                enabled = verification.opened && !verification.checking,
+                onClick = {
+                    failure = null
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        try {
+                            if (!verification.check()) failure = { AccountStrings.verificationNotConfirmed }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            failure = { AccountStrings.webChallengeCheckFailed }
+                        }
+                    }
+                },
+                modifier = Modifier.testTag("web_verification_check"),
+            )
+        },
+        dismissButton = {
+            AppTextButton(
+                text = AccountStrings.cancel,
+                onClick = ::dismiss,
+                modifier = Modifier.testTag("web_verification_cancel"),
+            )
+        },
+    )
 }

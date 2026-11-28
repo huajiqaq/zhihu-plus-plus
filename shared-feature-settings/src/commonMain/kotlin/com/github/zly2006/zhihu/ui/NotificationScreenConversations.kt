@@ -50,14 +50,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun NotificationConversationRow(
@@ -86,12 +86,12 @@ internal fun NotificationConversationRow(
                 .semantics {
                     if (showUnreadBadge) {
                         stateDescription = when {
-                            notification.unreadCount > 0 -> "${notification.unreadCount} 条未读消息"
-                            unread -> "未读"
-                            else -> "已读"
+                            notification.unreadCount > 0 -> NotificationsStrings.unreadMessages(notification.unreadCount)
+                            unread -> NotificationsStrings.unread
+                            else -> NotificationsStrings.read
                         }
                     }
-                }.openNotificationTarget(destination, navigator.onNavigate, "打开消息")
+                }.openNotificationTarget(destination, navigator.onNavigate, NotificationsStrings.openMessage)
                 .padding(
                     horizontal = notificationHorizontalPadding(),
                     vertical = AppDimens.Space12,
@@ -106,7 +106,7 @@ internal fun NotificationConversationRow(
                     if (authorDestination != null) {
                         Modifier
                             .testTag("notification_avatar_${notification.stableId}")
-                            .clickable(role = Role.Button, onClickLabel = "查看个人主页") {
+                            .clickable(role = Role.Button, onClickLabel = NotificationsStrings.openProfile) {
                                 navigator.onNavigate(authorDestination)
                             }
                     } else {
@@ -116,7 +116,7 @@ internal fun NotificationConversationRow(
             if (avatarUrl.isNotBlank()) {
                 AsyncImage(
                     model = avatarUrl,
-                    contentDescription = authorDestination?.let { "${it.name}的头像" },
+                    contentDescription = authorDestination?.let { NotificationsStrings.avatarDescription(it.name) },
                     modifier = avatarModifier.background(MaterialTheme.colorScheme.surfaceVariant),
                 )
             } else {
@@ -126,7 +126,7 @@ internal fun NotificationConversationRow(
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Notifications, contentDescription = authorDestination?.let { "${it.name}的头像" })
+                        AppIcon(Icons.Outlined.Notifications, contentDescription = authorDestination?.let { NotificationsStrings.avatarDescription(it.name) })
                     }
                 }
             }
@@ -169,7 +169,6 @@ internal fun NotificationConversationRow(
     }
 }
 
-@OptIn(ExperimentalTime::class)
 private fun MobileNotificationTimelineItem.notificationListDate(): String {
     val epochSeconds = created.takeIf { it > 0 } ?: createdStr.toLongOrNull()
         ?: return createdStr

@@ -34,13 +34,14 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppFloatingActionButton
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.DraggableFabColumn
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.feed.BaseFeedViewModel
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun BoxScope.HomeScreenFloatingActions(
@@ -73,7 +74,7 @@ internal fun BoxScope.HomeScreenFloatingActions(
                 .testTag(HOME_CREATE_FAB_TAG),
             containerColor = if (settingSkinIsMiuix()) null else FloatingActionButtonDefaults.containerColor,
         ) {
-            Icon(Icons.Default.Add, contentDescription = "创作")
+            AppIcon(Icons.Default.Add, contentDescription = FeedStrings.create)
         }
     }
     if (utilityFabsVisible) {
@@ -92,7 +93,7 @@ internal fun BoxScope.HomeScreenFloatingActions(
                     onClick = onDebugClick,
                     containerColor = FloatingActionButtonDefaults.containerColor,
                 ) {
-                    Icon(Icons.Default.CopyAll, contentDescription = "复制")
+                    AppIcon(Icons.Default.CopyAll, contentDescription = FeedStrings.copy)
                 }
             }
             AppFloatingActionButton(
@@ -103,7 +104,7 @@ internal fun BoxScope.HomeScreenFloatingActions(
                 if (viewModel.isLoading && !viewModel.isPullToRefresh) {
                     AppSpinner(modifier = Modifier.testTag("home_refresh_loading"), size = if (settingSkinIsMiuix()) null else AppDimens.IconSizeLarge)
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                    AppIcon(Icons.Default.Refresh, contentDescription = FeedStrings.refresh)
                 }
             }
         }

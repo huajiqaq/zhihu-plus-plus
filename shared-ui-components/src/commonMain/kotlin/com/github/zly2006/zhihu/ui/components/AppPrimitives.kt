@@ -42,6 +42,8 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -100,6 +102,11 @@ import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -187,23 +194,44 @@ fun AppDropdownMenuContent(
     }
 }
 
+data class AppSelectionOption(
+    val label: String,
+    val testTag: String? = null,
+)
+
 @Composable
 fun AppSelectionDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
-    options: List<String>,
+    options: List<AppSelectionOption>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset.Zero,
     renderInRootScaffold: Boolean = true,
-    content: @Composable ColumnScope.() -> Unit,
 ) {
     if (!rememberNavEntryOnTop()) return
     if (settingSkinIsMiuix()) {
-        MiuixPrimitives.selectionDropdown(options, selectedIndex, null, true, expanded, onDismissRequest, onSelect, renderInRootScaffold)
+        MiuixPrimitives.selectionDropdown(options.map { it.label }, selectedIndex, null, true, expanded, onDismissRequest, onSelect, renderInRootScaffold)
     } else {
-        AppDropdownMenu(expanded, onDismissRequest, modifier, offset, renderInRootScaffold, content)
+        AppDropdownMenu(expanded, onDismissRequest, modifier, offset, renderInRootScaffold) {
+            options.forEachIndexed { index, option ->
+                AppDropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = { onSelect(index) },
+                    modifier = (option.testTag?.let { Modifier.testTag(it) } ?: Modifier)
+                        .semantics {
+                            selected = index == selectedIndex
+                            role = Role.RadioButton
+                        },
+                    trailingIcon = if (index == selectedIndex) {
+                        { AppIcon(Icons.Default.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
     }
 }
 

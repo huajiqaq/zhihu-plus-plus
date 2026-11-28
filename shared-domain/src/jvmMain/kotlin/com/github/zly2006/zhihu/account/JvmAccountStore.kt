@@ -17,8 +17,9 @@
 
 package com.github.zly2006.zhihu.account
 
-import androidx.compose.runtime.Composable
-import com.github.zly2006.zhihu.desktop.defaultDesktopAccountStore
+import com.github.zly2006.zhihu.desktop.desktopZhihuLegacyAccountFile
+import kotlinx.io.files.Path
 
-@Composable
-actual fun rememberZhihuAccountStore(): ZhihuAccountStore = LocalZhihuAccountStore.current ?: defaultDesktopAccountStore
+fun createDesktopAccountStore(): ZhihuAccountStore = ZhihuAccountStore(
+    repository = ZhihuAccountRepository(Path(desktopZhihuLegacyAccountFile().toString())),
+)

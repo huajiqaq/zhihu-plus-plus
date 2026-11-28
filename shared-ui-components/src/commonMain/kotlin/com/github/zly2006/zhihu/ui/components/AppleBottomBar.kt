@@ -59,15 +59,14 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 
 /** 共用的液态玻璃导航。 */
 @Composable
 internal fun AppleBottomBar(items: List<BottomBarItem>, modifier: Modifier = Modifier) {
     if (items.isEmpty()) return
     val tokens = LocalAppSkinTokens.current
-    val dark = ThemeManager.isDarkTheme()
+    val dark = LocalAppTheme.current.isDarkTheme
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val labels = items.map { it.label }
@@ -152,7 +151,7 @@ internal fun AppleBottomBar(items: List<BottomBarItem>, modifier: Modifier = Mod
                                     },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Icon(item.icon, null, Modifier.size(24.dp), tint = foreground)
+                                AppIcon(item.icon, null, Modifier.size(24.dp), tint = foreground)
                                 Text(
                                     item.label,
                                     Modifier.fillMaxWidth().padding(top = 4.dp),

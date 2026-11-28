@@ -17,41 +17,45 @@
 
 package com.github.zly2006.zhihu.ui
 
+import com.github.zly2006.zhihu.i18n.ThemeStrings
+
 const val ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY = "answerDoubleTapAction"
 
 enum class AnswerDoubleTapAction(
     val preferenceValue: String,
-    val label: String,
+    private val actionLabel: () -> String,
 ) {
     None(
         preferenceValue = "none",
-        label = "无操作",
+        actionLabel = ThemeStrings::doubleTapNone,
     ),
     Ask(
         preferenceValue = "ask",
-        label = "询问并记住",
+        actionLabel = ThemeStrings::doubleTapAsk,
     ),
     VoteUp(
         preferenceValue = "voteUp",
-        label = "点赞",
+        actionLabel = ThemeStrings::doubleTapVoteUp,
     ),
     OpenComments(
         preferenceValue = "openComments",
-        label = "打开评论区",
+        actionLabel = ThemeStrings::doubleTapComments,
     ),
     ToggleImmersive(
         preferenceValue = "toggleImmersive",
-        label = "开关沉浸式",
+        actionLabel = ThemeStrings::doubleTapImmersive,
     ),
     JumpToTop(
         preferenceValue = "jumpToTop",
-        label = "回到顶部 ↑",
+        actionLabel = ThemeStrings::doubleTapTop,
     ),
     JumpToBottom(
         preferenceValue = "jumpToBottom",
-        label = "跳到底部 ↓",
+        actionLabel = ThemeStrings::doubleTapBottom,
     ),
     ;
+
+    val label: String get() = actionLabel()
 
     companion object {
         fun fromPreference(value: String?): AnswerDoubleTapAction = entries.firstOrNull {

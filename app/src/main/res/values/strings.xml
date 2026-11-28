@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Zhihu++</string>
+    <string name="capture_activity">Scan QR code</string>
 </resources>

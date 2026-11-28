@@ -37,8 +37,8 @@ java {
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    sourceCompatibility = JavaVersion.VERSION_21.toString()
-    targetCompatibility = JavaVersion.VERSION_21.toString()
+    sourceCompatibility = libs.versions.jvm.get()
+    targetCompatibility = libs.versions.jvm.get()
 }
 
 tasks.withType<KotlinCompile>().configureEach {
@@ -61,6 +61,10 @@ gradlePlugin {
         create("zhihuKmpConventions") {
             id = "zhihu.kmp-conventions"
             implementationClass = "buildlogic.ZhihuKmpConventionPlugin"
+        }
+        create("zhihuJavaFx") {
+            id = "zhihu.javafx"
+            implementationClass = "buildlogic.JavaFxConventionPlugin"
         }
     }
 }

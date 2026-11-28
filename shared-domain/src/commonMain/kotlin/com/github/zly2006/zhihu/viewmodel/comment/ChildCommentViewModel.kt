@@ -40,7 +40,7 @@ class ChildCommentViewModel(
     override suspend fun fetchFeeds(environment: PaginationEnvironment) {
         if (!initialCommentLoaded && initialComment != null) {
             initialCommentLoaded = true
-            processResponse(
+            commitPage(
                 environment = environment,
                 data = listOf(initialComment),
                 rawData = JsonArray(emptyList()),
@@ -51,7 +51,6 @@ class ChildCommentViewModel(
 
     override fun createCommentItem(comment: DataHolder.Comment, article: NavDestination): CommentItem {
         val commentItem = CommentItem(comment, null)
-        commentsMap[comment.id] = commentItem
         return commentItem
     }
 }

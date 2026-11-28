@@ -22,26 +22,23 @@
 
 package com.github.zly2006.zhihu.platform
 
-import kotlinx.coroutines.ensureActive
-
-import kotlinx.coroutines.currentCoroutineContext
-
-import kotlinx.coroutines.CancellationException
-
-import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import platform.AppKit.NSApplication
 import platform.AppKit.NSBackingStoreBuffered
@@ -145,7 +142,7 @@ internal class MacosMarkdownImageViewerController(
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 if (loadGeneration == generation && activeImageUrl == imageUrl) {
-                    userMessages.showShortMessage("图片加载失败: ${error.message}")
+                    userMessages.showShortMessage(WidgetsStrings.imageLoadError(error.message ?: WidgetsStrings.unknownError))
                     dismiss()
                 }
             }
@@ -203,7 +200,7 @@ private class ClosingLoadingView(
     private val onClose: () -> Unit,
 ) : NSView(frame = frame) {
     init {
-        val label = NSTextField.labelWithString("正在加载图片…").apply {
+        val label = NSTextField.labelWithString(WidgetsStrings.imageLoading).apply {
             textColor = NSColor.whiteColor
             alignment = NSTextAlignmentCenter
             this.frame = this@ClosingLoadingView.bounds

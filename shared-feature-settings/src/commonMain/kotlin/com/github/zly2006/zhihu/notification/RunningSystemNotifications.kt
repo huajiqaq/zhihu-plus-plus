@@ -30,6 +30,7 @@ import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuRequestProfile
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -64,8 +65,11 @@ internal interface RunningSystemNotificationAdapter {
     /** 真正接通点击唤醒后授予唯一租约；未接宿主或已有所有者时返回 null，不能仅凭 OS 名称宣布支持。 */
     fun activate(onClick: (receipt: String) -> Unit): AutoCloseable?
 
-    /** 文件须受本机账号保护且排除备份/同步；仅文件不存在时返回默认状态，损坏或保护失败须抛错。 */
+    /** 原生文件须受本机账号保护且排除备份；Web使用独立站点状态并披露浏览器备份限制。仅不存在时返回默认状态，损坏须抛错。 */
     fun loadState(): DeviceNotificationState
+
+    /** 标读请求发出前只拍快照，不替换当前事务的存储版本。 */
+    fun readSnapshot(): DeviceNotificationState = loadState()
 
     /** 原子替换且持久化成功后才返回；失败保留旧文件并抛错，不由平台镜像另一份订阅。 */
     fun saveState(state: DeviceNotificationState)
@@ -75,8 +79,32 @@ internal interface RunningSystemNotificationAdapter {
 
     suspend fun authorization(): RunningSystemNotificationAuthorization
 
+    /** 浏览器权限必须在点击调用栈中发起，不能等异步站点锁或系统授权查询。 */
+    fun prepareAuthorizationRequest() = Unit
+
     /** 仅由明确启用操作触发，拒绝或失败不能被当作已授权。 */
     suspend fun requestAuthorization()
+
+    /** 同源多标签共享持久状态时，每个事务重读；原生文件仍由唯一宿主持有。 */
+    val sharedState: Boolean get() = false
+
+    fun isStateCurrent(state: DeviceNotificationState): Boolean = true
+
+    /** 标读成功立即作废其他标签页尚未完成的只读轮询，不改变订阅。 */
+    fun invalidateReadAll() = Unit
+
+    suspend fun withStateLock(block: suspend () -> Unit) = block()
+
+    /** 页面隐藏时不承诺后台检查；权限状态与可运行状态分开。 */
+    val canPoll: Boolean get() = true
+
+    /** 浏览器初次核身未完成不等于退出，不能清空另一标签页保存的订阅。 */
+    fun accountStateKnown(accounts: ZhihuAccountStore): Boolean = true
+
+    fun observeChanges(onChange: () -> Unit): AutoCloseable? = null
+
+    /** 只有本机回执处理完毕后，平台才删除冷启动点击队列。 */
+    fun confirmClick(receipt: String) = Unit
 
     /**
      * 同步提交但不等待原生回调；系统明确接受或拒绝后恰好调用一次 onComplete。
@@ -123,9 +151,12 @@ internal class RunningSystemNotifications(
     val status = mutableStatus.asStateFlow()
     private var device = DeviceNotificationState()
     private var owner = accounts.client
+    private var ownerAccountId = accounts.accountsState.value.activeAccountId
     private var authorization = RunningSystemNotificationAuthorization(false, false, supported = false)
     private var activation: AutoCloseable? = null
     private var readObserver: AutoCloseable? = null
+    private var changeObserver: AutoCloseable? = null
+    private val pendingClicks = linkedSetOf<String>()
     private var pollJob: Job? = null
     private var permissionJob: Job? = null
     private var revision = 0L
@@ -133,7 +164,7 @@ internal class RunningSystemNotifications(
     private var active = false
     private var closed = false
     private var storageFailed = false
-    private var errorMessage: String? = null
+    private var errorMessage: (() -> String)? = null
     private val pendingWithdrawals = mutableSetOf<SystemNotificationClick>()
 
     init {
@@ -150,35 +181,49 @@ internal class RunningSystemNotifications(
                 activation = adapter.activate { receipt ->
                     if (receipt.isNotBlank()) {
                         scope.launch {
-                            if (ready.await()) consumeClick(receipt)
+                            if (ready.await()) {
+                                val added = accounts.withSessionLock { pendingClicks.add(receipt) }
+                                if (added) refresh()
+                            }
                         }
                     }
                 }
                 if (activation == null) {
-                    errorMessage = if (adapter.availabilityDescription.isNullOrBlank()) "此宿主尚未接通系统通知" else null
+                    errorMessage = if (adapter.availabilityDescription.isNullOrBlank()) ({ NotificationsStrings.hostNotConnected }) else null
                     updateStatus()
                     ready.complete(false)
                     return@withSessionLock false
                 }
-                device = adapter.loadState().also(::validateState)
-                reconcileAccount()
-                active = true
-                readObserver = accounts.observeNotificationReadAll(::beginRead)
-                updateStatus()
                 true
             } catch (_: Exception) {
-                active = false
-                errorMessage = "无法初始化本机通知，请检查本机存储和系统支持"
-                runCatching { activation?.close() }
-                activation = null
-                updateStatus()
-                ready.complete(false)
+                initializationFailed()
                 false
             }
         }
         if (!shouldStart) return false
-        /** 启动协程在锁外，异步授权查询不能借主线程的可重入锁跨越挂起点。 */
+        /** Web Locks 可挂起；绝不把账号的可重入锁跨越异步站点锁。 */
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                withDeviceLock {
+                    accounts.withSessionLock {
+                        if (closed) return@withSessionLock
+                        if (!adapter.sharedState) device = adapter.loadState().also(::validateState)
+                        reconcileAccount()
+                        active = true
+                        readObserver = accounts.observeNotificationReadAll(::beginRead)
+                        changeObserver = adapter.observeChanges(::refresh)
+                        updateStatus()
+                    }
+                }
+                ready.complete(active)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                accounts.withSessionLock { initializationFailed() }
+            }
+        }
         scope.launch {
+            if (!ready.await()) return@launch
             accounts.accountsState.collect {
                 accounts.withSessionLock {
                     /** Cookie 刷新也会发出 accountsState；不能让每次网络响应重新启动一次轮询。 */
@@ -191,8 +236,17 @@ internal class RunningSystemNotifications(
             }
         }
         scope.launch {
+            if (!ready.await()) return@launch
             while (isActive) {
-                val cycle = launch(start = CoroutineStart.LAZY) { runCycle() }
+                val cycle = launch(start = CoroutineStart.LAZY) {
+                    try {
+                        withDeviceLock { runCycle() }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        accounts.withSessionLock { reportError { NotificationsStrings.runningPollFailed } }
+                    }
+                }
                 accounts.withSessionLock {
                     pollJob = cycle
                     if (closed || storageFailed) cycle.cancel()
@@ -203,47 +257,104 @@ internal class RunningSystemNotifications(
                 withTimeoutOrNull(RUNNING_POLL_INTERVAL_MS) { wake.receive() }
             }
         }
-        ready.complete(true)
         return true
+    }
+
+    private fun initializationFailed() {
+        active = false
+        errorMessage = { NotificationsStrings.initFailed }
+        runCatching { activation?.close() }
+        activation = null
+        updateStatus()
+        ready.complete(false)
+    }
+
+    private suspend fun withDeviceLock(block: suspend () -> Unit) = adapter.withStateLock {
+        currentCoroutineContext().ensureActive()
+        if (adapter.sharedState) {
+            accounts.withSessionLock {
+                val latest = adapter.loadState().also(::validateState)
+                if (latest != device) {
+                    device = latest
+                    revision++
+                }
+            }
+        }
+        block()
     }
 
     fun refresh(): Unit = accounts.withSessionLock {
         if (!active || closed) return@withSessionLock
-        try {
-            reconcileAccount()
-            updateStatus()
-            wake.trySend(Unit)
-        } catch (_: Exception) {
-            reportError("无法更新本机通知，请稍后重试")
+        if (adapter.sharedState) invalidatePoll()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                withDeviceLock {
+                    accounts.withSessionLock {
+                        if (!operational()) return@withSessionLock
+                        reconcileAccount()
+                        if (authorization.supported && adapter.accountStateKnown(accounts)) pendingClicks.toList().forEach(::consumeClick)
+                        updateStatus()
+                        wake.trySend(Unit)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                accounts.withSessionLock { reportError { NotificationsStrings.updateFailed } }
+            }
         }
     }
 
     fun setTypeEnabled(type: NotificationType, enabled: Boolean, expectedClient: ZhihuAccountClient) {
-        var request: Job? = null
-        accounts.withSessionLock {
-            if (!operational()) return@withSessionLock
+        val allowed = accounts.withSessionLock {
+            if (!operational() || accounts.client !== expectedClient || !expectedClient.isCurrent || currentAccountId() == null) {
+                return@withSessionLock false
+            }
             try {
-                reconcileAccount()
-                if (accounts.client !== expectedClient || !expectedClient.isCurrent) return@withSessionLock
-                val accountId = currentAccountId() ?: return@withSessionLock
-                if ((type in device.enabledTypes) == enabled) return@withSessionLock
-                val epoch = if (!enabled && device.enabledTypes == setOf(type)) "" else newReceipt()
-                val change = device.withTypeEnabled(type, enabled, accountId, epoch)
-                saveAndWithdraw(change.state)
+                if (enabled) adapter.prepareAuthorizationRequest()
                 invalidatePoll()
-                permissionJob?.cancel()
-                errorMessage = null
-                updateStatus()
-                if (enabled) {
-                    val expected = snapshot()
-                    request = scope.launch(start = CoroutineStart.LAZY) { requestPermission(expected) }
-                    permissionJob = request
-                }
+                true
             } catch (_: Exception) {
-                reportError("无法保存本机通知订阅，请稍后重试")
+                reportError { NotificationsStrings.permissionRequestFailed }
+                false
             }
         }
-        request?.start()
+        if (!allowed) return
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var request: Job? = null
+            try {
+                withDeviceLock {
+                    accounts.withSessionLock {
+                        if (!operational()) return@withSessionLock
+                        reconcileAccount()
+                        if (accounts.client !== expectedClient || !expectedClient.isCurrent) return@withSessionLock
+                        val accountId = currentAccountId() ?: return@withSessionLock
+                        if (adapter.sharedState && device.accountId != null && device.accountId != accountId) {
+                            if (!enabled) return@withSessionLock
+                            saveAndWithdraw(DeviceNotificationState())
+                        }
+                        if ((type in device.enabledTypes) == enabled) return@withSessionLock
+                        val epoch = if (!enabled && device.enabledTypes == setOf(type)) "" else newReceipt()
+                        val change = device.withTypeEnabled(type, enabled, accountId, epoch)
+                        saveAndWithdraw(change.state)
+                        invalidatePoll()
+                        permissionJob?.cancel()
+                        errorMessage = null
+                        updateStatus()
+                        if (enabled) {
+                            val expected = snapshot()
+                            request = scope.launch(start = CoroutineStart.LAZY) { requestPermission(expected) }
+                            permissionJob = request
+                        }
+                    }
+                }
+                request?.start()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                accounts.withSessionLock { reportError { NotificationsStrings.subscriptionSaveFailed } }
+            }
+        }
     }
 
     fun openSystemSettings() = accounts.withSessionLock {
@@ -251,9 +362,9 @@ internal class RunningSystemNotifications(
         try {
             adapter.openSystemSettings()
         } catch (error: UnsupportedOperationException) {
-            reportError(error.message?.takeIf { it.isNotBlank() } ?: "请在系统设置中找到知乎++的通知选项")
+            reportError { error.message?.takeIf { it.isNotBlank() } ?: NotificationsStrings.systemSettingsHint }
         } catch (_: Exception) {
-            reportError("无法打开系统通知设置，请在系统设置中找到知乎++的通知选项")
+            reportError { NotificationsStrings.systemSettingsFailed }
         }
     }
 
@@ -269,7 +380,7 @@ internal class RunningSystemNotifications(
             throw error
         } catch (_: Exception) {
             accounts.withSessionLock {
-                if (matchesSession(expected)) reportError("无法请求系统通知权限，请在系统设置中检查")
+                if (matchesSession(expected)) reportError { NotificationsStrings.permissionRequestFailed }
             }
         }
     }
@@ -289,9 +400,12 @@ internal class RunningSystemNotifications(
             val poll = accounts.withSessionLock {
                 if (!isCurrent(beforeAuthorization)) return@withSessionLock null
                 applyAuthorization(permission)
+                if (permission.supported && adapter.accountStateKnown(accounts)) pendingClicks.toList().forEach(::consumeClick)
                 updateStatus()
                 val types = effectiveTypes()
-                if (device.accountId == null || types.isEmpty() || pendingWithdrawals.isNotEmpty()) return@withSessionLock null
+                if (!adapter.canPoll || !adapter.accountStateKnown(accounts) || device.accountId == null || types.isEmpty() || pendingWithdrawals.isNotEmpty()) {
+                    return@withSessionLock null
+                }
                 snapshot() to types
             } ?: return
             val (pollOwner, types) = poll
@@ -327,13 +441,13 @@ internal class RunningSystemNotifications(
             }
         } catch (_: TimeoutCancellationException) {
             accounts.withSessionLock {
-                if (expected?.let(::isCurrent) == true) reportError("系统尚未确认通知提交，将稍后检查")
+                if (expected?.let(::isCurrent) == true) reportError { NotificationsStrings.deliveryPending }
             }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             accounts.withSessionLock {
-                if (expected?.let(::isCurrent) == true) reportError("进程内通知检查失败，将稍后重试")
+                if (expected?.let(::isCurrent) == true) reportError { NotificationsStrings.runningPollFailed }
             }
         }
     }
@@ -344,10 +458,10 @@ internal class RunningSystemNotifications(
         var accepted = false
         try {
             val submitted = accounts.withSessionLock {
-                if (!isCurrent(expected)) throw CancellationException("通知订阅已变更")
+                if (!isCurrent(expected)) throw CancellationException(NotificationsStrings.subscriptionChanged)
                 if (event.key in device.reserved) return@withSessionLock false
                 val token = newReceipt()
-                val next = checkNotNull(device.reserve(event, token)) { "通知回执无法预留" }
+                val next = checkNotNull(device.reserve(event, token)) { NotificationsStrings.receiptReserveFailed }
                 save(next)
                 receipt = token
                 val accountId = checkNotNull(expected.accountId)
@@ -365,10 +479,10 @@ internal class RunningSystemNotifications(
             if (!submitted) return
             val token = checkNotNull(receipt)
             val deliveryError = withTimeout(DELIVERY_CONFIRMATION_TIMEOUT_MS) { completion.await() }
-            if (deliveryError != null) throw IllegalStateException("系统未接受通知", deliveryError)
+            if (deliveryError != null) throw IllegalStateException(NotificationsStrings.deliveryRejected, deliveryError)
             currentCoroutineContext().ensureActive()
             accounts.withSessionLock {
-                if (!matchesSession(expected) || device.clicks[token] != event) throw CancellationException("通知回执已失效")
+                if (!matchesSession(expected) || device.clicks[token] != event) throw CancellationException(NotificationsStrings.receiptExpired)
                 accepted = true
             }
         } finally {
@@ -376,7 +490,9 @@ internal class RunningSystemNotifications(
             if (!accepted && token != null) {
                 accounts.withSessionLock {
                     try {
-                        if (operational() && device.accountId == expected.accountId && device.clicks[token] == event) {
+                        if (operational() && (!adapter.sharedState || revision == expected.revision) && adapter.isStateCurrent(device) &&
+                            device.accountId == expected.accountId && device.clicks[token] == event
+                        ) {
                             save(device.copy(clicks = device.clicks - token))
                         }
                     } finally {
@@ -389,19 +505,34 @@ internal class RunningSystemNotifications(
 
     private fun beginRead(client: ZhihuAccountClient, entryName: String): (() -> Unit)? = accounts.withSessionLock {
         if (!operational() || accounts.client !== client || !client.isCurrent || owner !== client) return@withSessionLock null
-        val snapshot = device.readSnapshot(entryName) ?: return@withSessionLock null
+        val snapshot = (if (adapter.sharedState) adapter.readSnapshot() else device).readSnapshot(entryName) ?: return@withSessionLock null
         var completed = false
         val onSuccess: () -> Unit = {
             accounts.withSessionLock {
                 if (!completed && operational() && accounts.client === client && client.isCurrent && currentAccountId() == snapshot.accountId) {
                     completed = true
-                    /** 成功标读即使没有旧回执，也必须阻止请求开始前抓取的未读结果继续投递。 */
-                    invalidatePoll(cancel = false)
                     try {
-                        saveAndWithdraw(device.markRead(snapshot).state)
-                        updateStatus()
+                        adapter.invalidateReadAll()
                     } catch (_: Exception) {
-                        reportError("标读已成功，但本机通知未能完全撤回")
+                        reportError { NotificationsStrings.readWithdrawFailed }
+                    }
+                    /** 成功标读即使没有旧回执，也必须阻止请求开始前抓取的未读结果继续投递。 */
+                    invalidatePoll(cancel = adapter.sharedState)
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        try {
+                            withDeviceLock {
+                                accounts.withSessionLock {
+                                    if (operational() && accounts.client === client && client.isCurrent && currentAccountId() == snapshot.accountId) {
+                                        saveAndWithdraw(device.markRead(snapshot).state)
+                                        updateStatus()
+                                    }
+                                }
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            accounts.withSessionLock { reportError { NotificationsStrings.readWithdrawFailed } }
+                        }
                     }
                 }
             }
@@ -413,17 +544,25 @@ internal class RunningSystemNotifications(
         if (!operational()) return@withSessionLock
         try {
             reconcileAccount()
-            val accountId = device.accountId ?: return@withSessionLock
-            val event = device.clicks[receipt] ?: return@withSessionLock
-            val result = device.consumeClick(SystemNotificationClick(accountId, event.key, receipt), currentAccountId())
-                ?: return@withSessionLock
-            save(result.state)
-            invalidatePoll(cancel = false)
-            withdraw(accountId, event, receipt)
+            val accountId = device.accountId
+            if (adapter.sharedState && accountId != null && accountId != currentAccountId()) return@withSessionLock
+            val event = device.clicks[receipt]
+            val result = if (accountId != null && event != null) {
+                device.consumeClick(SystemNotificationClick(accountId, event.key, receipt), currentAccountId())
+            } else {
+                null
+            }
+            if (result != null) {
+                save(result.state)
+                invalidatePoll(cancel = false)
+                withdraw(checkNotNull(accountId), checkNotNull(event), receipt)
+            }
+            adapter.confirmClick(receipt)
+            pendingClicks -= receipt
             updateStatus()
-            onNavigate(result.event.destination)
+            if (result != null) onNavigate(result.event.destination)
         } catch (_: Exception) {
-            reportError("无法打开这条系统通知，请在应用内查看")
+            reportError { NotificationsStrings.openFailed }
         }
     }
 
@@ -433,7 +572,15 @@ internal class RunningSystemNotifications(
 
     private fun reconcileAccount() {
         val client = accounts.client
-        if (device.accountId != null && (device.accountId != currentAccountId() || owner !== client || !owner.isCurrent)) {
+        if (!adapter.accountStateKnown(accounts)) return
+        val revoked = if (adapter.sharedState) {
+            /** 另一标签页切号后，旧标签页不能凭过期身份反向清空新账号的订阅。 */
+            ownerAccountId != null && device.accountId == ownerAccountId &&
+                (owner !== client || !owner.isCurrent) && device.accountId != currentAccountId()
+        } else {
+            device.accountId != currentAccountId() || owner !== client || !owner.isCurrent
+        }
+        if (device.accountId != null && revoked) {
             invalidatePoll()
             permissionJob?.cancel()
             val previous = device
@@ -445,16 +592,21 @@ internal class RunningSystemNotifications(
             }
         }
         owner = client
+        ownerAccountId = currentAccountId()
     }
 
     private fun applyAuthorization(next: RunningSystemNotificationAuthorization) {
         if (authorization != next) revision++
         authorization = next
+        if (adapter.sharedState && (!next.supported || !adapter.accountStateKnown(accounts) || device.accountId != currentAccountId())) return
         val allowed = effectiveTypes()
         saveAndWithdraw(device.copy(clicks = device.clicks.filterValues { it.type in allowed }))
     }
 
-    private fun effectiveTypes(): Set<NotificationType> = if (authorization.supported && authorization.permissionGranted && authorization.appNotificationsEnabled) {
+    private fun effectiveTypes(): Set<NotificationType> = if (
+        device.accountId == currentAccountId() && owner === accounts.client &&
+        authorization.supported && authorization.permissionGranted && authorization.appNotificationsEnabled
+    ) {
         device.enabledTypes - authorization.blockedTypes
     } else {
         emptySet()
@@ -470,22 +622,24 @@ internal class RunningSystemNotifications(
         owner === expected.client &&
         currentAccountId() == expected.accountId &&
         device.accountId == expected.state.accountId &&
-        device.epoch == expected.state.epoch
+        device.epoch == expected.state.epoch &&
+        adapter.isStateCurrent(device)
 
-    private fun isCurrent(expected: RunningNotificationOwner): Boolean = matchesSession(expected) && revision == expected.revision
+    private fun isCurrent(expected: RunningNotificationOwner): Boolean = matchesSession(expected) &&
+        revision == expected.revision && (!adapter.sharedState || adapter.canPoll)
 
     private fun checkCurrent(expected: RunningNotificationOwner) = accounts.withSessionLock {
-        if (!isCurrent(expected)) throw CancellationException("通知订阅已变更")
+        if (!isCurrent(expected)) throw CancellationException(NotificationsStrings.subscriptionChanged)
     }
 
     private fun invalidatePoll(cancel: Boolean = true) {
         revision++
-        if (cancel) pollJob?.cancel(CancellationException("通知订阅或已读状态已变更"))
+        if (cancel) pollJob?.cancel(CancellationException(NotificationsStrings.subscriptionOrReadChanged))
         wake.trySend(Unit)
     }
 
     private fun newReceipt(): String = adapter.newReceipt().also {
-        check(it.isNotBlank() && it != device.epoch && it !in device.clicks) { "平台未提供新的随机通知回执" }
+        check(it.isNotBlank() && it != device.epoch && it !in device.clicks) { NotificationsStrings.receiptRandomMissing }
     }
 
     private fun saveAndWithdraw(next: DeviceNotificationState) {
@@ -505,7 +659,7 @@ internal class RunningSystemNotifications(
         } catch (error: Exception) {
             /** 不把内存改成“已保存”；关闭能力并保留错误，避免后续查询掩盖磁盘失败。 */
             storageFailed = true
-            errorMessage = "本机通知状态保存失败，已停止检查；请修复存储后重新启动"
+            errorMessage = { NotificationsStrings.storageFailedStopped }
             invalidatePoll()
             device.accountId?.let { accountId -> device.clicks.forEach { (receipt, event) -> withdraw(accountId, event, receipt) } }
             updateStatus()
@@ -520,7 +674,7 @@ internal class RunningSystemNotifications(
             } else {
                 !state.accountId.isNullOrBlank() && state.epoch.isNotBlank()
             },
-        ) { "本机通知状态不完整" }
+        ) { NotificationsStrings.stateIncomplete }
         require(state.clicks.all { (receipt, event) -> receipt.isNotBlank() && event.key.isNotBlank() && event.type in state.enabledTypes })
     }
 
@@ -537,7 +691,7 @@ internal class RunningSystemNotifications(
         updateStatus()
     }
 
-    private fun reportError(message: String) {
+    private fun reportError(message: () -> String) {
         if (!storageFailed) errorMessage = message
         updateStatus()
     }
@@ -550,9 +704,9 @@ internal class RunningSystemNotifications(
             appNotificationsEnabled = authorization.appNotificationsEnabled,
             enabledTypes = if (device.accountId == currentAccountId() && owner === accounts.client) device.enabledTypes else emptySet(),
             blockedChannels = authorization.blockedTypes,
-            error = errorMessage ?: if (pendingWithdrawals.isNotEmpty()) "部分系统通知未能撤回，将重试；也可在系统通知中心检查" else null,
+            errorText = errorMessage ?: if (pendingWithdrawals.isNotEmpty()) ({ NotificationsStrings.withdrawPending }) else null,
             backgroundPollingAvailable = false,
-            availabilityDescription = adapter.availabilityDescription,
+            availabilityText = { adapter.availabilityDescription },
         )
     }
 
@@ -563,9 +717,11 @@ internal class RunningSystemNotifications(
             active = false
             revision++
             ready.complete(false)
-            runCatching { readObserver?.close() }.onFailure { reportError("无法释放本机通知观察者") }
+            runCatching { readObserver?.close() }.onFailure { reportError { NotificationsStrings.readObserverReleaseFailed } }
             readObserver = null
-            runCatching { activation?.close() }.onFailure { reportError("无法释放系统通知事件监听") }
+            runCatching { changeObserver?.close() }.onFailure { reportError { NotificationsStrings.listenerReleaseFailed } }
+            changeObserver = null
+            runCatching { activation?.close() }.onFailure { reportError { NotificationsStrings.listenerReleaseFailed } }
             activation = null
             updateStatus()
         }

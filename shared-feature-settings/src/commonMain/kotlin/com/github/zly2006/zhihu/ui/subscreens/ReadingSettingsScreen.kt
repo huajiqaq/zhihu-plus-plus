@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.markdown.LocalMarkdownWidthManagedByHost
 import com.github.zly2006.zhihu.markdown.PlatformTiqianMarkdown
 import com.github.zly2006.zhihu.markdown.TiqianBrandTitle
@@ -44,8 +45,10 @@ import com.github.zly2006.zhihu.markdown.htmlToMdAst
 import com.github.zly2006.zhihu.markdown.isTiqianMarkdownRendererAvailable
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.LocalNavigator
+import com.github.zly2006.zhihu.platform.defaultAnswerSwitchMode
 import com.github.zly2006.zhihu.platform.isAnswerSwipeSupported
 import com.github.zly2006.zhihu.platform.isPageTurnSupported
+import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY
@@ -111,11 +114,6 @@ val READING_LAYOUT_SETTINGS_KEYS: Set<String> = setOf(
     TIQIAN_MATH_FONT_PREFERENCE_KEY,
 )
 
-private const val TYPOGRAPHY_PREVIEW_HTML =
-    "<p>拖动下面的滑杆，这段文字会立即按新的字号、行高和段间距重新排版，与回答正文使用同一套渲染器。</p>" +
-        "<p>第二段用来观察段间距：知乎 Zhihu 上的回答常常中英混排，例如 Kotlin Multiplatform 与 Compose 的讨论；" +
-        "行高决定同一段里相邻两行的距离，段间距决定段与段之间的空白。</p>"
-
 @Composable
 fun ReadingSettingsScreen(
     setting: String? = null,
@@ -133,7 +131,7 @@ fun ReadingSettingsScreen(
     var blockSpacing by rememberSetting(settings, PREF_BLOCK_SPACING, DEFAULT_BLOCK_SPACING_PERCENT)
     var tiqianMarkdown by rememberSetting(settings, TIQIAN_MARKDOWN_PREFERENCE_KEY, DEFAULT_TIQIAN_MARKDOWN)
     var tiqianMathFont by rememberSetting(settings, TIQIAN_MATH_FONT_PREFERENCE_KEY, TIQIAN_SANS_MATH_FONT)
-    var answerSwitchMode by rememberSetting(settings, ANSWER_SWITCH_MODE_PREFERENCE_KEY, "vertical")
+    var answerSwitchMode by rememberSetting(settings, ANSWER_SWITCH_MODE_PREFERENCE_KEY, defaultAnswerSwitchMode)
     var articleUseWebview by rememberSetting(settings, ARTICLE_USE_WEBVIEW_PREFERENCE_KEY, false)
     val useWebView = isLegacyWebViewSupported && articleUseWebview
     var showWebViewConfirmation by remember(articleUseWebview) { mutableStateOf(false) }
@@ -149,7 +147,7 @@ fun ReadingSettingsScreen(
     }
 
     AppSettingsPage(
-        title = "阅读与排版",
+        title = SettingsStrings.readingLayout,
         onBack = navigator.onNavigateBack,
         backTag = READING_SETTINGS_BACK_BUTTON_TAG,
         highlightedKey = highlightedKey,
@@ -158,20 +156,20 @@ fun ReadingSettingsScreen(
             if (showWebViewConfirmation) {
                 AppDialog(
                     modifier = Modifier.testTag(READING_LAYOUT_SETTINGS_WEBVIEW_CONFIRM_TAG),
-                    title = "启用已弃用的 WebView 渲染？",
-                    summary = "WebView 渲染已弃用，仅保留为兼容性回退，不再更新。开启后，正文查找定位与高亮、正文内划线喜欢与句子评论交互、段间距和提椠排版等 Compose 专属功能不可用。关闭后恢复 Compose 渲染。每次重新开启都需确认。",
-                    confirmText = "仍然开启",
+                    title = SettingsStrings.enableLegacyWebview,
+                    summary = SettingsStrings.legacyWebviewConfirmation,
+                    confirmText = SettingsStrings.enableAnyway,
                     onConfirm = {
                         articleUseWebview = true
                         showWebViewConfirmation = false
                     },
-                    dismissText = "取消",
+                    dismissText = SettingsStrings.cancel,
                     onDismissRequest = { showWebViewConfirmation = false },
                 )
             }
         },
     ) {
-        SettingItemGroup(title = "排版预览") {
+        SettingItemGroup(title = SettingsStrings.typographyPreview) {
             SettingItem(
                 modifier = Modifier.testTag(READING_LAYOUT_SETTINGS_PREVIEW_TAG),
                 title = {
@@ -186,7 +184,7 @@ fun ReadingSettingsScreen(
                     }
                 },
                 description = if (useWebView) {
-                    { Text("此处为 Compose 排版预览，不代表当前 WebView 正文的显示效果。") }
+                    { Text(SettingsStrings.composePreviewNote) }
                 } else {
                     null
                 },
@@ -194,11 +192,11 @@ fun ReadingSettingsScreen(
         }
 
         SettingItemGroup(
-            title = "排版",
+            title = SettingsStrings.typography,
             settingKey = "contentAndHome",
         ) {
             SettingItem(
-                title = { Text("字号") },
+                title = { Text(SettingsStrings.fontSize) },
                 description = { Text("$fontSize%") },
                 settingKey = "fontScale",
                 bottomAction = {
@@ -220,7 +218,7 @@ fun ReadingSettingsScreen(
                 },
             )
             SettingItem(
-                title = { Text("行高") },
+                title = { Text(SettingsStrings.lineHeight) },
                 description = { Text("$lineHeight%") },
                 settingKey = PREF_LINE_HEIGHT,
                 bottomAction = {
@@ -237,9 +235,9 @@ fun ReadingSettingsScreen(
                 },
             )
             SettingItem(
-                title = { Text("段间距") },
+                title = { Text(SettingsStrings.paragraphSpacing) },
                 description = {
-                    Text(if (useWebView) "$blockSpacing% · 当前 WebView 正文不支持段间距设置，关闭 WebView 后可用。" else "$blockSpacing%")
+                    Text(if (useWebView) SettingsStrings.webviewSpacingUnavailable(blockSpacing) else "$blockSpacing%")
                 },
                 enabled = !useWebView,
                 settingKey = PREF_BLOCK_SPACING,
@@ -260,13 +258,13 @@ fun ReadingSettingsScreen(
             if (isTiqianMarkdownRendererAvailable) {
                 SettingItemWithSwitch(
                     modifier = Modifier.testTag(APPEARANCE_SETTINGS_TIQIAN_MARKDOWN_TAG),
-                    title = { TiqianBrandTitle(prefix = "", suffix = "排版") },
+                    title = { TiqianBrandTitle(prefix = "", suffix = SettingsStrings.typography) },
                     description = {
                         Text(
                             if (useWebView) {
-                                "关闭 WebView 正文后可用。"
+                                SettingsStrings.disableWebviewFirst
                             } else {
-                                "使用「提椠」段落书写器排版正文：段落两端对齐，改进中西混排间距、代码、表格、公式与脚注等样式，接近纸质书的排版效果。作用于文章、想法与问题详情。"
+                                SettingsStrings.tiqianDescription
                             },
                         )
                     },
@@ -277,13 +275,13 @@ fun ReadingSettingsScreen(
                 )
                 AnimatedVisibility(visible = tiqianMarkdown) {
                     SettingItemWithSwitch(
-                        title = { Text("正文：使用非衬线数学字体") },
+                        title = { Text(SettingsStrings.sansMathFont) },
                         description = {
                             Text(
                                 if (useWebView) {
-                                    "关闭 WebView 正文后可用。"
+                                    SettingsStrings.disableWebviewFirst
                                 } else {
-                                    "默认公式使用非衬线的 Lete Sans Math；关闭后改用衬线的 STIX Two Math。"
+                                    SettingsStrings.sansMathFontDescription
                                 },
                             )
                         },
@@ -295,13 +293,13 @@ fun ReadingSettingsScreen(
                 }
             }
             SettingItem(
-                title = { Text("恢复默认") },
+                title = { Text(SettingsStrings.restoreDefaults) },
                 description = {
                     Text(
                         if (isTiqianMarkdownRendererAvailable) {
-                            "仅恢复字号、行高、段间距、提椠排版和数学字体。"
+                            SettingsStrings.restoreTypographyFull
                         } else {
-                            "仅恢复字号、行高和段间距。"
+                            SettingsStrings.restoreTypographyBasic
                         },
                     )
                 },
@@ -314,16 +312,16 @@ fun ReadingSettingsScreen(
                         tiqianMarkdown = DEFAULT_TIQIAN_MARKDOWN
                         tiqianMathFont = TIQIAN_SANS_MATH_FONT
                     }
-                    userMessages.showShortMessage("已恢复默认排版")
+                    userMessages.showShortMessage(SettingsStrings.typographyRestored)
                 },
             )
         }
 
-        SettingItemGroup(title = "回答页") {
+        SettingItemGroup(title = SettingsStrings.answerPage) {
             var titleAutoHide by rememberSetting(settings, "titleAutoHide", false)
             SettingItemWithSwitch(
-                title = { Text("自动隐藏回答标题") },
-                description = { Text("滚动时自动隐藏回答标题栏。") },
+                title = { Text(SettingsStrings.autoHideAnswerTitle) },
+                description = { Text(SettingsStrings.autoHideAnswerTitleDescription) },
                 checked = titleAutoHide,
                 onCheckedChange = { titleAutoHide = it },
                 settingKey = "titleAutoHide",
@@ -331,8 +329,8 @@ fun ReadingSettingsScreen(
 
             var autoHideArticleBottomBar by rememberSetting(settings, "autoHideArticleBottomBar", true)
             SettingItemWithSwitch(
-                title = { Text("自动隐藏回答底部按钮") },
-                description = { Text("手指向上滑动正文时隐藏悬浮操作栏，向下滑动时重新显示。") },
+                title = { Text(SettingsStrings.autoHideAnswerToolbar) },
+                description = { Text(SettingsStrings.autoHideAnswerToolbarDescription) },
                 checked = autoHideArticleBottomBar,
                 onCheckedChange = { autoHideArticleBottomBar = it },
                 settingKey = "autoHideArticleBottomBar",
@@ -340,8 +338,8 @@ fun ReadingSettingsScreen(
 
             var pinAnswerDate by rememberSetting(settings, "pinAnswerDate", false)
             SettingItemWithSwitch(
-                title = { Text("置顶回答日期") },
-                description = { Text("将回答的发布日期和编辑日期移动到内容最前面显示。") },
+                title = { Text(SettingsStrings.pinAnswerDate) },
+                description = { Text(SettingsStrings.pinAnswerDateDescription) },
                 checked = pinAnswerDate,
                 onCheckedChange = { pinAnswerDate = it },
                 settingKey = "pinAnswerDate",
@@ -349,8 +347,8 @@ fun ReadingSettingsScreen(
 
             var buttonSkipAnswer by rememberSetting(settings, "buttonSkipAnswer", true)
             SettingItemWithSwitch(
-                title = { Text("显示跳转下一个回答按钮") },
-                description = { Text("在回答页显示快速跳转按钮，可上下左右拖动，松手贴靠左右边缘。横竖屏分别记忆位置。") },
+                title = { Text(SettingsStrings.nextAnswerButton) },
+                description = { Text(SettingsStrings.nextAnswerButtonDescription) },
                 checked = buttonSkipAnswer,
                 onCheckedChange = { buttonSkipAnswer = it },
                 settingKey = "buttonSkipAnswer",
@@ -359,30 +357,30 @@ fun ReadingSettingsScreen(
             var autoHideSkipAnswerButton by rememberSetting(settings, "autoHideSkipAnswerButton", true)
             AnimatedVisibility(visible = buttonSkipAnswer) {
                 SettingItemWithSwitch(
-                    title = { Text("滚动时自动隐藏跳转按钮") },
-                    description = { Text("下拉正文时淡出「下一个回答」按钮，反向滚动时重新显示。") },
+                    title = { Text(SettingsStrings.autoHideNextAnswer) },
+                    description = { Text(SettingsStrings.autoHideNextAnswerDescription) },
                     checked = autoHideSkipAnswerButton,
                     onCheckedChange = { autoHideSkipAnswerButton = it },
                     settingKey = "autoHideSkipAnswerButton",
                 )
             }
         }
-        SettingItemGroup(title = "回答切换") {
+        SettingItemGroup(title = SettingsStrings.answerSwitching) {
             if (isAnswerSwipeSupported) {
                 val answerSwitchOptions = listOf(
-                    "off" to "关闭",
-                    "vertical" to "上下滑动",
-                    "horizontal" to "左右滑动",
+                    "off" to SettingsStrings.off,
+                    "vertical" to SettingsStrings.swipeVertical,
+                    "horizontal" to SettingsStrings.swipeHorizontal,
                 )
                 SettingItemSelect(
-                    title = { Text("回答切换手势") },
-                    description = { Text("在回答页面通过手势切换同一问题下的其他回答。") },
+                    title = { Text(SettingsStrings.answerSwitchGesture) },
+                    description = { Text(SettingsStrings.answerSwitchGestureDescription) },
                     options = answerSwitchOptions.map { it.second },
                     selectedIndex = answerSwitchOptions.indexOfFirst { it.first == answerSwitchMode },
                     onSelect = { index ->
                         val (mode, label) = answerSwitchOptions[index]
                         answerSwitchMode = mode
-                        userMessages.showShortMessage("已设置为：$label")
+                        userMessages.showShortMessage(SettingsStrings.settingChanged(label))
                     },
                     settingKey = ANSWER_SWITCH_MODE_PREFERENCE_KEY,
                 )
@@ -395,9 +393,9 @@ fun ReadingSettingsScreen(
                 val sensitivity = normalizedAnswerSwitchSensitivity(storedSensitivity)
                 AnimatedVisibility(visible = answerSwitchMode != "off") {
                     SettingItem(
-                        title = { Text("回答切换灵敏度") },
+                        title = { Text(SettingsStrings.answerSwitchSensitivity) },
                         description = {
-                            Text("当前 ${(sensitivity * 10).roundToInt() / 10f}x，数值越高，滑动越短；同时作用于上下和左右切换。")
+                            Text(SettingsStrings.answerSwitchSensitivityDescription((sensitivity * 10).roundToInt() / 10f))
                         },
                         settingKey = ANSWER_SWITCH_SENSITIVITY_PREFERENCE_KEY,
                         bottomAction = {
@@ -430,14 +428,14 @@ fun ReadingSettingsScreen(
             )
             val doubleTapAction = AnswerDoubleTapAction.fromPreference(doubleTapPreference)
             SettingItemSelect(
-                title = { Text("双击回答动作") },
-                description = { Text("双击回答正文时执行的动作。默认弹窗询问。") },
+                title = { Text(SettingsStrings.answerDoubleTap) },
+                description = { Text(SettingsStrings.answerDoubleTapDescription) },
                 options = AnswerDoubleTapAction.entries.map { it.label },
                 selectedIndex = AnswerDoubleTapAction.entries.indexOf(doubleTapAction),
                 onSelect = { index ->
                     val action = AnswerDoubleTapAction.entries[index]
                     doubleTapPreference = action.preferenceValue
-                    userMessages.showShortMessage("已设置为：${action.label}")
+                    userMessages.showShortMessage(SettingsStrings.answerDoubleTapChanged(action.label))
                 },
                 modifier = Modifier.testTag(APPEARANCE_SETTINGS_ANSWER_DOUBLE_TAP_TAG),
                 settingKey = ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY,
@@ -450,11 +448,17 @@ fun ReadingSettingsScreen(
                 val showPageTurnFab by rememberSetting(settings, PREF_SHOW_PAGE_TURN_FAB, false)
                 SettingItem(
                     modifier = Modifier.testTag(READING_LAYOUT_SETTINGS_PAGE_TURN_TAG),
-                    title = { Text("电纸书翻页") },
+                    title = { Text(if (platformName != "Android") SettingsStrings.pageTurning else SettingsStrings.einkPageTurning) },
                     description = {
                         Text(
-                            "音量键翻页已${if (volumeKeyPageTurn) "开启" else "关闭"} · 翻页按钮已${if (showPageTurnFab) "显示" else "隐藏"} · 按钮位置横竖屏分别记忆" +
-                                if (useWebView) "\nWebView 正文不支持电纸书翻页，其他支持翻页的页面不受影响。" else "",
+                            (if (platformName == "Android") {
+                                SettingsStrings.pageTurnSummary(
+                                    if (volumeKeyPageTurn) SettingsStrings.enabled else SettingsStrings.off,
+                                    if (showPageTurnFab) SettingsStrings.show else SettingsStrings.hide,
+                                )
+                            } else {
+                                SettingsStrings.pageTurnButtonsSummary(if (showPageTurnFab) SettingsStrings.show else SettingsStrings.hide)
+                            }) + if (useWebView) SettingsStrings.webviewPageTurnNote else "",
                         )
                     },
                     onClick = { navigator.onNavigate(Account.PageTurnSettings()) },
@@ -463,16 +467,16 @@ fun ReadingSettingsScreen(
         }
 
         if (isLegacyWebViewSupported) {
-            SettingItemGroup(title = "WebView 渲染（已弃用）") {
+            SettingItemGroup(title = SettingsStrings.legacyWebviewSection) {
                 SettingItemWithSwitch(
                     modifier = Modifier.testTag(APPEARANCE_SETTINGS_USE_WEBVIEW_TAG),
-                    title = { Text("使用 WebView 显示文章（已弃用）") },
+                    title = { Text(SettingsStrings.legacyWebview) },
                     description = {
                         Text(
                             if (useWebView) {
-                                "当前已开启，仅作兼容性回退，不再更新。正文查找定位与高亮、正文内划线喜欢与句子评论交互等 Compose 专属功能不可用；关闭后恢复。"
+                                SettingsStrings.legacyWebviewEnabled
                             } else {
-                                "仅作兼容性回退，不再更新。开启后正文查找定位与高亮、正文内划线喜欢与句子评论交互等 Compose 专属功能不可用；每次开启都需确认。"
+                                SettingsStrings.legacyWebviewDisabled
                             },
                         )
                     },
@@ -494,8 +498,8 @@ fun ReadingSettingsScreen(
                 AnimatedVisibility(visible = articleUseWebview && isWebViewCustomFontSupported) {
                     SettingItem(
                         modifier = Modifier.testTag(APPEARANCE_SETTINGS_WEBVIEW_FONT_TAG),
-                        title = { Text("WebView 自定义字体") },
-                        description = { Text(customFontName ?: "未设置") },
+                        title = { Text(SettingsStrings.webviewCustomFont) },
+                        description = { Text(customFontName ?: SettingsStrings.notSet) },
                         settingKey = WEBVIEW_CUSTOM_FONT_NAME_PREFERENCE_KEY,
                         bottomAction = {
                             WebViewCustomFontSettings(
@@ -517,8 +521,8 @@ fun ReadingSettingsScreen(
                 AnimatedVisibility(visible = articleUseWebview) {
                     SettingItemWithSwitch(
                         modifier = Modifier.testTag(APPEARANCE_SETTINGS_WEBVIEW_OPTIONS_TAG),
-                        title = { Text("WebView 硬件加速") },
-                        description = { Text("提高渲染性能，可能导致兼容性问题。") },
+                        title = { Text(SettingsStrings.webviewHardwareAcceleration) },
+                        description = { Text(SettingsStrings.webviewHardwareAccelerationDescription) },
                         checked = hardwareAcceleration,
                         onCheckedChange = { hardwareAcceleration = it },
                         settingKey = WEBVIEW_HARDWARE_ACCELERATION_PREFERENCE_KEY,
@@ -543,7 +547,8 @@ private fun ReadingTypographyPreview(
     useTiqianRenderer: Boolean,
     mathFontFamilyId: String?,
 ) {
-    val document = remember { htmlToMdAst(TYPOGRAPHY_PREVIEW_HTML) }
+    val previewHtml = SettingsStrings.typographyPreviewFirst + SettingsStrings.typographyPreviewSecond + SettingsStrings.typographyPreviewThird
+    val document = remember(previewHtml) { htmlToMdAst(previewHtml) }
     if (useTiqianRenderer && isTiqianMarkdownRendererAvailable) {
         Box(Modifier.fillMaxWidth()) {
             PlatformTiqianMarkdown(

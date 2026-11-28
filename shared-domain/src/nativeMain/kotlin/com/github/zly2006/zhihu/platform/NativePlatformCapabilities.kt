@@ -22,26 +22,22 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.backhandler.BackHandler
-import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationEventHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.nlp.OfflineNlpController
+import com.github.zly2006.zhihu.nlp.OfflineNlpModelState
 import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import kotlinx.cinterop.BetaInteropApi
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
+import com.github.zly2006.zhihu.viewmodel.ArticleExportResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
-import platform.Foundation.NSData
-import platform.Foundation.NSFileManager
-import platform.Foundation.dataWithBytes
-import kotlin.time.Clock
 
 @Composable
 actual fun isSoftwareKeyboardVisible(): Boolean = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -57,16 +53,18 @@ actual fun rememberImageSaver(): ImageSaver {
     val scope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
     val accountStore = rememberZhihuAccountStore()
-    return remember(scope, userMessages, accountStore) {
+    val delivery = LocalNativeFileDelivery.current
+    return remember(scope, userMessages, accountStore, delivery) {
         object : ImageSaver {
             override fun invoke(url: String) {
                 scope.launch {
-                    runCatching {
-                        saveNativeImageToDownloads(accountStore, url)
-                    }.onSuccess { filePath ->
-                        userMessages.showShortMessage("已保存图片: $filePath")
-                    }.onFailure { error ->
-                        userMessages.showShortMessage("保存失败: ${error.message}")
+                    try {
+                        val result = deliverNativeImage(accountStore.client.httpClient(), url, requireNativeFileDelivery(delivery), share = false)
+                        if (result is ArticleExportResult.Completed) userMessages.showShortMessage(result.completionMessage)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        userMessages.showShortMessage(DomainStrings.imageSaveFailed(error.message.orEmpty()))
                     }
                 }
             }
@@ -76,52 +74,26 @@ actual fun rememberImageSaver(): ImageSaver {
 
 @Composable
 actual fun rememberImageSharer(): ImageSharer {
+    val scope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
-    return remember(userMessages) {
+    val accountStore = rememberZhihuAccountStore()
+    val delivery = LocalNativeFileDelivery.current
+    return remember(scope, userMessages, accountStore, delivery) {
         object : ImageSharer {
             override fun invoke(url: String) {
-                runCatching {
-                    copyNativePlainText(url)
-                    userMessages.showShortMessage("已复制图片链接")
-                }.onFailure { error ->
-                    userMessages.showShortMessage("分享失败: ${error.message}")
+                scope.launch {
+                    try {
+                        val result = deliverNativeImage(accountStore.client.httpClient(), url, requireNativeFileDelivery(delivery), share = true)
+                        if (result is ArticleExportResult.Completed) userMessages.showShortMessage(result.completionMessage)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        userMessages.showShortMessage(DomainStrings.imageShareFailed(error.message.orEmpty()))
+                    }
                 }
             }
         }
     }
-}
-
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private suspend fun saveNativeImageToDownloads(
-    accountStore: ZhihuAccountStore,
-    imageUrl: String,
-): String {
-    val imageBytes = accountStore.client
-        .httpClient()
-        .get(imageUrl)
-        .body<ByteArray>()
-    val extension = imageUrl
-        .substringBefore('?')
-        .substringAfterLast('/')
-        .substringAfterLast('.', "")
-        .takeIf { it.length in 2..5 } ?: "jpg"
-    val downloadsDirectory = nativeDownloadsDirectoryPath()
-    NSFileManager.defaultManager.createDirectoryAtPath(
-        downloadsDirectory,
-        withIntermediateDirectories = true,
-        attributes = null,
-        error = null,
-    )
-    val filePath = "$downloadsDirectory/image_${Clock.System.now().toEpochMilliseconds()}.$extension"
-    val written = imageBytes.usePinned { pinned ->
-        NSFileManager.defaultManager.createFileAtPath(
-            filePath,
-            contents = NSData.dataWithBytes(pinned.addressOf(0), imageBytes.size.toULong()),
-            attributes = null,
-        )
-    }
-    check(written) { "无法写入 $filePath" }
-    return filePath
 }
 
 @Composable
@@ -131,11 +103,13 @@ actual fun rememberPlainTextClipboard(): PlainTextClipboard = remember {
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
-@Suppress("DEPRECATION")
 @Composable
-actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) =
-    BackHandler(enabled = enabled, onBack = onBack)
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = NavigationEventHandler(
+    state = rememberNavigationEventState(NavigationEventInfo.None),
+    isForwardEnabled = false,
+    isBackEnabled = enabled,
+    onBackCompleted = onBack,
+)
 
 @Composable
 actual fun PlatformPredictiveBackHandler(
@@ -149,7 +123,13 @@ actual fun platformSettingsStore(): SettingsStore = nativeSettingsStore("setting
 
 actual fun appPrivateDirectory(): Path = Path(nativeAppPrivateDirectoryPath())
 
-actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher? = null
+actual fun appPrivateTextFile(name: String): AppTextFile = DiskTextFile(Path(appPrivateDirectory(), name))
+
+actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
+    get() = OfflineNlpController.takeIf { it.state.value == OfflineNlpModelState.Ready }
+
+actual val platformSemanticRuntimeGeneration: StateFlow<Long>
+    get() = OfflineNlpController.policyGeneration
 
 actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
 
@@ -158,24 +138,12 @@ actual fun rememberSettingsStore(): SettingsStore = remember { nativeSettingsSto
 
 actual fun Modifier.exportTestTagsForUiAutomation(): Modifier = this
 
-@Composable
-actual fun rememberAppPrivateDirectory(): Path = remember { Path(nativeAppPrivateDirectoryPath()) }
-
-actual val isLiteVariant: Boolean = false
-
 actual val isJvm: Boolean = false
 
 actual val isNative: Boolean = true
 
-actual val isBlocklistNlpSupported: Boolean = false
+actual val isArticleHtmlExportSupported: Boolean = true
 
+actual val isArticleImageExportSupported: Boolean = true
 
-actual val includesFullVariantLicenses: Boolean = false
-
-actual val isArticleHtmlExportSupported: Boolean = false
-
-actual val isArticleImageExportSupported: Boolean = false
-
-actual val isPageTurnSupported: Boolean = false
-
-actual val isAnswerSwipeSupported: Boolean = !nativeIsDesktop
+actual val isArticlePdfExportSupported: Boolean = true

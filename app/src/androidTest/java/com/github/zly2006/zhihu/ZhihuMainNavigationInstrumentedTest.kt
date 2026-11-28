@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
+import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
@@ -57,14 +60,13 @@ import com.github.zly2006.zhihu.navigation.WriteQuestion
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.resetAppPreferences
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.ui.QUESTION_SCREEN_LIST_TAG
 import com.github.zly2006.zhihu.ui.WRITE_QUESTION_BACK_BUTTON_TAG
 import com.github.zly2006.zhihu.ui.WRITE_QUESTION_TITLE_TAG
 import com.github.zly2006.zhihu.ui.ZhihuMain
-import com.github.zly2006.zhihu.ui.rememberZhihuMainPreferenceState
+import com.github.zly2006.zhihu.ui.rememberZhihuMainTabsState
 import com.github.zly2006.zhihu.ui.subscreens.BOTTOM_BAR_ITEMS_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.COLLECTION_DIRECT_BROWSE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
@@ -134,8 +136,11 @@ class ZhihuMainNavigationInstrumentedTest {
         activity.setContent { }
         waitForIdle()
         activity.setContent {
+            CompositionLocalProvider(LocalZhihuAccountStore provides androidZhihuAccountStore(activity)) {
             ZhihuTheme {
                 val navHost = rememberAppNavHost(MainTabs)
+                val tabsState = rememberZhihuMainTabsState()
+                activity.tabsState = tabsState
                 LaunchedEffect(navHost) {
                     activity.navHost = navHost
                 }
@@ -143,7 +148,7 @@ class ZhihuMainNavigationInstrumentedTest {
                     modifier = (width?.let { Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(it(), height()) } ?: Modifier)
                         .testTag("zhihu_main_window"),
                     navHost = navHost,
-                    mainTabNavigationTarget = activity.mainTabNavigationTarget,
+                    tabsState = tabsState,
                     navigate = { destination ->
                         if (destination is Video && onVideo != null) onVideo(navHost) else activity.navigate(destination)
                     },
@@ -152,10 +157,6 @@ class ZhihuMainNavigationInstrumentedTest {
                         if (destination is Video && onVideo != null) onVideo(controller) else activity.navigate(destination, controller)
                     },
                     enableLandscapeListDetail = true,
-                    setCurrentMainTabOpenFrom = activity::setCurrentMainTabOpenFrom,
-                    consumeMainTabNavigationTarget = activity::consumeMainTabNavigationTarget,
-                    preferenceState = rememberZhihuMainPreferenceState(),
-                    isDarkTheme = ThemeManager.isDarkTheme,
                     articleContent = { _ ->
                         val navigator = LocalNavigator.current
                         var expanded by rememberSaveable { mutableStateOf(false) }
@@ -192,6 +193,7 @@ class ZhihuMainNavigationInstrumentedTest {
                         }
                     },
                 )
+            }
             }
         }
         waitForIdle()

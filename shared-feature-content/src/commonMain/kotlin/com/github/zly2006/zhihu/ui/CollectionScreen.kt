@@ -50,12 +50,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.github.zly2006.zhihu.data.Collection
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.CollectionContent
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
 import com.github.zly2006.zhihu.ui.components.AppScaffold
@@ -72,12 +74,11 @@ import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.CollectionsViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 fun CollectionScreen(
     urlToken: String?,
-    testCollections: List<Collection>? = null,
+    testCollections: List<ZhihuCollection>? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     showBackButton: Boolean = true,
     isActive: Boolean = true,
@@ -94,7 +95,7 @@ fun CollectionScreen(
     val useTestCollections = testCollections != null || urlToken == null
     val collections = testCollections ?: viewModel.allData
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
-    var collectionPendingDeletion by remember { mutableStateOf<Collection?>(null) }
+    var collectionPendingDeletion by remember { mutableStateOf<ZhihuCollection?>(null) }
     val pageTurnTarget = rememberPageTurnTarget(
         listState = listState,
         enabled = isActive && !showCreateCollectionDialog && collectionPendingDeletion == null,
@@ -119,8 +120,8 @@ fun CollectionScreen(
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             AppPageTitleBar(
-                title = "我的收藏夹",
-                subtitle = "共 ${collections.size} 个收藏夹",
+                title = ContentStrings.myCollections,
+                subtitle = ContentStrings.collectionCount(collections.size),
                 titleTag = COLLECTION_SCREEN_TITLE_TAG,
                 onBack = navigator.onNavigateBack.takeIf { showBackButton },
                 backTag = COLLECTION_SCREEN_BACK_BUTTON_TAG,
@@ -136,7 +137,7 @@ fun CollectionScreen(
                         enabled = !viewModel.isCreatingCollection && viewModel.deletingCollectionId == null,
                         modifier = Modifier.testTag(COLLECTION_SCREEN_CREATE_BUTTON_TAG),
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = "新建收藏夹")
+                        AppIcon(Icons.Filled.Add, contentDescription = ContentStrings.newCollection)
                     }
                 },
             )
@@ -182,7 +183,7 @@ fun CollectionScreen(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.Filled.Bookmarks,
                             contentDescription = null,
                             tint = if (settingSkinIsMiuix()) {
@@ -209,7 +210,7 @@ fun CollectionScreen(
                             )
                         }
                         Text(
-                            text = "${collection.itemCount} 条内容 · ${if (collection.isPublic) "公开" else "私密"}",
+                            text = ContentStrings.collectionVisibilityCount(collection.itemCount, if (collection.isPublic) ContentStrings.public else ContentStrings.private),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp),
@@ -224,9 +225,9 @@ fun CollectionScreen(
                             enabled = !viewModel.isCreatingCollection && viewModel.deletingCollectionId == null,
                             modifier = Modifier.testTag("collection_screen_delete_button_${collection.id}"),
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.Delete,
-                                contentDescription = "删除${collection.title}",
+                                contentDescription = ContentStrings.deleteCollectionNamed(collection.title),
                                 tint = MaterialTheme.colorScheme.error,
                             )
                         }
@@ -253,7 +254,7 @@ fun CollectionScreen(
                 ) {
                     viewModel.refresh(environment)
                     showCreateCollectionDialog = false
-                    userMessages.showShortMessage("收藏夹已创建")
+                    userMessages.showShortMessage(ContentStrings.collectionCreated)
                 }
             }
         },
@@ -270,10 +271,10 @@ fun CollectionScreen(
                     collectionPendingDeletion = null
                 }
             },
-            title = { Text("删除收藏夹") },
+            title = { Text(ContentStrings.deleteCollection) },
             text = {
                 Column {
-                    Text("删除后无法恢复，确认删除收藏夹“${collection.title}”吗？")
+                    Text(ContentStrings.deleteCollectionConfirm(collection.title))
                     viewModel.deleteCollectionError?.let {
                         Text(
                             text = it,
@@ -285,13 +286,13 @@ fun CollectionScreen(
             },
             confirmButton = {
                 AppTextButton(
-                    text = if (isDeleting) "删除中…" else "删除",
+                    text = if (isDeleting) ContentStrings.deleting else ContentStrings.delete,
                     onClick = {
                         coroutineScope.launch {
                             if (viewModel.deleteCollection(environment, collection)) {
                                 viewModel.refresh(environment)
                                 collectionPendingDeletion = null
-                                userMessages.showShortMessage("收藏夹已删除")
+                                userMessages.showShortMessage(ContentStrings.collectionDeleted)
                             }
                         }
                     },
@@ -301,7 +302,7 @@ fun CollectionScreen(
             },
             dismissButton = {
                 AppTextButton(
-                    text = "取消",
+                    text = ContentStrings.cancel,
                     onClick = {
                         collectionPendingDeletion = null
                     },

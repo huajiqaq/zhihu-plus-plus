@@ -39,7 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 
 private data class ZhihuEndorsementColorToken(
     val light: Color,
@@ -103,7 +103,7 @@ private fun zhihuEndorsementColor(
     fallback: Color,
 ): Color {
     val token = ZhihuEndorsementColorTokens[color?.group] ?: return fallback
-    val base = if (ThemeManager.isDarkTheme()) token.dark else token.light
+    val base = if (LocalAppTheme.current.isDarkTheme) token.dark else token.light
     return base.copy(alpha = (color?.alpha ?: 1f).coerceIn(0f, 1f))
 }
 

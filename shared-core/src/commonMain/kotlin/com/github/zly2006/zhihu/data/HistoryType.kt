@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.data
 
+import com.github.zly2006.zhihu.i18n.CoreStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -70,6 +71,23 @@ object HistoryType {
         "special_topic_history", "special" -> SPECIAL
         "collection" -> COLLECTION
         else -> OTHER
+    }
+
+    /** 筛选与历史记录使用原类型键，显示名称在绘制时解析。 */
+    fun displayName(type: String?): String = when (type) {
+        ANSWER -> CoreStrings.typeAnswer
+        ARTICLE -> CoreStrings.typeArticle
+        PIN -> CoreStrings.typePin
+        QUESTION -> CoreStrings.typeQuestion
+        VIDEO -> CoreStrings.typeVideo
+        PERSON -> CoreStrings.typePerson
+        TOPIC -> CoreStrings.typeTopic
+        COLUMN -> CoreStrings.typeColumn
+        BOOK -> CoreStrings.typeEbook
+        ROUND_TABLE -> CoreStrings.typeRoundtable
+        SPECIAL -> CoreStrings.typeSpecial
+        COLLECTION -> CoreStrings.typeCollection
+        else -> CoreStrings.typeOther
     }
 
     fun badgeType(rawType: String?): String = rawType?.takeIf { it in filters } ?: OTHER

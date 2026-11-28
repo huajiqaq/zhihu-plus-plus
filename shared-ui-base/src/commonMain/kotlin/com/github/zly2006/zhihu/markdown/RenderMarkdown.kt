@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalUriHandler
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.SegmentInfoMeta
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
 import com.github.zly2006.zhihu.platform.rememberImageGalleryOpener
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -191,7 +192,7 @@ private fun RenderMarkdownDocument(
     /** 在下方上下文提供者内消费评论目标，才能读取本正文的评论宿主。 */
     var pendingCommentTarget by remember(creationScope) { mutableStateOf<SegmentCommentHolder?>(null) }
     val creationEnvironment = rememberPaginationEnvironment(allowGuestAccess = false)
-    var segmentError by remember(creationScope) { mutableStateOf<String?>(null) }
+    var segmentError by remember(creationScope) { mutableStateOf<(() -> String)?>(null) }
     var processingSegment by remember(creationScope) { mutableStateOf(false) }
 
     suspend fun ensureSegmentRequestIsCurrent() {
@@ -205,17 +206,17 @@ private fun RenderMarkdownDocument(
             ?.let { findContainingSegmentForSelection(it, document, segmentMetaStates, removedSegmentHighlights) }
             ?.takeIf { it.contentId == target?.contentId && it.contentType == target?.contentType }
         when {
-            processingSegment -> segmentError = "正在处理段评，请稍候"
-            target == null -> segmentError = "当前内容不支持段评"
-            sourceHtml == null -> segmentError = "当前内容缺少原始正文，无法定位划线，请刷新后重试"
-            range == null || range.text.isBlank() -> segmentError = "选区跨越了不同原始段落、包含非纯文本，或无法准确定位，请重新选择。已有跨段划线可直接点击操作"
-            (existing == null || openCommentEditor) && range.text.length < 5 -> segmentError = "请至少选择5个字后再喜欢或评论"
-            !accountStore.session.login -> segmentError = "请先登录后操作段评"
+            processingSegment -> segmentError = { ReaderStrings.segmentBusy }
+            target == null -> segmentError = { ReaderStrings.segmentUnsupported }
+            sourceHtml == null -> segmentError = { ReaderStrings.segmentSourceMissing }
+            range == null || range.text.isBlank() -> segmentError = { ReaderStrings.segmentSelectionInvalid }
+            (existing == null || openCommentEditor) && range.text.length < 5 -> segmentError = { ReaderStrings.segmentSelectionTooShort }
+            !accountStore.session.login -> segmentError = { ReaderStrings.segmentSignInRequired }
             existing != null && openCommentEditor -> {
                 pendingCommentTarget = existing.toSegmentCommentHolder()
-                if (pendingCommentTarget == null) segmentError = "缺少段落定位，无法打开段评"
+                if (pendingCommentTarget == null) segmentError = { ReaderStrings.segmentLocationMissing }
             }
-            existing?.meta?.isLike == true -> segmentError = "这段划线已喜欢，可选择取消喜欢"
+            existing?.meta?.isLike == true -> segmentError = { ReaderStrings.segmentAlreadyLiked }
             else -> {
                 segmentError = null
                 processingSegment = true
@@ -253,7 +254,7 @@ private fun RenderMarkdownDocument(
                         throw error
                     } catch (error: Exception) {
                         ensureSegmentRequestIsCurrent()
-                        segmentError = "段评操作失败：${error.message?.takeIf(String::isNotBlank) ?: "请重试"}"
+                        segmentError = { ReaderStrings.segmentActionFailed(error.message?.takeIf(String::isNotBlank) ?: ReaderStrings.pleaseRetry) }
                     } finally {
                         processingSegment = false
                     }
@@ -264,10 +265,10 @@ private fun RenderMarkdownDocument(
     val onCancelSegmentLike: (SegmentCreationRange?) -> Unit = { range ->
         val liked = range?.let { findContainingSegmentForSelection(it, document, segmentMetaStates, removedSegmentHighlights) }?.takeIf { it.meta.isLike }
         when {
-            processingSegment -> segmentError = "正在处理段评，请稍候"
-            !accountStore.session.login -> segmentError = "请先登录后操作段评"
-            range == null -> segmentError = "无法定位选中的划线，请重新选择后重试"
-            liked == null -> segmentError = "选中的划线已变化，请重新选择后重试"
+            processingSegment -> segmentError = { ReaderStrings.segmentBusy }
+            !accountStore.session.login -> segmentError = { ReaderStrings.segmentSignInRequired }
+            range == null -> segmentError = { ReaderStrings.segmentNotFound }
+            liked == null -> segmentError = { ReaderStrings.segmentChanged }
             else -> {
                 segmentError = null
                 processingSegment = true
@@ -288,7 +289,7 @@ private fun RenderMarkdownDocument(
                         throw error
                     } catch (error: Exception) {
                         ensureSegmentRequestIsCurrent()
-                        segmentError = "取消喜欢失败：${error.message?.takeIf(String::isNotBlank) ?: "请重试"}"
+                        segmentError = { ReaderStrings.segmentUnlikeFailed(error.message?.takeIf(String::isNotBlank) ?: ReaderStrings.pleaseRetry) }
                     } finally {
                         processingSegment = false
                     }
@@ -322,7 +323,7 @@ private fun RenderMarkdownDocument(
             document,
             segmentMetaStates,
             segmentCommentSnapshot,
-            onError = { segmentError = it },
+            onError = { message -> segmentError = { message } },
             onOpenQuotedComments = { target ->
                 if (segmentCommentTarget != target) segmentCommentTarget = target
             },
@@ -390,9 +391,9 @@ private fun RenderMarkdownDocument(
     }
     segmentError?.let { message ->
         AppDialog(
-            title = "段评提示",
-            summary = message,
-            confirmText = "知道了",
+            title = ReaderStrings.segmentNotice,
+            summary = message(),
+            confirmText = ReaderStrings.gotIt,
             onDismissRequest = { segmentError = null },
             onConfirm = { segmentError = null },
         )

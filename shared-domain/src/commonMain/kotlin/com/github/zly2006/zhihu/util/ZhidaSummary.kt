@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.util
 
+import kotlin.io.encoding.Base64
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -28,8 +29,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 private val zhidaJson = Json {
     ignoreUnknownKeys = true
@@ -93,7 +92,6 @@ data class ZhidaSummaryErrorData(
     val error: ZhidaSummaryErrorDetail? = null,
 )
 
-@OptIn(ExperimentalEncodingApi::class)
 fun encodeZhidaAttachmentValue(contentId: Long, contentType: String): String {
     val uppercaseType = when (contentType.lowercase()) {
         "answer" -> "ANSWER"

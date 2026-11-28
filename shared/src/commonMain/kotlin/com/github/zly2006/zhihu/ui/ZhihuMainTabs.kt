@@ -31,16 +31,10 @@ import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.github.zly2006.zhihu.filter.ContentOpenFrom
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Daily
 import com.github.zly2006.zhihu.navigation.Follow
@@ -49,11 +43,8 @@ import com.github.zly2006.zhihu.navigation.HotList
 import com.github.zly2006.zhihu.navigation.MyCollections
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.navigation.TopLevelDestination
-import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.ui.components.BottomBarItem
 import com.github.zly2006.zhihu.ui.components.NoOpPagerNestedScrollConnection
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 internal sealed class MainTabPage(
     val bottomDestination: TopLevelDestination,
@@ -73,15 +64,16 @@ internal sealed class MainTabPage(
 }
 
 /** 底栏与侧边栏可选的全部入口；显示哪些、按什么顺序由设置决定。 */
-internal val MAIN_BOTTOM_BAR_ITEMS: List<Triple<TopLevelDestination, String, ImageVector>> = listOf(
-    Triple(Home, "主页", Icons.Filled.Home),
-    Triple(Follow, "关注", Icons.Filled.Group),
-    Triple(HotList, "热榜", Icons.Filled.Whatshot),
-    Triple(Daily, "日报", Icons.Filled.Newspaper),
-    Triple(OnlineHistory, "历史", Icons.Filled.History),
-    Triple(MyCollections, "收藏夹", Icons.Filled.Bookmarks),
-    Triple(Account, "账号", Icons.Filled.ManageAccounts),
-)
+internal val MAIN_BOTTOM_BAR_ITEMS: List<Triple<TopLevelDestination, String, ImageVector>>
+    get() = listOf(
+        Triple(Home, AppStrings.home, Icons.Filled.Home),
+        Triple(Follow, AppStrings.following, Icons.Filled.Group),
+        Triple(HotList, AppStrings.trending, Icons.Filled.Whatshot),
+        Triple(Daily, AppStrings.daily, Icons.Filled.Newspaper),
+        Triple(OnlineHistory, AppStrings.history, Icons.Filled.History),
+        Triple(MyCollections, AppStrings.collections, Icons.Filled.Bookmarks),
+        Triple(Account, AppStrings.account, Icons.Filled.ManageAccounts),
+    )
 
 /** 历史入口打开独立页面，不占主页分页；一个分页都没有时回退到主页。 */
 internal fun mainTabPagesFor(items: List<Triple<TopLevelDestination, String, ImageVector>>): List<MainTabPage> = items
@@ -179,79 +171,6 @@ private fun MyCollectionsTopLevelPage(
         scrollToTopTrigger = scrollToTopTrigger,
         isActive = isActive,
     )
-}
-
-/**
- * 主页分页的返回历史：返回键回到上一个停留过的分页，没有记录时回到第一页。
- * [enabled] 为 false 时不拦截返回键，历史照常记录。
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-internal fun MainTabBackHistory(
-    pages: List<MainTabPage>,
-    pagerState: PagerState,
-    currentDestination: () -> TopLevelDestination,
-    enabled: Boolean,
-    animateScroll: Boolean,
-    coroutineScope: CoroutineScope,
-) {
-    var history by rememberSaveable {
-        mutableStateOf(arrayOf(pages.getOrNull(pagerState.settledPage)?.key ?: pages.first().key))
-    }
-    var backTargetKey by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(pages) {
-        if (pages.none { it.key == backTargetKey }) {
-            backTargetKey = null
-        }
-        val validHistory = history.copyOf()
-        var validSize = 0
-        for (key in history) {
-            if (pages.any { it.key == key } && (validSize == 0 || validHistory[validSize - 1] != key)) {
-                validHistory[validSize++] = key
-            }
-        }
-        history = validHistory.copyOfRange(0, validSize)
-        snapshotFlow {
-            val page = pages.getOrNull(pagerState.settledPage)
-            val settledKey = page
-                ?.takeIf {
-                    !pagerState.isScrollInProgress && it.bottomDestination == currentDestination()
-                }?.key
-            settledKey to backTargetKey
-        }.collect { (key, _) ->
-            if (key == null || (backTargetKey != null && backTargetKey != key)) return@collect
-            backTargetKey = null
-            if (history.lastOrNull() != key) history += key
-        }
-    }
-
-    PlatformBackHandler(
-        enabled &&
-            (backTargetKey != null || pagerState.isScrollInProgress || history.size > 1 || pagerState.settledPage != 0),
-    ) {
-        if (backTargetKey == null && !pagerState.isScrollInProgress) {
-            val previousKey = history.getOrNull(history.lastIndex - 1)
-            val targetPage = pages.indexOfFirst { it.key == previousKey }.takeIf { it >= 0 } ?: 0
-            val targetKey = pages[targetPage].key
-            /** 同步占用返回目标至停稳，连按不能在动画协程启动前再消费一层。 */
-            backTargetKey = targetKey
-            history = if (previousKey == targetKey) {
-                history.copyOfRange(0, history.lastIndex)
-            } else {
-                arrayOf(targetKey)
-            }
-            coroutineScope.launch {
-                try {
-                    if (animateScroll) pagerState.animateScrollToPage(targetPage) else pagerState.scrollToPage(targetPage)
-                } finally {
-                    if (backTargetKey == targetKey && pages.getOrNull(pagerState.settledPage)?.key != targetKey) {
-                        backTargetKey = null
-                    }
-                }
-            }
-        }
-    }
 }
 
 internal val TopLevelDestination.openFrom: String?

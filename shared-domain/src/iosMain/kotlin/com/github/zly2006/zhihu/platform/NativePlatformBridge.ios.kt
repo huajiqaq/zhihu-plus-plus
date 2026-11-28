@@ -17,27 +17,16 @@
 
 package com.github.zly2006.zhihu.platform
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.uikit.LocalUIViewController
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.launch
 import kotlinx.io.RawSource
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -59,7 +48,13 @@ actual val nativeIsDesktop: Boolean = false
 
 actual val platformName: String = "iOS"
 
-actual val isAigcVoteSupported: Boolean = false
+actual val isAigcVoteSupported: Boolean = true
+
+actual val isPageTurnSupported: Boolean = true
+
+actual val isAnswerSwipeSupported: Boolean = true
+
+actual val defaultAnswerSwitchMode: String = "vertical"
 
 @Composable
 @OptIn(ExperimentalForeignApi::class)
@@ -71,10 +66,10 @@ actual fun rememberExternalUrlOpener(): ExternalUrlOpener {
                 NSOperationQueue.mainQueue.addOperationWithBlock {
                     val target = NSURL.URLWithString(url)
                     if (target == null || target.scheme.isNullOrBlank()) {
-                        messages.showShortMessage("链接地址无效")
+                        messages.showShortMessage(DomainStrings.invalidLink)
                     } else {
                         UIApplication.sharedApplication.openURL(target, options = emptyMap<Any?, Any>()) { opened ->
-                            if (!opened) messages.showShortMessage("系统无法打开此链接")
+                            if (!opened) messages.showShortMessage(DomainStrings.systemOpenLinkFailed)
                         }
                     }
                 }
@@ -104,7 +99,8 @@ internal actual fun rememberFilePicker(
     title: String,
     mimeTypes: List<String>,
     extensions: List<String>,
-    onPicked: (() -> Pair<String, RawSource>) -> Unit,
+    maxBytes: Int?,
+    onPicked: (suspend () -> Pair<String, RawSource>) -> Unit,
 ): () -> Unit {
     val host = LocalUIViewController.current
     val currentOnPicked by rememberUpdatedState(onPicked)
@@ -118,7 +114,7 @@ internal actual fun rememberFilePicker(
                     val file = Path(checkNotNull(url.path))
                     val source = SystemFileSystem.source(file)
                     // 复制模式返回应用持有的临时文件，关闭时不会删除提供方的原文件。
-                    (url.lastPathComponent ?: "所选文件") to object : RawSource by source {
+                    (url.lastPathComponent ?: DomainStrings.selectedFile) to object : RawSource by source {
                         override fun close() {
                             try {
                                 source.close()
@@ -159,33 +155,7 @@ internal actual fun rememberFilePicker(
     }
 }
 
-private val LocalIosUserMessages = staticCompositionLocalOf<UserMessageSink> { error("iOS 消息宿主未安装") }
-
 @Composable
-actual fun rememberUserMessageSink(): UserMessageSink = LocalIosUserMessages.current
-
-/** 短消息随当前窗口排队和销毁；只有提示自身避让安全区，不改变页面布局。 */
-@Composable
-fun IosUserMessageHost(content: @Composable () -> Unit) {
-    val state = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    val messages = remember(state, scope) {
-        object : UserMessageSink {
-            override fun showShortMessage(message: String) {
-                scope.launch { state.showSnackbar(message, duration = SnackbarDuration.Short) }
-            }
-
-            override fun showLongMessage(message: String) {
-                scope.launch { state.showSnackbar(message, duration = SnackbarDuration.Long) }
-            }
-        }
-    }
-    CompositionLocalProvider(LocalIosUserMessages provides messages) {
-        Box(Modifier.fillMaxSize()) {
-            content()
-            SnackbarHost(state, Modifier.align(Alignment.BottomCenter).safeDrawingPadding())
-        }
-    }
-}
+actual fun rememberUserMessageSink(): UserMessageSink = LocalWindowUserMessages.current
 
 actual val platformBottomBarItemLimit: Int? = 5

@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppButton
@@ -41,6 +42,7 @@ import com.github.zly2006.zhihu.ui.components.AppButton
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ArticleDoubleTapActionSheet(
+    votingEnabled: Boolean,
     onDismissRequest: () -> Unit,
     onSelect: (AnswerDoubleTapAction) -> Unit,
 ) {
@@ -59,32 +61,33 @@ internal fun ArticleDoubleTapActionSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "设置双击回答动作",
+                text = ContentStrings.doubleTapSettings,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "选择以后双击回答时默认执行的动作。选择后会立即保存到设置，你也可以稍后在设置中修改。",
+                text = ContentStrings.doubleTapHelp,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             AppButton(
-                text = "设为无操作",
+                text = ContentStrings.doubleTapNone,
                 onClick = { onSelect(AnswerDoubleTapAction.None) },
                 modifier = Modifier.fillMaxWidth(),
             )
             AppButton(
-                text = "设为点赞",
+                text = if (votingEnabled) ContentStrings.doubleTapUpvote else ContentStrings.doubleTapUpvoteReadOnly,
+                enabled = votingEnabled,
                 onClick = { onSelect(AnswerDoubleTapAction.VoteUp) },
                 modifier = Modifier.fillMaxWidth(),
             )
             AppButton(
-                text = "设为打开评论区",
+                text = ContentStrings.doubleTapComments,
                 onClick = { onSelect(AnswerDoubleTapAction.OpenComments) },
                 modifier = Modifier.fillMaxWidth(),
             )
             AppButton(
-                text = "设为开关沉浸式",
+                text = ContentStrings.doubleTapImmersive,
                 onClick = { onSelect(AnswerDoubleTapAction.ToggleImmersive) },
                 modifier = Modifier.fillMaxWidth(),
             )

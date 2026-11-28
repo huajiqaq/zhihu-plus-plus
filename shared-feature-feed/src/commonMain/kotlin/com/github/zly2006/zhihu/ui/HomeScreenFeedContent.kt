@@ -35,11 +35,13 @@ import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppScaffold
+import com.github.zly2006.zhihu.ui.components.ContentSkeleton
 import com.github.zly2006.zhihu.ui.components.FeedAuthorBlockRequest
 import com.github.zly2006.zhihu.ui.components.FeedCard
 import com.github.zly2006.zhihu.ui.components.FeedPullToRefresh
 import com.github.zly2006.zhihu.ui.components.PageTurnTarget
 import com.github.zly2006.zhihu.ui.components.PaginatedList
+import com.github.zly2006.zhihu.ui.components.SkeletonLayout
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.feed.BaseFeedViewModel
@@ -117,6 +119,7 @@ internal fun HomeScreenFeedContent(
                 onLoadMore = { viewModel.loadMore(paginationEnvironment) },
                 isEnd = { viewModel.isEnd },
                 isLoading = { viewModel.isLoading },
+                initialLoadingContent = { ContentSkeleton(SkeletonLayout.Feed) },
                 loadError = { viewModel.errorMessage },
                 onRetry = { viewModel.retry(paginationEnvironment) },
                 key = { item -> item.stableKey },

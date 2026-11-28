@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCheckbox
@@ -69,8 +70,8 @@ internal fun BlocklistSettingsAddDialog(
         )
 
         BlocklistTab.QuestionAuthors -> AddUserDialog(
-            title = "添加屏蔽提问者",
-            hint = "添加后会屏蔽该用户提出的问题，不影响该用户回答别人问题的内容",
+            title = AccountStrings.blockQuestionAuthorTitle,
+            hint = AccountStrings.blockQuestionAuthorHint,
             submitting = submitting,
             onDismiss = dismiss,
             onConfirm = onConfirmQuestionAuthor,
@@ -98,13 +99,13 @@ private fun AddKeywordDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加屏蔽关键词") },
+        title = { Text(AccountStrings.blockKeywordTitle) },
         text = {
             Column {
                 AppTextField(
                     state = keyword,
-                    labelText = "关键词",
-                    placeholder = "输入要屏蔽的关键词",
+                    labelText = AccountStrings.keyword,
+                    placeholder = AccountStrings.blockKeywordPlaceholder,
                     enabled = !submitting,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -125,7 +126,7 @@ private fun AddKeywordDialog(
                         enabled = !submitting,
                     )
                     Spacer(modifier = Modifier.width(AppDimens.Space8))
-                    Text("区分大小写")
+                    Text(AccountStrings.caseSensitive)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -141,11 +142,11 @@ private fun AddKeywordDialog(
                         enabled = !submitting,
                     )
                     Spacer(modifier = Modifier.width(AppDimens.Space8))
-                    Text("正则表达式")
+                    Text(AccountStrings.regularExpression)
                 }
                 if (isRegex) {
                     Text(
-                        "提示：使用正则表达式可以实现更灵活的匹配，但语法错误会导致该关键词无效",
+                        AccountStrings.regexHint,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = AppDimens.Space8),
@@ -155,7 +156,7 @@ private fun AddKeywordDialog(
         },
         confirmButton = {
             AppButton(
-                text = "添加",
+                text = AccountStrings.add,
                 onClick = {
                     val text = keyword.text.toString()
                     if (text.isNotBlank()) onConfirm(text, caseSensitive, isRegex)
@@ -166,7 +167,7 @@ private fun AddKeywordDialog(
         },
         dismissButton = {
             AppTextButton(
-                text = "取消",
+                text = AccountStrings.cancel,
                 onClick = onDismiss,
                 modifier = Modifier.testTag(BlocklistSettingsTestTags.KEYWORD_DIALOG_DISMISS),
                 enabled = !submitting,
@@ -180,8 +181,8 @@ private fun AddUserDialog(
     submitting: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit,
-    title: String = "添加屏蔽用户",
-    hint: String = "提示：可以从用户主页的URL中获取用户ID",
+    title: String = AccountStrings.blockUserTitle,
+    hint: String = AccountStrings.blockUserHint,
 ) {
     val userId = rememberTextFieldState()
     val userName = rememberTextFieldState()
@@ -193,8 +194,8 @@ private fun AddUserDialog(
             Column {
                 AppTextField(
                     state = userId,
-                    labelText = "用户ID",
-                    placeholder = "输入用户ID",
+                    labelText = AccountStrings.userId,
+                    placeholder = AccountStrings.userIdPlaceholder,
                     enabled = !submitting,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -203,8 +204,8 @@ private fun AddUserDialog(
                 Spacer(modifier = Modifier.height(AppDimens.Space8))
                 AppTextField(
                     state = userName,
-                    labelText = "用户名",
-                    placeholder = "输入用户名（可选）",
+                    labelText = AccountStrings.username,
+                    placeholder = AccountStrings.usernamePlaceholder,
                     enabled = !submitting,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -220,7 +221,7 @@ private fun AddUserDialog(
         },
         confirmButton = {
             AppButton(
-                text = "添加",
+                text = AccountStrings.add,
                 onClick = {
                     val id = userId.text.toString()
                     if (id.isNotBlank()) onConfirm(id, userName.text.toString().ifBlank { id })
@@ -231,7 +232,7 @@ private fun AddUserDialog(
         },
         dismissButton = {
             AppTextButton(
-                text = "取消",
+                text = AccountStrings.cancel,
                 onClick = onDismiss,
                 modifier = Modifier.testTag(BlocklistSettingsTestTags.USER_DIALOG_DISMISS),
                 enabled = !submitting,
@@ -251,18 +252,18 @@ private fun AddTopicDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加屏蔽主题") },
+        title = { Text(AccountStrings.blockTopicTitle) },
         text = {
             Column {
                 Text(
-                    "输入要屏蔽的主题ID和名称。主题ID可以从知乎网页版主题链接中获取。",
+                    AccountStrings.blockTopicHint,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(modifier = Modifier.height(AppDimens.Space16))
                 AppTextField(
                     state = topicId,
-                    labelText = "主题ID",
-                    placeholder = "例如: 19550517",
+                    labelText = AccountStrings.topicId,
+                    placeholder = AccountStrings.topicIdExample,
                     enabled = !submitting,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -271,8 +272,8 @@ private fun AddTopicDialog(
                 Spacer(modifier = Modifier.height(AppDimens.Space8))
                 AppTextField(
                     state = topicName,
-                    labelText = "主题名称",
-                    placeholder = "例如: 娱乐",
+                    labelText = AccountStrings.topicName,
+                    placeholder = AccountStrings.topicNameExample,
                     enabled = !submitting,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -282,7 +283,7 @@ private fun AddTopicDialog(
         },
         confirmButton = {
             AppButton(
-                text = "添加",
+                text = AccountStrings.add,
                 onClick = {
                     val id = topicId.text.toString()
                     if (id.isNotBlank()) onConfirm(id, topicName.text.toString().ifBlank { id })
@@ -293,7 +294,7 @@ private fun AddTopicDialog(
         },
         dismissButton = {
             AppTextButton(
-                text = "取消",
+                text = AccountStrings.cancel,
                 onClick = onDismiss,
                 modifier = Modifier.testTag(BlocklistSettingsTestTags.TOPIC_DIALOG_DISMISS),
                 enabled = !submitting,

@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -47,21 +48,22 @@ fun JvmSystemNotificationHost(
 ) {
     val currentWake = rememberUpdatedState(wakeWindow)
     val currentOpen = rememberUpdatedState(onOpen)
-    var adapter by remember { mutableStateOf<RunningSystemNotificationAdapter>(UnavailableJvmNotifications("正在连接桌面通知服务")) }
+    var adapter by remember { mutableStateOf<RunningSystemNotificationAdapter>(UnavailableJvmNotifications { NotificationsStrings.jvmConnecting }) }
     LaunchedEffect(wakeWindow != null) {
         var prepared: RunningSystemNotificationAdapter? = null
         try {
             withContext(Dispatchers.IO) {
                 val os = System.getProperty("os.name")
                 prepared = when {
-                    wakeWindow == null -> UnavailableJvmNotifications("当前宿主没有可唤醒的通知目标窗口")
+                    wakeWindow == null -> UnavailableJvmNotifications { NotificationsStrings.jvmWindowMissing }
                     os.startsWith("Linux", ignoreCase = true) -> runCatching { LinuxSystemNotifications.connect() }
-                        .getOrElse { UnavailableJvmNotifications("无法连接支持点击的本机 Unix D-Bus 通知服务，请检查桌面会话后重新启动应用；退出后不能从通知启动。") }
-                    os.startsWith("Windows", ignoreCase = true) -> runCatching { WindowsSystemNotifications.connect() }
-                        .getOrElse {
-                            UnavailableJvmNotifications("当前安装方式或窗口不支持系统通知。请使用已签名安装、已启用通知的 Windows MSIX 版本；应用仍可正常使用。")
-                        }
-                    else -> UnavailableJvmNotifications("此 JVM 宿主暂不支持系统通知")
+                        .getOrElse { UnavailableJvmNotifications { NotificationsStrings.jvmLinuxUnavailable } }
+                    os.startsWith("Windows", ignoreCase = true) -> runCatching {
+                        if (WindowsNotificationBridge.available()) WindowsSystemNotifications.connect() else PortableSystemNotifications.connect()
+                    }.getOrElse { UnavailableJvmNotifications { NotificationsStrings.jvmWindowsUnavailable } }
+                    os.startsWith("Mac", ignoreCase = true) -> runCatching { PortableSystemNotifications.connect() }
+                        .getOrElse { UnavailableJvmNotifications { NotificationsStrings.appleUnavailable } }
+                    else -> UnavailableJvmNotifications { NotificationsStrings.jvmUnsupported }
                 }
             }
             adapter = checkNotNull(prepared)
@@ -85,8 +87,10 @@ fun JvmSystemNotificationHost(
 }
 
 private class UnavailableJvmNotifications(
-    override val availabilityDescription: String,
+    private val description: () -> String,
 ) : RunningSystemNotificationAdapter {
+    override val availabilityDescription: String get() = description()
+
     override fun activate(onClick: (String) -> Unit): AutoCloseable? = null
 
     override fun loadState(): DeviceNotificationState = error(availabilityDescription)

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.Person
@@ -94,7 +95,7 @@ internal fun MobileNotificationTimelineItem.displayTitle(): String =
         ?.takeIf { it.isNotBlank() }
         ?: detailTitle.takeIf { it.isNotBlank() }
         ?: target?.name?.takeIf { it.isNotBlank() }
-        ?: "通知"
+        ?: NotificationsStrings.notification
 
 internal fun MobileNotificationTimelineItem.avatarUrl(): String =
     head?.avatarUrl?.takeIf { it.isNotBlank() }
@@ -124,7 +125,7 @@ internal fun MobileNotificationTimelineItem.avatarDestination(): Person? {
         return Person(
             id = author.id?.takeIf(String::isNotBlank) ?: Person.EMPTY_ID,
             urlToken = author.urlToken,
-            name = author.name.ifBlank { "用户" },
+            name = author.name.ifBlank { NotificationsStrings.user },
         )
     }
     if (actorLink is Person) {
@@ -136,7 +137,7 @@ internal fun MobileNotificationTimelineItem.avatarDestination(): Person? {
                 (it.urlToken.isNotBlank() || it.id.isNotBlank()) &&
                 (head?.avatarUrl.isNullOrBlank() || head?.avatarUrl == it.avatarUrl)
         }?.let {
-            Person(id = it.id.ifBlank { Person.EMPTY_ID }, urlToken = it.urlToken, name = it.name.ifBlank { "用户" })
+            Person(id = it.id.ifBlank { Person.EMPTY_ID }, urlToken = it.urlToken, name = it.name.ifBlank { NotificationsStrings.user })
         }
 }
 
@@ -155,7 +156,7 @@ internal fun MobileNotificationTimelineItem.navDestination(): NavDestination? {
                 Person(
                     id = it.id.ifBlank { Person.EMPTY_ID },
                     urlToken = it.urlToken,
-                    name = it.name.ifBlank { "loading..." },
+                    name = it.name.ifBlank { NotificationsStrings.loading },
                 )
             }
     }

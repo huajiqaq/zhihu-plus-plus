@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.rememberLifecycleOwner
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import com.github.zly2006.zhihu.navigation.AppNavDisplay
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.EmptyDetail
@@ -66,7 +67,6 @@ import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
-import com.github.zly2006.zhihu.navigation.AppNavDisplay as NavDisplay
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -103,7 +103,7 @@ internal fun ZhihuMainDetailPane(
         LocalReadingPlayerOverlayPadding provides readingPlayerOverlayPadding,
         LocalReadingPlayerOverlayOffsetState provides readingPlayerOverlayOffsetState,
     ) {
-        NavDisplay(
+        AppNavDisplay(
             navHost = detailHost,
             modifier = paneModifier.clipToBounds().testTag("detail_pane"),
             onBack = detailHost::onBack,

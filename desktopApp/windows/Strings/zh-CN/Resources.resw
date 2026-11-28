@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <data name="AppName" xml:space="preserve"><value>知乎++</value></data>
+    <data name="AppDescription" xml:space="preserve"><value>免费、无广告的第三方知乎客户端</value></data>
+    <data name="NotificationName" xml:space="preserve"><value>知乎++通知</value></data>
+    <data name="NewMessage" xml:space="preserve"><value>有新的消息，点击查看</value></data>
+    <data name="LaunchFailure" xml:space="preserve"><value>无法启动 Windows MSIX 应用。请重新安装正式签名包，或使用不带系统通知的常规桌面版本。</value></data>
+</root>

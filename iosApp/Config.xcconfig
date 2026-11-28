@@ -7,11 +7,27 @@ ARCHS = arm64
 TARGETED_DEVICE_FAMILY = 1,2
 IPHONEOS_DEPLOYMENT_TARGET = 16.0
 SUPPORTS_MACCATALYST = NO
-PRODUCT_BUNDLE_IDENTIFIER = com.github.zly2006.zhihu.ios
-PRODUCT_NAME = $(TARGET_NAME)
+ZHIHU_IOS_VARIANT = full
+ZHIHU_IOS_BUNDLE_SUFFIX_full =
+ZHIHU_IOS_BUNDLE_SUFFIX_lite = .lite
+ZHIHU_IOS_PRODUCT_SUFFIX_full =
+ZHIHU_IOS_PRODUCT_SUFFIX_lite = Lite
+ZHIHU_IOS_DISPLAY_NAME_full = Zhihu++
+ZHIHU_IOS_DISPLAY_NAME_lite = Zhihu++ Lite
+ZHIHU_IOS_DISPLAY_NAME = $(ZHIHU_IOS_DISPLAY_NAME_$(ZHIHU_IOS_VARIANT))
+PRODUCT_BUNDLE_IDENTIFIER = com.github.zly2006.zhihu.ios$(ZHIHU_IOS_BUNDLE_SUFFIX_$(ZHIHU_IOS_VARIANT))
+PRODUCT_NAME = $(TARGET_NAME)$(ZHIHU_IOS_PRODUCT_SUFFIX_$(ZHIHU_IOS_VARIANT))
 INFOPLIST_FILE = $(DERIVED_FILE_DIR)/ZhihuPlusPlus-Info.plist
+ZHIHU_IOS_KONAN_TARGET[sdk=iphoneos*] = iosArm64
+ZHIHU_IOS_KONAN_TARGET[sdk=iphonesimulator*] = iosSimulatorArm64
+ZHIHU_IOS_LICENSE_STAGING_DIR = $(DERIVED_FILE_DIR)/apple-licenses/$(ZHIHU_IOS_VARIANT)/$(ZHIHU_IOS_KONAN_TARGET)
 SWIFT_VERSION = 5.0
 CLANG_ENABLE_MODULES = YES
 ENABLE_USER_SCRIPT_SANDBOXING = NO
 FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
-OTHER_LDFLAGS = $(inherited) -framework Shared -framework Security -framework UniformTypeIdentifiers -framework UserNotifications -lc++
+ZHIHU_IOS_ORT_SLICE[sdk=iphoneos*] = ios-arm64
+ZHIHU_IOS_ORT_SLICE[sdk=iphonesimulator*] = ios-arm64_x86_64-simulator
+// Shared is static; only the Full executable links the official ORT archive.
+ZHIHU_IOS_NLP_LDFLAGS_full = -force_load "$(SRCROOT)/../shared-domain/build/generated/onnxruntime-apple/$(ZHIHU_IOS_ORT_SLICE)/onnxruntime.framework/onnxruntime" -weak_framework CoreML
+ZHIHU_IOS_NLP_LDFLAGS_lite =
+OTHER_LDFLAGS = $(inherited) -framework Shared -framework Security -framework UniformTypeIdentifiers -framework UserNotifications -lc++ $(ZHIHU_IOS_NLP_LDFLAGS_$(ZHIHU_IOS_VARIANT))

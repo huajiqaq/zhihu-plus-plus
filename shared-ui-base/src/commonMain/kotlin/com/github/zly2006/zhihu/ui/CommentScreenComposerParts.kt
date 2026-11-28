@@ -70,12 +70,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.markdown.rememberMarkdownImageModel
 import com.github.zly2006.zhihu.platform.rememberImagePreviewOpener
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -87,7 +89,6 @@ import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.comment.CommentImageAttachment
 import com.github.zly2006.zhihu.viewmodel.comment.CommentSticker
 import com.github.zly2006.zhihu.viewmodel.comment.MentionCandidate
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -114,28 +115,37 @@ internal fun CommentScreenTools(
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         if (voiceRecorder.isSupported) {
-            if (voiceRecorder.isRecording) {
+            if (voiceRecorder.isBusy) {
+                AppSpinner(size = AppDimens.IconSizeCompact)
+                AppIconButton(onClick = voiceRecorder::cancel, modifier = Modifier.size(AppDimens.TouchTarget)) {
+                    AppIcon(Icons.Default.Close, contentDescription = CommentsStrings.removeVoice)
+                }
+            } else if (voiceRecorder.isRecording) {
                 AppIconButton(
                     onClick = { stopVoiceRecording() },
+                    enabled = !voiceRecorder.isBusy,
                     modifier = Modifier
                         .size(AppDimens.TouchTarget)
                         .testTag(COMMENT_VOICE_RECORD_BUTTON_TAG),
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.Filled.Stop,
-                        contentDescription = "停止录音",
+                        contentDescription = CommentsStrings.stopRecording,
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
+                AppIconButton(onClick = voiceRecorder::cancel, modifier = Modifier.size(AppDimens.TouchTarget)) {
+                    AppIcon(Icons.Default.Close, contentDescription = CommentsStrings.removeVoice)
+                }
                 Text(
-                    text = "录音中 ${(recordingElapsedMs / 1000).coerceAtLeast(0)}″",
+                    text = CommentsStrings.recordingSeconds((recordingElapsedMs / 1000).coerceAtLeast(0).toInt()),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
             } else {
                 AppButton(
                     onClick = { requestVoicePermission() },
-                    enabled = !isSending && !isUploadingImage && !isUploadingVoice,
+                    enabled = !isSending && !isUploadingImage && !isUploadingVoice && !voiceRecorder.isBusy,
                     modifier = Modifier
                         .heightIn(min = AppDimens.TouchTarget)
                         .testTag(COMMENT_VOICE_BUTTON_TAG),
@@ -144,9 +154,9 @@ internal fun CommentScreenTools(
                     contentColor = if (uploadedVoiceId != null) LocalAppSkinTokens.current.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     contentPadding = PaddingValues(horizontal = AppDimens.Space12, vertical = AppDimens.Space8),
                 ) {
-                    Icon(Icons.Outlined.Mic, contentDescription = "录制语音评论")
+                    AppIcon(Icons.Outlined.Mic, contentDescription = CommentsStrings.recordVoiceComment)
                     Spacer(modifier = Modifier.width(AppDimens.Space4))
-                    Text("语音", style = LocalAppSkinTokens.current.footnote2)
+                    Text(CommentsStrings.voice, style = LocalAppSkinTokens.current.footnote2)
                 }
             }
         }
@@ -165,18 +175,19 @@ internal fun CommentScreenTools(
                 if (isUploadingImage) {
                     AppSpinner(size = AppDimens.IconSizeCompact)
                 } else {
-                    Icon(Icons.Outlined.Image, contentDescription = "添加图片")
+                    AppIcon(Icons.Outlined.Image, contentDescription = CommentsStrings.addImage)
                 }
                 Spacer(modifier = Modifier.width(AppDimens.Space4))
-                Text("图片", style = LocalAppSkinTokens.current.footnote2)
+                Text(CommentsStrings.image, style = LocalAppSkinTokens.current.footnote2)
             }
         }
         if (!voiceRecorder.isSupported || launchImagePicker == null) {
             Text(
-                "当前平台暂不支持" + listOfNotNull(
-                    "录音".takeUnless { voiceRecorder.isSupported },
-                    "选图".takeIf { launchImagePicker == null },
-                ).joinToString("、"),
+                when {
+                    !voiceRecorder.isSupported && launchImagePicker == null -> CommentsStrings.recordingAndImagesUnavailable
+                    !voiceRecorder.isSupported -> CommentsStrings.recordingUnavailable
+                    else -> CommentsStrings.imagePickerUnavailable
+                },
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -191,9 +202,9 @@ internal fun CommentScreenTools(
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             contentPadding = PaddingValues(horizontal = AppDimens.Space12, vertical = AppDimens.Space8),
         ) {
-            Icon(Icons.Outlined.AlternateEmail, contentDescription = "提及用户")
+            AppIcon(Icons.Outlined.AlternateEmail, contentDescription = CommentsStrings.mentionUser)
             Spacer(modifier = Modifier.width(AppDimens.Space4))
-            Text("提及", style = LocalAppSkinTokens.current.footnote2)
+            Text(CommentsStrings.mention, style = LocalAppSkinTokens.current.footnote2)
         }
     }
 }
@@ -221,16 +232,16 @@ internal fun CommentScreenVoicePreview(
                 .size(32.dp)
                 .testTag(COMMENT_VOICE_PREVIEW_TAG),
         ) {
-            Icon(
+            AppIcon(
                 imageVector = if (voicePreviewPlayer.playingUrl == voice.filePath) {
                     Icons.Filled.Pause
                 } else {
                     Icons.Filled.PlayArrow
                 },
                 contentDescription = if (voicePreviewPlayer.playingUrl == voice.filePath) {
-                    "暂停语音"
+                    CommentsStrings.pauseVoice
                 } else {
-                    "播放语音"
+                    CommentsStrings.playVoice
                 },
                 modifier = Modifier.size(18.dp),
             )
@@ -245,7 +256,7 @@ internal fun CommentScreenVoicePreview(
                 AppSpinner(size = 14.dp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "语音上传中…",
+                    text = CommentsStrings.voiceUploading,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -253,14 +264,14 @@ internal fun CommentScreenVoicePreview(
             }
 
             uploadedVoiceId != null -> Text(
-                text = "语音已就绪",
+                text = CommentsStrings.voiceReady,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
 
             voiceUploadError != null -> AppTextButton(
-                text = "重试上传",
+                text = CommentsStrings.retryUpload,
                 onClick = { uploadRecordedVoice() },
                 enabled = !isSending,
                 modifier = Modifier
@@ -272,7 +283,7 @@ internal fun CommentScreenVoicePreview(
             )
 
             else -> Text(
-                text = "等待上传",
+                text = CommentsStrings.waitingToUpload,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -285,9 +296,9 @@ internal fun CommentScreenVoicePreview(
                 .size(32.dp)
                 .testTag(COMMENT_VOICE_DELETE_TAG),
         ) {
-            Icon(
+            AppIcon(
                 Icons.Default.Close,
-                contentDescription = "移除语音",
+                contentDescription = CommentsStrings.removeVoice,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -314,7 +325,7 @@ internal fun CommentScreenPendingAttachments(
                 Box {
                     AsyncImage(
                         model = rememberMarkdownImageModel(image.url),
-                        contentDescription = "待发送图片",
+                        contentDescription = CommentsStrings.pendingImage,
                         modifier = Modifier
                             .size(56.dp)
                             .clip(RoundedCornerShape(8.dp))
@@ -330,9 +341,9 @@ internal fun CommentScreenPendingAttachments(
                             .align(Alignment.TopEnd)
                             .size(20.dp),
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.Default.Close,
-                            contentDescription = "移除图片",
+                            contentDescription = CommentsStrings.removeImage,
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -352,7 +363,7 @@ internal fun CommentScreenPendingAttachments(
                 Box {
                     AsyncImage(
                         model = sticker.commentUrl,
-                        contentDescription = sticker.title.ifBlank { "待发送贴纸" },
+                        contentDescription = sticker.title.ifBlank { CommentsStrings.pendingSticker },
                         modifier = Modifier
                             .size(56.dp)
                             .clip(RoundedCornerShape(8.dp))
@@ -368,9 +379,9 @@ internal fun CommentScreenPendingAttachments(
                             .align(Alignment.TopEnd)
                             .size(20.dp),
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.Default.Close,
-                            contentDescription = "移除贴纸",
+                            contentDescription = CommentsStrings.removeSticker,
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -390,13 +401,13 @@ internal fun CommentScreenMentionPicker(
 ) {
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("提及用户") },
+        title = { Text(CommentsStrings.mentionUser) },
         text = {
             Column {
                 AppTextField(
                     state = mentionQuery,
-                    labelText = "搜索提及的用户",
-                    placeholder = "搜索用户",
+                    labelText = CommentsStrings.searchMentionUsers,
+                    placeholder = CommentsStrings.searchUsers,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = AppDimens.TouchTarget)
@@ -415,7 +426,7 @@ internal fun CommentScreenMentionPicker(
 
                     mentionResults.isEmpty() -> {
                         Text(
-                            text = "没有找到用户",
+                            text = CommentsStrings.noUsersFound,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -455,7 +466,7 @@ internal fun CommentScreenMentionPicker(
         },
         confirmButton = {
             AppTextButton(
-                text = "关闭",
+                text = CommentsStrings.close,
                 onClick = onDismiss,
                 modifier = Modifier.heightIn(min = AppDimens.TouchTarget),
             )
@@ -485,7 +496,7 @@ internal fun ColumnScope.CommentScreenReplyBanner(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
+                AppIcon(
                     Icons.AutoMirrored.Filled.Reply,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
@@ -493,7 +504,13 @@ internal fun ColumnScope.CommentScreenReplyBanner(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "回复 ${replyToComment?.item?.author?.name ?: ""}",
+                    text = CommentsStrings.replyToAuthor(
+                        replyToComment
+                            ?.item
+                            ?.author
+                            ?.name
+                            .orEmpty(),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.weight(1f),
@@ -504,9 +521,9 @@ internal fun ColumnScope.CommentScreenReplyBanner(
                         .size(24.dp)
                         .testTag(COMMENT_CANCEL_REPLY_TAG),
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.Default.Close,
-                        contentDescription = "取消回复",
+                        contentDescription = CommentsStrings.cancelReply,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     )

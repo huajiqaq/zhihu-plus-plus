@@ -54,15 +54,17 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.currentSystemInDarkTheme
+import com.github.zly2006.zhihu.theme.rememberThemeSnapshot
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.splash_accent
 import zhihu.uicomponents.generated.resources.splash_cat
-import kotlin.math.PI
-import kotlin.math.sin
 
 const val APP_STARTUP_SPLASH_TAG = "app_startup_splash"
 
@@ -84,10 +86,10 @@ fun AppSplashScreen(onFinished: () -> Unit) {
     var splashDrawn by remember { mutableStateOf(false) }
     val entrance = remember { Animatable(if (completed) 1f else 0f) }
     val finish by rememberUpdatedState(onFinished)
-    ThemeManager.ObserveSettings(rememberSettingsStore())
-    val darkTheme = ThemeManager.isDarkTheme()
+    val snapshot by rememberThemeSnapshot(rememberSettingsStore())
+    val darkTheme = snapshot.resolve(currentSystemInDarkTheme()).isDarkTheme
     val background = if (darkTheme) {
-        if (ThemeManager.getAmoledTheme()) Color.Black else Color(0xFF121212)
+        if (snapshot.amoledTheme) Color.Black else Color(0xFF121212)
     } else {
         Color(0xFFFAFAFA)
     }
@@ -110,7 +112,7 @@ fun AppSplashScreen(onFinished: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .testTag(APP_STARTUP_SPLASH_TAG)
-                .semantics { paneTitle = "启动页" }
+                .semantics { paneTitle = WidgetsStrings.startupScreen }
                 .drawWithContent {
                     drawContent()
                     if (!splashDrawn) splashDrawn = true
@@ -168,7 +170,7 @@ fun AppSplashScreen(onFinished: () -> Unit) {
                 }
                 Spacer(Modifier.height(8.dp))
                 BasicText(
-                    "知乎++",
+                    WidgetsStrings.appName,
                     style = TextStyle(color = textColor, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
                     modifier = Modifier.graphicsLayer {
                         val progress = FastOutSlowInEasing.transform(((entrance.value - 0.22f) / 0.52f).coerceIn(0f, 1f))
@@ -178,7 +180,7 @@ fun AppSplashScreen(onFinished: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
                 BasicText(
-                    "让阅读回归内容",
+                    WidgetsStrings.startupTagline,
                     style = TextStyle(color = textColor.copy(alpha = 0.55f), fontSize = 14.sp, letterSpacing = 2.sp),
                     modifier = Modifier.graphicsLayer {
                         alpha = ((entrance.value - 0.38f) / 0.44f).coerceIn(0f, 1f)

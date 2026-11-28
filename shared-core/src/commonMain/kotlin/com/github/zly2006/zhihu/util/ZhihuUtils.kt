@@ -18,6 +18,9 @@
 package com.github.zly2006.zhihu.util
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.AppLanguage
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.CoreStrings
 import io.ktor.client.call.body
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -26,16 +29,13 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
+import kotlin.jvm.JvmName
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlin.jvm.JvmName
-import kotlin.math.roundToInt
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 class HttpStatusException(
     val status: HttpStatusCode,
@@ -61,27 +61,32 @@ fun Url.isZhihuLoginRiskControl(): Boolean =
         (host == "zhihu.com" || host.endsWith(".zhihu.com")) &&
         encodedPath.split('/').any { it == "unhuman" || it == "risk_control" }
 
-fun formatCompactCount(count: Int): String = when {
-    count >= 10_000 -> {
-        if (count % 10_000 == 0) {
-            "${count / 10_000} 万"
-        } else {
-            val roundedTenths = ((count / 10_000.0) * 10).roundToInt() / 10.0
-            "$roundedTenths 万"
-        }
+fun formatCompactCount(count: Int): String {
+    val english = AppLocale.current == AppLanguage.English
+    val scale = when {
+        !english && count >= 10_000 -> 10_000
+        english && count >= 1_000_000_000 -> 1_000_000_000
+        english && count >= 1_000_000 -> 1_000_000
+        english && count >= 1_000 -> 1_000
+        else -> return count.toString()
     }
-
-    else -> count.toString()
+    val tenths = (count.toLong() * 10 + scale / 2) / scale
+    val number = if (tenths % 10 == 0L && (english || count % scale == 0)) (tenths / 10).toString() else (tenths / 10.0).toString()
+    return when (scale) {
+        1_000_000_000 -> CoreStrings.compactBillions(number)
+        1_000_000 -> CoreStrings.compactMillions(number)
+        1_000 -> CoreStrings.compactThousands(number)
+        else -> CoreStrings.compactTenThousands(number)
+    }
 }
 
 fun formatDailyDate(dateString: String): String {
     if (dateString.length != 8 || dateString.any { !it.isDigit() }) {
         return dateString
     }
-    return "${dateString.substring(0, 4)}年${dateString.substring(4, 6)}月${dateString.substring(6, 8)}日"
+    return CoreStrings.dailyDate(dateString.substring(0, 4), dateString.substring(4, 6), dateString.substring(6, 8))
 }
 
-@OptIn(ExperimentalTime::class)
 fun formatRelativeTime(
     epochSeconds: Long,
     nowEpochSeconds: Long = Clock.System.now().epochSeconds,
@@ -90,10 +95,10 @@ fun formatRelativeTime(
     val diff = nowEpochSeconds - epochSeconds
 
     return when {
-        diff < 60 -> "刚刚"
-        diff < 3_600 -> "${diff / 60}分钟前"
-        diff < 86_400 -> "${diff / 3_600}小时前"
-        diff < 604_800 -> "${diff / 86_400}天前"
+        diff < 60 -> CoreStrings.justNow
+        diff < 3_600 -> CoreStrings.minutesAgo(diff / 60)
+        diff < 86_400 -> CoreStrings.hoursAgo(diff / 3_600)
+        diff < 604_800 -> CoreStrings.daysAgo(diff / 86_400)
         else -> {
             val dateTime = Instant
                 .fromEpochSeconds(epochSeconds)
@@ -109,7 +114,6 @@ fun formatRelativeTime(
     }
 }
 
-@OptIn(ExperimentalTime::class)
 fun formatFullDateTime(epochSeconds: Long): String {
     val dateTime = Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(TimeZone.currentSystemDefault())
     return buildString {
@@ -139,9 +143,5 @@ fun extractImageUrl(attribute: (String) -> String): String? =
         ?: attribute("data-thumbnail").takeIf { it.isNotBlank() }
         ?: attribute("src").takeIf { it.isNotBlank() }
 
-suspend fun HttpResponse.json() = this.body<JsonElement>()
-
-suspend fun HttpResponse.jsonObject() = this.body<JsonObject>()
-
 @JvmName("jsonTyped")
-suspend inline fun <reified T> HttpResponse.json() = ZhihuJson.decodeJson<T>(this.json())
+suspend inline fun <reified T> HttpResponse.json() = ZhihuJson.decodeJson<T>(this.body<JsonElement>())

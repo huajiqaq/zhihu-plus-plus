@@ -26,13 +26,13 @@ private const val LOCAL_CONTENT_DATABASE_NAME = "local_content_database"
 @Volatile
 private var localContentDatabase: LocalContentDatabase? = null
 
-actual fun getLocalContentDatabase(): LocalContentDatabase? =
+actual fun getLocalContentDatabase(): LocalContentDatabase =
     localContentDatabase ?: getLocalContentDatabase(currentAndroidApplicationContext())
 
 fun getLocalContentDatabase(context: Context): LocalContentDatabase =
     localContentDatabase ?: synchronized(LocalContentDatabase::class) {
         localContentDatabase ?: buildLocalContentDatabase(
-            Room.databaseBuilder<LocalContentDatabase>(
+            Room.databaseBuilder<RoomLocalContentDatabase>(
                 context.applicationContext,
                 LOCAL_CONTENT_DATABASE_NAME,
             ),

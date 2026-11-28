@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!--
+ Zhihu++ - Free & Ad-Free Zhihu client for all platforms.
+ Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation (version 3 only).
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with this program. If not, see <https://www.gnu.org/licenses/>.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+    <meta name="referrer" content="no-referrer">
+    <meta name="zhihu-build-id" content="development">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" type="image/png" href="./icon-192.png">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <title>Zhihu++</title>
+    <script>
+        (() => {
+            const root = document.documentElement;
+            const isChinese = lang => /^zh(?:-|$)/i.test(lang);
+            const firstSupported = (navigator.languages || [navigator.language]).find(lang => /^(zh|en)(?:-|$)/i.test(lang));
+            root.lang = isChinese(firstSupported) ? 'zh-CN' : 'en';
+            const updateTitle = () => { document.title = isChinese(root.lang) ? '知乎++' : 'Zhihu++'; };
+            updateTitle();
+            new MutationObserver(updateTitle).observe(root, {attributes: true, attributeFilter: ['lang']});
+        })();
+    </script>
+    <style>
+        html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        body { overscroll-behavior: none; }
+        #boot-status, .boot-noscript {
+            position: fixed; inset: 0; z-index: 1; box-sizing: border-box; padding: 24px;
+            display: grid; place-content: center; overflow: auto;
+            color-scheme: light dark; color: CanvasText; background: Canvas;
+            font: 16px/1.6 system-ui, sans-serif;
+        }
+        #boot-status p, .boot-noscript p { max-width: 36em; }
+        #boot-status h1 { font-size: 24px; margin: 0; }
+        #boot-retry { justify-self: start; padding: 8px 20px; font: inherit; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <main id="app" aria-busy="true"></main>
+    <section id="boot-status" role="status" aria-live="polite" aria-atomic="true">
+        <h1 id="boot-title">Loading Zhihu++…</h1>
+        <p id="boot-detail">The first visit downloads the app and rendering engine. Your browser may cache them for later visits.</p>
+        <button id="boot-retry" type="button" hidden>Reload</button>
+    </section>
+    <noscript>
+        <style>#boot-status { display: none; }</style>
+        <div class="boot-noscript">
+            <p lang="en">To use Zhihu++, enable JavaScript and use a browser that supports WebAssembly GC.</p>
+            <p lang="zh-CN">知乎++需要启用 JavaScript，并使用支持 WebAssembly GC 的浏览器。</p>
+        </div>
+    </noscript>
+    <script>
+        (() => {
+            const status = document.getElementById('boot-status');
+            const title = document.getElementById('boot-title');
+            const detail = document.getElementById('boot-detail');
+            const retry = document.getElementById('boot-retry');
+            const chinese = /^zh(?:-|$)/i.test(document.documentElement.lang);
+            title.textContent = chinese ? '正在加载知乎++…' : 'Loading Zhihu++…';
+            detail.textContent = chinese
+                ? '首次访问需要下载应用和渲染引擎；后续访问可复用浏览器缓存。'
+                : 'The first visit downloads the app and rendering engine. Your browser may cache them for later visits.';
+            retry.textContent = chinese ? '重新加载' : 'Reload';
+            retry.addEventListener('click', () => location.reload());
+            const showFailure = () => {
+                title.textContent = chinese ? '知乎++未能启动' : 'Zhihu++ could not start';
+                detail.textContent = chinese
+                    ? '请检查网络后重试，并确认浏览器支持 WebAssembly GC。仍无法启动时，可查看浏览器控制台中的错误。'
+                    : 'Check your connection and retry in a browser that supports WebAssembly GC. If this persists, check the browser console for errors.';
+                retry.hidden = false;
+            };
+            const onError = event => {
+                if (event.target === window || event.target?.id === 'app-script') showFailure();
+            };
+            const finish = () => {
+                window.removeEventListener('error', onError, true);
+                window.removeEventListener('unhandledrejection', showFailure);
+                document.getElementById('app').removeAttribute('aria-busy');
+                status.remove();
+            };
+            // 捕获脚本网络失败；Wasm 异步编译失败由 unhandledrejection 处理，不吞控制台错误。
+            window.addEventListener('error', onError, true);
+            window.addEventListener('unhandledrejection', showFailure);
+            window.addEventListener('zhihu-app-ready', finish, {once: true});
+        })();
+    </script>
+    <script id="app-script" src="zhihu.js" defer></script>
+</body>
+</html>

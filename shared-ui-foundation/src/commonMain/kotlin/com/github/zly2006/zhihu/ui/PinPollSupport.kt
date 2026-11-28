@@ -20,10 +20,11 @@ package com.github.zly2006.zhihu.ui
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.pinSummaryText
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
+import kotlin.time.Clock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlin.time.Clock
 
 const val ZHIHU_PLUS_AUTHOR_URL_TOKEN = "scanmenge"
 const val ZHIHU_PLUS_AUTHOR_PINS_URL = "https://www.zhihu.com/api/v4/v2/pins/$ZHIHU_PLUS_AUTHOR_URL_TOKEN/moments"
@@ -38,10 +39,18 @@ data class HomePinAnnouncement(
     val pinId: Long,
     val kind: HomePinAnnouncementKind,
     val createdAtEpochSeconds: Long = 0L,
-    val title: String,
+    private val sourceTitle: String,
     val optionCount: Int,
     val memberCount: Int,
-)
+) {
+    val title: String
+        get() = sourceTitle.ifBlank {
+            when (kind) {
+                HomePinAnnouncementKind.Poll -> WidgetsStrings.pinPoll
+                HomePinAnnouncementKind.Topic -> WidgetsStrings.appUpdatePost
+            }
+        }
+}
 
 fun decodeHomePinAnnouncements(
     response: JsonObject,
@@ -89,29 +98,23 @@ fun DataHolder.Pin.Poll.acceptsVote(nowEpochSeconds: Long = Clock.System.now().e
 
 fun DataHolder.Pin.Poll.statusText(): String {
     val voteState = if (isVoted) {
-        "已投票"
+        WidgetsStrings.pollVoted
     } else if (maxSelections > 1) {
-        "最多选择 $maxSelections 项"
+        WidgetsStrings.pollChooseUpTo(maxSelections)
     } else {
-        "最多选择一项"
+        WidgetsStrings.pollChooseOne
     }
     val validity = when {
-        endAt < 0 -> "长期有效"
-        endAt <= Clock.System.now().epochSeconds -> "投票已结束"
+        endAt < 0 -> WidgetsStrings.pollNoEndDate
+        endAt <= Clock.System.now().epochSeconds -> WidgetsStrings.pollEnded
         else -> null
     }
-    return buildString {
-        append(voteState)
-        if (isVoted || memberCount > 0) {
-            append("，")
-            append(memberCount)
-            append(" 人参与")
-        }
-        if (validity != null) {
-            append("，")
-            append(validity)
-        }
+    val participation = if (isVoted || memberCount > 0) {
+        WidgetsStrings.pollStatusDetail(voteState, WidgetsStrings.pollParticipants(memberCount))
+    } else {
+        voteState
     }
+    return validity?.let { WidgetsStrings.pollStatusDetail(participation, it) } ?: participation
 }
 
 fun DataHolder.Pin.toHomePinAnnouncement(): HomePinAnnouncement? {
@@ -122,7 +125,7 @@ fun DataHolder.Pin.toHomePinAnnouncement(): HomePinAnnouncement? {
             pinId = pinId,
             kind = HomePinAnnouncementKind.Poll,
             createdAtEpochSeconds = created,
-            title = poll.title.ifBlank { "想法投票" },
+            sourceTitle = poll.title,
             optionCount = poll.options.size,
             memberCount = poll.memberCount,
         )
@@ -135,7 +138,7 @@ fun DataHolder.Pin.toHomePinAnnouncement(): HomePinAnnouncement? {
         pinId = pinId,
         kind = HomePinAnnouncementKind.Topic,
         createdAtEpochSeconds = created,
-        title = excerptTitle.substringBefore("<br").pinSummaryText().ifBlank { "知乎++新动态" },
+        sourceTitle = excerptTitle.substringBefore("<br").pinSummaryText(),
         optionCount = 0,
         memberCount = 0,
     )

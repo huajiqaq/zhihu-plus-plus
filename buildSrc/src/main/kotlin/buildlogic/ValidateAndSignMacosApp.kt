@@ -17,6 +17,8 @@
 
 package buildlogic
 
+import java.io.File
+import javax.inject.Inject
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
@@ -26,8 +28,6 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 import org.gradle.work.DisableCachingByDefault
-import java.io.File
-import javax.inject.Inject
 
 @DisableCachingByDefault(because = "Ad-hoc codesigning mutates the assembled application bundle")
 abstract class ValidateAndSignMacosApp @Inject constructor(
@@ -62,6 +62,14 @@ abstract class ValidateAndSignMacosApp @Inject constructor(
         check(missingRequiredFiles.isEmpty()) {
             "macOS app is missing required files: ${missingRequiredFiles.joinToString()}"
         }
+        val onnxRuntime = bundle.resolve("Contents/Frameworks/libonnxruntime.1.dylib")
+        check(onnxRuntime.isFile) { "macOS app is missing ONNX Runtime" }
+        execOperations.exec { spec ->
+            spec.commandLine("/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", onnxRuntime.absolutePath)
+        }.assertNormalExitValue()
+        execOperations.exec { spec ->
+            spec.commandLine("/usr/bin/codesign", "--verify", "--strict", onnxRuntime.absolutePath)
+        }.assertNormalExitValue()
         execOperations.exec { spec ->
             spec.commandLine(
                 "/usr/bin/codesign",

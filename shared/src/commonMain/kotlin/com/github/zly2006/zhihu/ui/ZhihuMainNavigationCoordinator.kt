@@ -17,10 +17,8 @@
 
 package com.github.zly2006.zhihu.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
@@ -34,23 +32,18 @@ import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.OnlineHistoryRoute
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
-import com.github.zly2006.zhihu.navigation.TopLevelDestination
 import com.github.zly2006.zhihu.navigation.Video
 
 /** 主壳导航协调：评论交接、内容打开来源、视频入口、回到主页签。平台差异由构造参数注入。 */
 class ZhihuMainNavigationCoordinator(
     private val mainHost: () -> AppNavHost,
+    private val tabs: () -> ZhihuMainTabsState,
     private val showMessage: (String) -> Unit,
     private val openVideo: (video: Video, contentId: String, contentType: String) -> Unit,
     private val onRouteAccepted: (NavDestination) -> Unit = {},
     private val openMainTabs: (AppNavHost) -> Unit = { it.popToRoot() },
     private val prepareContentOpen: (NavDestination, String) -> Unit = ContentOpenEventSupport::prepareContentOpen,
 ) {
-    var mainTabNavigationTarget: TopLevelDestination? by mutableStateOf(null)
-        private set
-
-    private var currentMainTabOpenFrom: String? = null
-
     fun navigate(
         route: NavDestination,
         targetHost: AppNavHost = mainHost(),
@@ -63,7 +56,7 @@ class ZhihuMainNavigationCoordinator(
         }
         CommentNavigationHandoff.clearCommentUnless(route)
         val host = mainHost()
-        val openFrom = (if (host.top == MainTabs) currentMainTabOpenFrom else null)
+        val openFrom = (if (host.top == MainTabs) tabs().currentDestination.openFrom else null)
             ?: ContentOpenEventSupport.inferOpenFrom(
                 if (targetHost != host && host.top == OnlineHistoryRoute && currentContentOpenSource(targetHost) == null) {
                     OnlineHistoryRoute
@@ -82,7 +75,7 @@ class ZhihuMainNavigationCoordinator(
                 }
                 is Question -> current.questionId.toString() to "question"
                 else -> {
-                    showMessage("无法打开视频：未知的内容类型")
+                    showMessage(AppStrings.videoUnknownType)
                     return
                 }
             }
@@ -90,7 +83,7 @@ class ZhihuMainNavigationCoordinator(
             return
         }
         if (route == MainTabs) {
-            mainTabNavigationTarget = Home
+            tabs().requestTab(Home)
             openMainTabs(mainHost())
             return
         }
@@ -98,21 +91,6 @@ class ZhihuMainNavigationCoordinator(
             targetHost.popToRoot()
         }
         targetHost.open(route)
-    }
-
-    /** 宿主自绘导航（如 macOS 原生侧栏）指定要切到的主页签；传 null 取消尚未消费的请求。 */
-    fun requestMainTab(destination: TopLevelDestination?) {
-        mainTabNavigationTarget = destination
-    }
-
-    fun setCurrentMainTabOpenFrom(openFrom: String?) {
-        currentMainTabOpenFrom = openFrom
-    }
-
-    fun consumeMainTabNavigationTarget(destination: TopLevelDestination) {
-        if (mainTabNavigationTarget == destination) {
-            mainTabNavigationTarget = null
-        }
     }
 
     /** 内容打开来源取触发导航的返回栈，避免误用主栈页面。 */

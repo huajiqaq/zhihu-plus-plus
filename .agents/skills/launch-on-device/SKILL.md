@@ -1,6 +1,6 @@
 ---
 name: launch-on-device
-description: 构建、安装并启动 Zhihu++ Android 调试版，检查 ADB 连接、安装失败和启动错误。用于用户要求部署到已获准设备或模拟器时。
+description: 构建、安装并启动 Zhihu++ Android 调试版，检查 ADB 连接、安装失败和启动错误。用于用户要求部署到已获准的 Android 模拟器时。
 license: CC BY-NC-SA 4.0
 ---
 
@@ -8,7 +8,7 @@ license: CC BY-NC-SA 4.0
 
 ## 使用
 
-在项目根目录执行；ADB 在 PATH 中，设备状态应为 `device`。
+仅在用户要求部署时执行，使用获准的 AVD；设备边界见 [协作说明](../../../CLAUDE.md#构建与验证)。在项目根目录运行，ADB 在 PATH 中，连接状态应为 `device`。
 
 ```bash
 adb devices

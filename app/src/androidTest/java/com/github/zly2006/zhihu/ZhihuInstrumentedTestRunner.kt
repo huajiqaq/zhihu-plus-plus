@@ -18,11 +18,26 @@
 package com.github.zly2006.zhihu
 
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.test.runner.AndroidJUnitRunner
 import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 
+class ZhihuInstrumentedTestApplication : ZhihuApplication() {
+    val environment = InstrumentedTestEnvironment()
+    override val zhihuAccountStore get() = environment.accountStore
+}
+
 class ZhihuInstrumentedTestRunner : AndroidJUnitRunner() {
+    private lateinit var application: ZhihuInstrumentedTestApplication
+    private var testArguments: Bundle? = null
+
+    override fun newApplication(cl: ClassLoader, className: String, context: Context): Application =
+        super.newApplication(cl, ZhihuInstrumentedTestApplication::class.java.name, context).also {
+            application = it as ZhihuInstrumentedTestApplication
+        }
+
     override fun onCreate(arguments: Bundle) {
         if (!arguments.containsKey(TEST_TIMEOUT_ARGUMENT)) {
             arguments.putString(TEST_TIMEOUT_ARGUMENT, DEFAULT_TEST_TIMEOUT_MILLIS.toString())
@@ -39,27 +54,22 @@ class ZhihuInstrumentedTestRunner : AndroidJUnitRunner() {
         listenerNames += timingListenerName
         arguments.putString(TEST_LISTENER_ARGUMENT, listenerNames.joinToString(","))
 
-        InstrumentedTestEnvironment.configureFromArguments(arguments)
+        testArguments = Bundle(arguments)
         super.onCreate(arguments)
     }
 
     override fun callApplicationOnCreate(app: Application) {
-        // Application 的后台入口也必须持有同一个合成账号，不能先初始化真实存储再替换。
-        if (InstrumentedTestEnvironment.isMockMode()) InstrumentedTestEnvironment.reseed(app)
+        // 先建立测试 Application 自己的账号根对象，后台入口不能先打开生产存储。
+        application.environment.configureFromArguments(testArguments)
+        application.environment.reseed(app)
         super.callApplicationOnCreate(app)
-    }
-
-    override fun onStart() {
-        // 父类 onStart 才等待主线程空闲，mock 只在 callApplicationOnCreate 中播种。
-        if (!InstrumentedTestEnvironment.isMockMode()) InstrumentedTestEnvironment.reseed(targetContext)
-        super.onStart()
     }
 
     override fun finish(resultCode: Int, results: Bundle?) {
         try {
-            InstrumentedTestEnvironment.close()
+            if (::application.isInitialized) application.environment.close()
         } catch (error: Exception) {
-            android.util.Log.e("ZHPP_TEST", "关闭设备测试账号根对象失败", error)
+            Log.e("ZHPP_TEST", "关闭设备测试账号根对象失败", error)
         } finally {
             super.finish(resultCode, results)
         }

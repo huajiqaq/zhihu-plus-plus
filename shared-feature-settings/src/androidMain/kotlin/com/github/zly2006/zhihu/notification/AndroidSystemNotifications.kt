@@ -43,7 +43,13 @@ import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuRequestProfile
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
+import com.github.zly2006.zhihu.platform.androidSettingsStore
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
+import java.io.File
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,9 +61,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 private const val WORK_NAME = "zhihu-system-notifications"
 private const val WORK_EPOCH = "subscription_epoch"
@@ -72,12 +75,15 @@ private var runtime: AndroidSystemNotifications? = null
 
 /** Application、设置和 Worker 共用一个所有者；账号 store 及客户端始终只借用。 */
 @Synchronized
-fun androidSystemNotifications(context: Context): AndroidSystemNotifications = runtime ?: AndroidSystemNotifications(
-    context.applicationContext,
-    androidZhihuAccountStore(context),
-).also {
-    runtime = it
-    it.start()
+fun androidSystemNotifications(context: Context): AndroidSystemNotifications {
+    applySavedAppLanguage(androidSettingsStore(context))
+    return runtime ?: AndroidSystemNotifications(
+        context.applicationContext,
+        androidZhihuAccountStore(context),
+    ).also {
+        runtime = it
+        it.start()
+    }
 }
 
 private data class PollOwner(
@@ -109,8 +115,6 @@ class AndroidSystemNotifications internal constructor(
     internal fun start() {
         accounts.observeNotificationReadAll(::beginReadAll)
         refresh()
-        /** 分组上线前已订阅的设备不会再走开关，启动时给既有通道补上归类。 */
-        accounts.withSessionLock { createChannels() }
         scope.launch {
             accounts.accountsState.collect { refresh() }
         }
@@ -120,10 +124,11 @@ class AndroidSystemNotifications internal constructor(
     fun refresh() = accounts.withSessionLock {
         try {
             reconcileAccount()
+            createChannels()
             updateStatus()
             schedule()
         } catch (_: Exception) {
-            updateStatus("无法更新本机通知任务，请稍后重试")
+            updateStatus { NotificationsStrings.androidTaskUpdateFailed }
         }
     }
 
@@ -140,7 +145,7 @@ class AndroidSystemNotifications internal constructor(
                         change.removed.forEach { cancel(it, snapshot.accountId) }
                         updateStatus()
                     } catch (_: Exception) {
-                        updateStatus("标记已读成功，但无法更新本机通知，请稍后重试")
+                        updateStatus { NotificationsStrings.androidReadUpdateFailed }
                     }
                 }
             }
@@ -168,7 +173,7 @@ class AndroidSystemNotifications internal constructor(
             schedule()
             true
         } catch (_: Exception) {
-            updateStatus("无法保存本机通知订阅，请稍后重试")
+            updateStatus { NotificationsStrings.subscriptionSaveFailed }
             false
         }
     }
@@ -199,19 +204,19 @@ class AndroidSystemNotifications internal constructor(
     private fun createChannels() {
         if (device.enabledTypes.isEmpty()) return
         /** 分组只影响系统设置里的归类，把消息通道与朗读前台服务的通道分开列出。 */
-        manager.createNotificationChannelGroup(NotificationChannelGroup(CHANNEL_GROUP_ID, "消息通知"))
+        manager.createNotificationChannelGroup(NotificationChannelGroup(CHANNEL_GROUP_ID, NotificationsStrings.channelGroup))
         device.enabledTypes.forEach { type ->
             manager.createNotificationChannel(
                 NotificationChannel(channelId(type), type.displayName, NotificationManager.IMPORTANCE_DEFAULT).apply {
                     group = CHANNEL_GROUP_ID
-                    description = "后台联网检查，间隔至少 15 分钟，并非实时推送"
+                    description = NotificationsStrings.channelDescription
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
                 },
             )
         }
     }
 
-    private fun updateStatus(error: String? = null) {
+    private fun updateStatus(error: (() -> String)? = null) {
         val granted = Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         mutableStatus.value = SystemNotificationStatus(
@@ -223,7 +228,7 @@ class AndroidSystemNotifications internal constructor(
             blockedChannels = NotificationType.entries.filterTo(mutableSetOf()) {
                 manager.getNotificationChannel(channelId(it))?.importance == NotificationManager.IMPORTANCE_NONE
             },
-            error = error,
+            errorText = error,
             backgroundPollingAvailable = true,
         )
     }
@@ -254,6 +259,7 @@ class AndroidSystemNotifications internal constructor(
     internal suspend fun poll(epoch: String) {
         val snapshot = accounts.withSessionLock {
             reconcileAccount()
+            createChannels()
             updateStatus()
             if (epoch != device.epoch || device.accountId == null || effectiveTypes().isEmpty()) {
                 if (effectiveTypes().isEmpty()) cancelPosted()
@@ -265,10 +271,10 @@ class AndroidSystemNotifications internal constructor(
             val client = snapshot.client.httpClient(ZhihuRequestProfile.Mobile)
             val result = pollSystemNotifications(snapshot.state.checkpoint, snapshot.effectiveTypes) { url ->
                 currentCoroutineContext().ensureActive()
-                check(isCurrent(snapshot)) { "通知订阅已变更" }
+                check(isCurrent(snapshot)) { NotificationsStrings.subscriptionChanged }
                 loadSystemNotificationPage(client, url).also {
                     currentCoroutineContext().ensureActive()
-                    check(isCurrent(snapshot)) { "通知订阅已变更" }
+                    check(isCurrent(snapshot)) { NotificationsStrings.subscriptionChanged }
                 }
             }
             currentCoroutineContext().ensureActive()
@@ -292,7 +298,7 @@ class AndroidSystemNotifications internal constructor(
         } catch (error: Exception) {
             accounts.withSessionLock {
                 if (isCurrent(snapshot)) {
-                    updateStatus("后台检查失败，将稍后重试")
+                    updateStatus { NotificationsStrings.backgroundPollFailed }
                     throw error
                 }
             }
@@ -348,14 +354,14 @@ class AndroidSystemNotifications internal constructor(
         val publicVersion = NotificationCompat
             .Builder(context, channelId(event.type))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("知乎++")
-            .setContentText("你有新的通知")
+            .setContentTitle(NotificationsStrings.appName)
+            .setContentText(NotificationsStrings.newNotification)
             .build()
         val notification = NotificationCompat
             .Builder(context, channelId(event.type))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(event.type.displayName)
-            .setContentText("点按查看详情")
+            .setContentText(NotificationsStrings.tapDetails)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(publicVersion)
             .setContentIntent(pendingIntent)
@@ -398,6 +404,7 @@ class SystemNotificationWorker(
     parameters: WorkerParameters,
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
+        applySavedAppLanguage(androidSettingsStore(applicationContext))
         val epoch = inputData.getString(WORK_EPOCH) ?: return Result.success()
         return try {
             androidSystemNotifications(applicationContext).poll(epoch)

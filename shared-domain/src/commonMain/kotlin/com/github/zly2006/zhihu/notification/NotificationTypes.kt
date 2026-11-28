@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.notification
 
 import androidx.compose.runtime.Composable
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import kotlinx.serialization.Serializable
 
 interface NotificationSettingsStore {
@@ -43,14 +44,22 @@ expect fun rememberNotificationSettingsStore(): NotificationSettingsStore
 
 @Serializable
 enum class NotificationType(
-    val displayName: String,
     val defaultValue: Boolean,
     val regex: Regex,
 ) {
-    LIKE_ANSWER("喜欢了你的回答", true, Regex("喜欢了你的回答")),
-    LIKE_COMMENT("喜欢了你的评论", true, Regex("喜欢了.*你的评论")),
-    REPLY_COMMENT("回复了你的评论", true, Regex("回复了.*你的评论")),
-    INVITE_ANSWER("邀请你回答问题", false, Regex("\\s?(邀请你回答问题|的提问等你来答|邀请你回答)")),
+    LIKE_ANSWER(true, Regex("喜欢了你的回答")),
+    LIKE_COMMENT(true, Regex("喜欢了.*你的评论")),
+    REPLY_COMMENT(true, Regex("回复了.*你的评论")),
+    INVITE_ANSWER(false, Regex("\\s?(邀请你回答问题|的提问等你来答|邀请你回答)")),
+    ;
+
+    val displayName: String
+        get() = when (this) {
+            LIKE_ANSWER -> DomainStrings.notificationLikeAnswer
+            LIKE_COMMENT -> DomainStrings.notificationLikeComment
+            REPLY_COMMENT -> DomainStrings.notificationReply
+            INVITE_ANSWER -> DomainStrings.notificationInvitation
+        }
 }
 
 fun matchNotificationType(verb: String): NotificationType? =

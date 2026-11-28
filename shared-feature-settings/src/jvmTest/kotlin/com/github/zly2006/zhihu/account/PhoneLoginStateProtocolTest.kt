@@ -29,8 +29,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import kotlinx.coroutines.test.runTest
-import kotlinx.io.files.Path
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -39,6 +37,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlinx.coroutines.test.runTest
+import kotlinx.io.files.Path
 
 class PhoneLoginStateProtocolTest {
     private lateinit var directory: java.nio.file.Path
@@ -167,7 +167,7 @@ class PhoneLoginStateProtocolTest {
             val accountStore = ZhihuAccountStore(repository, checkNotNull(engine))
             try {
                 signingStartedAt = Clock.System.now().epochSeconds
-                assertEquals("已验证账号", client.signIn(accountStore))
+                assertEquals("已验证账号", client.signIn(accountStore, accountStore.client))
                 assertEquals(null, client.errorMessage)
                 val token = accountStore.session
                 assertEquals("account-access", token.mobileAccessToken)
@@ -185,7 +185,7 @@ class PhoneLoginStateProtocolTest {
                 assertEquals(otherNumber, client.phoneNumber.text.toString())
                 assertFalse(client.hasRequestedDigits)
                 assertFalse(client.canSignIn)
-                assertEquals(null, client.signIn(accountStore), "不能用前一号码的短信码提交")
+                assertEquals(null, client.signIn(accountStore, accountStore.client), "不能用前一号码的短信码提交")
                 assertEquals(6, requestIndex)
             } finally {
                 try {

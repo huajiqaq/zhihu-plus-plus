@@ -39,10 +39,10 @@ import com.github.zly2006.zhihu.ui.components.SegmentCreationRange
 import com.github.zly2006.zhihu.ui.components.SegmentSelectionMenu
 import com.github.zly2006.zhihu.ui.components.SegmentToolbarPositionProvider
 import com.github.zly2006.zhihu.ui.components.buildSegmentSelectionMenuActions
+import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.tiqian.compose.CjkSelectionState
-import kotlin.coroutines.resume
 
 /** 显示菜单时挂起、关闭时恢复；不获取焦点的弹窗保留拖拽手柄的选区焦点。 */
 @Composable

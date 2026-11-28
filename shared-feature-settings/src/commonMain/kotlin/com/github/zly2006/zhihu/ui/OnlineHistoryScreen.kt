@@ -45,6 +45,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.navigation.History
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.requestLoginNavigation
@@ -58,6 +60,7 @@ import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
@@ -79,7 +82,6 @@ import com.github.zly2006.zhihu.viewmodel.feed.OnlineHistoryViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val ONLINE_HISTORY_OVERFLOW_TAG = "online_history_overflow"
 const val ONLINE_HISTORY_BACK_TAG = "online_history_back"
@@ -92,6 +94,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
     val navigator = LocalNavigator.current
     val model: OnlineHistoryViewModel = viewModel { OnlineHistoryViewModel() }
     val account by rememberAccountSettingsAccountState()
+    val readOnly = rememberZhihuAccountStore().usesBrowserSession
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
     val accountClient = environment.httpClient()
     val userMessages = rememberUserMessageSink()
@@ -149,7 +152,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    userMessages.showShortMessage("记录状态获取失败：${e.message}")
+                    userMessages.showShortMessage(AccountStrings.historyRecordingLoadFailed(e.message))
                 }
             } else {
                 model.clearForGuest()
@@ -178,7 +181,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
             modifier = Modifier.fillMaxSize().appPageTitleBarScroll(titleBarState),
             topBar = {
                 AppPageTitleBar(
-                    title = if (selectionMode) "已选 ${selectedKeys.size} 项" else "在线浏览历史",
+                    title = if (selectionMode) AccountStrings.historySelected(selectedKeys.size) else AccountStrings.historyOnlineTitle,
                     scrollState = titleBarState,
                     onBack = if (selectionMode) {
                         (
@@ -196,26 +199,37 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                             HistorySelectAction(selectionMode, {
                                 selectionMode = !selectionMode
                                 selectedKeys = emptySet()
-                            }, enabled = !busy && model.recordingEnabled)
+                            }, enabled = !readOnly && !busy && model.recordingEnabled)
                             AppIconButton(onClick = { showActions = true }, modifier = Modifier.testTag(ONLINE_HISTORY_OVERFLOW_TAG), enabled = !busy) {
-                                Icon(Icons.Default.MoreVert, "更多选项")
+                                AppIcon(Icons.Default.MoreVert, AccountStrings.moreOptions)
                                 AppDropdownMenu(expanded = isActive && showActions, onDismissRequest = { showActions = false }) {
-                                    AppDropdownMenuItem(text = { Text("查看本地历史记录") }, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyViewLocalRecords) }, onClick = {
                                         showActions = false
                                         navigator.onNavigate(History)
                                     })
-                                    AppDropdownMenuItem(text = { Text("批量删除") }, enabled = !busy && model.recordingEnabled, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyBulkDelete) }, enabled = !readOnly && !busy && model.recordingEnabled, onClick = {
                                         showActions = false
                                         selectedKeys = emptySet()
                                         selectionMode = true
                                     })
-                                    AppDropdownMenuItem(text = { Text("清空浏览记录") }, enabled = model.recordingEnabled, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyClear) }, enabled = !readOnly && model.recordingEnabled, onClick = {
                                         showActions = false
                                         showClear = true
                                     })
                                     AppDropdownMenuItem(
                                         modifier = Modifier.testTag(HISTORY_RECORDING_TOGGLE_TAG),
-                                        text = { Text(if (model.recordingEnabled) "关闭最近浏览" else "开启最近浏览") },
+                                        text = {
+                                            Text(
+                                                if (readOnly) {
+                                                    AccountStrings.historyWebReadonly
+                                                } else if (model.recordingEnabled) {
+                                                    AccountStrings.historyDisable
+                                                } else {
+                                                    AccountStrings.historyEnable
+                                                },
+                                            )
+                                        },
+                                        enabled = !readOnly,
                                         onClick = {
                                             showActions = false
                                             if (model.recordingEnabled) {
@@ -227,7 +241,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                                                     } catch (e: CancellationException) {
                                                         throw e
                                                     } catch (e: Exception) {
-                                                        userMessages.showShortMessage("开启失败：${e.message}")
+                                                        userMessages.showShortMessage(AccountStrings.historyEnableFailed(e.message))
                                                     }
                                                 }
                                             }
@@ -247,7 +261,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                         allSelected,
                         onSelectAll = { selectedKeys = if (allSelected) selectedKeys - visibleKeys else selectedKeys + visibleKeys },
                         onDelete = { showDelete = true },
-                        enabled = !busy,
+                        enabled = !readOnly && !busy,
                     )
                 }
             },
@@ -255,18 +269,18 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
             when {
                 !account.login -> OnlineHistoryGuestContent(::requestLoginNavigation, { navigator.onNavigate(History) }, Modifier.padding(padding))
                 !model.recordingEnabled -> AppEmptyState(
-                    title = "最近浏览已关闭",
+                    title = AccountStrings.historyDisabled,
                     modifier = Modifier.fillMaxSize().padding(padding),
                     icon = Icons.Default.History,
                     action = {
-                        AppButton(text = "点击开启", enabled = !busy, onClick = {
+                        AppButton(text = if (readOnly) AccountStrings.historyWebCannotEnable else AccountStrings.historyEnableAction, enabled = !readOnly && !busy, onClick = {
                             scope.launch {
                                 try {
                                     model.setRecordingEnabled(environment, true)
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    userMessages.showShortMessage("开启失败：${e.message}")
+                                    userMessages.showShortMessage(AccountStrings.historyEnableFailed(e.message))
                                 }
                             }
                         })
@@ -302,16 +316,16 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                                     titleTrailingContent = { HistoryTypeBadge(item.historyType, item.titleBadges) },
                                     onClick = if (selectionMode) ({ _, _ -> if (!busy) toggle() }) else null,
                                     menuItems = { dismiss ->
-                                        AppDropdownMenuItem(text = { Text("删除此条浏览记录") }, enabled = !busy, onClick = {
+                                        AppDropdownMenuItem(text = { Text(AccountStrings.historyDeleteItem) }, enabled = !readOnly && !busy, onClick = {
                                             dismiss()
                                             scope.launch {
                                                 deleting = true
                                                 try {
-                                                    if (model.deleteItems(environment, setOf(item.stableKey))) userMessages.showShortMessage("已删除")
+                                                    if (model.deleteItems(environment, setOf(item.stableKey))) userMessages.showShortMessage(AccountStrings.deleted)
                                                 } catch (e: CancellationException) {
                                                     throw e
                                                 } catch (e: Exception) {
-                                                    userMessages.showShortMessage("删除失败：${e.message}")
+                                                    userMessages.showShortMessage(AccountStrings.deleteFailedDetail(e.message))
                                                 } finally {
                                                     if (environment.httpClient() === accountClient && model.accountId == account.id) deleting = false
                                                 }
@@ -328,10 +342,10 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
         }
         if (isActive && showDisable) {
             AppDialog(
-                title = "确认关闭",
-                summary = "关闭后当前账号的浏览记录及本机历史将被清空，且不会再被记录。",
-                confirmText = "确认关闭",
-                dismissText = "取消",
+                title = AccountStrings.historyConfirmDisable,
+                summary = AccountStrings.historyDisableSummary,
+                confirmText = AccountStrings.historyConfirmDisable,
+                dismissText = AccountStrings.cancel,
                 destructive = true,
                 confirmEnabled = !busy,
                 onDismissRequest = { showDisable = false },
@@ -347,7 +361,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            userMessages.showShortMessage("关闭失败：${e.message}")
+                            userMessages.showShortMessage(AccountStrings.historyDisableFailed(e.message))
                         }
                     }
                 },
@@ -355,10 +369,10 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
         }
         if (isActive && showClear) {
             AppDialog(
-                title = "确认清空吗？",
-                summary = "会清空当前账号的在线历史和本机全部历史，清空后无法恢复。",
-                confirmText = "清空吧",
-                dismissText = "先不了",
+                title = AccountStrings.historyConfirmClearTitle,
+                summary = AccountStrings.historyClearSummary,
+                confirmText = AccountStrings.historyClearConfirm,
+                dismissText = AccountStrings.notNow,
                 destructive = true,
                 confirmEnabled = !busy,
                 onDismissRequest = { showClear = false },
@@ -372,7 +386,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            userMessages.showShortMessage("清空失败：${e.message}")
+                            userMessages.showShortMessage(AccountStrings.clearFailedDetail(e.message))
                         } finally {
                             if (environment.httpClient() === accountClient && model.accountId == account.id) clearing = false
                         }
@@ -382,10 +396,10 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
         }
         if (isActive && showDelete) {
             AppDialog(
-                title = "删除选中的 ${selectedKeys.size} 条浏览记录？",
-                summary = "会删除所有已选记录（包括其他筛选类型），不影响未选或未加载记录。",
-                confirmText = "删除",
-                dismissText = "取消",
+                title = AccountStrings.historyDeleteSelectedTitle(selectedKeys.size),
+                summary = AccountStrings.historyDeleteSelectedSummary,
+                confirmText = AccountStrings.delete,
+                dismissText = AccountStrings.cancel,
                 destructive = true,
                 confirmEnabled = !busy && selectedKeys.isNotEmpty(),
                 onDismissRequest = { showDelete = false },
@@ -403,7 +417,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            userMessages.showShortMessage("删除失败：${e.message}")
+                            userMessages.showShortMessage(AccountStrings.deleteFailedDetail(e.message))
                         } finally {
                             if (environment.httpClient() === accountClient && model.accountId == account.id) deleting = false
                         }
@@ -419,7 +433,7 @@ private fun OnlineHistoryClearingRow() {
     val skin = LocalAppSkinTokens.current
     Row(Modifier.fillMaxWidth().padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8).testTag(ONLINE_HISTORY_CLEARING_TAG), horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12), verticalAlignment = Alignment.CenterVertically) {
         AppSpinner(size = AppDimens.InlineSpinnerSize)
-        Text("正在清除历史记录…", style = skin.body2, color = skin.onSurfaceVariantSummary)
+        Text(AccountStrings.historyClearing, style = skin.body2, color = skin.onSurfaceVariantSummary)
     }
 }
 
@@ -427,13 +441,13 @@ private fun OnlineHistoryClearingRow() {
 private fun OnlineHistoryGuestContent(onLogin: () -> Unit, onOpenLocalHistory: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag(ONLINE_HISTORY_GUEST_TAG)) {
         AppEmptyState(
-            "登录后可查看在线历史",
-            description = "在线历史保存在知乎账号里。本机打开过的内容记在本地历史中，不需要登录。",
+            AccountStrings.historySignInTitle,
+            description = AccountStrings.historySignInSummary,
             icon = Icons.Default.History,
             action = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(AppDimens.Space8)) {
-                    AppButton(text = "登录知乎", onClick = onLogin)
-                    AppOutlinedButton(text = "查看本地历史", onClick = onOpenLocalHistory)
+                    AppButton(text = AccountStrings.signInZhihu, onClick = onLogin)
+                    AppOutlinedButton(text = AccountStrings.historyViewLocal, onClick = onOpenLocalHistory)
                 }
             },
         )

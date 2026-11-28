@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="palette_tonal_spot">Tonal Spot</string>
+    <string name="palette_neutral">Neutral</string>
+    <string name="palette_vibrant">Vibrant</string>
+    <string name="palette_expressive">Expressive</string>
+    <string name="palette_rainbow">Rainbow</string>
+    <string name="palette_fruit_salad">Fruit Salad</string>
+    <string name="palette_monochrome">Monochrome</string>
+    <string name="palette_fidelity">Fidelity</string>
+    <string name="palette_content">Content</string>
+    <string name="double_tap_none">Do nothing</string>
+    <string name="double_tap_ask">Ask and remember</string>
+    <string name="double_tap_vote_up">Upvote</string>
+    <string name="double_tap_comments">Open comments</string>
+    <string name="double_tap_immersive">Toggle immersive mode</string>
+    <string name="double_tap_top">Jump to top ↑</string>
+    <string name="double_tap_bottom">Jump to bottom ↓</string>
+</resources>

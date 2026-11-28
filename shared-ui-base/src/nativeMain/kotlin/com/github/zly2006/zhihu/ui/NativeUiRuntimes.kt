@@ -21,75 +21,47 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.em
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
-import com.github.zly2006.zhihu.platform.appPrivateDirectory
+import com.github.zly2006.zhihu.platform.LocalNativeFileDelivery
+import com.github.zly2006.zhihu.platform.withNativeExportDirectory
+import com.github.zly2006.zhihu.viewmodel.ArticleExportResult
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import kotlinx.coroutines.CancellationException
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.writeString
 import com.github.zly2006.zhihu.platform.nativeAppVersionName
 import com.github.zly2006.zhihu.platform.nativeBundledResourcePath
 import com.github.zly2006.zhihu.platform.nativeIsDesktop
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSystemUrlOpener
-import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.viewmodel.NativePaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.NotificationEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.encodeBlocklistBackup
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.create
-import platform.Foundation.dataUsingEncoding
 import org.jetbrains.skia.Image as SkiaImage
 
 @Composable
-actual fun rememberArticleTtsState(): TtsState = NativeArticleSpeechController.currentState
+actual fun rememberArticleTtsState(): TtsState = rememberContinuousArticleTtsState()
 
 @Composable
-actual fun rememberArticleSpeechToggler(): (String, String) -> Unit {
-    val userMessages = rememberUserMessageSink()
-    val coroutineScope = rememberCoroutineScope()
-    val ttsState = NativeArticleSpeechController.currentState
-    return { title, content ->
-        if (ttsState.isSpeaking) {
-            NativeArticleSpeechController.stopSpeaking()
-        } else if (ttsState !in listOf(TtsState.Error, TtsState.Uninitialized, TtsState.Initializing)) {
-            coroutineScope.launch {
-                try {
-                    val textToRead = withContext(Dispatchers.Default) { articleSpeechText(title, content) }
-                    if (textToRead.isNotBlank()) {
-                        if (NativeArticleSpeechController.startSpeaking(textToRead)) {
-                            userMessages.showMessage("开始朗读：$title")
-                        } else {
-                            userMessages.showMessage("朗读启动失败")
-                        }
-                    }
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    userMessages.showMessage("朗读失败：${e.message}")
-                }
-            }
-        }
-    }
-}
+actual fun rememberArticleSpeechToggler(): (String, String) -> Unit = rememberContinuousArticleSpeechToggler()
 
 @Composable
 actual fun rememberArticleBrowserOpener(): (Article) -> Unit {
@@ -101,8 +73,7 @@ actual fun rememberArticleBrowserOpener(): (Article) -> Unit {
 actual fun rememberNotificationEnvironment(
     settingsStore: NotificationSettingsStore,
 ): NotificationEnvironment {
-    val store = com.github.zly2006.zhihu.account
-        .rememberZhihuAccountStore()
+    val store = rememberZhihuAccountStore()
     return remember(settingsStore, store) { NativePaginationEnvironment(notificationSettingsStore = settingsStore, accountStore = store) }
 }
 
@@ -206,34 +177,25 @@ actual fun ZhihuHtmlWebViewContent(html: String): Unit = error("$platformName �
 actual val isLegacyWebViewSupported: Boolean = false
 
 @Composable
-@OptIn(BetaInteropApi::class, ExperimentalForeignApi::class)
 actual fun rememberBlocklistRuleExporter(): suspend () -> String {
     val database = remember { getContentFilterDatabase() }
+    val delivery = LocalNativeFileDelivery.current
     return {
+        val host = checkNotNull(delivery) { DomainStrings.exportHostUnavailable }
         val text = encodeBlocklistBackup(
             keywordDao = database.blockedKeywordDao(),
             userDao = database.blockedUserDao(),
             questionAuthorDao = database.blockedQuestionAuthorDao(),
             topicDao = database.blockedTopicDao(),
         )
-        val outputDirectory = appPrivateDirectory().toString()
-        val outputFile = "$outputDirectory/zhihupp_blocklist.json"
-        val fileManager = NSFileManager.defaultManager
-        if (!fileManager.fileExistsAtPath(outputDirectory)) {
-            fileManager.createDirectoryAtPath(
-                outputDirectory,
-                withIntermediateDirectories = true,
-                attributes = null,
-                error = null,
-            )
+        when (val result = withNativeExportDirectory { directory ->
+            val output = "$directory/zhihupp_blocklist.json"
+            SystemFileSystem.sink(Path(output)).buffered().use { it.writeString(text) }
+            host.saveFile(output, image = false)
+        }) {
+            is ArticleExportResult.Completed -> result.completionMessage
+            ArticleExportResult.Cancelled -> throw CancellationException("Blocklist export cancelled")
         }
-        val data = checkNotNull(
-            NSString.create(string = text).dataUsingEncoding(NSUTF8StringEncoding),
-        ) { "无法编码导出内容" }
-        check(fileManager.createFileAtPath(outputFile, contents = data, attributes = null)) {
-            "无法写入导出文件"
-        }
-        "已导出到 $outputFile"
     }
 }
 

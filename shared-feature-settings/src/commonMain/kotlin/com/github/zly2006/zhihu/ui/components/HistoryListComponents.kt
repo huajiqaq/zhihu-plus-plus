@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.HistoryType
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 
 const val HISTORY_TYPE_FILTER_TAG_PREFIX = "history_type_filter_"
@@ -59,7 +60,7 @@ fun HistoryTypeFilterRow(
     ) {
         item(key = "all") {
             AppChip(
-                label = "全部",
+                label = AccountStrings.all,
                 enabled = enabled,
                 selected = selectedType == null,
                 onClick = { onSelect(null) },
@@ -70,7 +71,7 @@ fun HistoryTypeFilterRow(
             if (type !in availableTypes) continue
             item(key = type) {
                 AppChip(
-                    label = type,
+                    label = HistoryType.displayName(type),
                     enabled = enabled,
                     selected = selectedType == type,
                     onClick = { onSelect(type) },
@@ -93,7 +94,7 @@ fun HistoryTypeBadge(type: String?, images: Array<String> = emptyArray()) {
     ) {
         if (images.isEmpty()) {
             Text(
-                text = label,
+                text = HistoryType.displayName(label),
                 style = skin.footnote2,
                 color = skin.onSurfaceVariantSummary,
                 maxLines = 1,
@@ -102,7 +103,7 @@ fun HistoryTypeBadge(type: String?, images: Array<String> = emptyArray()) {
             for (image in images) {
                 AsyncImage(
                     model = image,
-                    contentDescription = label,
+                    contentDescription = HistoryType.displayName(label),
                     modifier = Modifier.size(AppDimens.IconSizeSmall),
                     contentScale = ContentScale.Fit,
                 )
@@ -149,7 +150,7 @@ fun HistorySelectionBar(
         horizontalArrangement = Arrangement.spacedBy(AppDimens.Space8),
     ) {
         Text(
-            text = "共选 $selectedCount 项",
+            text = AccountStrings.historySelectionCount(selectedCount),
             style = skin.body2,
             color = skin.onSurface,
             modifier = Modifier.weight(1f),
@@ -157,13 +158,13 @@ fun HistorySelectionBar(
             overflow = TextOverflow.Ellipsis,
         )
         AppTextButton(
-            text = if (allSelected) "取消全选" else "全选",
+            text = if (allSelected) AccountStrings.selectNone else AccountStrings.selectAll,
             onClick = onSelectAll,
             enabled = enabled && totalCount > 0,
             modifier = Modifier.testTag(HISTORY_SELECT_ALL_TAG),
         )
         AppTextButton(
-            text = "删除($selectedCount)",
+            text = AccountStrings.historyDeleteCount(selectedCount),
             onClick = onDelete,
             enabled = enabled && selectedCount > 0,
             contentColor = skin.error,
@@ -175,7 +176,7 @@ fun HistorySelectionBar(
 @Composable
 fun HistorySelectAction(selectionMode: Boolean, onEnter: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     AppTextButton(
-        text = if (selectionMode) "取消" else "管理",
+        text = if (selectionMode) AccountStrings.cancel else AccountStrings.manage,
         onClick = onEnter,
         enabled = enabled,
         modifier = modifier.testTag(HISTORY_SELECT_TOGGLE_TAG),

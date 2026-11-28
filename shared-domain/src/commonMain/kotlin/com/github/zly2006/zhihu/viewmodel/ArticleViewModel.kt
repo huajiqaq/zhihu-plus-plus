@@ -27,23 +27,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.zly2006.zhihu.account.ZhihuLoginRequiredException
 import com.github.zly2006.zhihu.data.AigcVoteNamedVoter
-import com.github.zly2006.zhihu.data.Collection
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.data.HttpFailureKind
+import com.github.zly2006.zhihu.data.HttpFailureRecord
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
 import com.github.zly2006.zhihu.data.OfficialBadge
+import com.github.zly2006.zhihu.data.SegmentInfoParagraph
 import com.github.zly2006.zhihu.data.VoteUpState
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.data.classifyHttpFailure
 import com.github.zly2006.zhihu.data.fetchZhihuContentDetail
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.CollectionAnswerNavigator
 import com.github.zly2006.zhihu.navigation.PaginationInfoNavigator
 import com.github.zly2006.zhihu.navigation.QuestionAnswerNavigator
 import com.github.zly2006.zhihu.platform.UserMessageSink
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.HttpStatusException
 import com.github.zly2006.zhihu.util.applySegmentInfosToHtml
+import com.github.zly2006.zhihu.util.buildSegmentTextParts
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.comment.SegmentCommentEvents
@@ -52,6 +60,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import kotlin.collections.Collection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -90,20 +99,19 @@ class ArticleViewModel(
         private set
 
     /** 引用索引来自同一响应元数据，不能从跳过富格式段落的注入 HTML 反推。 */
-    var segmentInfos by mutableStateOf<kotlin.collections.Collection<com.github.zly2006.zhihu.data.SegmentInfoParagraph>>(emptySet())
+    var segmentInfos by mutableStateOf<Collection<SegmentInfoParagraph>>(emptySet())
         private set
 
     val commentSegments by derivedStateOf {
         segmentInfos
             .flatMap { paragraph ->
-                com.github.zly2006.zhihu.util
-                    .buildSegmentTextParts(
-                        text = paragraph.text,
-                        marks = paragraph.marks,
-                        contentId = article.id.toString(),
-                        contentType = article.type.toString(),
-                        paragraphId = paragraph.pid,
-                    ).mapNotNull { it.highlight }
+                buildSegmentTextParts(
+                    text = paragraph.text,
+                    marks = paragraph.marks,
+                    contentId = article.id.toString(),
+                    contentType = article.type.toString(),
+                    paragraphId = paragraph.pid,
+                ).mapNotNull { it.highlight }
             }.flatMap { span ->
                 span.meta.segIds
                     .filter(String::isNotBlank)
@@ -125,8 +133,8 @@ class ArticleViewModel(
     var attachment by mutableStateOf<JsonElement?>(null)
     var isLoading by mutableStateOf(false)
         private set
-    var loadError by mutableStateOf<String?>(null)
-        private set
+    private var loadErrorText by mutableStateOf<(() -> String)?>(null)
+    val loadError: String? get() = loadErrorText?.invoke()
     var hasLoaded by mutableStateOf(httpClient == null)
         private set
     private var canLoadFullContent by mutableStateOf(false)
@@ -144,15 +152,15 @@ class ArticleViewModel(
         private set
     var votersLoading by mutableStateOf(false)
         private set
-    var votersError by mutableStateOf<String?>(null)
-        private set
+    private var votersErrorText by mutableStateOf<(() -> String)?>(null)
+    val votersError: String? get() = votersErrorText?.invoke()
     var votersSocialText by mutableStateOf("")
         private set
     val voters = mutableStateListOf<DataHolder.Author>()
     var questionId by mutableLongStateOf(0L)
     var answerNextIds by mutableStateOf<List<Long>>(emptyList())
         private set
-    var collections = mutableStateListOf<Collection>()
+    var collections = mutableStateListOf<ZhihuCollection>()
     var updatedAt by mutableLongStateOf(0L)
     var createdAt by mutableLongStateOf(0L)
     var ipInfo by mutableStateOf<String?>(null)
@@ -165,16 +173,16 @@ class ArticleViewModel(
         }
     var aiSummaryText by mutableStateOf("")
         private set
-    var aiSummaryError by mutableStateOf<String?>(null)
-        private set
+    private var aiSummaryErrorText by mutableStateOf<(() -> String)?>(null)
+    val aiSummaryError: String? get() = aiSummaryErrorText?.invoke()
     var aiSummaryLoading by mutableStateOf(false)
         private set
     var aigcVoteAvailable by mutableStateOf(false)
         private set
     var aigcVoteLoading by mutableStateOf(false)
         private set
-    var aigcVoteError by mutableStateOf<String?>(null)
-        private set
+    private var aigcVoteErrorText by mutableStateOf<(() -> String)?>(null)
+    val aigcVoteError: String? get() = aigcVoteErrorText?.invoke()
     var aigcVoteCredit by mutableIntStateOf(0)
         private set
     var aigcVoteProgress by mutableIntStateOf(0)
@@ -224,7 +232,7 @@ class ArticleViewModel(
         scope = { viewModelScope },
         readTitle = { title },
         aiSummaryTextState = ::aiSummaryText,
-        aiSummaryErrorState = ::aiSummaryError,
+        aiSummaryErrorState = ::aiSummaryErrorText,
         aiSummaryLoadingState = ::aiSummaryLoading,
     )
 
@@ -241,7 +249,7 @@ class ArticleViewModel(
         authorNameValue = { authorName },
         aigcVoteAvailableState = ::aigcVoteAvailable,
         aigcVoteLoadingState = ::aigcVoteLoading,
-        aigcVoteErrorState = ::aigcVoteError,
+        aigcVoteErrorState = ::aigcVoteErrorText,
         aigcVoteCreditState = ::aigcVoteCredit,
         aigcVoteProgressState = ::aigcVoteProgress,
         aigcVoteCapState = ::aigcVoteCap,
@@ -272,7 +280,7 @@ class ArticleViewModel(
         votersTotalState = ::votersTotal,
         votersNextUrlState = ::votersNextUrl,
         votersLoadingState = ::votersLoading,
-        votersErrorState = ::votersError,
+        votersErrorState = ::votersErrorText,
         votersSocialTextState = ::votersSocialText,
     )
 
@@ -308,10 +316,10 @@ class ArticleViewModel(
         val updatedAt: Long = 0L,
         val ipInfo: String? = null,
         val endorsements: List<DataHolder.AnswerEndorsementDisplay> = emptyList(),
-        val sourceLabel: String = "此问题",
+        val sourceLabel: String = DomainStrings.thisQuestion,
         val sourceContent: String? = content,
         val segmentCommentSnapshot: SegmentCommentEvents.Snapshot? = null,
-        val segmentInfos: kotlin.collections.Collection<com.github.zly2006.zhihu.data.SegmentInfoParagraph> = emptySet(),
+        val segmentInfos: Collection<SegmentInfoParagraph> = emptySet(),
         /** 为空时由详情元数据推导；明确 false 保留全文已加载后的状态。 */
         val canLoadFullContent: Boolean? = null,
     ) {
@@ -319,7 +327,7 @@ class ArticleViewModel(
             get() = endorsements.map { endorsement -> endorsement.text }
     }
 
-    fun toCachedContent(sourceLabel: String = "此问题"): CachedAnswerContent = CachedAnswerContent(
+    fun toCachedContent(sourceLabel: String = DomainStrings.thisQuestion): CachedAnswerContent = CachedAnswerContent(
         article = article,
         title = title,
         authorName = authorName,
@@ -387,7 +395,7 @@ class ArticleViewModel(
     }
 
     init {
-        Log.i("zhihu-scroll", "me is $this")
+        AppLog.i("zhihu-scroll", "me is $this")
         registerOnPause?.invoke {
             rememberedScrollYSync = false
         }
@@ -396,11 +404,10 @@ class ArticleViewModel(
     val isFavorited: Boolean
         get() = collections.any { it.isFavorited }
 
-    @OptIn(ExperimentalStdlibApi::class)
     fun loadArticle(environment: ArticleLoadEnvironment) {
         if (httpClient == null || isLoading) return
         isLoading = true
-        loadError = null
+        loadErrorText = null
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.Default) {
@@ -410,25 +417,25 @@ class ArticleViewModel(
                         if (answer != null) {
                             applyLoadedAnswer(environment, answer, commentSnapshot)
                         } else {
-                            error("暂时无法获取内容，请重试")
+                            error(DomainStrings.articleUnavailable)
                         }
                     } else if (article.type == ArticleType.Article) {
                         val loadedArticle = loadedContent as? DataHolder.Article
                         if (loadedArticle != null) {
                             applyLoadedArticle(loadedArticle, commentSnapshot)
                         } else {
-                            error("暂时无法获取内容，请重试")
+                            error(DomainStrings.articleUnavailable)
                         }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to load content", e)
-                loadError = if (e is com.github.zly2006.zhihu.account.ZhihuLoginRequiredException || e is com.github.zly2006.zhihu.util.HttpStatusException) {
-                    zhihuFetchFailureMessage(e)
+                AppLog.e("ArticleViewModel", "Failed to load content", e)
+                loadErrorText = if (e is ZhihuLoginRequiredException || e is HttpStatusException) {
+                    zhihuFetchFailureText(e)
                 } else {
-                    "暂时无法获取内容，请重试"
+                    DomainStrings::articleUnavailable
                 }
             } finally {
                 isLoading = false
@@ -446,8 +453,7 @@ class ArticleViewModel(
         }
         if (environment.accountClient?.load()?.login == false && !environment.allowGuestAccess) {
             environment.accountClient?.reportLoginRequired()
-            throw com.github.zly2006.zhihu.account
-                .ZhihuLoginRequiredException()
+            throw ZhihuLoginRequiredException()
         }
         val owner = httpClient
         return environment.withAuthenticatedClient { client, cookies ->
@@ -458,7 +464,7 @@ class ArticleViewModel(
             val detail = fetchZhihuContentDetail(article) { url, include ->
                 if (environment.httpClient() !== client) throw CancellationException("加载期间账户已切换")
                 environment.fetchJson(url, include)
-            } ?: throw IllegalStateException("暂时无法获取内容，请重试")
+            } ?: throw IllegalStateException(DomainStrings.articleUnavailable)
             if (environment.httpClient() !== client) {
                 throw CancellationException("加载期间账户已切换")
             }
@@ -468,7 +474,7 @@ class ArticleViewModel(
                     is DataHolder.Article -> article.type == ArticleType.Article && detail.id == article.id
                     else -> false
                 },
-            ) { "暂时无法获取内容，请重试" }
+            ) { DomainStrings.articleUnavailable }
             detail to snapshot
         }
     }
@@ -545,7 +551,7 @@ class ArticleViewModel(
                 }
             }
             sharedData.navigator?.pushAnswer(
-                toCachedContent(sourceLabel = sharedData.navigator?.sourceName ?: "此问题"),
+                toCachedContent(sourceLabel = sharedData.navigator?.sourceName ?: DomainStrings.thisQuestion),
             )
         }
         loadAnswerRelationshipEndorsement(environment)
@@ -662,29 +668,27 @@ class ArticleViewModel(
                     val response = client.get(url) { signZhihuFetchRequest(cookies) }
                     response.raiseForStatus()
                     val html = response.bodyAsText()
-                    val failure = com.github.zly2006.zhihu.data.classifyHttpFailure(
-                        com.github.zly2006.zhihu.data
-                            .HttpFailureRecord("display", 0, "GET", url, response.status.value, emptyMap(), environment.isLoggedIn, true, com.github.zly2006.zhihu.data.HttpFailureKind.FORBIDDEN),
+                    val failure = classifyHttpFailure(
+                        HttpFailureRecord("display", 0, "GET", url, response.status.value, emptyMap(), environment.isLoggedIn, true, HttpFailureKind.FORBIDDEN),
                         response.headers[HttpHeaders.Location],
                         html,
                     )
-                    if (failure.kind == com.github.zly2006.zhihu.data.HttpFailureKind.LOGIN_REQUIRED) {
-                        throw com.github.zly2006.zhihu.account
-                            .ZhihuLoginRequiredException()
+                    if (failure.kind == HttpFailureKind.LOGIN_REQUIRED) {
+                        throw ZhihuLoginRequiredException()
                     }
                     fullContentAfterAnchor(html, anchor)
                 }
                 currentCoroutineContext().ensureActive()
                 if (environment.httpClient() !== owner) throw CancellationException("加载期间账户已切换")
                 if (extraHtml == null) {
-                    userMessages.showShortMessage("获取失败，请检查是否开通会员或是否购买")
+                    userMessages.showShortMessage(DomainStrings.paidContentUnavailable)
                     return@launch
                 }
                 appendPaidContent(extraHtml)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to load full content", e)
+                AppLog.e("ArticleViewModel", "Failed to load full content", e)
                 userMessages.showShortMessage(zhihuFetchFailureMessage(e))
             } finally {
                 isLoadingFullContent = false
@@ -769,6 +773,14 @@ class ArticleViewModel(
         onComplete: (Boolean) -> Unit,
     ) {
         exportController.exportToImageWithComments(environment, commentCount, includeAppAttribution, onComplete)
+    }
+
+    suspend fun exportToPdf(
+        environment: ArticleExportContentEnvironment,
+        includeAppAttribution: Boolean,
+        onComplete: (Boolean) -> Unit,
+    ) {
+        exportController.exportToPdf(environment, includeAppAttribution, onComplete)
     }
 
     suspend fun exportToHtml(

@@ -21,6 +21,7 @@ import android.app.AlertDialog
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.util.ContinuousUsageReminderPolicy
 import kotlinx.coroutines.Job
@@ -102,9 +103,9 @@ class ContinuousUsageReminderManager(
         if (reminderDialog?.isShowing == true) return
         reminderDialog = AlertDialog
             .Builder(activity)
-            .setTitle("连续浏览提醒")
-            .setMessage("你已经连续浏览知乎 ${reminder.durationText}\n\n休息一下吧")
-            .setPositiveButton("知道了", null)
+            .setTitle(DomainStrings.breakReminder)
+            .setMessage(DomainStrings.breakReminderTime(reminder.durationText))
+            .setPositiveButton(DomainStrings.gotIt, null)
             .show()
     }
 

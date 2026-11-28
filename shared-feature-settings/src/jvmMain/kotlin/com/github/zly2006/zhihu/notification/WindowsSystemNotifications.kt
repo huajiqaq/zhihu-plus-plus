@@ -17,9 +17,13 @@
 
 package com.github.zly2006.zhihu.notification
 
+import com.github.zly2006.zhihu.i18n.AppLanguage
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** 只由 MSIX 的本应用原生宿主通过 RegisterNatives 接通；不搜索或解压任何本机库。 */
 object WindowsNotificationBridge {
@@ -41,7 +45,7 @@ object WindowsNotificationBridge {
 
     external fun takeReceipt(): String?
 
-    external fun publish(receipt: String)
+    external fun publish(receipt: String, chinese: Boolean)
 
     external fun withdraw(receipt: String)
 
@@ -57,8 +61,8 @@ internal class WindowsSystemNotifications private constructor() :
         private val closed = AtomicBoolean(false)
         private var clickThread: Thread? = null
 
-        override val availabilityDescription: String =
-            "仅应用运行期间检查新消息；已投递通知可在退出后启动应用。是否显示由 Windows 通知设置和勿扰模式决定。"
+        override val availabilityDescription: String
+            get() = NotificationsStrings.windowsAvailability
 
         override fun activate(onClick: (String) -> Unit): AutoCloseable? {
             if (closed.get() || !WindowsNotificationBridge.available() || !claimed.compareAndSet(false, true)) return null
@@ -94,14 +98,15 @@ internal class WindowsSystemNotifications private constructor() :
         }
 
         override suspend fun requestAuthorization() {
-            check(authorization().permissionGranted) { "请在 Windows 系统设置中允许知乎++发送通知" }
+            check(authorization().permissionGranted) { NotificationsStrings.windowsPermissionHint }
         }
 
         override fun publish(accountId: String, event: SystemNotificationEvent, receipt: String, onComplete: (Throwable?) -> Unit) {
             val result = runCatching {
-                check(!closed.get() && claimed.get()) { "通知宿主已关闭" }
+                check(!closed.get() && claimed.get()) { NotificationsStrings.hostClosed }
                 require(RECEIPT.matches(receipt))
-                WindowsNotificationBridge.publish(receipt)
+                applySavedAppLanguage()
+                WindowsNotificationBridge.publish(receipt, AppLocale.current == AppLanguage.Chinese)
             }
             onComplete(result.exceptionOrNull())
         }
@@ -112,7 +117,7 @@ internal class WindowsSystemNotifications private constructor() :
         }
 
         override fun openSystemSettings(): Nothing =
-            throw UnsupportedOperationException("请打开 Windows 设置 → 系统 → 通知，找到知乎++并允许通知")
+            throw SystemNotificationUnavailableException { NotificationsStrings.windowsSettingsHint }
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
@@ -123,7 +128,7 @@ internal class WindowsSystemNotifications private constructor() :
             private val RECEIPT = Regex("[0-9a-f]{32}")
 
             fun connect(): WindowsSystemNotifications {
-                check(WindowsNotificationBridge.available()) { "当前安装方式或窗口尚未接通 Windows 通知" }
+                check(WindowsNotificationBridge.available()) { NotificationsStrings.windowsUnconnected }
                 return WindowsSystemNotifications()
             }
         }

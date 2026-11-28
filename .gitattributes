@@ -8,3 +8,8 @@ gradle/*.toml text eol=lf
 gradle/*.json text eol=lf
 # 补丁空行的上下文标记必须保留空格。
 gradle/upstream-patches/*.patch text eol=lf whitespace=-blank-at-eol
+
+# 原许可按上游字节校验，Worker 固定摘要以 LF 计算。
+webApp/src/wasmJsMain/resources/nlp/ort/LICENSE -text
+webApp/src/wasmJsMain/resources/nlp/ort/ThirdPartyNotices.txt -text
+webApp/src/wasmJsMain/resources/nlp/offline-nlp-worker.mjs text eol=lf

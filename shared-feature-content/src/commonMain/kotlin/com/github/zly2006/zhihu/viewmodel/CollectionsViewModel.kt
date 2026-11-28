@@ -20,12 +20,14 @@ package com.github.zly2006.zhihu.viewmodel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.github.zly2006.zhihu.data.Collection
-import com.github.zly2006.zhihu.util.jsonObject
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.i18n.ContentStrings
+import io.ktor.client.call.body
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -34,11 +36,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlin.reflect.typeOf
 
 class CollectionsViewModel(
     val urlToken: String,
-) : PaginationViewModel<Collection>(typeOf<Collection>()) {
+) : PaginationViewModel<ZhihuCollection>(typeOf<ZhihuCollection>()) {
     var isCreatingCollection by mutableStateOf(false)
         private set
     var createCollectionError by mutableStateOf<String?>(null)
@@ -72,9 +73,9 @@ class CollectionsViewModel(
                 )
             }
             if (!response.status.isSuccess()) {
-                error("创建收藏夹失败：${response.status}")
+                error(ContentStrings.collectionCreateError(response.status))
             }
-            val responseBody = response.jsonObject()
+            val responseBody = response.body<JsonObject>()
             val collectionId = (responseBody["collection"] as? JsonObject)
                 ?.get("id")
                 ?.jsonPrimitive
@@ -85,14 +86,14 @@ class CollectionsViewModel(
                         ?.jsonPrimitive
                         ?.contentOrNull
                         ?.takeIf(String::isNotBlank)
-                        ?: "创建收藏夹失败：响应无效",
+                        ?: ContentStrings.collectionCreateInvalidResponse,
                 )
             }
             true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            createCollectionError = e.message ?: "创建收藏夹失败"
+            createCollectionError = e.message ?: ContentStrings.collectionCreateFailed
             false
         } finally {
             isCreatingCollection = false
@@ -101,11 +102,11 @@ class CollectionsViewModel(
 
     suspend fun deleteCollection(
         environment: ZhihuApiEnvironment,
-        collection: Collection,
+        collection: ZhihuCollection,
     ): Boolean {
         if (deletingCollectionId != null) return false
         if (collection.isDefault) {
-            deleteCollectionError = "默认收藏夹不能删除"
+            deleteCollectionError = ContentStrings.defaultCollectionCannotDelete
             return false
         }
         deletingCollectionId = collection.id
@@ -115,23 +116,23 @@ class CollectionsViewModel(
                 "https://www.zhihu.com/api/v4/collections/${collection.id}",
             )
             if (!response.status.isSuccess()) {
-                error("删除收藏夹失败：${response.status}")
+                error(ContentStrings.collectionDeleteError(response.status))
             }
-            val responseBody = response.jsonObject()
+            val responseBody = response.body<JsonObject>()
             if (responseBody["success"]?.jsonPrimitive?.booleanOrNull != true) {
                 error(
                     responseBody["message"]
                         ?.jsonPrimitive
                         ?.contentOrNull
                         ?.takeIf(String::isNotBlank)
-                        ?: "删除收藏夹失败：响应无效",
+                        ?: ContentStrings.collectionDeleteInvalidResponse,
                 )
             }
             true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            deleteCollectionError = e.message ?: "删除收藏夹失败"
+            deleteCollectionError = e.message ?: ContentStrings.collectionDeleteFailed
             false
         } finally {
             deletingCollectionId = null

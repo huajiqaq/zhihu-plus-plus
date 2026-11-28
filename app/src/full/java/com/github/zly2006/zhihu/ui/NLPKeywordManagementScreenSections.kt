@@ -43,6 +43,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
+import com.github.zly2006.zhihu.i18n.SettingsStrings
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.nlp.ModelState
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCard
@@ -68,13 +72,13 @@ internal fun NLPKeywordManagementModelSection(
             modifier = Modifier.padding(AppDimens.Space16),
             verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
         ) {
-            Text("Transformer 模型", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(AndroidNlpStrings.transformerModel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             val statusText = when (val state = modelState) {
-                ModelState.Uninitialized -> "当前状态：未加载"
-                ModelState.Loading -> "当前状态：正在加载"
-                ModelState.Ready -> "当前状态：已就绪"
-                is ModelState.Error -> "当前状态：加载失败"
-                is ModelState.Downloading -> "当前状态：下载中 ${state.progress}%"
+                ModelState.Uninitialized -> AndroidNlpStrings.modelStatusUnloaded
+                ModelState.Loading -> AndroidNlpStrings.modelStatusLoading
+                ModelState.Ready -> AndroidNlpStrings.modelStatusReady
+                is ModelState.Error -> AndroidNlpStrings.modelStatusFailed
+                is ModelState.Downloading -> AndroidNlpStrings.modelStatusDownloading(state.progress)
             }
             Text(statusText, style = MaterialTheme.typography.bodyMedium)
             (modelState as? ModelState.Error)?.let { error ->
@@ -82,7 +86,7 @@ internal fun NLPKeywordManagementModelSection(
             }
             if (isExtracting) {
                 Text(
-                    "提示：正在进行关键词任务，卸载暂不可用",
+                    AndroidNlpStrings.processingUnloadUnavailable,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -92,13 +96,13 @@ internal fun NLPKeywordManagementModelSection(
                     onClick = onLoad,
                     enabled = modelState !is ModelState.Loading && modelState !is ModelState.Ready,
                 ) {
-                    Text(if (modelState is ModelState.Loading) "加载中..." else "加载模型")
+                    Text(if (modelState is ModelState.Loading) WidgetsStrings.loading else AndroidNlpStrings.loadModel)
                 }
                 AppTextButton(
                     onClick = onUnload,
                     enabled = modelState is ModelState.Ready && !isExtracting,
                 ) {
-                    Text("卸载模型")
+                    Text(SettingsStrings.nlpUnload)
                 }
             }
         }
@@ -109,10 +113,10 @@ internal fun NLPKeywordManagementModelSection(
 internal fun NLPKeywordManagementInfoSection() {
     NlpCard(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(modifier = Modifier.padding(AppDimens.Space16)) {
-            Text("NLP智能屏蔽", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(AccountStrings.nlpBlocking, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(AppDimens.Space8))
             Text(
-                "基于自然语言处理技术，通过组合多个关键词成短语来表达与逻辑。例如：\"政治 敏感\" 将匹配同时包含这两个主题的内容。",
+                AndroidNlpStrings.aboutBlocking,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -127,7 +131,7 @@ internal fun NLPKeywordManagementThresholdSection(
 ) {
     NlpCard {
         Column(modifier = Modifier.padding(AppDimens.Space16)) {
-            Text("相似度阈值: ${String.format("%.2f", similarityThreshold)}", style = MaterialTheme.typography.titleSmall)
+            Text(SettingsStrings.nlpThreshold(String.format("%.2f", similarityThreshold)), style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(AppDimens.Space8))
             val slider = rememberSliderState(value = similarityThreshold, steps = 15, trackRange = 0.1f..0.9f)
             slider.value = similarityThreshold
@@ -136,7 +140,7 @@ internal fun NLPKeywordManagementThresholdSection(
                 onValueChange = onSimilarityThresholdChange,
             )
             Text(
-                "阈值越高，匹配越严格；阈值越低，匹配越宽松",
+                AndroidNlpStrings.thresholdHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -152,13 +156,13 @@ internal fun NLPKeywordManagementExtractionSection(
 ) {
     NlpCard {
         Column(modifier = Modifier.padding(AppDimens.Space16)) {
-            Text("提取关键词", style = MaterialTheme.typography.titleSmall)
+            Text(AndroidNlpStrings.extractKeywords, style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(AppDimens.Space8))
             AppTextField(
                 state = inputText,
-                labelText = "输入文本",
+                labelText = AndroidNlpStrings.inputText,
                 lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 3, maxHeightInLines = 5),
-                placeholder = "粘贴Feed内容或输入任意文本",
+                placeholder = AndroidNlpStrings.inputPlaceholder,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(AppDimens.Space8))
@@ -167,7 +171,7 @@ internal fun NLPKeywordManagementExtractionSection(
                 enabled = inputText.text.isNotBlank() && !isExtracting,
                 modifier = Modifier.align(Alignment.End),
             ) {
-                Text(if (isExtracting) "提取中..." else "提取关键词")
+                Text(if (isExtracting) AndroidNlpStrings.extracting else AndroidNlpStrings.extractKeywords)
             }
         }
     }
@@ -187,17 +191,17 @@ internal fun NLPKeywordManagementExtractedKeywordsSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("提取的关键词", style = MaterialTheme.typography.titleSmall)
+                Text(AndroidNlpStrings.extractedKeywords, style = MaterialTheme.typography.titleSmall)
                 AppTextButton(
                     onClick = onAdd,
                     enabled = !submitting,
                 ) {
-                    Text("组合为短语并添加")
+                    Text(AndroidNlpStrings.combineAndAdd)
                 }
             }
             Spacer(modifier = Modifier.height(AppDimens.Space8))
             Text(
-                "提示：所有关键词将用空格连接成一个短语",
+                AndroidNlpStrings.combineHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -229,9 +233,9 @@ internal fun NLPKeywordManagementRecordsEntry(
     SettingsContent {
         SettingItem(
             modifier = Modifier.padding(horizontal = AppDimens.Space16).padding(bottom = AppDimens.Space16),
-            title = { Text("NLP 匹配记录") },
+            title = { Text(SettingsStrings.nlpRecords) },
             description = {
-                Text(if (recordCount != null) "最近 $recordCount 条被语义屏蔽的内容与匹配的短语" else "被语义屏蔽的内容与匹配的短语")
+                Text(if (recordCount != null) AndroidNlpStrings.recordsCount(recordCount) else AndroidNlpStrings.recordsHint)
             },
             onClick = onClick,
         )
@@ -248,20 +252,21 @@ internal fun NLPKeywordManagementKeywordItem(
         title = { Text(keyword.keyword, fontWeight = FontWeight.Medium) },
         description = {
             Text(
-                "包含 ${keyword.getNLPKeywords().size} 个关键词 · 添加于 ${
-                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(keyword.createdTime))
-                }",
+                AndroidNlpStrings.phraseDetails(
+                    keyword.getNLPKeywords().size,
+                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(keyword.createdTime)),
+                ),
             )
         },
         endAction = {
             Row {
                 AppIconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "编辑短语“${keyword.keyword}”", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.Edit, contentDescription = AndroidNlpStrings.editPhraseAccessibility(keyword.keyword), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 AppIconButton(
                     onClick = onDelete,
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除短语“${keyword.keyword}”", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.Delete, contentDescription = AndroidNlpStrings.deletePhraseAccessibility(keyword.keyword), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
@@ -291,7 +296,7 @@ internal fun NLPKeywordManagementAddAction(
     AppTextButton(onClick = onClick) {
         Icon(Icons.Default.Add, contentDescription = null)
         Spacer(modifier = Modifier.width(AppDimens.Space4))
-        Text("手动添加")
+        Text(AndroidNlpStrings.addManually)
     }
 }
 

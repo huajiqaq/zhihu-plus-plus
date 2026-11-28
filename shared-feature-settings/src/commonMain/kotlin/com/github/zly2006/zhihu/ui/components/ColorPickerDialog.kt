@@ -51,11 +51,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import kotlin.math.roundToInt
 
 @Composable
 fun ColorPickerDialog(
-    title: String = "选择颜色",
+    title: String = AccountStrings.pickColor,
     initialColor: Color,
     presetColors: List<Color> = listOf(
         Color(0xFF2196F3),
@@ -100,15 +101,15 @@ fun ColorPickerDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                ColorSlider("红色", red)
+                ColorSlider(AccountStrings.colorRed, red)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                ColorSlider("绿色", green)
+                ColorSlider(AccountStrings.colorGreen, green)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                ColorSlider("蓝色", blue)
+                ColorSlider(AccountStrings.colorBlue, blue)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -120,7 +121,7 @@ fun ColorPickerDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text("预设颜色", style = MaterialTheme.typography.labelMedium)
+                Text(AccountStrings.presetColors, style = MaterialTheme.typography.labelMedium)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -139,13 +140,13 @@ fun ColorPickerDialog(
         },
         confirmButton = {
             AppTextButton(
-                text = "确定",
+                text = AccountStrings.confirm,
                 onClick = { onColorSelected(selectedColor()) },
             )
         },
         dismissButton = {
             AppTextButton(
-                text = "取消",
+                text = AccountStrings.cancel,
                 onClick = onDismiss,
             )
         },
@@ -195,7 +196,15 @@ private fun PresetColor(
             .background(color)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
             .semantics {
-                contentDescription = "预设颜色 #${color.toArgb().toUInt().toString(16).padStart(6, '0').takeLast(6).uppercase()}"
+                contentDescription = AccountStrings.presetColorDescription(
+                    color
+                        .toArgb()
+                        .toUInt()
+                        .toString(16)
+                        .padStart(6, '0')
+                        .takeLast(6)
+                        .uppercase(),
+                )
                 this.selected = selected
             }.clickable { onSelect(color) },
     )

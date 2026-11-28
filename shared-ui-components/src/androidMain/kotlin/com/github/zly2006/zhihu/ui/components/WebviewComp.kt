@@ -64,6 +64,8 @@ import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.account.webViewFailureObserver
 import com.github.zly2006.zhihu.data.AccountData
 import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Video
@@ -71,7 +73,7 @@ import com.github.zly2006.zhihu.navigation.resolveNavigationUrl
 import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 import com.github.zly2006.zhihu.platform.openInSystemBrowser
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.ui.subscreens.PREF_FONT_SIZE
 import com.github.zly2006.zhihu.ui.subscreens.PREF_LINE_HEIGHT
 import com.github.zly2006.zhihu.util.blacklist
@@ -130,7 +132,9 @@ class CustomWebView : WebView {
         onLoad: (CustomWebView) -> Unit,
         useHardwareAcceleration: Boolean,
         onNavigate: (NavDestination) -> Unit,
+        darkTheme: Boolean,
     ) : this(context) {
+        this.darkTheme = darkTheme
         onNavigateCallback = onNavigate
         if (useHardwareAcceleration) {
             setLayerType(LAYER_TYPE_HARDWARE, null)
@@ -166,21 +170,21 @@ class CustomWebView : WebView {
                 val url = imgElement?.let { extractImageUrl(it::attr) }
                     ?: result.extra?.takeIf { !it.startsWith("data") }
                 if (url != null) {
-                    menu.add("查看图片").setOnMenuItemClickListener {
+                    menu.add(WidgetsStrings.viewImage).setOnMenuItemClickListener {
                         OpenImageDialog(context, url).show()
                         true
                     }
-                    menu.add("在浏览器中打开").setOnMenuItemClickListener {
+                    menu.add(WidgetsStrings.openInBrowser).setOnMenuItemClickListener {
                         openInSystemBrowser(context, url)
                         true
                     }
-                    menu.add("保存图片").setOnMenuItemClickListener {
+                    menu.add(WidgetsStrings.saveImage).setOnMenuItemClickListener {
                         GlobalScope.launch(Dispatchers.Main) {
                             saveImageToGallery(context, androidZhihuAccountStore(context).client.httpClient(), url)
                         }
                         true
                     }
-                    menu.add("分享图片").setOnMenuItemClickListener {
+                    menu.add(WidgetsStrings.shareImage).setOnMenuItemClickListener {
                         GlobalScope.launch(Dispatchers.Main) {
                             shareImage(context, androidZhihuAccountStore(context).client.httpClient(), url)
                         }
@@ -193,6 +197,13 @@ class CustomWebView : WebView {
 
     var document: Document? = null
         private set
+    private var articleLanguageTag: String? = null
+    var darkTheme: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            evaluateJavascript("document.body?.classList.toggle('dark-theme', $value)", null)
+        }
     var contentId: String? = null
     internal var htmlClickListener: ((Element) -> Unit)? = null
         private set
@@ -309,9 +320,15 @@ class CustomWebView : WebView {
         document: Document,
         additionalStyle: String = "",
     ) {
+        val languageTag = AppLocale.languageTag
         if (this.document?.html() == document.html()) {
+            if (articleLanguageTag != languageTag) {
+                evaluateJavascript("document.querySelector('html[data-zhplus-reader]')?.setAttribute('lang', '$languageTag')", null)
+                articleLanguageTag = languageTag
+            }
             return
         }
+        articleLanguageTag = languageTag
         Log.i("CustomWebView", "Loading content for URL: $url with document title: ${document.title()}")
         val settings = androidSettingsStore(context)
         val fontSize = settings.getInt(PREF_FONT_SIZE, 100)
@@ -327,11 +344,12 @@ class CustomWebView : WebView {
             ""
         }
 
-        val bodyClass = if (ThemeManager.isDarkTheme) " class=\"dark-theme\" " else ""
+        val bodyClass = if (darkTheme) " class=\"dark-theme\" " else ""
 
         loadDataWithBaseURL(
             url,
             """
+            <html lang="$languageTag" data-zhplus-reader>
             <head>
             <link rel="stylesheet" href="https://zhihu-plus.internal/assets/stylesheet.css">
             <viewport content="width=device-width, initial-scale=1.0">
@@ -348,6 +366,7 @@ class CustomWebView : WebView {
             <body $bodyClass>
             ${document.body().html()}
             </body>
+            </html>
             """.trimIndent(),
             "text/html",
             "utf-8",
@@ -433,6 +452,7 @@ fun WebviewComp(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val darkTheme = LocalAppTheme.current.isDarkTheme
     val currentOnNavigate = rememberUpdatedState(LocalNavigator.current.onNavigate)
     val onNavigate = remember { { destination: NavDestination -> currentOnNavigate.value(destination) } }
     val useHardwareAcceleration = androidSettingsStore(context).getBoolean("webviewHardwareAcceleration", true)
@@ -445,20 +465,22 @@ fun WebviewComp(
             val webView = if (existingWebView != null) {
                 (existingWebView.parent as? ViewGroup)?.removeView(existingWebView)
                 existingWebView.onNavigateCallback = onNavigate
+                existingWebView.darkTheme = darkTheme
                 existingWebView
             } else {
-                CustomWebView(ctx, onLoad, useHardwareAcceleration, onNavigate)
+                CustomWebView(ctx, onLoad, useHardwareAcceleration, onNavigate, darkTheme)
             }
             FrameLayout(ctx).apply { addView(webView) }
         },
         update = { frameLayout ->
             val view = frameLayout.getChildAt(0) as? CustomWebView ?: run {
                 frameLayout.removeAllViews()
-                val newWebView = CustomWebView(frameLayout.context, onLoad, useHardwareAcceleration, onNavigate)
+                val newWebView = CustomWebView(frameLayout.context, onLoad, useHardwareAcceleration, onNavigate, darkTheme)
                 frameLayout.addView(newWebView)
                 newWebView
             }
             view.onNavigateCallback = onNavigate
+            view.darkTheme = darkTheme
             if (scrollState != null) {
                 view.scrollToHeightCallback = { elementY, maxY ->
                     coroutineScope.launch {
@@ -627,7 +649,7 @@ fun WebView.setupUpWebviewClient(onPageFinished: ((String) -> Unit)? = null) {
                     else -> return true
                 }
                 runCatching { context.startActivity(Intent(action, uri)) }
-                    .onFailure { androidUserMessageSink(context).showShortMessage("没有可打开此链接的应用") }
+                    .onFailure { androidUserMessageSink(context).showShortMessage(WidgetsStrings.noLinkHandler) }
             }
             return true
         }
@@ -653,7 +675,7 @@ fun WebView.setupUpWebviewClient(onPageFinished: ((String) -> Unit)? = null) {
                     view.evaluateJavascript(footnoteScript, null)
                 }
                 view.evaluateJavascript(
-                    if (ThemeManager.isDarkTheme) {
+                    if (view.darkTheme) {
                         "document.body.classList.add('dark-theme');"
                     } else {
                         "document.body.classList.remove('dark-theme');"

@@ -54,8 +54,8 @@ import com.github.zly2006.zhihu.util.isZhihuLoginRiskControl
 import com.github.zly2006.zhihu.util.telemetry
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
-import kotlinx.coroutines.launch
 import java.util.TimeZone
+import kotlinx.coroutines.launch
 
 actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Phone,
@@ -77,30 +77,14 @@ actual fun decodePhoneLoginCaptchaImage(content: String) = runCatching {
 @Composable
 actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) {
     val context = LocalContext.current
-    val accountStore = rememberZhihuAccountStore()
-    val accountClient = accountStore.client
-    val cookies = remember(accountClient) {
-        (accountStore.session.cookies + accountStore.accountsState.value.guestCookies).toMutableMap()
+    AccountQrLoginPane { username ->
+        telemetry(context, "login")
+        onLoginSuccess(username)
     }
-    val client = rememberLoginHttpClient(cookies)
-    SharedQrLoginPane(
-        client = client,
-        cookies = cookies,
-        onRiskControl = { url, candidate -> accountClient.reportHumanVerification(url, candidate) },
-        onLoginSuccess = { cookies ->
-            if (accountStore.login(cookies.toMutableMap())) {
-                telemetry(context, "login")
-                onLoginSuccess(accountStore.session.username)
-                true
-            } else {
-                false
-            }
-        },
-    )
 }
 
 @Composable
-actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
+actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit) {
     val context = LocalContext.current
     val accountStore = rememberZhihuAccountStore()
     val accountClient = accountStore.client
@@ -124,7 +108,7 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
                         isVerifying = true
                         scope.launch {
                             try {
-                                if (accountStore.login(cookies.toMutableMap())) {
+                                if (accountStore.login(accountClient, cookies.toMutableMap())) {
                                     telemetry(context, "login")
                                     loginSuccess.value(accountStore.session.username)
                                 }

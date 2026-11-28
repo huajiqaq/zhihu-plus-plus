@@ -31,13 +31,15 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
+import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccounts
+import com.github.zly2006.zhihu.account.ZhihuSavedAccount
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.WriteQuestion
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.util.ZHIHU_WEB_ZSE93
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
@@ -50,7 +52,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import kotlinx.coroutines.CompletableDeferred
 import java.net.URLDecoder
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
@@ -58,6 +59,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.io.files.Path as KotlinxPath
 
 @OptIn(ExperimentalTestApi::class)
@@ -65,7 +67,6 @@ class WriteQuestionScreenTest {
     @Test
     fun publishesOfficialFormAndRetainsDraftAfterFailure() {
         val oldHome = System.getProperty("user.home")
-        val oldTheme = ThemeManager.snapshot()
         val home = Files.createTempDirectory("zhihu-question-ui-")
         val requests = CopyOnWriteArrayList<HttpRequestData>()
         val navigations = CopyOnWriteArrayList<NavDestination>()
@@ -86,9 +87,14 @@ class WriteQuestionScreenTest {
         try {
             System.setProperty("user.home", home.toString())
             val account = home.resolve("fixture-account.json")
-            Files.createDirectories(account.parent)
-            Files.writeString(account, """{"login":true,"username":"question-ui-fixture","cookies":{"d_c0":"synthetic-device","z_c0":"synthetic-session"}}""")
-            val accountStore = ZhihuAccountStore(ZhihuAccountRepository(KotlinxPath(account.toString())), engine = engine)
+            val repository = ZhihuAccountRepository(KotlinxPath(account.toString()))
+            val session = ZhihuAccountSession(
+                login = true,
+                username = "question-ui-fixture",
+                cookies = mutableMapOf("d_c0" to "synthetic-device", "z_c0" to "synthetic-session"),
+            )
+            repository.saveAccounts(ZhihuAccounts(session.username, listOf(ZhihuSavedAccount(session.username, session))))
+            val accountStore = ZhihuAccountStore(repository, engine = engine)
             store = accountStore
             assertEquals("question-ui-fixture", accountStore.session.username)
             assertSame(engine, accountStore.client.httpClient().engine)
@@ -159,7 +165,6 @@ class WriteQuestionScreenTest {
         } finally {
             responseGate.complete(Unit)
             store?.close()
-            ThemeManager.load(oldTheme)
             if (oldHome == null) System.clearProperty("user.home") else System.setProperty("user.home", oldHome)
             home.toFile().deleteRecursively()
         }

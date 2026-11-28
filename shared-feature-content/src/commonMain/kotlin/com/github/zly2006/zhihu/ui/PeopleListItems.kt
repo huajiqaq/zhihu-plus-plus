@@ -43,19 +43,21 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.pinSummaryText
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.CollectionContent
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
+import com.github.zly2006.zhihu.navigation.Topic
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AuthorBadge
 import com.github.zly2006.zhihu.ui.components.FeedItemSurface
 import com.github.zly2006.zhihu.util.formatCompactCount
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun CollectionListItem(
@@ -78,7 +80,7 @@ internal fun CollectionListItem(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = "${collection.answerCount} 内容 · ${collection.followerCount} 关注",
+                text = ContentStrings.collectionStats(collection.answerCount, collection.followerCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = AppDimens.Space4),
@@ -108,7 +110,7 @@ internal fun QuestionListItem(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = "${question.answerCount} 回答 · ${question.followerCount} 关注",
+                text = ContentStrings.questionStats(question.answerCount, question.followerCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = AppDimens.Space4),
@@ -148,7 +150,7 @@ internal fun PinListItem(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${pin.likeCount} 赞 · ${pin.commentCount} 评论",
+                text = ContentStrings.pinStats(pin.likeCount, pin.commentCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = AppDimens.Space4),
@@ -189,8 +191,8 @@ internal fun ColumnListItem(
                     )
                 }
                 val counts = listOfNotNull(
-                    column.articlesCount?.let { "$it 文章" },
-                    listOfNotNull(column.followerCount, column.followers).maxOrNull()?.let { "$it 关注" },
+                    column.articlesCount?.let { ContentStrings.articleCount(it) },
+                    listOfNotNull(column.followerCount, column.followers).maxOrNull()?.let { ContentStrings.followerCount(it) },
                 )
                 if (counts.isNotEmpty()) {
                     Text(
@@ -232,8 +234,7 @@ internal fun FollowedTopicListItem(topic: FollowedTopic) {
             .testTag("people_screen_followed_topic_item_${topic.displayId}"),
         onClick = {
             navigator.onNavigate(
-                com.github.zly2006.zhihu.navigation
-                    .Topic(topic.displayId, topic.displayName),
+                Topic(topic.displayId, topic.displayName),
             )
         },
     ) {
@@ -243,7 +244,7 @@ internal fun FollowedTopicListItem(topic: FollowedTopic) {
         ) {
             AsyncImage(
                 model = topic.displayAvatarUrl,
-                contentDescription = "话题头像",
+                contentDescription = ContentStrings.topicAvatar,
                 modifier = Modifier
                     .padding(end = AppDimens.Space12)
                     .size(AppDimens.ProfileActionSize)
@@ -297,7 +298,7 @@ internal fun PeopleListItem(
             ) {
                 AsyncImage(
                     model = people.avatarUrl,
-                    contentDescription = "用户头像",
+                    contentDescription = ContentStrings.userAvatar,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(AppDimens.ProfileEditActionSize)
@@ -332,12 +333,12 @@ internal fun PeopleListItem(
                         )
                     }
                     Text(
-                        text = "${formatCompactCount(people.answerCount)} 回答 · ${formatCompactCount(people.articlesCount)} 文章 · ${formatCompactCount(people.followerCount)} 粉丝",
+                        text = ContentStrings.personStats(formatCompactCount(people.answerCount), formatCompactCount(people.articlesCount), formatCompactCount(people.followerCount)),
                         style = skin.footnote2,
                         color = skin.onSurfaceVariantSummary,
                     )
                 }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = skin.onSurfaceVariantActions)
+                AppIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = skin.onSurfaceVariantActions)
             }
         }
     }

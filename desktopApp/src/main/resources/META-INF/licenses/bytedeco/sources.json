@@ -1,0 +1,304 @@
+{
+  "artifact": "org.bytedeco:ffmpeg:8.1.2-1.5.14",
+  "classifiers": [
+    "windows-x86_64",
+    "macosx-x86_64",
+    "macosx-arm64",
+    "linux-x86_64",
+    "linux-arm64"
+  ],
+  "javaCvVersion": "1.5.14",
+  "javaCppVersion": "1.5.14",
+  "buildRecipe": "https://github.com/bytedeco/javacpp-presets/blob/d57d8a28635211e174df378611cb1952f751c943/ffmpeg/cppbuild.sh",
+  "patches": "https://github.com/bytedeco/javacpp-presets/tree/d57d8a28635211e174df378611cb1952f751c943/ffmpeg",
+  "sourceArchives": [
+    "https://zlib.net/zlib-1.3.2.tar.gz",
+    "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+    "https://ftp.osuosl.org/pub/xiph/releases/speex/speex-1.2.1.tar.gz",
+    "https://archive.mozilla.org/pub/opus/opus-1.3.1.tar.gz",
+    "https://sourceforge.net/projects/opencore-amr/files/opencore-amr/opencore-amr-0.1.6.tar.gz/download",
+    "https://sourceforge.net/projects/opencore-amr/files/vo-amrwbenc/vo-amrwbenc-0.1.3.tar.gz/download",
+    "https://www.openssl.org/source/openssl-3.5.7.tar.gz",
+    "https://github.com/cisco/openh264/archive/v2.6.0.tar.gz",
+    "https://github.com/webmproject/libvpx/archive/v1.16.0.tar.gz",
+    "https://ftp.osuosl.org/pub/blfs/conglomeration/alsa-lib/alsa-lib-1.2.16.1.tar.bz2",
+    "https://ftp.osuosl.org/pub/blfs/conglomeration/freetype/freetype-2.14.3.tar.xz",
+    "https://github.com/harfbuzz/harfbuzz/archive/refs/tags/14.3.0.tar.gz",
+    "https://github.com/lu-zero/mfx_dispatch/archive/1.35.1.tar.gz",
+    "https://github.com/FFmpeg/nv-codec-headers/archive/n13.1.15.0.tar.gz",
+    "http://xmlsoft.org/sources/libxml2-2.9.12.tar.gz",
+    "https://github.com/Haivision/srt/archive/refs/tags/v1.5.6.tar.gz",
+    "https://github.com/webmproject/libwebp/archive/refs/tags/v1.6.0.tar.gz",
+    "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+    "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v4.2.0/SVT-AV1-v4.2.0.tar.gz",
+    "https://github.com/sekrit-twc/zimg/archive/refs/tags/release-3.0.6.tar.gz",
+    "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.bz2"
+  ],
+  "components": [
+    {
+      "id": "org.bytedeco:javacv",
+      "name": "JavaCV",
+      "version": "1.5.14",
+      "license": "Apache-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0",
+      "source": "https://github.com/bytedeco/javacv/tree/43ec490259f72d47c4dd251fcbed9e9b474d2997",
+      "licenseFiles": [
+        "javacv/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "org.bytedeco:javacpp",
+      "name": "JavaCPP",
+      "version": "1.5.14",
+      "license": "Apache-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0",
+      "source": "https://github.com/bytedeco/javacpp/tree/d7ee5be30f28a6ea5f84a001d2222b17407a3db0",
+      "licenseFiles": [
+        "javacpp/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "native:ffmpeg",
+      "name": "FFmpeg native runtime (non-GPL build)",
+      "version": "8.1.2-1.5.14",
+      "license": "LGPL-3.0-or-later; FFmpeg and external-library terms",
+      "source": "https://github.com/bytedeco/javacpp-presets/tree/d57d8a28635211e174df378611cb1952f751c943/ffmpeg",
+      "licenseFiles": [
+        "ffmpeg/COPYING.LGPLv3",
+        "ffmpeg/COPYING.GPLv3",
+        "ffmpeg/COPYING.LGPLv2.1",
+        "ffmpeg/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "native:lame",
+      "name": "LAME",
+      "version": "3.100",
+      "license": "LGPL-2.0-or-later",
+      "source": "https://sourceforge.net/projects/lame/files/lame/3.100/",
+      "licenseFiles": [
+        "ffmpeg/COPYING.lame",
+        "ffmpeg/LICENSE.lame"
+      ]
+    },
+    {
+      "id": "native:speex",
+      "name": "Speex",
+      "version": "1.2.1",
+      "license": "BSD-3-Clause",
+      "source": "https://ftp.osuosl.org/pub/xiph/releases/speex/speex-1.2.1.tar.gz",
+      "licenseFiles": [
+        "ffmpeg/COPYING.speex"
+      ]
+    },
+    {
+      "id": "native:opus",
+      "name": "Opus",
+      "version": "1.3.1",
+      "license": "BSD-3-Clause",
+      "source": "https://archive.mozilla.org/pub/opus/opus-1.3.1.tar.gz",
+      "licenseFiles": [
+        "ffmpeg/COPYING.opus"
+      ]
+    },
+    {
+      "id": "native:opencore-amr",
+      "name": "OpenCORE AMR",
+      "version": "0.1.6",
+      "license": "Apache-2.0",
+      "source": "https://sourceforge.net/projects/opencore-amr/files/opencore-amr/",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.opencore-amr"
+      ]
+    },
+    {
+      "id": "native:vo-amrwbenc",
+      "name": "VisualOn AMR-WB encoder",
+      "version": "0.1.3",
+      "license": "Apache-2.0",
+      "source": "https://sourceforge.net/projects/opencore-amr/files/vo-amrwbenc/",
+      "licenseFiles": [
+        "ffmpeg/COPYING.vo-amrwbenc"
+      ]
+    },
+    {
+      "id": "native:openssl",
+      "name": "OpenSSL",
+      "version": "3.5.7",
+      "license": "Apache-2.0",
+      "source": "https://www.openssl.org/source/openssl-3.5.7.tar.gz",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.openssl"
+      ]
+    },
+    {
+      "id": "native:openh264",
+      "name": "OpenH264",
+      "version": "2.6.0",
+      "license": "BSD-2-Clause",
+      "source": "https://github.com/cisco/openh264/tree/v2.6.0",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.openh264"
+      ]
+    },
+    {
+      "id": "native:libvpx",
+      "name": "libvpx",
+      "version": "1.16.0",
+      "license": "BSD-3-Clause and patent grant",
+      "source": "https://github.com/webmproject/libvpx/tree/v1.16.0",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.libvpx",
+        "libvpx/PATENTS"
+      ]
+    },
+    {
+      "id": "native:freetype",
+      "name": "FreeType",
+      "version": "2.14.3",
+      "license": "FTL OR GPL-2.0-only",
+      "source": "https://github.com/freetype/freetype/tree/VER-2-14-3",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.freetype",
+        "freetype/FTL.TXT",
+        "freetype/GPLv2.TXT"
+      ]
+    },
+    {
+      "id": "native:harfbuzz",
+      "name": "HarfBuzz",
+      "version": "14.3.0",
+      "license": "MIT-like; see original notices",
+      "source": "https://github.com/harfbuzz/harfbuzz/tree/14.3.0",
+      "licenseFiles": [
+        "harfbuzz/COPYING"
+      ]
+    },
+    {
+      "id": "native:zlib",
+      "name": "zlib",
+      "version": "1.3.2",
+      "license": "Zlib",
+      "source": "https://zlib.net/zlib-1.3.2.tar.gz",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.zlib"
+      ]
+    },
+    {
+      "id": "native:libxml2",
+      "name": "libxml2",
+      "version": "2.9.12",
+      "license": "MIT",
+      "source": "http://xmlsoft.org/sources/libxml2-2.9.12.tar.gz",
+      "licenseFiles": [
+        "ffmpeg/Copyright.libxml2"
+      ]
+    },
+    {
+      "id": "native:srt",
+      "name": "SRT",
+      "version": "1.5.6",
+      "license": "MPL-2.0",
+      "source": "https://github.com/Haivision/srt/tree/v1.5.6",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.srt"
+      ]
+    },
+    {
+      "id": "native:libwebp",
+      "name": "libwebp",
+      "version": "1.6.0",
+      "license": "BSD-3-Clause and patent grant",
+      "source": "https://github.com/webmproject/libwebp/tree/v1.6.0",
+      "licenseFiles": [
+        "ffmpeg/COPYING.libwebp",
+        "libwebp/PATENTS"
+      ]
+    },
+    {
+      "id": "native:libaom",
+      "name": "libaom",
+      "version": "3.14.1",
+      "license": "BSD-2-Clause and patent grant",
+      "source": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+      "licenseFiles": [
+        "libaom/LICENSE",
+        "libaom/PATENTS"
+      ]
+    },
+    {
+      "id": "native:svt-av1",
+      "name": "SVT-AV1",
+      "version": "4.2.0",
+      "license": "BSD-3-Clause and included third-party terms",
+      "source": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/tree/v4.2.0",
+      "licenseFiles": [
+        "svt-av1/LICENSE.txt",
+        "svt-av1/LICENSE-BSD2.txt",
+        "svt-av1/PATENTS.txt"
+      ]
+    },
+    {
+      "id": "native:zimg",
+      "name": "zimg",
+      "version": "3.0.6",
+      "license": "WTFPL and included third-party terms",
+      "source": "https://github.com/sekrit-twc/zimg/tree/release-3.0.6",
+      "licenseFiles": [
+        "zimg/COPYING"
+      ]
+    },
+    {
+      "id": "native:nvcodec",
+      "name": "NVIDIA codec headers",
+      "version": "13.1.15.0",
+      "license": "MIT",
+      "source": "https://github.com/FFmpeg/nv-codec-headers/tree/n13.1.15.0",
+      "licenseFiles": [
+        "ffmpeg/COPYRIGHT.nvcodec"
+      ],
+      "platforms": [
+        "windows",
+        "linux"
+      ]
+    },
+    {
+      "id": "native:mfx",
+      "name": "Intel Media SDK dispatcher",
+      "version": "1.35.1",
+      "license": "MIT",
+      "source": "https://github.com/lu-zero/mfx_dispatch/tree/1.35.1",
+      "licenseFiles": [
+        "ffmpeg/LICENSE.mfx"
+      ],
+      "platforms": [
+        "windows",
+        "linux"
+      ]
+    },
+    {
+      "id": "native:alsa",
+      "name": "ALSA (Linux runtime)",
+      "version": "1.2.16.1",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.16.1.tar.bz2",
+      "licenseFiles": [
+        "alsa/COPYING"
+      ],
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "id": "native:libva",
+      "name": "VA-API headers (Linux)",
+      "version": "as selected by the upstream build environment",
+      "license": "MIT",
+      "source": "https://github.com/bytedeco/javacpp-presets/blob/d57d8a28635211e174df378611cb1952f751c943/ffmpeg/cppbuild.sh",
+      "licenseFiles": [
+        "ffmpeg/COPYING.libva"
+      ],
+      "platforms": [
+        "linux"
+      ]
+    }
+  ]
+}

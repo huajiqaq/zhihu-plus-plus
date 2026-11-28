@@ -25,7 +25,8 @@ import com.github.zly2006.zhihu.data.DailySection
 import com.github.zly2006.zhihu.data.DailyStoriesResponse
 import com.github.zly2006.zhihu.data.fetchDailyStoriesBefore
 import com.github.zly2006.zhihu.data.fetchLatestDailyStories
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.i18n.FeedStrings
+import com.github.zly2006.zhihu.util.AppLog
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.DateTimeUnit
@@ -39,10 +40,10 @@ class DailyViewModel : ViewModel() {
         private set
     var isLoadingMore by mutableStateOf(false)
         private set
-    var error by mutableStateOf<String?>(null)
-        private set
-    var loadMoreError by mutableStateOf<String?>(null)
-        private set
+    private var loadFailure by mutableStateOf<Exception?>(null)
+    val error: String? get() = loadFailure?.let { FeedStrings.dailyLoadError(it.message.orEmpty()) }
+    private var earlierFailure by mutableStateOf<Exception?>(null)
+    val loadMoreError: String? get() = earlierFailure?.let { FeedStrings.earlierDailyError(it.message.orEmpty()) }
     var isEnd by mutableStateOf(false)
         private set
     private var nextDate: String? = null
@@ -51,18 +52,18 @@ class DailyViewModel : ViewModel() {
     suspend fun loadLatest(httpClient: HttpClient) {
         requestedDate = null
         isLoading = true
-        error = null
+        loadFailure = null
         try {
             val data: DailyStoriesResponse = httpClient.fetchLatestDailyStories()
             sections = if (data.stories.isEmpty()) emptyList() else listOf(DailySection(data.date, data.stories))
             nextDate = data.date
-            loadMoreError = null
+            earlierFailure = null
             isEnd = data.stories.isEmpty()
-            error = null
+            loadFailure = null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            error = "加载失败: ${e.message}"
+            loadFailure = e
         } finally {
             isLoading = false
         }
@@ -71,7 +72,7 @@ class DailyViewModel : ViewModel() {
     suspend fun loadDate(httpClient: HttpClient, date: String) {
         requestedDate = date
         isLoading = true
-        error = null
+        loadFailure = null
         try {
             val nextApiDate = LocalDate
                 .parse("${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}")
@@ -81,13 +82,13 @@ class DailyViewModel : ViewModel() {
             val data: DailyStoriesResponse = httpClient.fetchDailyStoriesBefore(nextApiDate)
             sections = if (data.stories.isEmpty()) emptyList() else listOf(DailySection(data.date, data.stories))
             nextDate = data.date
-            loadMoreError = null
+            earlierFailure = null
             isEnd = data.stories.isEmpty()
-            error = null
+            loadFailure = null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            error = "加载失败: ${e.message}"
+            loadFailure = e
         } finally {
             isLoading = false
         }
@@ -99,7 +100,7 @@ class DailyViewModel : ViewModel() {
     }
 
     suspend fun retryLoadMore(httpClient: HttpClient) {
-        loadMoreError = null
+        earlierFailure = null
         loadMore(httpClient)
     }
 
@@ -114,12 +115,12 @@ class DailyViewModel : ViewModel() {
             }
             isEnd = data.stories.isEmpty() || data.date >= date
             nextDate = data.date
-            loadMoreError = null
+            earlierFailure = null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("DailyViewModel", "Failed to load more daily stories", e)
-            loadMoreError = "历史日报加载失败：${e.message}"
+            AppLog.e("DailyViewModel", "Failed to load more daily stories", e)
+            earlierFailure = e
         } finally {
             isLoadingMore = false
         }

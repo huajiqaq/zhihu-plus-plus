@@ -17,17 +17,18 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.height
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
+import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -69,7 +70,7 @@ class PaginationPresentationTest {
         mainClock.advanceTimeBy(500)
         waitForIdle()
         assertEquals(1, requests, "失败后不能自动轮询请求")
-        onNodeWithText("重试").performClick()
+        onNodeWithText(WidgetsStrings.retry).performClick()
         waitForIdle()
         assertEquals(1, retries)
         assertEquals(2, requests)

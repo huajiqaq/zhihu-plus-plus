@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- 仅移除 ORT 的自动遥测桥，推理仍由 SentenceEmbedding 按需初始化。 -->
+        <provider
+                android:name="ai.onnxruntime.TelemetryInitializer"
+                tools:node="remove"/>
+    </application>
+</manifest>

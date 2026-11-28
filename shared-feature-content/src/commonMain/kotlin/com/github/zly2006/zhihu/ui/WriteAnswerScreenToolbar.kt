@@ -38,13 +38,14 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.editor.isImagePickerSupported
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.AppTopBar
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun WriteAnswerTopBar(
@@ -62,9 +63,9 @@ internal fun WriteAnswerTopBar(
             Text(
                 text =
                     when {
-                        isDetecting || isLoadingExistingAnswer -> "正在检测已有回答..."
-                        existingAnswerId != null -> "编辑回答"
-                        else -> "写回答"
+                        isDetecting || isLoadingExistingAnswer -> ContentStrings.checkingExistingAnswer
+                        existingAnswerId != null -> ContentStrings.editAnswer
+                        else -> ContentStrings.writeAnswer
                     },
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
@@ -76,7 +77,7 @@ internal fun WriteAnswerTopBar(
                 onClick = onShowSettings,
                 enabled = !isSubmitting,
             ) {
-                Icon(Icons.Default.Settings, contentDescription = "回答设置")
+                AppIcon(Icons.Default.Settings, contentDescription = ContentStrings.answerSettings)
             }
             AppButton(
                 onClick = onPublish,
@@ -85,7 +86,7 @@ internal fun WriteAnswerTopBar(
                 if (isSubmitting) {
                     AppSpinner(modifier = Modifier, size = 18.dp)
                 } else {
-                    Text("发布")
+                    Text(ContentStrings.publish)
                 }
             }
         },
@@ -116,7 +117,7 @@ internal fun ColumnScope.WriteAnswerActionToolbar(
             enabled = !isSubmitting && hasContent && editorAvailable,
             modifier = Modifier.size(AppDimens.TouchTarget).testTag(WRITE_ANSWER_FAB_PREVIEW_TAG),
         ) {
-            Icon(Icons.Filled.Visibility, contentDescription = "预览")
+            AppIcon(Icons.Filled.Visibility, contentDescription = ContentStrings.preview)
         }
         if (isImagePickerSupported) {
             AppIconButton(
@@ -125,23 +126,23 @@ internal fun ColumnScope.WriteAnswerActionToolbar(
                 modifier = Modifier
                     .size(AppDimens.TouchTarget)
                     .testTag(WRITE_ANSWER_FAB_IMAGE_TAG)
-                    .semantics { contentDescription = "插入图片" },
+                    .semantics { contentDescription = ContentStrings.insertImage },
             ) {
                 if (isUploadingImage) {
                     AppSpinner(modifier = Modifier, size = AppDimens.IconSizeCompact)
                 } else {
-                    Icon(Icons.Filled.Image, contentDescription = "插入图片")
+                    AppIcon(Icons.Filled.Image, contentDescription = ContentStrings.insertImage)
                 }
             }
         }
         AppTextButton(
-            text = "草稿",
+            text = ContentStrings.draft,
             onClick = onSaveDraft,
             enabled = initialContentLoaded && !isSubmitting && !isUploadingImage && editorAvailable,
             modifier = Modifier
                 .widthIn(min = AppDimens.TouchTarget)
                 .testTag(WRITE_ANSWER_FAB_SAVE_TAG)
-                .semantics { contentDescription = "保存草稿" },
+                .semantics { contentDescription = ContentStrings.saveDraft },
         )
     }
 }

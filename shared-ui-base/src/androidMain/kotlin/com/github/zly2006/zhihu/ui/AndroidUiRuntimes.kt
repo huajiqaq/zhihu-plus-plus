@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.platform.androidSettingsStore
@@ -54,21 +56,23 @@ import com.github.zly2006.zhihu.reading.loadReadingPlaybackSpeed
 import com.github.zly2006.zhihu.ui.article.prepareContentDocument
 import com.github.zly2006.zhihu.ui.components.WebviewComp
 import com.github.zly2006.zhihu.ui.components.setupUpWebviewClient
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.EmojiManager
-import com.github.zly2006.zhihu.util.Log
 import com.github.zly2006.zhihu.util.OPEN_IN_BROWSER_PLUGIN_VERSION
 import com.github.zly2006.zhihu.util.OpenInBrowser
 import com.github.zly2006.zhihu.util.createEmojiInlineContent
 import com.github.zly2006.zhihu.util.fuckHonorService
+import com.github.zly2006.zhihu.viewmodel.NotificationEnvironment
 import com.github.zly2006.zhihu.viewmodel.SharedAndroidNotificationEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.encodeBlocklistBackup
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
-import java.io.File
 
 private const val WEBVIEW_ACTIVITY_CLASS = "com.github.zly2006.zhihu.WebviewActivity"
 
@@ -141,10 +145,10 @@ actual fun rememberArticleSpeechToggler(): (String, String) -> Unit {
                             }
                         }
                     }
-                } catch (e: kotlinx.coroutines.CancellationException) {
+                } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    userMessages.showMessage("朗读失败：${e.message}")
+                    userMessages.showMessage(ReaderStrings.speechFailed(e.message.orEmpty()))
                 }
             }
         }
@@ -153,22 +157,22 @@ actual fun rememberArticleSpeechToggler(): (String, String) -> Unit {
 
 @Composable
 actual fun rememberArticleBrowserOpener(): (Article) -> Unit {
-    val context = LocalContext.current.applicationContext
+    val account = rememberZhihuAccountStore().client
     val coroutineScope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
     return { article ->
         coroutineScope.launch {
             val sent = try {
-                OpenInBrowser.openUrlInBrowser(context, article)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                OpenInBrowser.openUrlInBrowser(account, article)
+            } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 false
             }
             if (sent) {
-                userMessages.showMessage("已发送到电脑。请使用最新版浏览器扩展（v$OPEN_IN_BROWSER_PLUGIN_VERSION）打开；如果长时间没反应，请检查电脑浏览器是否登录了与手机相同的知乎账号。")
+                userMessages.showMessage(ReaderStrings.sentToComputer(OPEN_IN_BROWSER_PLUGIN_VERSION))
             } else {
-                userMessages.showShortMessage("未能发送到电脑，请检查登录状态和网络后重试")
+                userMessages.showShortMessage(ReaderStrings.sendToComputerFailed)
             }
         }
     }
@@ -198,7 +202,7 @@ actual fun ArticleWebViewContent(
                     while (scrollState.maxValue < rememberedScrollY) {
                         delay(100)
                     }
-                    Log.i("zhihu-scroll", "scroll to $rememberedScrollY, max= ${scrollState.maxValue}, sync on")
+                    AppLog.i("zhihu-scroll", "scroll to $rememberedScrollY, max= ${scrollState.maxValue}, sync on")
                     scrollState.animateScrollTo(rememberedScrollY)
                     onRememberedScrollYSyncChange(true)
                 }
@@ -251,8 +255,8 @@ actual fun rememberBlocklistRuleExporter(): suspend () -> String {
             )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "查看屏蔽规则"))
-        "已导出到 ${file.absolutePath}"
+        context.startActivity(Intent.createChooser(intent, ReaderStrings.viewBlocklist))
+        ReaderStrings.exportedTo(file.absolutePath)
     }
 }
 
@@ -309,10 +313,9 @@ actual fun Modifier.commentSelectionWorkaround(): Modifier = fuckHonorService()
 @Composable
 actual fun rememberNotificationEnvironment(
     settingsStore: NotificationSettingsStore,
-): com.github.zly2006.zhihu.viewmodel.NotificationEnvironment {
+): NotificationEnvironment {
     val context = LocalContext.current
-    val store = com.github.zly2006.zhihu.account
-        .rememberZhihuAccountStore()
+    val store = rememberZhihuAccountStore()
     return remember(context, settingsStore, store) {
         SharedAndroidNotificationEnvironment(context, false, settingsStore, store)
     }

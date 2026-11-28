@@ -32,10 +32,10 @@ private val macosContentFilterDatabase by lazy {
         error = null,
     )
     buildContentFilterDatabase(
-        Room.databaseBuilder<ContentFilterDatabase>(
+        Room.databaseBuilder<RoomContentFilterDatabase>(
             name = "$dataDirectory/content-filter.db",
         ),
     )
 }
 
-internal actual fun nativeContentFilterDatabase(): ContentFilterDatabase = macosContentFilterDatabase
+actual fun getContentFilterDatabase(): ContentFilterDatabase = macosContentFilterDatabase

@@ -17,25 +17,17 @@
 
 package com.github.zly2006.zhihu.data
 
-import android.content.Context
 import android.util.Log
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
-import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 
-fun Context.asApiEnvironment(): ZhihuApiEnvironment {
-    val appContext = applicationContext
-    AccountData.loadData(appContext)
+fun ZhihuAccountClient.asApiEnvironment(): ZhihuApiEnvironment = object : ZhihuApiEnvironment {
+    override val accountClient: ZhihuAccountClient = this@asApiEnvironment
 
-    return object : ZhihuApiEnvironment {
-        override val accountClient: ZhihuAccountClient
-            get() = androidZhihuAccountStore(appContext).client
-
-        override suspend fun handleFetchFailure(
-            tag: String?,
-            error: Exception,
-        ) {
-            Log.e(tag ?: "ZhihuApiEnvironment", "Failed to fetch Zhihu API", error)
-        }
+    override suspend fun handleFetchFailure(
+        tag: String?,
+        error: Exception,
+    ) {
+        Log.e(tag ?: "ZhihuApiEnvironment", "Failed to fetch Zhihu API", error)
     }
 }

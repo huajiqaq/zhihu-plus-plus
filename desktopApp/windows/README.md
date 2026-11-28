@@ -1,27 +1,27 @@
-# 可选 Windows MSIX 系统通知
+# Windows 系统通知：MSI 与可选 MSIX
 
-常规 MSI/AppImage 和 jpackage app-image 的构建、启动入口不变。MSI 没有可靠的包身份/激活登记，不发送系统通知，也不自注册或修改快捷方式。Windows 普通启动始终可以创建窗口；只有取得通知租约的窗口检查新消息，不为普通启动发送唤醒 IPC。
+Windows x64 JVM 宿主默认 Full。正式 MSI 使用 [package-windows-msi.ps1](../../.github/scripts/package-windows-msi.ps1) 打包，在 per-user 安装阶段写入通知注册；不由应用启动时自注册。裸 JVM、未注册的 MSI 或直接复制的应用目录不能替代该通知注册。MSIX 通过 `package-msix.ps1` 生成 unsigned 包，另需正式签名并安装。普通启动可以创建窗口；只有取得通知租约的窗口检查新消息，不为普通启动发送唤醒 IPC。当前能力、签名与验收状态见[平台能力与边界](../../docs/platform-capabilities.md#windows)。
 
-## 正式分发
+## MSIX 正式分发
 
-此目录是可选 Windows x64 MSIX 包装，不是新的通用运行器。先用项目现有 `:desktopApp:createReleaseDistributable` 生成 Windows app-image，然后执行：
+从仓库根目录运行 `./gradlew.bat -PzhihuUpstreamPatches=true :desktopApp:createReleaseDistributable` 生成 Windows x64 app-image，再将它包装为可选的 MSIX：
 
 ```powershell
 ./desktopApp/windows/package-msix.ps1 `
   -AppImage <createReleaseDistributable生成的Zhihu++目录> `
-  -OutputDirectory <仓外新的空目录路径> `
+  -OutputDirectory <仓外尚不存在的目录路径> `
   -IdentityName <正式包Identity.Name> `
   -Publisher 'CN=<正式签名证书主体>' `
   -Version <四段MSIX包版本号>
 ```
 
-要求 JDK 21、Visual Studio C++ 桌面工具/CMake、Windows SDK。脚本通过 `JAVA_HOME`/`javac`、`vswhere`、Windows SDK 的已安装根和版本发现工具；也可显式指定 `JavaHome`、`WindowsSdkRoot`、`WindowsSdkVersion`。没有 .NET SDK、NuGet、Windows App SDK runtime 或网络下载依赖。
+构建与包装统一使用完整 Temurin JDK 25，另需 Visual Studio C++ 桌面工具/CMake 和 Windows SDK。将 `JAVA_HOME` 与 IDE 的 Gradle JDK 指向同一 JDK 25；包装脚本默认使用 `JAVA_HOME`，也可用 `-JavaHome` 显式指定该安装。脚本通过 `vswhere`、Windows SDK 的已安装根和版本发现其他工具，也可指定 `WindowsSdkRoot`、`WindowsSdkVersion`。没有 .NET SDK、NuGet、Windows App SDK runtime 或网络下载依赖。
 
 `OutputDirectory` 必须不存在，且不能在输入 app-image 内。脚本只读取项目 app-image 中固定的 `app/Zhihu++.cfg`，只接受固定 `MainKt`、同目录 JAR 文件名与列明的必要 JVM 选项；不接受主类、外部路径、任意 JVM 参数或运行命令。身份/发布者必须显式传入，示例身份只能用于未签名核验。脚本生成 `Zhihu++.unsigned.msix`，MakeAppx 默认语义验证保持启用。它不签名、安装、注册、启动程序或发送通知。发布者另行通过正常签名/分发渠道提供完整包，不能用修改机器信任来代替正式发布。
 
-新 MSIX 使用 `ZhihuNotifications.exe` 作为本应用宿主，通过标准 JNI Invocation API 启动原 app-image 的固定 MainKt、JAR 和 runtime；不是创建任意子进程，不执行脚本，也不读取外部启动参数。它不替换 MSI 中的 jpackage 启动器。MSIX 内附原 app-image 的常规启动器仍可用于无通知的普通桌面入口。
+MSIX 使用 `ZhihuNotifications.exe` 作为本应用宿主，通过标准 JNI Invocation API 启动输入 app-image 的固定 MainKt、JAR 和 runtime；不创建任意子进程、不执行脚本，也不读取外部启动参数。它不替换 MSI 中的 jpackage 启动器。MSIX 内附的常规启动器可用于无通知的普通桌面入口。
 
-## 通知与激活边界
+## MSIX 通知与激活边界
 
 - 原生宿主使用 Windows SDK 的 `INotificationActivationCallback` 和 WinRT `ToastNotificationManager`。清单将本应用唯一 CLSID `A198161D-C0D7-4500-87F0-AC2A791570E1` 同时声明为 `desktop:ToastNotificationActivation` 和 `com:ExeServer`。不使用注册表自注册、ProgID、协议或其他应用的 AUMID。
 - 宿主先验证签名完整包（不接受 development/稀疏注册）、编译绑定的名称/发布者、当前 AUMID、同包路径、无重解析和不可由普通用户改写的包文件 ACL。原生模块就是该包内宿主，通过 `RegisterNatives` 绑定窄 JVM 桥；JVM 不搜索、提取或 `System.load` 外部 DLL。唯一动态加载为同包固定 `app-image/runtime/bin/server/jvm.dll`，Windows DLL 搜索限同包 runtime 与 System32，不使用 cwd/PATH。
@@ -31,7 +31,7 @@
 - common 的 `RunningSystemNotificationHost` 在共享导航准备好后取得租约，加载 `JvmNotificationStateStore`，核验当前账号并持久化消费一次性 receipt 后唤醒真实窗口。重复/旧账号 receipt 不导航；不新增路由或账号缓存。
 - 只在进程运行时轮询；退出后仅保留系统已投递的通知和冷点击入口。系统通知禁用时宿主仍可报告“已支持但无权限”，不宣称可以显示。未打包、缺 JNI、第二通知所有者、身份/存储/注册失败时明确 unsupported，不影响常规 MSI 窗口。
 
-## 本机存储
+## MSIX 本机存储
 
 复用现有 `JvmNotificationStateStore`，Windows 根来自 `ApplicationData.Current.LocalCacheFolder`，不从环境变量拼装；LocalCache 不参加应用数据备份/漫游。应用仅创建自己的受保护子目录，不读取其他账号数据。新目录使用 protected DACL，文件仍用现有原子临时写/替换。
 
@@ -41,7 +41,7 @@
 
 可以在仓外构建 C++、运行 MakeAppx 验证未签名包、检查清单/PE/JAR/JNI 保留规则；这些都不能证明系统通知实际可用。正式签名安装后还必须验证：
 
-1. 普通 MSIX 首次启动能到共享 UI；MSI 和未接桥入口仍正常使用并明确不支持通知。
+1. 签名安装的 MSIX 首次启动能到共享 UI；正式 MSI 需另验收 per-user 安装注册后的通知路径。裸 JVM、未注册入口仍可正常打开窗口，但不支持系统通知。
 2. Windows 授权允许/拒绝与勿扰状态；SDK 接受投递不等于已经显示。
 3. 同一 receipt 暖点击、应用退出后的 COM 冷点击均到真实窗口；共享导航初始化期间不丢回执。
 4. 重复、失效、旧账号 receipt 不导航；登出、关闭订阅、标读和撤回仅影响对应 receipt。
@@ -56,4 +56,4 @@
 - [MSIX com:ExeServer](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-com-exeserver)
 - [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) / [Group](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.group)
 - [ApplicationData.LocalCacheFolder](https://learn.microsoft.com/en-us/uwp/api/windows.storage.applicationdata.localcachefolder)
-- [JNI Invocation API](https://docs.oracle.com/en/java/javase/21/docs/specs/jni/invocation.html)
+- [JNI Invocation API](https://docs.oracle.com/en/java/javase/25/docs/specs/jni/invocation.html)

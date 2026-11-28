@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "知乎++";
+"CFBundleName" = "知乎++";
+"NSMicrophoneUsageDescription" = "录制由你选择发送的语音评论。";
+"NSPhotoLibraryAddUsageDescription" = "将所选图片和导出的文章保存到相册。";

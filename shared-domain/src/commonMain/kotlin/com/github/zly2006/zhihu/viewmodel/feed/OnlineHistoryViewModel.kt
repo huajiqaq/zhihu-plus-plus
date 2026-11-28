@@ -28,7 +28,7 @@ import com.github.zly2006.zhihu.data.OnlineHistoryDeletePair
 import com.github.zly2006.zhihu.data.OnlineHistoryItem
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.util.raiseForStatus
@@ -112,13 +112,13 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
     private fun markCleared() {
         resetForRefresh()
         clearLoadedItems()
-        pendingRefresh.value = false
+        isRefreshPending = false
         loaded = true
         lastPaging = ZhihuPaging(isEnd = true, next = "")
     }
 
     private fun clearLoadedItems() {
-        displayItems.clear()
+        replaceDisplayItems(emptyList())
         deletionPairs.clear()
     }
 
@@ -136,12 +136,12 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
     /** HTTP 成功不代表业务成功；不猜测逐条结果，明确 error 时保留整批选择。 */
     private suspend fun HttpResponse.checkHistorySuccess() {
         raiseForStatus()
-        check(status.isSuccess()) { "浏览记录请求失败: $status" }
+        check(status.isSuccess()) { DomainStrings.historyRequestFailed(status) }
         val text = bodyAsText()
         if (text.isBlank()) return
         val json = ZhihuJson.json.parseToJsonElement(text) as? JsonObject
-            ?: error("浏览记录响应格式错误，请重试")
-        check(json["error"] == null || json["error"] == JsonNull) { "浏览记录操作未成功，请重试" }
+            ?: error(DomainStrings.historyBadResponse)
+        check(json["error"] == null || json["error"] == JsonNull) { DomainStrings.historyUpdateFailed }
     }
 
     /** 同一账号重登录会替换 client；A→B→A 的迟到响应不能仅凭账号字符串识别。 */
@@ -213,13 +213,11 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
         }
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray) {
-        if (!recordingEnabled) return
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): () -> Unit {
+        if (!recordingEnabled) return {}
         val localEntries = localHistory.history
-        if (pendingRefresh.value) {
-            clearLoadedItems()
-            pendingRefresh.value = false
-        }
+        val items = mutableListOf<FeedDisplayItem>()
+        val pairs = mutableMapOf<String, OnlineHistoryDeletePair>()
         for (element in rawData) {
             val item = runCatching { ZhihuJson.decodeJson<OnlineHistoryItem>(element) }.getOrNull() ?: continue
             val nav = resolveContent(item.data.action.url)
@@ -228,9 +226,8 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
             val pair = OnlineHistoryDeletePair(item.data.extra.contentToken, item.data.extra.contentType)
             val matchedItem = localEntries.firstOrNull { it == nav }
             val key = "online:${pair.contentType}:${pair.contentToken}"
-            deletionPairs[key] = pair
-            if (displayItems.any { it.stableKey == key }) continue
-            displayItems += FeedDisplayItem(
+            pairs[key] = pair
+            items += FeedDisplayItem(
                 title = item.data.header.title,
                 summary = item.data.content
                     ?.summary
@@ -239,9 +236,9 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
                     ?.firstOrNull()
                     ?.data
                     ?.text
-                    ?.takeIf(String::isNotBlank) ?: type,
+                    ?.takeIf(String::isNotBlank) ?: HistoryType.displayName(type),
                 feed = null,
-                navDestinationJson = nav?.toFeedDisplayItemNavDestinationJson(),
+                destination = nav,
                 avatarSrc = (matchedItem as? Article)?.avatarSrc,
                 authorName = item.data.content?.authorName,
                 historyType = type,
@@ -249,7 +246,12 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
                 historyKey = key,
             )
         }
-        loaded = true
+        return {
+            if (isRefreshPending) clearLoadedItems()
+            commitDisplayPage(items, data, rawData)
+            deletionPairs.putAll(pairs)
+            loaded = true
+        }
     }
 
     suspend fun deleteItems(environment: PaginationEnvironment, keys: Set<String>): Boolean {
@@ -259,7 +261,7 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
         try {
             return historyRequests.withLock {
                 if (!isCurrentAccount(environment, generation, client)) return@withLock false
-                val pairs = keys.mapTo(linkedSetOf()) { key -> checkNotNull(deletionPairs[key]) { "历史记录已改变，请重新选择" } }
+                val pairs = keys.mapTo(linkedSetOf()) { key -> checkNotNull(deletionPairs[key]) { DomainStrings.historySelectionChanged } }
                 val response = environment.withAuthenticatedClient { requestClient, cookies ->
                     if (requestClient !== client || !isCurrentAccount(environment, generation, client)) return@withAuthenticatedClient null
                     client.post("https://api.zhihu.com/read_history/batch_del") {
@@ -288,7 +290,7 @@ class OnlineHistoryViewModel : BaseFeedViewModel() {
                 response.checkHistorySuccess()
                 currentCoroutineContext().ensureActive()
                 if (!isCurrentAccount(environment, generation, client)) return@withLock false
-                displayItems.removeAll { it.stableKey in keys }
+                removeDisplayItems { it.stableKey in keys }
                 for (key in keys) deletionPairs.remove(key)
                 true
             }

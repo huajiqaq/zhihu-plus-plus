@@ -34,6 +34,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.github.zly2006.zhihu.i18n.CommentsStrings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
@@ -83,11 +86,17 @@ private class AndroidVoiceCommentRecorder(
     override var isRecording by mutableStateOf(false)
         private set
 
+    override var isBusy by mutableStateOf(false)
+        private set
+    override var errorMessage by mutableStateOf<String?>(null)
+        private set
+
     override val elapsedMs: Long
         get() = if (isRecording) SystemClock.elapsedRealtime() - startedAt else 0L
 
-    override fun start(): Boolean {
-        if (isRecording) return true
+    override suspend fun start(): Boolean {
+        if (isRecording || isBusy) return false
+        errorMessage = null
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -101,7 +110,12 @@ private class AndroidVoiceCommentRecorder(
             @Suppress("DEPRECATION")
             MediaRecorder()
         }
+        isBusy = true
         return runCatching {
+            recorder.setOnErrorListener { _, _, _ ->
+                cancel()
+                errorMessage = CommentsStrings.recordingFailed("")
+            }
             recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -120,10 +134,10 @@ private class AndroidVoiceCommentRecorder(
             runCatching { recorder.release() }
             file.delete()
             false
-        }
+        }.also { isBusy = false }
     }
 
-    override fun stop(): RecordedVoiceComment? {
+    override suspend fun stop(): RecordedVoiceComment? {
         if (!isRecording) return null
         val duration = elapsedMs
         val file = outputFile
@@ -145,6 +159,7 @@ private class AndroidVoiceCommentRecorder(
     }
 
     override fun cancel() {
+        isBusy = false
         if (!isRecording) {
             outputFile?.delete()
             outputFile = null
@@ -158,8 +173,9 @@ private class AndroidVoiceCommentRecorder(
         outputFile = null
     }
 
-    override fun readBytes(recorded: RecordedVoiceComment): ByteArray? =
+    override suspend fun readBytes(recorded: RecordedVoiceComment): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { File(recorded.filePath).readBytes() }.getOrNull()
+    }
 
     override fun delete(recorded: RecordedVoiceComment) {
         runCatching { File(recorded.filePath).delete() }

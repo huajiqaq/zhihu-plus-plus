@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
@@ -123,14 +124,14 @@ fun ListDetailDivider(
             .fillMaxHeight()
             .testTag("list_detail_divider")
             .semantics {
-                contentDescription = "调整列表和详情宽度"
+                contentDescription = ReaderStrings.resizeListDetail
                 customActions = listOf(
-                    CustomAccessibilityAction("增加列表宽度") {
+                    CustomAccessibilityAction(ReaderStrings.widenList) {
                         onAdjustBy(0.05f)
                         onDragStopped()
                         true
                     },
-                    CustomAccessibilityAction("减小列表宽度") {
+                    CustomAccessibilityAction(ReaderStrings.narrowList) {
                         onAdjustBy(-0.05f)
                         onDragStopped()
                         true
@@ -219,12 +220,12 @@ fun EmptyDetailPane(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(AppDimens.Space4),
             ) {
                 Text(
-                    text = "选择左侧内容",
+                    text = ReaderStrings.selectContent,
                     style = if (miuix) tokens.title4 else MaterialTheme.typography.titleMedium,
                     color = tokens.onSurface,
                 )
                 Text(
-                    text = "从列表打开回答、文章或问题，内容会显示在这里",
+                    text = ReaderStrings.selectContentDescription,
                     style = if (miuix) tokens.footnote1 else MaterialTheme.typography.bodySmall,
                     color = tokens.onSurfaceVariantSummary,
                     textAlign = TextAlign.Center,

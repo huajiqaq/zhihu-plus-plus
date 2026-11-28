@@ -20,37 +20,83 @@ package com.github.zly2006.zhihu.ui
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 
 private const val HOME_FEED_STARTUP_CACHE_FILE_PREFIX = "home_feed_startup_cache_"
 private const val HOME_FEED_STARTUP_CACHE_FILE_SUFFIX = ".json"
-
 private const val HOME_FEED_STARTUP_SNAPSHOT_MAX_ITEMS = 10
+private const val HOME_FEED_STARTUP_SNAPSHOT_VERSION = 2
 
-fun homeFeedStartupCacheFileName(recommendationMode: RecommendationMode): String =
-    HOME_FEED_STARTUP_CACHE_FILE_PREFIX + recommendationMode.key + HOME_FEED_STARTUP_CACHE_FILE_SUFFIX
+internal val HOME_FEED_FILTER_SETTING_KEYS = setOf(
+    "qualityFilterMode",
+    "answerVoteupThreshold",
+    "articleVoteupThreshold",
+    "articleFollowersThreshold",
+    "videoVoteThreshold",
+    "videoFollowersThreshold",
+    "questionAnswerThreshold",
+    "questionFollowersThreshold",
+    "enableContentFilter",
+    "reverseBlock",
+    "filterFollowedUserContent",
+    "enableKeywordBlocking",
+    "enableNLPBlocking",
+    "nlpSimilarityThreshold",
+    "enableUserBlocking",
+    "enableTopicBlocking",
+    "topicBlockingThreshold",
+    "blockZhihuAdPlatform",
+    "blockZhihuSchool",
+    "blockWeChatOfficialAccount",
+    "blockPaidContent",
+)
 
-fun encodeHomeFeedStartupSnapshot(items: List<FeedDisplayItem>): String? {
+internal fun shouldContinueEmptyHomeFeed(
+    mode: RecommendationMode,
+    completedPageCount: Int,
+    isEmpty: Boolean,
+    hasNextPage: Boolean,
+    isLoading: Boolean,
+    hasError: Boolean,
+): Boolean = mode != RecommendationMode.LOCAL && completedPageCount > 0 && isEmpty && hasNextPage && !isLoading && !hasError
+
+@Serializable
+private data class HomeFeedStartupSnapshot(
+    val version: Int,
+    val filterFingerprint: String,
+    val items: List<FeedDisplayItem>,
+)
+
+fun homeFeedStartupCacheFileName(recommendationMode: RecommendationMode, owner: String? = null): String =
+    HOME_FEED_STARTUP_CACHE_FILE_PREFIX + recommendationMode.key + owner?.let { "_$it" }.orEmpty() + HOME_FEED_STARTUP_CACHE_FILE_SUFFIX
+
+fun encodeHomeFeedStartupSnapshot(items: List<FeedDisplayItem>, filterFingerprint: String): String? {
     // raw 的多态内容自带 type 字段，会与 kotlinx.serialization 的默认类型判别字段冲突；启动恢复也不需要这份可重新获取的详情缓存。
     val snapshotItems = items.take(HOME_FEED_STARTUP_SNAPSHOT_MAX_ITEMS).map { it.copy(raw = null) }
-    if (snapshotItems.isEmpty()) return null
 
     return try {
-        ZhihuJson.json.encodeToString(snapshotItems)
+        ZhihuJson.json.encodeToString(
+            HomeFeedStartupSnapshot(HOME_FEED_STARTUP_SNAPSHOT_VERSION, filterFingerprint, snapshotItems),
+        )
     } catch (error: Exception) {
-        Log.e("HomeFeedStartupSnapshot", "Failed to encode home feed startup snapshot", error)
+        AppLog.e("HomeFeedStartupSnapshot", "Failed to encode home feed startup snapshot", error)
         null
     }
 }
 
-fun decodeHomeFeedStartupSnapshot(serialized: String?): List<FeedDisplayItem> {
+fun decodeHomeFeedStartupSnapshot(serialized: String?, filterFingerprint: String): List<FeedDisplayItem> {
     if (serialized.isNullOrBlank()) return emptyList()
 
     return runCatching {
-        ZhihuJson
-            .json
-            .decodeFromString<List<FeedDisplayItem>>(serialized)
+        val snapshot = ZhihuJson.json.decodeFromString<HomeFeedStartupSnapshot>(serialized)
+        if (snapshot.version != HOME_FEED_STARTUP_SNAPSHOT_VERSION || snapshot.filterFingerprint != filterFingerprint) {
+            return@runCatching emptyList()
+        }
+        /** 旧 RULES 卡片把过滤说明写进正文，不能把这份有损结果当成可复检内容。 */
+        if (snapshot.items.any { it.isQualityFiltered && it.qualityFilterReason == null }) return@runCatching emptyList()
+        snapshot.items
     }.getOrDefault(emptyList())
 }

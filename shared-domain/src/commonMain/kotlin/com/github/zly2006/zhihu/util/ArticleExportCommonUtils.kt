@@ -19,29 +19,58 @@ package com.github.zly2006.zhihu.util
 
 import com.fleeksoft.ksoup.Ksoup
 import com.fleeksoft.ksoup.nodes.Element
+import com.fleeksoft.ksoup.safety.Cleaner
+import com.fleeksoft.ksoup.safety.Safelist
 import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.util.twoDigitString
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.statement.readRawBytes
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readBuffer
+import kotlin.io.encoding.Base64
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
+import kotlinx.io.readByteArray
 
 const val ARTICLE_EXPORT_TEMPLATE_ASSET = "article_export_template.html"
 const val ARTICLE_EXPORT_GITHUB_URL = "https://github.com/zly2006/zhihu-plus-plus"
 private const val ARTICLE_EXPORT_IMAGE_FETCH_CONCURRENCY = 6
+private const val ARTICLE_EXPORT_IMAGE_MAX_BYTES = 32 * 1024 * 1024
+private const val ARTICLE_EXPORT_IMAGE_TIMEOUT_MS = 15_000L
+private const val ARTICLE_EXPORT_IMAGE_MAX_REDIRECTS = 5
+private const val ARTICLE_EXPORT_CONTENT_BASE_URL = "https://www.zhihu.com/"
+
+/** 只用于不可信正文；模板及本地脚注脚本不经过清洗。 */
+private fun articleExportSafelist(): Safelist = Safelist.relaxed()
+    .addTags("div", "span", "u", "s", "del", "sub", "sup", "kbd", "figure", "figcaption")
+    .addAttributes(":all", "id", "class", "title", "lang", "dir", "style", "data-pid")
+    .addAttributes("sup", "data-draft-type", "data-numero", "data-text", "data-url")
+    .addAttributes("img", "eeimg", "data-rawwidth", "data-rawheight", "loading")
+    .addAttributes("pre", "lang", "data-language")
+    .addAttributes("code", "data-language")
+    .addAttributes("ol", "start")
+    .addAttributes("li", "value")
+    .addProtocols("a", "href", "#")
+    .addProtocols("img", "src", "data")
+    .preserveRelativeLinks(true)
 
 data class ArticleExportFooterData(
     val exportEpochMillis: Long = Clock.System.now().toEpochMilliseconds(),
@@ -79,23 +108,10 @@ fun prepareArticleExportComment(
         .selectFirst("a.comment_img, a.comment_gif, a.comment_sticker")
         ?.attr("href")
         ?.takeIf { it.isNotBlank() }
-        ?.let(::normalizeArticleExportUrl)
+        ?.let { safeArticleExportUrl(it, image = true) }
         .orEmpty()
 
-    document.select("noscript").remove()
     document.select("a.comment_img, a.comment_gif, a.comment_sticker").remove()
-    document.select("a[href^=//]").forEach { anchor ->
-        anchor.attr("href", normalizeArticleExportUrl(anchor.attr("href")))
-    }
-    document.select("img").forEach { image ->
-        extractArticleExportImageUrl(image)?.let { src ->
-            image.attr("src", normalizeArticleExportUrl(src))
-        }
-        image.removeClass("lazy")
-        image.removeAttr("srcset")
-        image.removeAttr("sizes")
-        image.attr("loading", "eager")
-    }
     document.body().select("p, div").forEach { element ->
         if (element.text().isBlank() && element.select("img").isEmpty()) {
             element.remove()
@@ -104,7 +120,7 @@ fun prepareArticleExportComment(
 
     return ArticleExportComment(
         authorName = authorName,
-        contentHtml = document.body().html().trim(),
+        contentHtml = prepareArticleExportContentHtml(document.body().html()).trim(),
         createdTimeText = createdTimeText,
         imageSrc = imageSrc,
     )
@@ -115,22 +131,21 @@ fun buildArticleExportCommentsHtml(
     requestedCount: Int? = null,
 ): String {
     if (comments.isEmpty()) return ""
-    val titleSuffix = requestedCount
+    val heading = requestedCount
         ?.takeIf { it > 0 }
-        ?.let { " (前 ${minOf(it, comments.size)} 条)" }
-        .orEmpty()
+        ?.let { DomainStrings.exportTopCommentsCount(minOf(it, comments.size)) }
+        ?: DomainStrings.exportTopComments
 
     return buildString {
-        append("<div class='comments-title'>热门评论$titleSuffix</div>")
+        append("<div class='comments-title'>$heading</div>")
         comments.forEach { comment ->
-            val imageHtml = comment.imageSrc
-                .takeIf { it.isNotBlank() }
+            val imageHtml = safeArticleExportUrl(comment.imageSrc, image = true)
                 ?.let {
                     """
                     <img
                         class="comment-image"
                         src="${escapeArticleExportHtml(it)}"
-                        alt="评论图片"
+                        alt="${DomainStrings.exportCommentImage}"
                     />
                     """.trimIndent()
                 }.orEmpty()
@@ -138,7 +153,7 @@ fun buildArticleExportCommentsHtml(
                 """
                 <div class="comment">
                     <div class="comment-author">${escapeArticleExportHtml(comment.authorName)}</div>
-                    <div class="comment-content">${comment.contentHtml}</div>
+                    <div class="comment-content">${prepareArticleExportContentHtml(comment.contentHtml)}</div>
                     $imageHtml
                     <div class="comment-time">${escapeArticleExportHtml(comment.createdTimeText)}</div>
                 </div>
@@ -219,17 +234,16 @@ suspend fun buildOfflineArticleExportHtml(
     includeImages: Boolean = true,
     extraSectionsHtml: String = "",
     useOriginalOnImageFetchFailure: Boolean = false,
-): String = inlineArticleExportImagesInHtml(
+): String = inlineArticleExportImagesForOfflineHtml(
     html = buildArticleExportHtml(
         loadAssetText = loadAssetText,
         exportData = exportData,
         extraSectionsHtml = extraSectionsHtml,
     ),
+    httpClient = httpClient,
     includeImages = includeImages,
     useOriginalOnImageFetchFailure = useOriginalOnImageFetchFailure,
-) { imageUrl ->
-    fetchArticleExportImageDataUrl(httpClient, imageUrl)
-}
+)
 
 suspend fun buildOfflineArticleExportHtml(
     loadAssetText: (String) -> String,
@@ -256,19 +270,20 @@ fun renderArticleExportHtml(
     exportData: ArticleExportData,
     extraSectionsHtml: String = "",
 ): String {
+    val bodyHtml = prepareArticleExportContentHtml(exportData.content)
+    val extraHtml = prepareArticleExportContentHtml(extraSectionsHtml)
     if (template.isBlank()) {
-        return prepareArticleExportContentHtml(exportData.content) + extraSectionsHtml
+        return bodyHtml + extraHtml
     }
 
     val footerPlaceholders = buildArticleExportFooterPlaceholders(exportData.footerData)
-    val authorAvatarHtml = exportData.authorAvatarSrc
-        .takeIf { it.isNotBlank() }
+    val authorAvatarHtml = safeArticleExportUrl(exportData.authorAvatarSrc, image = true)
         ?.let {
             """
             <img
                 class="author-avatar"
-                src="${escapeArticleExportHtml(normalizeArticleExportUrl(it))}"
-                alt="作者头像"
+                src="${escapeArticleExportHtml(it)}"
+                alt="${DomainStrings.exportAuthorAvatar}"
             />
             """.trimIndent()
         } ?: "<div class=\"author-avatar author-avatar-placeholder\"></div>"
@@ -279,47 +294,109 @@ fun renderArticleExportHtml(
         .orEmpty()
 
     val placeholders = mapOf(
+        "{{languageTag}}" to AppLocale.languageTag,
         "{{title}}" to escapeArticleExportHtml(exportData.title),
         "{{authorAvatar}}" to authorAvatarHtml,
         "{{authorName}}" to escapeArticleExportHtml(exportData.authorName),
         "{{authorBio}}" to authorBioHtml,
         "{{voteCount}}" to exportData.voteUpCount.toString(),
         "{{commentCount}}" to exportData.commentCount.toString(),
-        "{{bodyHtml}}" to prepareArticleExportContentHtml(exportData.content),
-        "{{extraSections}}" to extraSectionsHtml,
+        "{{bodyHtml}}" to bodyHtml,
+        "{{extraSections}}" to extraHtml,
         "{{exportedDate}}" to footerPlaceholders.exportedDate,
         "{{publishedDate}}" to footerPlaceholders.publishedDate,
         "{{editedDate}}" to footerPlaceholders.editedDate,
         "{{editedDateClass}}" to footerPlaceholders.editedDateClass,
         "{{appAttributionClass}}" to footerPlaceholders.appAttributionClass,
-        "{{githubUrl}}" to escapeArticleExportHtml(footerPlaceholders.githubUrl),
+        "{{githubUrl}}" to escapeArticleExportHtml(safeArticleExportUrl(footerPlaceholders.githubUrl).orEmpty()),
     )
-    return placeholders.entries.fold(template) { html, entry ->
-        html.replace(entry.key, entry.value)
+    // 只替换模板原有占位符，正文里的同名文本不能被再次当成模板执行。
+    return Regex("\\{\\{[A-Za-z]+}}").replace(template) { match -> placeholders[match.value] ?: match.value }
+}
+
+/** 借用传输引擎，不继承账号的 Cookie、认证、签名或请求插件；重定向逐跳校验。 */
+suspend fun inlineArticleExportImagesForOfflineHtml(
+    html: String,
+    httpClient: HttpClient,
+    includeImages: Boolean = true,
+    useOriginalOnImageFetchFailure: Boolean = false,
+    replaceFailedImagesWithPlaceholder: Boolean = false,
+    maxTotalImageBytes: Long = Long.MAX_VALUE,
+    validateImage: suspend (bytes: ByteArray, mimeType: String) -> Unit = { _, _ -> },
+): String = HttpClient(httpClient.engine) {
+    followRedirects = false
+    install(HttpTimeout) { requestTimeoutMillis = ARTICLE_EXPORT_IMAGE_TIMEOUT_MS }
+}.use { imageClient ->
+    require(maxTotalImageBytes > 0)
+    val budgetLock = Mutex()
+    var totalImageBytes = 0L
+    inlineArticleExportImagesInHtml(
+        html = html,
+        includeImages = includeImages,
+        useOriginalOnImageFetchFailure = useOriginalOnImageFetchFailure,
+        replaceFailedImagesWithPlaceholder = replaceFailedImagesWithPlaceholder,
+    ) { imageUrl ->
+        val image = downloadArticleExportImage(imageClient, imageUrl)
+        budgetLock.withLock {
+            totalImageBytes += image.bytes.size
+            if (totalImageBytes > maxTotalImageBytes) throw ArticleExportBudgetExceeded()
+        }
+        validateImage(image.bytes, image.mimeType)
+        "data:${image.mimeType};base64,${Base64.Default.encode(image.bytes)}"
     }
 }
 
-@OptIn(ExperimentalEncodingApi::class)
-suspend fun fetchArticleExportImageDataUrl(
+internal data class ArticleExportImageDownload(val bytes: ByteArray, val mimeType: String)
+
+/** 资源预算不足不能降级为坏图占位，否则会把不完整导出误报为成功。 */
+internal class ArticleExportBudgetExceeded : DisplayFailure({ DomainStrings.exportTooLarge })
+
+/** 调用方提供无凭据且禁用自动重定向的客户端，共用图片导出协议与整链期限。 */
+internal suspend fun downloadArticleExportImage(
     httpClient: HttpClient,
     imageUrl: String,
-): String {
-    val response = httpClient.get(imageUrl)
-    if (!response.status.isSuccess()) {
-        throw IllegalStateException("下载图片失败: ${response.status.value}")
-    }
-
-    val bytes = response.readRawBytes()
-    if (bytes.isEmpty()) {
-        throw IllegalStateException("图片内容为空")
-    }
-
-    val mimeType = resolveArticleExportImageMimeType(
-        contentTypeHeader = response.headers[HttpHeaders.ContentType],
-        imageUrl = imageUrl,
-        imageBytes = bytes,
-    )
-    return "data:$mimeType;base64,${Base64.Default.encode(bytes)}"
+    maxBytes: Int = ARTICLE_EXPORT_IMAGE_MAX_BYTES,
+): ArticleExportImageDownload {
+    require(maxBytes in 1..ARTICLE_EXPORT_IMAGE_MAX_BYTES)
+    var currentUrl = safeArticleExportUrl(imageUrl, image = true) ?: throw DisplayFailure { DomainStrings.exportImageUrlUnsupported }
+    if (currentUrl.startsWith("data:", ignoreCase = true)) throw DisplayFailure { DomainStrings.exportImageInlineDownload }
+    // 整条重定向链共用期限，不能每跳重新获得完整下载预算。
+    return withTimeoutOrNull(ARTICLE_EXPORT_IMAGE_TIMEOUT_MS) {
+        val visitedUrls = mutableSetOf<String>()
+        var downloaded: ArticleExportImageDownload? = null
+        while (downloaded == null) {
+            if (!visitedUrls.add(currentUrl.substringBefore('#'))) throw DisplayFailure { DomainStrings.exportImageRedirectLoop }
+            downloaded = httpClient.prepareGet(currentUrl).execute { response ->
+                if (response.status.value in setOf(301, 302, 303, 307, 308)) {
+                    if (visitedUrls.size > ARTICLE_EXPORT_IMAGE_MAX_REDIRECTS) throw DisplayFailure { DomainStrings.exportImageRedirectLimit }
+                    currentUrl = safeArticleExportUrl(response.headers[HttpHeaders.Location].orEmpty(), image = true, baseUrl = currentUrl)
+                        ?: throw DisplayFailure { DomainStrings.exportImageRedirectUnsupported }
+                    if (currentUrl.startsWith("data:", ignoreCase = true)) throw DisplayFailure { DomainStrings.exportImageRedirectUnsupported }
+                    null
+                } else {
+                    if (!response.status.isSuccess()) {
+                        throw DisplayFailure { DomainStrings.downloadImageStatus(response.status.value) }
+                    }
+                    val bytes = response.bodyAsChannel().readBuffer(maxBytes.toLong() + 1).readByteArray()
+                    if (bytes.size > maxBytes) throw DisplayFailure { DomainStrings.exportImageTooLarge }
+                    if (bytes.isEmpty()) {
+                        throw DisplayFailure { DomainStrings.emptyImage }
+                    }
+                    val mimeType = resolveArticleExportImageMimeType(
+                        contentTypeHeader = response.headers[HttpHeaders.ContentType],
+                        imageUrl = currentUrl,
+                        imageBytes = bytes,
+                    )
+                    if (mimeType !in setOf("image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/svg+xml", "image/avif", "image/heic", "image/heif")) {
+                        throw DisplayFailure { DomainStrings.imageTypeUnsupported(mimeType) }
+                    }
+                    // SVG 仍只能作为 img 的 data 资源使用，不插入 DOM，也不以 iframe/object 打开。
+                    ArticleExportImageDownload(bytes, mimeType)
+                }
+            }
+        }
+        downloaded
+    } ?: throw DisplayFailure { DomainStrings.renderTimedOut }
 }
 
 fun resolveArticleExportImageMimeType(
@@ -380,28 +457,92 @@ private fun guessArticleExportImageMimeTypeFromBytes(imageBytes: ByteArray): Str
 }
 
 fun prepareArticleExportContentHtml(content: String): String {
-    val document = Ksoup.parseBodyFragment(content)
-    document.select("noscript").remove()
-    document.select("img").forEach { image ->
-        extractArticleExportImageUrl(image)?.let { src ->
-            image.attr("src", normalizeArticleExportUrl(src))
+    val document = Ksoup.parseBodyFragment(content, ARTICLE_EXPORT_CONTENT_BASE_URL)
+    document.select("script, style, noscript, template, form, input, button, textarea, select, link, meta, base, svg").remove()
+    // 交互嵌入不能进入离线文档，保留可读的原链接与静态封面。
+    document.select("iframe, video, audio, embed, object").forEach { embedded ->
+        val source = embedded.attr("src").ifBlank { embedded.attr("data") }
+            .ifBlank { embedded.selectFirst("source[src]")?.attr("src").orEmpty() }
+        val link = safeArticleExportUrl(source)
+        val poster = safeArticleExportUrl(embedded.attr("poster"), image = true)
+        if (poster != null) embedded.before("<img src=\"${escapeArticleExportHtml(poster)}\">")
+        if (link != null) {
+            val label = embedded.attr("title").ifBlank { link }
+            embedded.before("<p><a href=\"${escapeArticleExportHtml(link)}\">${escapeArticleExportHtml(label)}</a></p>")
+        } else if (embedded.text().isNotBlank()) {
+            embedded.before("<p>${escapeArticleExportHtml(embedded.text())}</p>")
         }
-        image.removeClass("lazy")
-        image.removeAttr("srcset")
-        image.removeAttr("sizes")
-        image.attr("loading", "eager")
+        embedded.remove()
     }
-
-    document.select("a[href^=//]").forEach { anchor ->
-        anchor.attr("href", normalizeArticleExportUrl(anchor.attr("href")))
+    document.select("img").forEach { image ->
+        val src = extractImageUrl(image::attr)?.let { safeArticleExportUrl(it, image = true) }
+        if (src == null) {
+            image.remove()
+        } else {
+            image.attr("src", src)
+            image.removeClass("lazy")
+            image.attr("loading", "eager")
+        }
     }
-    return document.body().html()
+    for (element in document.select("[href], [cite], [data-url]")) {
+        for (attribute in listOf("href", "cite", "data-url")) {
+            if (!element.hasAttr(attribute)) continue
+            val url = safeArticleExportUrl(element.attr(attribute))
+            if (url == null) element.removeAttr(attribute) else element.attr(attribute, url)
+        }
+    }
+    document.select("[style]").forEach { element ->
+        val style = safeArticleExportStyle(element.attr("style"))
+        if (style.isEmpty()) element.removeAttr("style") else element.attr("style", style)
+    }
+    return Cleaner(articleExportSafelist()).clean(document).apply {
+        outputSettings().prettyPrint(false)
+    }.body().html()
 }
+
+/** 相对地址沿用原来的知乎根基准；离线文档和 WebView 都不再借用知乎 origin。 */
+private fun safeArticleExportUrl(raw: String, image: Boolean = false, baseUrl: String = ARTICLE_EXPORT_CONTENT_BASE_URL): String? {
+    val value = raw.trim()
+    if (value.isEmpty() || value.any { it.isISOControl() || it == '\\' }) return null
+    if (!image && value.startsWith('#')) return value
+    if (image && Regex("data:image/(?:png|jpeg|gif|webp|avif|bmp);base64,[A-Za-z0-9+/]+={0,2}", RegexOption.IGNORE_CASE).matches(value)) {
+        return value
+    }
+    val absolute = Ksoup.parseBodyFragment("", baseUrl).body()
+        .appendElement("a").attr("href", value).absUrl("href")
+    if (absolute.isEmpty()) return null
+    val url = runCatching { Url(absolute) }.getOrNull() ?: return null
+    if (url.host.isBlank() || url.user != null || url.password != null ||
+        (url.protocol != URLProtocol.HTTPS && (image || url.protocol != URLProtocol.HTTP))
+    ) return null
+    return url.toString()
+}
+
+/** 仅保留无 URL、无函数求值的排版和颜色，不能用 CSS 绕过资源校验。 */
+private fun safeArticleExportStyle(style: String): String = style.split(';').mapNotNull { declaration ->
+    val property = declaration.substringBefore(':').trim().lowercase()
+    val value = declaration.substringAfter(':', "").trim().lowercase()
+    val allowed = when (property) {
+        "color", "background-color" -> Regex("(?:#[0-9a-f]{3}|#[0-9a-f]{4}|#[0-9a-f]{6}|#[0-9a-f]{8}|[a-z]+|rgba?\\([0-9.,% ]+\\))").matches(value)
+        "text-align" -> value in setOf("left", "right", "center", "justify", "start", "end")
+        "font-weight" -> value in setOf("normal", "bold", "bolder", "lighter") || Regex("[1-9]00").matches(value)
+        "font-style" -> value in setOf("normal", "italic", "oblique")
+        "text-decoration" -> value in setOf("none", "underline", "overline", "line-through")
+        "white-space" -> value in setOf("normal", "pre", "pre-wrap", "pre-line", "break-spaces")
+        "vertical-align" -> value in setOf("baseline", "sub", "super", "middle", "top", "bottom", "text-top", "text-bottom") ||
+            Regex("-?[0-9]+(?:\\.[0-9]+)?(?:px|em|ex|rem|%)?").matches(value)
+        "font-size", "line-height", "width", "height", "max-width" -> value in setOf("auto", "normal") ||
+            Regex("[0-9]+(?:\\.[0-9]+)?(?:px|em|ex|rem|%)?").matches(value)
+        else -> false
+    }
+    if (allowed) "$property:$value" else null
+}.joinToString(";")
 
 suspend fun inlineArticleExportImagesInHtml(
     html: String,
     includeImages: Boolean = true,
     useOriginalOnImageFetchFailure: Boolean = false,
+    replaceFailedImagesWithPlaceholder: Boolean = false,
     resolveDataUrl: suspend (String) -> String,
 ): String {
     if (!includeImages) {
@@ -411,6 +552,7 @@ suspend fun inlineArticleExportImagesInHtml(
     inlineArticleExportImages(
         imageNodes = document.select("img"),
         useOriginalOnImageFetchFailure = useOriginalOnImageFetchFailure,
+        replaceFailedImagesWithPlaceholder = replaceFailedImagesWithPlaceholder,
         resolveDataUrl = resolveDataUrl,
     )
     return document.outerHtml()
@@ -419,17 +561,19 @@ suspend fun inlineArticleExportImagesInHtml(
 suspend fun inlineArticleExportImages(
     imageNodes: Iterable<Element>,
     useOriginalOnImageFetchFailure: Boolean = false,
+    replaceFailedImagesWithPlaceholder: Boolean = false,
     resolveDataUrl: suspend (String) -> String,
 ) {
     val imagesByUrl = linkedMapOf<String, MutableList<Element>>()
     imageNodes.forEach { image ->
-        val imageUrl = extractArticleExportImageUrl(image)
-            ?.let(::normalizeArticleExportUrl)
-            ?: image
-                .attr("src")
-                .takeIf { it.isNotBlank() && !it.startsWith("data:") }
-                ?.let(::normalizeArticleExportUrl)
-            ?: return@forEach
+        val source = extractImageUrl(image::attr) ?: return@forEach
+        if (source.startsWith("data:", ignoreCase = true)) return@forEach
+        val imageUrl = safeArticleExportUrl(source, image = true)
+        if (imageUrl == null) {
+            image.removeAttr("src")
+            image.removeAttr("srcset")
+            return@forEach
+        }
         imagesByUrl.getOrPut(imageUrl) { mutableListOf() }.add(image)
     }
     if (imagesByUrl.isEmpty()) {
@@ -441,15 +585,16 @@ suspend fun inlineArticleExportImages(
         imagesByUrl.keys
             .map { imageUrl ->
                 async {
-                    imageUrl to if (useOriginalOnImageFetchFailure) {
-                        runCatching {
-                            semaphore.withPermit {
-                                resolveDataUrl(imageUrl)
-                            }
-                        }.getOrDefault(imageUrl)
-                    } else {
-                        semaphore.withPermit {
-                            resolveDataUrl(imageUrl)
+                    imageUrl to try {
+                        semaphore.withPermit { resolveDataUrl(imageUrl) }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        if (error is ArticleExportBudgetExceeded) throw error
+                        when {
+                            replaceFailedImagesWithPlaceholder -> null
+                            useOriginalOnImageFetchFailure -> imageUrl
+                            else -> throw error
                         }
                     }
                 }
@@ -460,18 +605,21 @@ suspend fun inlineArticleExportImages(
     imagesByUrl.forEach { (imageUrl, images) ->
         val dataUrl = dataUrlsByUrl.getValue(imageUrl)
         images.forEach { image ->
-            image.attr("src", dataUrl)
-            image.removeClass("lazy")
-            image.removeAttr("srcset")
-            image.removeAttr("sizes")
-            image.attr("loading", "eager")
+            if (dataUrl == null) {
+                image.replaceWith(
+                    Element("span").addClass("export-image-placeholder").text(
+                        "[${WidgetsStrings.imageLoadFailed}]" + image.attr("alt").takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty(),
+                    ),
+                )
+            } else {
+                image.attr("src", dataUrl)
+                image.removeClass("lazy")
+                image.removeAttr("srcset")
+                image.removeAttr("sizes")
+                image.attr("loading", "eager")
+            }
         }
     }
-}
-
-fun normalizeArticleExportUrl(url: String): String = when {
-    url.startsWith("//") -> "https:$url"
-    else -> url
 }
 
 fun buildArticleExportFileName(
@@ -483,33 +631,33 @@ fun buildArticleExportFileName(
         is DataHolder.Answer -> ExportFileMeta(
             title = content.question.title,
             authorName = content.author.name,
-            typeLabel = "回答",
+            typeLabel = DomainStrings.exportAnswer,
             typeKey = "answer",
             articleId = content.id,
         )
         is DataHolder.Article -> ExportFileMeta(
             title = content.title,
             authorName = content.author.name,
-            typeLabel = "文章",
+            typeLabel = DomainStrings.exportArticle,
             typeKey = "article",
             articleId = content.id,
         )
         else -> throw IllegalArgumentException("Unsupported export content type: ${content::class.simpleName}")
     }
-    val safeTitle = sanitizeArticleExportFileNamePart(title).ifBlank { "无标题" }
+    val safeTitle = sanitizeArticleExportFileNamePart(title).ifBlank { DomainStrings.untitled }
     val safeAuthorName = sanitizeArticleExportFileNamePart(authorName)
-        .ifBlank { "匿名作者" }
+        .ifBlank { DomainStrings.anonymousAuthor }
     val normalizedExtension = extension.trimStart('.')
 
-    return "zhihu++_${safeTitle}_${safeAuthorName}的${typeLabel}_${typeKey}_${articleId}_$timestamp.$normalizedExtension"
+    val authorAndType = DomainStrings.exportAuthorType(safeAuthorName, typeLabel)
+    return "zhihu++_${safeTitle}_${authorAndType}_${typeKey}_${articleId}_$timestamp.$normalizedExtension"
 }
 
-@OptIn(ExperimentalTime::class)
 fun buildCollectionExportZipFileName(
     collectionTitle: String,
     timestampMillis: Long = Clock.System.now().toEpochMilliseconds(),
 ): String {
-    val safeTitle = sanitizeArticleExportFileNamePart(collectionTitle).ifBlank { "收藏夹" }
+    val safeTitle = sanitizeArticleExportFileNamePart(collectionTitle).ifBlank { DomainStrings.collectionTitle }
     return "zhihu++_${safeTitle}_${formatArticleExportFileTimestamp(timestampMillis)}.zip"
 }
 
@@ -545,15 +693,15 @@ private data class ArticleExportFooterPlaceholders(
 private fun buildArticleExportFooterPlaceholders(footerData: ArticleExportFooterData): ArticleExportFooterPlaceholders {
     val publishedDate = footerData.createdEpochSeconds
         .takeIf { it > 0L }
-        ?.let { "发布日期：" + formatArticleExportDate(it * 1000L) }
+        ?.let { DomainStrings.exportPublishedDate(formatArticleExportDate(it * 1000L)) }
         .orEmpty()
     val editedDate = footerData.updatedEpochSeconds
         .takeIf { it > 0L && it != footerData.createdEpochSeconds }
-        ?.let { "编辑日期：" + formatArticleExportDate(it * 1000L) }
+        ?.let { DomainStrings.exportEditedDate(formatArticleExportDate(it * 1000L)) }
         .orEmpty()
 
     return ArticleExportFooterPlaceholders(
-        exportedDate = "导出日期：" + formatArticleExportDate(footerData.exportEpochMillis),
+        exportedDate = DomainStrings.exportExportedDate(formatArticleExportDate(footerData.exportEpochMillis)),
         publishedDate = publishedDate,
         editedDate = editedDate,
         editedDateClass = if (editedDate.isBlank()) "export-footer-line is-hidden" else "export-footer-line",
@@ -562,12 +710,6 @@ private fun buildArticleExportFooterPlaceholders(footerData: ArticleExportFooter
     )
 }
 
-private fun extractArticleExportImageUrl(image: Element): String? =
-    com.github.zly2006.zhihu.util
-        .extractImageUrl(image::attr)
-        ?.takeIf { !it.startsWith("data:") }
-
-@OptIn(ExperimentalTime::class)
 private fun formatArticleExportFileTimestamp(timestampMillis: Long = Clock.System.now().toEpochMilliseconds()): String {
     val dateTime = Instant
         .fromEpochMilliseconds(timestampMillis)
@@ -583,7 +725,6 @@ private fun formatArticleExportFileTimestamp(timestampMillis: Long = Clock.Syste
     }
 }
 
-@OptIn(ExperimentalTime::class)
 fun formatArticleExportDate(epochMillis: Long): String {
     val dateTime = Instant
         .fromEpochMilliseconds(epochMillis)

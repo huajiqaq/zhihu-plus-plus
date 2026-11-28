@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -51,7 +52,7 @@ internal fun WriteAnswerQuestionSection(
             .padding(top = 10.dp, bottom = 12.dp),
     ) {
         Text(
-            text = "正在回答",
+            text = ContentStrings.answering,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -75,7 +76,7 @@ internal fun WriteAnswerModeSelector(
     onModeChange: (Int) -> Unit,
 ) {
     AppSegmentedControl(
-        options = listOf("图文", "Markdown"),
+        options = listOf(ContentStrings.richText, "Markdown"),
         selectedIndex = if (richMode) 0 else 1,
         onSelect = onModeChange,
         enabled = enabled,
@@ -104,21 +105,21 @@ internal fun WriteAnswerEditorSection(
     }
     if (!initialContentLoaded && !isDetecting) {
         AppTextButton(
-            text = "重试加载草稿",
+            text = ContentStrings.retryLoadDraft,
             onClick = onRetryDraftLoad,
         )
     }
     if (richMode) {
         WriteContentRichEditor(
             state = richEditor,
-            placeholder = "请输入图文回答内容……",
+            placeholder = ContentStrings.answerPlaceholder,
             enabled = !isSubmitting && !isEditorConverting,
             modifier = Modifier.testTag(WRITE_ANSWER_CONTENT_TAG),
         )
     } else {
         WriteContentMarkdownEditor(
             state = content,
-            placeholder = "请输入图文回答内容……",
+            placeholder = ContentStrings.answerPlaceholder,
             contentTag = WRITE_ANSWER_CONTENT_TAG,
             enabled = !isSubmitting && !isEditorConverting,
         )

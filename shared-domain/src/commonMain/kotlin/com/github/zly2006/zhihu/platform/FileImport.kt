@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,7 +35,8 @@ internal expect fun rememberFilePicker(
     title: String,
     mimeTypes: List<String>,
     extensions: List<String>,
-    onPicked: (() -> Pair<String, RawSource>) -> Unit,
+    maxBytes: Int?,
+    onPicked: (suspend () -> Pair<String, RawSource>) -> Unit,
 ): () -> Unit
 
 /** 选择器延迟打开数据源，确保读取和关闭均在工作线程完成。 */
@@ -49,14 +51,14 @@ fun rememberFileImporter(
 ): () -> Unit {
     val scope = rememberCoroutineScope()
     val currentOnImported by rememberUpdatedState(onImported)
-    return rememberFilePicker(title, mimeTypes, extensions) { openFile ->
+    return rememberFilePicker(title, mimeTypes, extensions, maxBytes) { openFile ->
         scope.launch {
             try {
                 val (name, bytes) = withContext(Dispatchers.Default) {
                     val (name, rawSource) = openFile()
                     name to rawSource.buffered().use { source ->
                         if (maxBytes != null) {
-                            require(!source.request(maxBytes.toLong() + 1)) { "文件大小不能超过 ${maxBytes / 1024 / 1024} MB" }
+                            require(!source.request(maxBytes.toLong() + 1)) { DomainStrings.fileMaxMb(maxBytes / 1024 / 1024) }
                         }
                         source.readByteArray()
                     }
@@ -65,7 +67,7 @@ fun rememberFileImporter(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                userMessages.showLongMessage("导入失败：${error.message ?: "读取文件失败"}")
+                userMessages.showLongMessage(DomainStrings.importFailed(error.message ?: DomainStrings.fileReadFailed))
             }
         }
     }

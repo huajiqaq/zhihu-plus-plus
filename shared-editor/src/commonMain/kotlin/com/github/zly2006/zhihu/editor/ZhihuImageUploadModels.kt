@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.editor
 
+import com.github.zly2006.zhihu.i18n.EditorStrings
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -34,7 +35,7 @@ data class UploadedZhihuImage(
 )
 
 class UnknownImageFormatException(
-    message: String = "无法识别图片格式，已取消上传",
+    message: String = EditorStrings.unsupportedImageFormat,
 ) : IllegalArgumentException(message)
 
 enum class ZhihuImageUploadSource(

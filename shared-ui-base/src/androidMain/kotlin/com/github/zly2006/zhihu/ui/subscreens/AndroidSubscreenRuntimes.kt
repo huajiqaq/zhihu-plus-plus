@@ -35,20 +35,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
+import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.updater.UpdateManager
 import com.github.zly2006.zhihu.updater.UpdateManager.UpdateState
 import com.github.zly2006.zhihu.updater.UpdateStep
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
-import java.io.File
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 actual val isWebViewCustomFontSupported: Boolean = true
 
@@ -67,15 +69,15 @@ actual fun WebViewCustomFontSettings(
         val destFile = File(context.filesDir, "custom_font")
         val tempFile = File(context.filesDir, "custom_font.tmp")
         runCatching {
-            val input = context.contentResolver.openInputStream(uri) ?: error("无法读取所选文件")
+            val input = context.contentResolver.openInputStream(uri) ?: error(ReaderStrings.selectedFileUnreadable)
             input.use { source -> tempFile.outputStream().use { output -> source.copyTo(output) } }
-            check(tempFile.renameTo(destFile)) { "无法保存所选字体文件" }
+            check(tempFile.renameTo(destFile)) { ReaderStrings.fontFileSaveFailed }
         }.onSuccess {
             onCustomFontNameChange(name)
-            userMessages.showShortMessage("字体已设置，重新打开文章后生效")
+            userMessages.showShortMessage(ReaderStrings.fontSelected)
         }.onFailure {
             tempFile.delete()
-            userMessages.showLongMessage("字体设置失败：${it.message ?: it::class.simpleName}")
+            userMessages.showLongMessage(ReaderStrings.fontSelectionFailed(it.message ?: it::class.simpleName.orEmpty()))
         }
     }
     Column(
@@ -92,20 +94,20 @@ actual fun WebViewCustomFontSettings(
                 },
                 modifier = Modifier.weight(1f),
             ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null)
-                Text("选择", modifier = Modifier.padding(start = 4.dp))
+                AppIcon(Icons.Default.FolderOpen, contentDescription = null)
+                Text(ReaderStrings.choose, modifier = Modifier.padding(start = 4.dp))
             }
             if (customFontName != null) {
                 AppOutlinedButton(
                     onClick = {
                         File(context.filesDir, "custom_font").delete()
                         onCustomFontNameChange(null)
-                        userMessages.showShortMessage("已清除自定义字体")
+                        userMessages.showShortMessage(ReaderStrings.fontCleared)
                     },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Icon(Icons.Default.Clear, contentDescription = null)
-                    Text("清除", modifier = Modifier.padding(start = 4.dp))
+                    AppIcon(Icons.Default.Clear, contentDescription = null)
+                    Text(ReaderStrings.clear, modifier = Modifier.padding(start = 4.dp))
                 }
             }
         }
@@ -166,7 +168,7 @@ private fun UpdateState.toSystemUpdateState(): SystemUpdateState = when (this) {
     is UpdateState.UpdateAvailable -> toSystemUpdate()
     is UpdateState.Downloading -> SystemUpdateState.Downloading(update.toSystemUpdate())
     is UpdateState.Downloaded -> SystemUpdateState.Downloaded(update.toSystemUpdate())
-    is UpdateState.Error -> SystemUpdateState.Error(message, step, update?.toSystemUpdate())
+    is UpdateState.Error -> SystemUpdateState.Error({ message }, step, update?.toSystemUpdate())
 }
 
 private fun UpdateState.UpdateAvailable.toSystemUpdate() = SystemUpdateState.UpdateAvailable(
@@ -187,7 +189,7 @@ actual fun rememberLicenseManifestReader(): suspend () -> String {
                 /** 清单属于 app 变体资源，此模块没有其 R 类，需按资源名查找。 */
                 @SuppressLint("DiscouragedApi")
                 val id = context.resources.getIdentifier("aboutlibraries", "raw", context.packageName)
-                check(id != 0) { LICENSE_MANIFEST_MISSING_MESSAGE }
+                if (id == 0) throw ReaderDisplayFailure(LICENSE_MANIFEST_MISSING_MESSAGE) { ReaderStrings.licenseManifestMissing }
                 context.resources
                     .openRawResource(id)
                     .bufferedReader()

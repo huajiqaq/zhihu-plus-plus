@@ -20,9 +20,11 @@ package com.github.zly2006.zhihu.ui.subscreens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
+import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
 import com.github.zly2006.zhihu.updater.UpdateStep
 import com.github.zly2006.zhihu.updater.describeUpdateFailure
 import kotlinx.coroutines.Dispatchers
@@ -65,11 +67,11 @@ actual fun rememberSystemUpdateDownloader(): suspend () -> Unit {
     return download@{
         val update = desktopSystemUpdateState.value.pendingUpdate ?: return@download
         try {
-            require(update.downloadUrl.isNotBlank()) { "下载链接为空" }
+            if (update.downloadUrl.isBlank()) throw ReaderDisplayFailure("下载链接为空") { ReaderStrings.downloadUrlMissing }
             openWebUrl(update.downloadUrl)
             desktopSystemUpdateState.value = update
         } catch (error: Exception) {
-            desktopSystemUpdateState.value = SystemUpdateState.Error(describeUpdateFailure(error), UpdateStep.Download, update)
+            desktopSystemUpdateState.value = SystemUpdateState.Error({ describeUpdateFailure(error) }, UpdateStep.Download, update)
         }
     }
 }
@@ -77,7 +79,7 @@ actual fun rememberSystemUpdateDownloader(): suspend () -> Unit {
 @Composable
 actual fun rememberDownloadedSystemUpdateInstaller(): suspend () -> Unit = {
     desktopSystemUpdateState.value = SystemUpdateState.Error(
-        "$platformName 暂不支持 APK 更新安装",
+        { ReaderStrings.apkInstallUnavailable(platformName) },
         UpdateStep.Install,
         desktopSystemUpdateState.value.pendingUpdate,
     )
@@ -102,18 +104,18 @@ internal fun desktopVersionName(): String =
             ?.bufferedReader(Charsets.UTF_8)
             ?.use { it.readText().trim() }
             ?.takeIf { it.isNotBlank() }
-        ?: error("没有找到构建时生成的版本信息 zhihu-version.txt")
+        ?: throw ReaderDisplayFailure("没有找到构建时生成的版本信息 zhihu-version.txt") { ReaderStrings.versionMetadataMissing }
 
 @Composable
 actual fun rememberLicenseManifestReader(): suspend () -> String = remember {
     {
         withContext(Dispatchers.IO) {
-            ManualLicenseEntry::class.java
+            SystemUpdateState::class.java
                 .getResourceAsStream("/aboutlibraries.json")
                 ?.bufferedReader(Charsets.UTF_8)
                 ?.use { it.readText() }
                 ?.takeIf { it.isNotBlank() }
-                ?: error(LICENSE_MANIFEST_MISSING_MESSAGE)
+                ?: throw ReaderDisplayFailure(LICENSE_MANIFEST_MISSING_MESSAGE) { ReaderStrings.licenseManifestMissing }
         }
     }
 }

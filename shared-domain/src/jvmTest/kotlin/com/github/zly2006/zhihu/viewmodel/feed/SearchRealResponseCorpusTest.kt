@@ -26,6 +26,10 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.job
@@ -37,10 +41,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchRealResponseCorpusTest {
@@ -81,7 +81,7 @@ class SearchRealResponseCorpusTest {
 
             override fun authenticatedCookies() = mapOf("d_c0" to "test")
 
-            override fun blockedUserIds() = blockedAuthors
+            override suspend fun blockedUserIds() = blockedAuthors
 
             override suspend fun handleFetchFailure(tag: String?, error: Exception) {
                 failures += "${error.javaClass.name}: ${error.message}"

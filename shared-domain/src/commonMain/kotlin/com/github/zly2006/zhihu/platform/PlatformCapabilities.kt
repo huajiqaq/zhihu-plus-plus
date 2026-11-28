@@ -24,6 +24,7 @@ import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.WebPage
 import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.io.files.Path
 
 expect val platformBottomBarItemLimit: Int?
@@ -40,16 +41,18 @@ expect val isLiteVariant: Boolean
 
 expect val isBlocklistNlpSupported: Boolean
 
-/** 构建里带有 Full 版本专属组件，开源许可页要列出它们的许可证。 */
-expect val includesFullVariantLicenses: Boolean
-
 expect val isArticleHtmlExportSupported: Boolean
+
+expect val isArticlePdfExportSupported: Boolean
 
 expect val isArticleImageExportSupported: Boolean
 
 expect val isPageTurnSupported: Boolean
 
 expect val isAnswerSwipeSupported: Boolean
+
+/** 开放桌面手势能力不改变此前默认关闭的阅读行为。 */
+expect val defaultAnswerSwitchMode: String
 
 enum class UserMessageDuration {
     Short,
@@ -74,43 +77,6 @@ interface UserMessageSink {
 
 @Composable
 expect fun rememberUserMessageSink(): UserMessageSink
-
-interface SettingsStore {
-    fun getBoolean(key: String, defaultValue: Boolean): Boolean
-
-    fun putBoolean(key: String, value: Boolean)
-
-    fun getString(key: String, defaultValue: String): String
-
-    fun putString(key: String, value: String)
-
-    fun getStringOrNull(key: String): String?
-
-    fun putStringSet(key: String, value: Set<String>)
-
-    fun getStringSet(key: String, defaultValue: Set<String>): Set<String>
-
-    fun getInt(key: String, defaultValue: Int): Int
-
-    fun putInt(key: String, value: Int)
-
-    fun getLong(key: String, defaultValue: Long): Long
-
-    fun putLong(key: String, value: Long)
-
-    fun getFloat(key: String, defaultValue: Float): Float
-
-    fun putFloat(key: String, value: Float)
-
-    fun remove(key: String)
-
-    /** 不支持枚举的存储不导出设置条目。 */
-    fun allEntries(): Map<String, Any> = emptyMap()
-
-    fun removeByPrefix(prefix: String) = Unit
-
-    fun observeKeyChanges(onChanged: (String) -> Unit): AutoCloseable = AutoCloseable { }
-}
 
 interface SystemUrlOpener {
     operator fun invoke(url: String)
@@ -156,6 +122,9 @@ expect fun appPrivateDirectory(): Path
 
 expect val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
 
+/** 语义模型进入或离开可推理状态时变化；不随下载进度变化，Android 保持原模型生命周期。 */
+expect val platformSemanticRuntimeGeneration: StateFlow<Long>
+
 expect suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>)
 
 @Composable
@@ -166,9 +135,6 @@ expect fun rememberSettingsStore(): SettingsStore
 expect fun isSoftwareKeyboardVisible(): Boolean
 
 expect fun Modifier.exportTestTagsForUiAutomation(): Modifier
-
-@Composable
-expect fun rememberAppPrivateDirectory(): Path
 
 @Composable
 expect fun rememberExternalUrlOpener(): ExternalUrlOpener

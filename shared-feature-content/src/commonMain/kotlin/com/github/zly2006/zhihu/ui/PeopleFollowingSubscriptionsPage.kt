@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.PageTurnTarget
@@ -48,12 +49,13 @@ import com.github.zly2006.zhihu.ui.components.PaginatedList
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 
-private val PEOPLE_SCREEN_SUBSCRIPTION_TITLES = listOf(
-    "我订阅的专栏",
-    "关注的话题",
-    "关注的问题",
-    "关注的收藏夹",
-)
+private val PEOPLE_SCREEN_SUBSCRIPTION_TITLES: List<String>
+    get() = listOf(
+        ContentStrings.subscribedColumns,
+        ContentStrings.followedTopics,
+        ContentStrings.followedQuestions,
+        ContentStrings.followedCollections,
+    )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

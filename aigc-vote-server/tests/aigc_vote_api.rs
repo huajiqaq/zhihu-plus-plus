@@ -26,6 +26,30 @@ use serde_json::json;
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn browser_preflight_only_allows_known_origins_and_json_without_credentials() {
+    let app = app(AppState::new_in_memory().expect("初始化测试状态失败"));
+    for (origin, method, headers, allowed) in [
+        ("https://zly2006.github.io", "POST", "content-type", true),
+        ("http://127.0.0.1:8080", "GET", "Content-Type", true),
+        ("https://other.example", "POST", "content-type", false),
+        ("http://127.0.0.1:8081", "POST", "content-type", false),
+        ("https://zly2006.github.io", "DELETE", "content-type", false),
+        ("https://zly2006.github.io", "POST", "authorization", false),
+    ] {
+        let response = app.clone().oneshot(
+            Request::builder().method(Method::OPTIONS).uri("/v1/read-events:batch")
+                .header("origin", origin)
+                .header("access-control-request-method", method)
+                .header("access-control-request-headers", headers)
+                .body(Body::empty()).unwrap(),
+        ).await.unwrap();
+        assert_eq!(response.status(), if allowed { StatusCode::NO_CONTENT } else { StatusCode::FORBIDDEN });
+        assert_eq!(response.headers().get("access-control-allow-origin").map(|value| value.to_str().unwrap()), allowed.then_some(origin));
+        assert!(!response.headers().contains_key("access-control-allow-credentials"));
+    }
+}
+
+#[tokio::test]
 async fn read_events_award_credit_per_20_valid_unique_contents_and_cap_at_five() {
     let state = AppState::new_in_memory().expect("初始化测试状态失败");
     let app = app(state);

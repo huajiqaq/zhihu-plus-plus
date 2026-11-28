@@ -24,18 +24,20 @@ import com.github.zly2006.zhihu.account.ZhihuRequestProfile
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
 import com.github.zly2006.zhihu.data.decodePinContentDetail
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Pin
-import com.github.zly2006.zhihu.util.jsonObject
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.ContentLoadEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.addReadHistory
 import com.github.zly2006.zhihu.viewmodel.setAuthorFollowing
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 
 internal class PinScreenData : ViewModel() {
@@ -102,7 +104,7 @@ internal class PinScreenData : ViewModel() {
             throw error
         } catch (error: Exception) {
             if (generation == authorFollowGeneration && environment.httpClient() === owner) {
-                authorFollowError.value = if (following) "关注失败，请重试" else "取消关注失败，请重试"
+                authorFollowError.value = if (following) ContentStrings.followFailedRetry else ContentStrings.unfollowFailedRetry
             }
         } finally {
             if (generation == authorFollowGeneration) {
@@ -131,7 +133,7 @@ internal class PinScreenData : ViewModel() {
             val jsonObject = environment
                 .get("https://api.zhihu.com/v2/pins/${pin.id}", profile = ZhihuRequestProfile.Mobile)
                 .raiseForStatus()
-                .jsonObject()
+                .body<JsonObject>()
             val loadedPin = decodePinContentDetail(jsonObject)
             currentCoroutineContext().ensureActive()
             if (generation != detailLoadGeneration || environment.httpClient() !== client) {
@@ -151,7 +153,7 @@ internal class PinScreenData : ViewModel() {
             throw error
         } catch (error: Exception) {
             if (generation == detailLoadGeneration && environment.httpClient() === client) {
-                errorMessage.value = error.message?.takeIf(String::isNotBlank) ?: "想法详情加载失败"
+                errorMessage.value = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.pinDetailLoadFailed
             }
         } finally {
             if (generation == detailLoadGeneration) {

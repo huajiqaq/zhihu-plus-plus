@@ -21,6 +21,12 @@ import androidx.room.useWriterConnection
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import io.ktor.client.engine.mock.MockEngine
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.createTempDirectory
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,15 +36,50 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.io.path.createTempDirectory
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 class LocalContentDatabaseTest {
+    @Test
+    fun migrationKeepsOldCandidatesAndUsesNewEvidenceWithoutReranking() = runTest {
+        val file = createTempDirectory("local-content-v5").resolve("local-content.db").toFile()
+        val old = Json.decodeFromString<CrawlingResult>(
+            """{"taskId":1,"contentId":"answer:42","title":"old","summary":"","url":"","reason":"Trending","score":9.0}""",
+        )
+        assertEquals(null, old.filterFactsJson)
+        val seed = getLocalContentDatabase(file)
+        try {
+            seed.contentDao().insertResults(listOf(old))
+            seed.useWriterConnection { connection ->
+                connection.usePrepared("ALTER TABLE crawling_results DROP COLUMN filterFactsJson") { it.step() }
+                connection.usePrepared("PRAGMA user_version = 5") { it.step() }
+            }
+        } finally {
+            seed.closeDatabase()
+        }
+
+        val migrated = getLocalContentDatabase(file)
+        try {
+            val dao = migrated.contentDao()
+            val preserved = dao.getRecentResults(1).single()
+            assertEquals(old.copy(id = preserved.id), preserved)
+            val snapshot = """{"facts":{"voteCount":999},"accountId":null}"""
+            dao.insertResults(listOf(old.copy(title = "new", score = 1.0, filterFactsJson = snapshot)))
+            val winner = collectCandidateResults(dao, 1).single()
+            assertEquals(preserved, winner)
+            assertEquals(
+                999,
+                dao
+                    .getLatestFilterFactResults(listOf(winner.contentId))
+                    .single()
+                    .filterFactsFor(null)
+                    ?.voteCount,
+            )
+        } finally {
+            migrated.closeDatabase()
+        }
+    }
+
     @Test
     fun recoveryPreservesLiveExecutorAndReleasesOnlyAfterCancellationCleanup() = runTest {
         val file = createTempDirectory("local-content-recovery-room").resolve("local-content.db").toFile()

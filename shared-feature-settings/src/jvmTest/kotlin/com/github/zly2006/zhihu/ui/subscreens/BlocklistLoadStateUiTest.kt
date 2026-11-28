@@ -35,7 +35,6 @@ import androidx.room.useReaderConnection
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.BlocklistSettingsScreen
@@ -43,12 +42,13 @@ import com.github.zly2006.zhihu.ui.BlocklistSettingsTestTags
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedKeyword
 import com.github.zly2006.zhihu.viewmodel.filter.ContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordType
+import com.github.zly2006.zhihu.viewmodel.filter.RoomContentFilterDatabase
+import com.github.zly2006.zhihu.viewmodel.filter.desktopContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.filter.desktopContentFilterDatabaseFile
-import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
-import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.runBlocking
 
 /**
  * 清空需要确认，且不能删除其他类型的屏蔽规则。
@@ -97,12 +97,10 @@ class BlocklistLoadStateUiTest {
 
     private fun withFixture(body: (ContentFilterDatabase) -> Unit) {
         val originalUserHome = System.getProperty("user.home")
-        val originalTheme = ThemeManager.snapshot()
         try {
             System.setProperty("user.home", fixtureHome.toAbsolutePath().toString())
             desktopSettingsStore().putString("uiThemeStyle", ThemeStyle.MATERIAL_EXPRESSIVE.name)
-            ThemeManager.setThemeStyle(ThemeStyle.MATERIAL_EXPRESSIVE)
-            val database = getContentFilterDatabase()
+            val database = desktopContentFilterDatabase
             check(isFixtureDatabase(database)) { "桌面数据库单例不在测试目录下，该测试必须在独立 JVM worker 中执行" }
             runBlocking {
                 database.blockedKeywordDao().deleteKeywordsByType(KeywordType.EXACT_MATCH.name)
@@ -115,12 +113,11 @@ class BlocklistLoadStateUiTest {
             }
             body(database)
         } finally {
-            ThemeManager.load(originalTheme)
             System.setProperty("user.home", originalUserHome)
         }
     }
 
-    private fun isFixtureDatabase(database: ContentFilterDatabase): Boolean = runBlocking {
+    private fun isFixtureDatabase(database: RoomContentFilterDatabase): Boolean = runBlocking {
         val path = database.useReaderConnection { connection ->
             connection.usePrepared("SELECT file FROM pragma_database_list WHERE name = 'main'") { statement ->
                 if (statement.step()) statement.getText(0) else ""

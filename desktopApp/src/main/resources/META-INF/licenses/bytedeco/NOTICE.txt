@@ -1,0 +1,29 @@
+JavaCV / JavaCPP 1.5.14 and FFmpeg 8.1.2-1.5.14
+
+Zhihu++ uses unmodified official Maven Central artifacts published by
+Bytedeco. JavaCV and JavaCPP offer Apache-2.0 or GPL with Classpath exception;
+the original complete license texts are in javacv/ and javacpp/.
+
+Only the target runtime's FFmpeg and JavaCPP native classifier is distributed.
+The classifier never has the '-gpl' suffix. In the official build recipe this
+means x264/x265/GPL-only FFmpeg features are NOT enabled. The base FFmpeg
+build DOES enable --enable-version3 and external libraries, so the native
+runtime is LGPL version 3 or later, not merely the wrapper POM's Apache-2.0.
+FFmpeg's original LICENSE.md is retained as ffmpeg/LICENSE.txt. Complete
+LGPL/GPL texts, third-party copyright notices, and patent grants are retained
+without alteration. Some unused GPL-copy files are present because they come
+from the upstream license set; their presence does not enable GPL code.
+
+sources.json identifies the official preset commit, build instructions,
+patches, source archives and linked components. Platform-only entries state
+their platform scope. JavaCV's default OpenCV/camera SDK dependency graph is
+not included. Binary codecs are not removed or replaced to reduce size.
+
+This software is based in part on the work of the Independent JPEG Group.
+Portions of this software are copyright (c) 2026 The FreeType Project
+(www.freetype.org). All rights reserved.
+
+Redistributors must preserve these notices and satisfy the applicable source
+and relinking requirements. Upstream links are provenance, not a substitute
+for any corresponding-source delivery or written-offer obligation. This
+application has not modified FFmpeg/JavaCV/JavaCPP native binaries.

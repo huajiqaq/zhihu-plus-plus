@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -46,12 +45,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.pinSummaryText
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Navigator
@@ -59,8 +56,9 @@ import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.reading.RegisterReadingQueueSource
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
-import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSelectionDropdownMenu
+import com.github.zly2006.zhihu.ui.components.AppSelectionOption
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.FeedCard
 import com.github.zly2006.zhihu.ui.components.PaginatedList
@@ -68,7 +66,6 @@ import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 private fun DataHolder.Answer.toPeopleAnswerDisplayItem(): FeedDisplayItem {
     val destination = Article(
@@ -86,9 +83,9 @@ private fun DataHolder.Answer.toPeopleAnswerDisplayItem(): FeedDisplayItem {
     return FeedDisplayItem(
         title = question.title,
         summary = excerpt,
-        details = "回答 · $voteupCount 赞同 · $commentCount 评论",
+        details = ContentStrings.answerDetails(voteupCount, commentCount),
         feed = null,
-        navDestinationJson = destination.toFeedDisplayItemNavDestinationJson(),
+        destination = destination,
         raw = this,
     )
 }
@@ -108,9 +105,9 @@ private fun DataHolder.Article.toPeopleArticleDisplayItem(): FeedDisplayItem {
     return FeedDisplayItem(
         title = title,
         summary = excerpt,
-        details = "文章 · $voteupCount 赞同 · $commentCount 评论",
+        details = ContentStrings.articleDetails(voteupCount, commentCount),
         feed = null,
-        navDestinationJson = destination.toFeedDisplayItemNavDestinationJson(),
+        destination = destination,
         raw = this,
     )
 }
@@ -120,9 +117,9 @@ private fun DataHolder.Pin.toPeoplePinDisplayItem(): FeedDisplayItem? {
     return FeedDisplayItem(
         title = excerptTitle.pinSummaryText(),
         summary = null,
-        details = "想法 · $likeCount 赞 · $commentCount 评论",
+        details = ContentStrings.pinDetails(likeCount, commentCount),
         feed = null,
-        navDestinationJson = Pin(id = pinId, authorName = author.name).toFeedDisplayItemNavDestinationJson(),
+        destination = Pin(id = pinId, authorName = author.name),
         raw = this,
     )
 }
@@ -171,37 +168,24 @@ private fun SortBar(
                 contentColor = if (settingSkinIsMiuix()) skin.onSurface else skin.onSurfaceVariantActions,
                 contentPadding = PaddingValues(horizontal = AppDimens.Space8),
             ) {
-                Text(if (currentSort == "voteups") "按热度" else "按时间", style = skin.footnote1)
+                Text(if (currentSort == "voteups") ContentStrings.sortByPopularity else ContentStrings.sortByTime, style = skin.footnote1)
                 Spacer(Modifier.width(AppDimens.Space4))
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
+                AppIcon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
             }
             AppSelectionDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                options = listOf("按热度", "按时间"),
+                options = listOf(
+                    AppSelectionOption(ContentStrings.sortByPopularity, hotTag),
+                    AppSelectionOption(ContentStrings.sortByTime, timeTag),
+                ),
                 selectedIndex = if (currentSort == "voteups") 0 else 1,
                 onSelect = { index ->
                     expanded = false
                     val sort = if (index == 0) "voteups" else "created"
                     if (currentSort != sort) onSortChange(sort)
                 },
-            ) {
-                listOf(Triple("按热度", "voteups", hotTag), Triple("按时间", "created", timeTag)).forEach { (label, sort, tag) ->
-                    AppDropdownMenuItem(
-                        text = { Text(label) },
-                        modifier = Modifier.testTag(tag).semantics { selected = currentSort == sort },
-                        trailingIcon = if (currentSort == sort) {
-                            { Icon(Icons.Default.Check, contentDescription = null) }
-                        } else {
-                            null
-                        },
-                        onClick = {
-                            expanded = false
-                            if (currentSort != sort) onSortChange(sort)
-                        },
-                    )
-                }
-            }
+            )
         }
     }
 }

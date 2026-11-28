@@ -6,7 +6,7 @@
 
 准备程序为 `gradle/prepare-upstream-sources.py`，需要 Python 3.11+ 和 Git；直接请求版本见 [版本目录](../gradle/libs.versions.toml)，补丁文件在 `gradle/upstream-patches/`。
 
-- APK 与桌面打包自动启用补丁；依赖未发布接口的独立编译和测试加 `-PzhihuUpstreamPatches=true`。普通编译、测试和依赖检查可用 `-PzhihuUpstreamPatches=false`，不准备源码或补丁资产，但打包不允许此模式。
+- `assemble…`、`bundle…`、`package…` 等打包入口会自动启用补丁。单独运行 `:desktopApp:createReleaseDistributable`，或编译、测试依赖未发布接口的代码时，显式传 `-PzhihuUpstreamPatches=true`。仅在不需要补丁的普通编译、测试或依赖检查中使用 `-PzhihuUpstreamPatches=false`。
 - 补丁模式用 `includeBuild` / `dependencySubstitution` 替换 lock 登记的提椠模块。最终 Maven 版本按目标变体的 `dependencyInsight` 核对；MIUIX 图标的二进制及元数据校验见 `gradle/verification-metadata.xml`，依赖报告不代替制品校验。
 - 准备程序从宿主版本目录读取 AGP、Kotlin/Compose 编译器、Compose 插件与库、Material3、backhandler 和 Skiko，适配根插件及宿主消费模块的直接依赖声明，并计入输入指纹与来源记录。Skiko 版本必须与所选 Compose 官方制品匹配；不单独强制 Skiko 或关闭兼容检查。宿主编译/运行图和 included-build 编译图需分别核对；原上游基线测试不替代对齐后消费者的验证，不修改原测试或 golden。
 - 新输入需官方 Haxe 工具链。`ZHIHU_TIQIAN_TOOLCHAIN` 指向本地 JSON：`haxe`、`node` 为可执行文件，Windows 便携版可另传 `neko`；`boring`、`reflaxe`、`format`、`formatter` 为 lock 的 `sources.tiqian-core.generation.tools` 对应干净源码目录（不含 `.git`）。程序校验 Haxe 版本、工具摘要和上游 pin，再执行官方 `gen kotlin-f32`，保留生产源码、原测试和发布工程。

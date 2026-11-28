@@ -22,6 +22,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import kotlinx.io.RawSource
 import kotlinx.io.asSource
 
@@ -30,7 +31,8 @@ internal actual fun rememberFilePicker(
     title: String,
     mimeTypes: List<String>,
     extensions: List<String>,
-    onPicked: (() -> Pair<String, RawSource>) -> Unit,
+    maxBytes: Int?,
+    onPicked: (suspend () -> Pair<String, RawSource>) -> Unit,
 ): () -> Unit {
     val resolver = LocalContext.current.contentResolver
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -38,8 +40,8 @@ internal actual fun rememberFilePicker(
             onPicked {
                 val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                     if (it.moveToFirst()) it.getString(0) else null
-                } ?: "所选文件"
-                name to (resolver.openInputStream(uri)?.asSource() ?: error("读取文件失败"))
+                } ?: DomainStrings.selectedFile
+                name to (resolver.openInputStream(uri)?.asSource() ?: error(DomainStrings.fileReadFailed))
             }
         }
     }

@@ -54,7 +54,7 @@ fun NavDestination.isSecondaryDetailDestination(): Boolean = when (this) {
     is Account.SystemAndUpdateSettings,
     Account.SettingsSearch,
     Account.OpenSourceLicenses,
-    Account.DeveloperSettings,
+    Account.AccountTools,
     is Notification.NotificationSettings,
     is Notification.Message,
     -> true

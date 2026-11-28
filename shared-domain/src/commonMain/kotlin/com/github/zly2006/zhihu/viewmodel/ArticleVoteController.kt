@@ -20,21 +20,23 @@ package com.github.zly2006.zhihu.viewmodel
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.VoteUpState
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.UserMessageSink
-import com.github.zly2006.zhihu.util.Log
-import com.github.zly2006.zhihu.util.jsonObject
+import com.github.zly2006.zhihu.util.AppLog
+import io.ktor.client.call.body
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlin.reflect.KMutableProperty0
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.reflect.KMutableProperty0
 
 /**
  * 文章页的点赞与赞同者。点赞成功后票态、数量、赞同者总数一起更新，回答还要重拉社交文案和赞同者列表，
@@ -50,7 +52,7 @@ internal class ArticleVoteController(
     votersTotalState: KMutableProperty0<Int>,
     votersNextUrlState: KMutableProperty0<String?>,
     votersLoadingState: KMutableProperty0<Boolean>,
-    votersErrorState: KMutableProperty0<String?>,
+    votersErrorState: KMutableProperty0<(() -> String)?>,
     votersSocialTextState: KMutableProperty0<String>,
 ) {
     private var voteUpState by voteUpStateState
@@ -76,7 +78,7 @@ internal class ArticleVoteController(
                             ArticleType.Article -> setBody(mapOf("voting" to if (newState == VoteUpState.Up) 1 else 0))
                         }
                         contentType(ContentType.Application.Json)
-                    }.jsonObject()
+                    }.body<JsonObject>()
 
                 voteUpState = newState
                 voteUpCount = response["voteup_count"]!!.jsonPrimitive.int
@@ -88,8 +90,8 @@ internal class ArticleVoteController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Vote up failed", e)
-                userMessages.showShortMessage("点赞失败: ${e.message}")
+                AppLog.e("ArticleViewModel", "Vote up failed", e)
+                userMessages.showShortMessage(DomainStrings.voteFailed(e.message.orEmpty()))
             }
         }
     }
@@ -112,8 +114,8 @@ internal class ArticleVoteController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to load answer voters", e)
-                votersError = e.message ?: "加载赞同者失败"
+                AppLog.e("ArticleViewModel", "Failed to load answer voters", e)
+                votersError = { e.message ?: DomainStrings.votersFailed }
             } finally {
                 votersLoading = false
             }
@@ -131,7 +133,7 @@ internal class ArticleVoteController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to load answer relationship endorsement", e)
+                AppLog.e("ArticleViewModel", "Failed to load answer relationship endorsement", e)
                 votersSocialText = ""
             }
         }

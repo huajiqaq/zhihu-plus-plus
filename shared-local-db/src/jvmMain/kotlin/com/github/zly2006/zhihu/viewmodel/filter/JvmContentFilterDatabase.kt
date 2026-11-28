@@ -23,15 +23,15 @@ import java.io.File
 fun desktopContentFilterDatabaseFile(): File =
     File(File(System.getProperty("user.home"), ".zhihu-plus"), "content-filter.db")
 
-private val desktopContentFilterDatabase by lazy {
+val desktopContentFilterDatabase: RoomContentFilterDatabase by lazy {
     getContentFilterDatabase(desktopContentFilterDatabaseFile().also { it.parentFile?.mkdirs() })
 }
 
 actual fun getContentFilterDatabase(): ContentFilterDatabase = desktopContentFilterDatabase
 
-fun getContentFilterDatabase(databaseFile: File): ContentFilterDatabase =
+fun getContentFilterDatabase(databaseFile: File): RoomContentFilterDatabase =
     buildContentFilterDatabase(
-        Room.databaseBuilder<ContentFilterDatabase>(
+        Room.databaseBuilder<RoomContentFilterDatabase>(
             name = databaseFile.absolutePath,
         ),
     )

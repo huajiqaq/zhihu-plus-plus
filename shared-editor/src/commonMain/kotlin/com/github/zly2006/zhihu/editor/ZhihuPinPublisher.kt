@@ -73,13 +73,7 @@ private fun calculatePinHtmlTextLength(html: String): Int =
         .length
 
 @Serializable
-data class SavePinDraftRequest(
-    val action: String = "pin",
-    val data: PinContentPayload,
-)
-
-@Serializable
-data class PublishPinRequest(
+data class PinContentRequest(
     val action: String = "pin",
     val data: PinContentPayload,
 )

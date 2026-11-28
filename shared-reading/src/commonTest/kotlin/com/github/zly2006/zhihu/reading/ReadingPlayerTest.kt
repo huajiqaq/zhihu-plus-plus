@@ -17,10 +17,10 @@
 
 package com.github.zly2006.zhihu.reading
 
-import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 
 class ReadingPlayerTest {
     @AfterTest

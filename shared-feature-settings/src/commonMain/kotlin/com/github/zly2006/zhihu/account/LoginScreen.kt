@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,9 +76,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
+import com.github.zly2006.zhihu.theme.LocalAppThemeOverride
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.ui.components.AppBackButton
 import com.github.zly2006.zhihu.ui.components.AppButton
@@ -85,6 +88,7 @@ import com.github.zly2006.zhihu.ui.components.AppCheckbox
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppLinearProgress
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
@@ -95,7 +99,6 @@ import com.github.zly2006.zhihu.ui.components.appGroupedPageBackground
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.ui.rememberHomeIsDebuggable
 import com.github.zly2006.zhihu.ui.rememberSetting
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 internal const val ZHIHU_TERMS_URL = "https://www.zhihu.com/term/zhihu-terms"
 internal const val ZHIHU_PRIVACY_URL = "https://www.zhihu.com/term/privacy"
@@ -103,12 +106,15 @@ private const val ZHIHU_OFFICIAL_APP_URL = "https://www.zhihu.com/app/"
 private const val LOGIN_BACK_TAG = "login_back"
 
 enum class LoginMethod(
-    val label: String,
+    private val labelText: () -> String,
     val tag: String,
 ) {
-    Phone("手机号登录", "login_mode_phone"),
-    Qr("扫码登录", "login_mode_qr"),
-    Web("备用网页", "login_mode_web"),
+    Phone({ AccountStrings.loginPhone }, "login_mode_phone"),
+    Qr({ AccountStrings.loginQr }, "login_mode_qr"),
+    Web({ AccountStrings.loginWebFallback }, "login_mode_web"),
+    ;
+
+    val label: String get() = labelText()
 }
 
 expect val supportedLoginMethods: List<LoginMethod>
@@ -117,7 +123,7 @@ expect val supportedLoginMethods: List<LoginMethod>
 expect fun QrLoginPane(onLoginSuccess: (String) -> Unit)
 
 @Composable
-expect fun WebLoginPane(onLoginSuccess: (String) -> Unit)
+expect fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit)
 
 /** 手机表单状态跨登录方式切换保留；onBack=null 表示根页面入口。 */
 @Composable
@@ -128,7 +134,7 @@ fun LoginScreen(
 ) {
     val uriHandler = LocalUriHandler.current
     val settings = rememberSettingsStore()
-    val phoneLoginState = rememberPhoneLoginState()
+    val phoneLoginState = if (LoginMethod.Phone in supportedLoginMethods) rememberPhoneLoginState() else null
     var noticesConfirmed by rememberSetting(settings, "loginNoticesConfirmed", false)
     var loggedInUsername by remember { mutableStateOf<String?>(null) }
 
@@ -150,13 +156,14 @@ fun LoginScreen(
         },
         phoneLoginState = phoneLoginState,
         onLoginSuccess = { username -> loggedInUsername = username },
+        onBrowserSessionVerified = onLoginComplete,
     ) {
         loggedInUsername?.let { username ->
             AppDialog(
                 onDismissRequest = onLoginComplete,
-                title = "登录成功",
-                summary = "欢迎回来，$username",
-                confirmText = "确定",
+                title = AccountStrings.loginSuccess,
+                summary = AccountStrings.loginWelcome(username),
+                confirmText = AccountStrings.confirm,
                 onConfirm = onLoginComplete,
             )
         }
@@ -168,8 +175,9 @@ fun LoginScreen(
 private fun LoginMethodsStage(
     onBack: (() -> Unit)?,
     onContinueAsGuest: () -> Unit,
-    phoneLoginState: PhoneLoginState,
+    phoneLoginState: PhoneLoginState?,
     onLoginSuccess: (String) -> Unit,
+    onBrowserSessionVerified: () -> Unit,
     overlays: @Composable () -> Unit,
 ) {
     val methods = supportedLoginMethods
@@ -181,29 +189,35 @@ private fun LoginMethodsStage(
         topBar = {
             if (selectedMethod == LoginMethod.Web) {
                 AppCompactTopBar(
-                    title = "网页登录",
+                    title = AccountStrings.loginWeb,
                     onBack = onBack,
                     backTag = LOGIN_BACK_TAG,
                     containerColor = background,
                     actions = {
                         if (methods.size > 1) {
                             AppTextButton(
-                                text = "其他登录方式",
+                                text = AccountStrings.loginOtherMethods,
                                 onClick = { selectedMethod = methods.first { it != LoginMethod.Web } },
                                 modifier = Modifier.testTag("login_method_return"),
+                            )
+                        } else {
+                            AppTextButton(
+                                text = AccountStrings.loginGuest,
+                                onClick = onContinueAsGuest,
+                                modifier = Modifier.testTag("login_guest"),
                             )
                         }
                     },
                 )
             } else {
                 AppCompactTopBar(
-                    title = "知乎++登录",
+                    title = AccountStrings.loginTitle,
                     onBack = onBack,
                     backTag = LOGIN_BACK_TAG,
                     containerColor = background,
                     actions = {
                         AppTextButton(
-                            text = "先逛逛",
+                            text = AccountStrings.loginGuest,
                             onClick = onContinueAsGuest,
                             modifier = Modifier.testTag("login_guest"),
                         )
@@ -221,7 +235,7 @@ private fun LoginMethodsStage(
                     .imePadding()
                     .testTag("login_web_content"),
             ) {
-                WebLoginPane(onLoginSuccess)
+                WebLoginPane(onLoginSuccess, onBrowserSessionVerified)
             }
         } else {
             Column(
@@ -250,7 +264,7 @@ private fun LoginMethodsStage(
                             onSelect = { selectedMethod = methods[it] },
                             modifier = Modifier.testTag("login_mode_selector"),
                             testTags = methods.map(LoginMethod::tag),
-                            enabled = !phoneLoginState.isBusy,
+                            enabled = phoneLoginState?.isBusy != true,
                         )
                     }
                     Box(
@@ -259,7 +273,7 @@ private fun LoginMethodsStage(
                             .weight(1f),
                     ) {
                         if (selectedMethod == LoginMethod.Phone) {
-                            PhoneLoginPane(onLoginSuccess = onLoginSuccess, state = phoneLoginState)
+                            PhoneLoginPane(onLoginSuccess = onLoginSuccess, state = checkNotNull(phoneLoginState))
                         } else {
                             QrLoginPane(onLoginSuccess)
                         }
@@ -282,6 +296,7 @@ private fun LoginWelcomeStage(
     var expandedNoticeIndex by rememberSaveable { mutableIntStateOf(-1) }
     var readNoticesMask by rememberSaveable { mutableIntStateOf(0) }
     var agreed by rememberSaveable { mutableStateOf(false) }
+    val loginNotices = loginNotices()
     val allNoticesRead = readNoticesMask == (1 shl loginNotices.size) - 1
     val readNoticeCount = loginNotices.indices.count { readNoticesMask and (1 shl it) != 0 }
     val onToggleNotice: (Int) -> Unit = { index ->
@@ -294,6 +309,8 @@ private fun LoginWelcomeStage(
     val miuix = settingSkinIsMiuix()
     val groupInset = if (miuix) AppDimens.SettingGroupHorizontalMarginMiuix else AppDimens.SettingGroupHeaderHorizontalPadding
     val isDebuggable = rememberHomeIsDebuggable()
+    val theme by rememberUpdatedState(LocalAppTheme.current)
+    val overrideStyle by rememberUpdatedState(LocalAppThemeOverride.current)
     val background = appGroupedPageBackground()
 
     AppScaffold(containerColor = background) { innerPadding ->
@@ -317,13 +334,13 @@ private fun LoginWelcomeStage(
                     }
                     Spacer(Modifier.height(if (onBack == null) AppDimens.LoginHeroTopSpacing else AppDimens.Space16))
                     Text(
-                        text = "开始之前",
+                        text = AccountStrings.loginBeforeStart,
                         modifier = if (isDebuggable) {
                             Modifier.pointerInput(Unit) {
                                 detectTapGestures(
                                     onLongPress = {
-                                        ThemeManager.setThemeStyle(
-                                            if (ThemeManager.currentStyle == ThemeStyle.MIUIX) {
+                                        overrideStyle(
+                                            if (theme.style == ThemeStyle.MIUIX) {
                                                 ThemeStyle.MATERIAL_EXPRESSIVE
                                             } else {
                                                 ThemeStyle.MIUIX
@@ -344,7 +361,7 @@ private fun LoginWelcomeStage(
                     )
                     Spacer(Modifier.height(AppDimens.Space8))
                     Text(
-                        text = "知乎++ 由开源社区维护，与知乎官方无隶属关系。请逐项展开阅读以下说明，再确认是否继续。",
+                        text = AccountStrings.loginNoticeIntro,
                         style = if (miuix) {
                             LocalAppSkinTokens.current.footnote2
                         } else {
@@ -354,7 +371,7 @@ private fun LoginWelcomeStage(
                     )
                     Spacer(Modifier.height(AppDimens.Space16))
                     Text(
-                        text = "已读 $readNoticeCount / ${loginNotices.size} 项",
+                        text = AccountStrings.loginNoticeProgress(readNoticeCount, loginNotices.size),
                         style = if (miuix) LocalAppSkinTokens.current.footnote2 else MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = accentColor(),
@@ -403,7 +420,7 @@ private fun LoginWelcomeStage(
                             )
                             Spacer(Modifier.width(AppDimens.Space10))
                             Text(
-                                text = "我已阅读并同意以上说明",
+                                text = AccountStrings.loginAgreeNotices,
                                 style = if (miuix) {
                                     LocalAppSkinTokens.current.footnote2
                                 } else {
@@ -467,7 +484,7 @@ private fun LoginNoticeRow(
         modifier = Modifier
             .testTag("login_notice_step_${index + 1}")
             .semantics {
-                stateDescription = if (expanded) "已展开" else "已收起"
+                stateDescription = if (expanded) AccountStrings.expanded else AccountStrings.collapsed
                 if (expanded) {
                     collapse(action = toggle)
                 } else {
@@ -478,7 +495,7 @@ private fun LoginNoticeRow(
         description = { Text(notice.summary) },
         icon = {
             if (read) {
-                Icon(Icons.Filled.Check, contentDescription = "已读", tint = accentColor())
+                AppIcon(Icons.Filled.Check, contentDescription = AccountStrings.read, tint = accentColor())
             } else {
                 Text("${index + 1}", color = accentColor(), fontWeight = FontWeight.SemiBold)
             }
@@ -486,7 +503,7 @@ private fun LoginNoticeRow(
         onClick = onToggle,
         shape = RectangleShape,
         endAction = {
-            Icon(
+            AppIcon(
                 imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = null,
                 tint = secondaryTextColor(),
@@ -515,7 +532,7 @@ private fun WelcomeActions(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AppButton(
-            text = "同意并继续",
+            text = AccountStrings.loginAgreeContinue,
             onClick = onConfirm,
             enabled = agreed,
             modifier = Modifier
@@ -524,7 +541,7 @@ private fun WelcomeActions(
                 .testTag("login_notice_confirm"),
         )
         AppTextButton(
-            text = "下载官方 App",
+            text = AccountStrings.loginOfficialApp,
             onClick = onOpenOfficialApp,
             modifier = Modifier.testTag("login_notice_secondary_action"),
         )
@@ -605,22 +622,22 @@ private data class LoginNotice(
 
 private val URL_REGEX = Regex("""https?://[A-Za-z0-9./_%?=&:#~+-]+""")
 
-private val loginNotices = listOf(
+private fun loginNotices(): List<LoginNotice> = listOf(
     LoginNotice(
-        title = "关于本应用",
-        summary = "由开源社区维护，与知乎官方无隶属关系。",
-        message = "我清楚，本应用由开源社区开发和维护，不由知乎官方开发并运营，也不受到知乎官方的承认或支持，使用本应用的一切后果由我本人承担。我可以在 $ZHIHU_OFFICIAL_APP_URL 下载官方应用。",
+        title = AccountStrings.loginAboutTitle,
+        summary = AccountStrings.loginAboutSummary,
+        message = AccountStrings.loginAboutNotice(ZHIHU_OFFICIAL_APP_URL),
     ),
     LoginNotice(
-        title = "使用约定",
-        summary = "遵守知乎协议，内容仅用于个人浏览与备份。",
-        message = "在使用本应用的过程中，我承诺遵守知乎使用协议 $ZHIHU_TERMS_URL 。我保证在使用过程中不侵犯知乎及其他作者的著作权，使用本应用产生的一切输出仅用于个人浏览和备份，不会进行传播等其他影响作者著作权的行为。",
-        inlineActionText = "查看协议",
+        title = AccountStrings.loginTermsTitle,
+        summary = AccountStrings.loginTermsSummary,
+        message = AccountStrings.loginTermsNotice(ZHIHU_TERMS_URL),
+        inlineActionText = AccountStrings.loginViewTerms,
     ),
     LoginNotice(
-        title = "隐私与遥测",
-        summary = "匿名使用统计可随时在设置中关闭。",
-        message = "我知晓，本应用可能会收集部分匿名化的使用信息来确定使用人数，我可以在设置中随时关闭此项遥测。",
-        inlineActionText = "查看设置",
+        title = AccountStrings.loginPrivacyTitle,
+        summary = AccountStrings.loginPrivacySummary,
+        message = AccountStrings.loginPrivacyNotice,
+        inlineActionText = AccountStrings.loginViewSettings,
     ),
 )

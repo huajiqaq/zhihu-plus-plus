@@ -54,17 +54,18 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.ui.components.AppBadgedBox
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppFilledTonalIconButton
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSectionTitle
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.appGroupedCardColor
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 internal enum class ProfileRefresh { Idle, Silent, Retrying, Failed }
 
@@ -72,7 +73,7 @@ internal enum class ProfileRefresh { Idle, Silent, Retrying, Failed }
 @Composable
 private fun accountCardColor(): Color = if (settingSkinIsMiuix()) {
     /** Miuix 暗色下 surfaceContainer 与页面同色，与设置分组一样抬高一级。 */
-    if (ThemeManager.isDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest else LocalAppSkinTokens.current.surfaceContainer
+    if (LocalAppTheme.current.isDarkTheme) MaterialTheme.colorScheme.surfaceContainerHighest else LocalAppSkinTokens.current.surfaceContainer
 } else {
     appGroupedCardColor()
 }
@@ -123,7 +124,7 @@ internal fun AccountProfileCard(
         ) {
             AsyncImage(
                 model = data.avatarUrl,
-                contentDescription = "头像",
+                contentDescription = ReaderStrings.avatar,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(AppDimens.ProfileHeroAvatarHeight)
@@ -145,7 +146,7 @@ internal fun AccountProfileCard(
                 )
                 Spacer(Modifier.height(AppDimens.Space2))
                 Text(
-                    text = "查看个人主页",
+                    text = ReaderStrings.viewProfile,
                     style = if (miuix) LocalAppSkinTokens.current.footnote1 else MaterialTheme.typography.bodyMedium,
                     color = if (miuix) {
                         LocalAppSkinTokens.current.onSurfaceVariantSummary
@@ -162,7 +163,7 @@ internal fun AccountProfileCard(
                             .size(AppDimens.TouchTarget)
                             .testTag(ACCOUNT_SETTINGS_SCAN_TAG),
                     ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码登录")
+                        AppIcon(Icons.Default.QrCodeScanner, contentDescription = ReaderStrings.scanToSignIn)
                     }
                     Spacer(Modifier.width(AppDimens.Space4))
                 }
@@ -174,9 +175,9 @@ internal fun AccountProfileCard(
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ),
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = "退出登录",
+                        contentDescription = ReaderStrings.signOut,
                         modifier = Modifier.size(AppDimens.IconSizeMedium),
                     )
                 }
@@ -207,7 +208,7 @@ private fun ProfileRefreshStatus(
         if (retrying) {
             AppSpinner(size = AppDimens.InlineSpinnerSize)
         } else {
-            Icon(
+            AppIcon(
                 Icons.Default.ErrorOutline,
                 contentDescription = null,
                 tint = color,
@@ -215,7 +216,7 @@ private fun ProfileRefreshStatus(
             )
         }
         Text(
-            text = if (retrying) "正在更新资料…" else "资料未更新，点击重试",
+            text = if (retrying) ReaderStrings.profileRefreshing else ReaderStrings.profileRefreshFailed,
             style = MaterialTheme.typography.bodyMedium,
             color = color,
         )
@@ -256,7 +257,7 @@ internal fun AccountQuickAccessRow(
             .padding(bottom = AppDimens.SettingGroupBottomMargin),
     ) {
         AppSectionTitle(
-            text = "快捷访问",
+            text = ReaderStrings.quickAccess,
             modifier = Modifier.padding(
                 start = if (settingSkinIsMiuix()) {
                     AppDimens.SettingGroupHorizontalMarginMiuix + AppDimens.SettingRowHorizontalPadding - AppDimens.Space4
@@ -300,7 +301,7 @@ internal fun AccountQuickAccessRow(
                             verticalArrangement = Arrangement.Center,
                         ) {
                             AppBadgedBox(count = action.badgeCount) {
-                                Icon(
+                                AppIcon(
                                     imageVector = action.icon,
                                     contentDescription = null,
                                     tint = contentColor,

@@ -50,10 +50,10 @@ import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.plainSearchText
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.util.cardText
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun FeedCardPreviewDialog(
@@ -82,7 +82,7 @@ internal fun FeedCardPreviewDialog(
                     horizontalArrangement = Arrangement.spacedBy(AppDimens.HeaderActionSpacing),
                 ) {
                     Text(
-                        text = "内容预览",
+                        text = WidgetsStrings.contentPreview,
                         modifier = Modifier.weight(1f).semantics { heading() },
                         style = skin.title4.copy(fontWeight = FontWeight.SemiBold),
                         color = skin.onSurface,
@@ -91,9 +91,9 @@ internal fun FeedCardPreviewDialog(
                         onClick = onDismissRequest,
                         modifier = Modifier.size(AppDimens.TouchTarget),
                     ) {
-                        Icon(
+                        AppIcon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "关闭内容预览",
+                            contentDescription = WidgetsStrings.closeContentPreview,
                             tint = skin.onSurfaceVariantActions,
                             modifier = Modifier.size(AppDimens.IconSizeMedium),
                         )
@@ -109,12 +109,12 @@ internal fun FeedCardPreviewDialog(
                     ),
                 ) {
                     TextButton(onClick = onDismissRequest) {
-                        Text("关闭", color = skin.onSurfaceVariantSummary)
+                        Text(WidgetsStrings.close, color = skin.onSurfaceVariantSummary)
                     }
                     TextButton(
                         onClick = onOpen,
                         modifier = Modifier.testTag(FEED_CARD_PREVIEW_OPEN_TAG),
-                    ) { Text("打开", color = skin.primary) }
+                    ) { Text(WidgetsStrings.open, color = skin.primary) }
                 }
             }
         }
@@ -154,7 +154,8 @@ internal fun FeedCardPreviewBody(
                 color = skin.onSurfaceVariantSummary,
             )
         }
-        if (item.authorName != null || item.details.isNotBlank()) {
+        val details = item.displayDetails
+        if (item.authorName != null || details.isNotBlank()) {
             Spacer(Modifier.size(AppDimens.FeedCardContentTopPadding))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 item.avatarSrc?.takeIf { it.isNotBlank() }?.let { avatar ->
@@ -174,9 +175,9 @@ internal fun FeedCardPreviewBody(
                             color = skin.onSurface,
                         )
                     }
-                    if (item.details.isNotBlank()) {
+                    if (details.isNotBlank()) {
                         Text(
-                            text = item.feed.plainSearchText(item.details),
+                            text = item.feed.plainSearchText(details),
                             style = MaterialTheme.typography.labelSmall,
                             color = skin.onSurfaceVariantSummary,
                             maxLines = 2,

@@ -1,0 +1,44 @@
+{
+  "name": "onnxruntime-web",
+  "version": "1.31.1",
+  "repository": "https://github.com/microsoft/onnxruntime",
+  "sourceCommit": "41d4d61f14b9c1dd0b2ccda1e9b85dd415fd0496",
+  "npm": {
+    "metadata": "https://registry.npmjs.org/onnxruntime-web/1.31.1",
+    "publisher": "microsoft1es",
+    "tarball": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.1.tgz",
+    "integrity": "sha512-5GeH+bWQ+HxM10z7erGlsWqryrwMbSvm/1tkIsKTT48g0fI19VXVVC435t4t7VsPdSQeS7NmuZPXrQ73k82URw==",
+    "wasmBuildCommit": "41d4d61f1",
+    "artifacts": [
+      {
+        "path": "dist/ort.wasm.min.mjs",
+        "sha256": "c21d9c326d453a4a61398270c804d5979e118540597cb0c07f7b3d64e6098234"
+      },
+      {
+        "path": "dist/ort-wasm-simd-threaded.mjs",
+        "sha256": "30ed0b5cd1182ede931fea448afb567d4dc705ec957af09f108a2be5f770dac3"
+      },
+      {
+        "path": "dist/ort-wasm-simd-threaded.wasm",
+        "sha256": "4b884c203b0fa48d057be3332c65513ff85aa3c5bddd6946acc0fab7ecda001d"
+      }
+    ]
+  },
+  "licenseSource": {
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.1/microsoft.ml.onnxruntime.1.31.1.nupkg",
+    "repositoryCommitMember": "Microsoft.ML.OnnxRuntime.nuspec",
+    "files": [
+      {
+        "path": "LICENSE",
+        "bytes": 1094,
+        "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674"
+      },
+      {
+        "path": "ThirdPartyNotices.txt",
+        "bytes": 344457,
+        "sha256": "c53a76501ef60db6f865f20599f220761201ac4057683acefdab37d861b86622"
+      }
+    ]
+  },
+  "noticeScope": "The npm tarball contains no LICENSE, ThirdPartyNotices or Web-specific license file. The distributed JavaScript retains its Microsoft MIT copyright header. LICENSE and ThirdPartyNotices.txt are reproduced verbatim from the official NuGet package with the same release and matching source commit. The notices cover the upstream project and are not a Web-specific dependency inventory or SBOM."
+}

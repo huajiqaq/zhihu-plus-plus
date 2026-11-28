@@ -1,6 +1,10 @@
 name: Prepare build inputs
 description: Configure Gradle and install the host SDK and locked Tiqian generation tools
 inputs:
+  upstream-tools:
+    description: Install locked generation tools for builds that consume Tiqian sources
+    required: false
+    default: 'true'
   native-cache-scope:
     description: Native build stage used to select the closest compatible cache
     required: false
@@ -38,11 +42,21 @@ runs:
         from pathlib import Path
         kotlin = tomllib.loads(Path('gradle/libs.versions.toml').read_text())['versions']['kotlin']
         xcode = hashlib.sha256(subprocess.check_output(['xcodebuild', '-version'])).hexdigest()[:16]
-        compatible = f"konan-v2-{os.environ['RUNNER_OS']}-{os.environ['RUNNER_ARCH']}-{kotlin}-{xcode}-"
-        scope = f"{compatible}{os.environ['GITHUB_JOB']}-{os.environ['NATIVE_CACHE_SCOPE']}-"
+        compatible = f"{os.environ['RUNNER_OS']}-{os.environ['RUNNER_ARCH']}-{kotlin}-{xcode}-"
+        job, stage = os.environ['GITHUB_JOB'], os.environ['NATIVE_CACHE_SCOPE']
+        scope = f"konan-v3-{compatible}{job}-{stage}-"
         key = scope + os.environ['GITHUB_SHA']
+        # v2 debug- also matches debug-release-: both contain Debug, never Release-only.
+        legacy_stage = {
+            ('macos-native', 'debug'): 'macos-native-debug',
+            ('macos-native', 'release'): 'macos-native-debug-release',
+            ('ios-release', 'release'): 'ios-acceptance-release',
+            ('ios-simulator-build', 'simulator-build'): 'ios-acceptance-simulator',
+            ('build-desktop', 'release'): 'build-desktop-release',
+        }.get((job, stage))
+        legacy_scope = f"konan-v2-{compatible}{legacy_stage}-" if legacy_stage else ''
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-            output.write(f'compatible={compatible}\nscope={scope}\nkey={key}\n')
+            output.write(f'scope={scope}\nkey={key}\nlegacy-scope={legacy_scope}\n')
         PY
     - name: Restore Kotlin Native
       if: runner.os == 'macOS'
@@ -53,18 +67,20 @@ runs:
         key: ${{ steps.native_key.outputs.key }}
         restore-keys: |
           ${{ steps.native_key.outputs.scope }}
-          ${{ steps.native_key.outputs.compatible }}
+          ${{ steps.native_key.outputs.legacy-scope }}
     - name: Set up Node
       uses: actions/setup-node@v7
       with:
-        node-version: '22'
+        node-version: '24'
         package-manager-cache: false
     - name: Read Haxe version
+      if: inputs.upstream-tools == 'true'
       id: haxe
       shell: bash
       run: |
         python -I -c 'import json; from pathlib import Path; version = json.loads(Path("gradle/upstream-sources.lock.json").read_text(encoding="utf-8"))["sources"]["tiqian-core"]["generation"]["haxeVersion"]; print("version=" + version)' >> "$GITHUB_OUTPUT"
     - name: Set up Haxe
+      if: inputs.upstream-tools == 'true'
       uses: krdlab/setup-haxe@18e4b483cfffca2fb8881530bf8a6cec39dac8fb
       with:
         haxe-version: ${{ steps.haxe.outputs.version }}
@@ -73,5 +89,6 @@ runs:
       with:
         packages: platform-tools
     - name: Prepare locked generation tools
+      if: inputs.upstream-tools == 'true'
       shell: bash
       run: python -I .github/scripts/prepare-tiqian-toolchain.py --output "$RUNNER_TEMP/zhihu-tiqian-toolchain" --env "$GITHUB_ENV"

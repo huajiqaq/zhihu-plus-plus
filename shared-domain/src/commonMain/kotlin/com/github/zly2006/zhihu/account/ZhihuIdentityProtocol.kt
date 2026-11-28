@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu.account
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
@@ -53,9 +54,11 @@ data class ZhihuIdentityChangeResult(
 )
 
 class ZhihuIdentityApiException(
-    message: String,
+    private val reason: () -> String,
     val statusCode: Int,
-) : IllegalStateException(message)
+) : IllegalStateException() {
+    override val message: String get() = reason()
+}
 
 fun io.ktor.client.request.HttpRequestBuilder.applyIdentityHeaders(session: ZhihuAccountSession) {
     accept(ContentType.Application.Json)
@@ -80,7 +83,9 @@ fun io.ktor.client.request.HttpRequestBuilder.applyIdentityHeaders(session: Zhih
         }
 }
 
-suspend fun HttpResponse.identitySuccessBody(operation: String): String {
+suspend fun HttpResponse.identitySuccessBody(operation: String): String = identitySuccessBody { operation }
+
+suspend fun HttpResponse.identitySuccessBody(operation: () -> String): String {
     val body = bodyAsText()
     if (status == HttpStatusCode.OK) return body
 
@@ -93,9 +98,12 @@ suspend fun HttpResponse.identitySuccessBody(operation: String): String {
             ?.content
             ?: json["message"]?.jsonPrimitive?.content
     }.getOrNull()
+    val code = status.value
     throw ZhihuIdentityApiException(
-        message = serverMessage?.let { "$operation 失败：$it" } ?: "$operation 失败（HTTP ${status.value}）",
-        statusCode = status.value,
+        reason = {
+            if (serverMessage != null) DomainStrings.identityActionFailed(operation(), serverMessage) else DomainStrings.identityActionHttp(operation(), code)
+        },
+        statusCode = code,
     )
 }
 

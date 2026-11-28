@@ -18,9 +18,7 @@
 package com.github.zly2006.zhihu.util
 
 import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
-@OptIn(ExperimentalEncodingApi::class)
 object ZhihuMessageBodyEncryptor {
     fun encrypt(form: String): String {
         val plain = form.encodeToByteArray()

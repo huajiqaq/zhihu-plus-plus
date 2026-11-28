@@ -21,6 +21,10 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -28,23 +32,24 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.material3.rememberDynamicColorScheme
 
-/** 固定换肤组合根；不提供设置存储的独立渲染使用宿主显式装载的快照。 */
+/** 固定换肤组合根；显式快照用于独立渲染，生产根观察自己的持久设置。 */
 @Composable
 fun ZhihuTheme(
-    settings: SettingsStore? = rememberSettingsStore(),
+    snapshot: ThemeSnapshot? = null,
+    settings: SettingsStore? = if (snapshot == null) rememberSettingsStore() else null,
     content: @Composable () -> Unit,
-) {
-    if (settings != null) {
-        ThemeManager.ObserveSettings(settings)
-    }
-    val useDynamicColor = ThemeManager.getUseDynamicColor()
-    val customBackgroundColor = ThemeManager.getBackgroundColor()
-    val darkTheme = ThemeManager.isDarkTheme()
-    val themeStyle = ThemeManager.getThemeStyle()
-    val paletteStyle = ThemeManager.getPaletteStyle()
-    val colorSpec = ThemeManager.getColorSpec()
-    val amoledTheme = ThemeManager.getAmoledTheme()
-    val seedColor = if (useDynamicColor) platformDynamicThemeSeedColor() ?: ThemeManager.getCustomColor() else ThemeManager.getCustomColor()
+) = AppLanguageHost(settings) {
+    val preferences = snapshot ?: rememberThemeSnapshot(requireNotNull(settings)).value
+    var styleOverride by remember(preferences) { mutableStateOf<ThemeStyle?>(null) }
+    val theme = preferences.resolve(currentSystemInDarkTheme(), styleOverride)
+    val useDynamicColor = preferences.useDynamicColor
+    val customBackgroundColor = theme.backgroundColor
+    val darkTheme = theme.isDarkTheme
+    val themeStyle = theme.style
+    val paletteStyle = preferences.paletteStyle
+    val colorSpec = preferences.colorSpec
+    val amoledTheme = preferences.amoledTheme
+    val seedColor = if (useDynamicColor) platformDynamicThemeSeedColor() ?: theme.customColor else theme.customColor
     val generatedColorScheme = rememberDynamicColorScheme(
         seedColor = seedColor,
         isDark = darkTheme,
@@ -66,8 +71,10 @@ fun ZhihuTheme(
         amoledTheme = amoledTheme && darkTheme,
     ) { colorScheme, typography, skinTokens ->
         CompositionLocalProvider(
+            LocalAppTheme provides theme,
+            LocalAppThemeOverride provides { styleOverride = it },
             LocalAppSkinTokens provides skinTokens,
-            LocalMiuixStyle provides ThemeManager.getMiuixStyle(),
+            LocalMiuixStyle provides preferences.miuixStyle,
         ) {
             MaterialExpressiveTheme(
                 colorScheme = colorScheme.withAmoledSurfaces(amoledTheme && darkTheme),

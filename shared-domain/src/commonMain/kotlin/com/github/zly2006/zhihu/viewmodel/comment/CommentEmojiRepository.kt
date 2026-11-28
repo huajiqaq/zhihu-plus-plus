@@ -18,8 +18,9 @@
 package com.github.zly2006.zhihu.viewmodel.comment
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.SettingsStore
-import com.github.zly2006.zhihu.util.jsonObject
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.request.setBody
@@ -174,7 +175,7 @@ suspend fun collectCommentSticker(environment: ZhihuApiEnvironment, stickerId: S
             contentType(ContentType.Application.Json)
             setBody(body)
         }.raiseForStatus()
-        .ensureStickerSuccess("收藏失败")
+        .ensureStickerSuccess(DomainStrings::stickerSaveFailed)
 }
 
 suspend fun removeCollectedCommentSticker(environment: ZhihuApiEnvironment, stickerId: String) {
@@ -187,11 +188,11 @@ suspend fun removeCollectedCommentSticker(environment: ZhihuApiEnvironment, stic
             contentType(ContentType.Application.Json)
             setBody(body)
         }.raiseForStatus()
-        .ensureStickerSuccess("取消收藏失败")
+        .ensureStickerSuccess(DomainStrings::stickerRemoveFailed)
 }
 
 /** HTTP 200 仍可能携带非零业务 code。 */
-private suspend fun io.ktor.client.statement.HttpResponse.ensureStickerSuccess(action: String) {
+private suspend fun io.ktor.client.statement.HttpResponse.ensureStickerSuccess(failure: (String) -> String) {
     val text = bodyAsText()
     val json = runCatching { ZhihuJson.json.parseToJsonElement(text).jsonObject }.getOrNull()
     val code = json
@@ -201,7 +202,7 @@ private suspend fun io.ktor.client.statement.HttpResponse.ensureStickerSuccess(a
         ?.toIntOrNull() ?: 0
     if (code != 0) {
         val message = json?.get("message")?.jsonPrimitive?.contentOrNull ?: text.take(120)
-        error("$action：$message")
+        throw DisplayFailure { failure(message) }
     }
 }
 
@@ -221,18 +222,19 @@ suspend fun uploadCommentSticker(
         setBody(body)
     }
     if (!response.status.isSuccess()) {
-        throw IllegalStateException("表情上传失败：${response.status}")
+        val status = response.status
+        throw DisplayFailure { DomainStrings.stickerUploadFailed(status) }
     }
     val json = response.bodyAsText().let { text ->
         runCatching { ZhihuJson.json.parseToJsonElement(text).jsonObject }.getOrNull()
-            ?: throw IllegalStateException("表情上传失败：响应无法解析")
+            ?: throw DisplayFailure { DomainStrings.stickerInvalidResponse }
     }
     val code = json["code"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
     if (code != 0) {
-        val message = json["message"]?.jsonPrimitive?.contentOrNull ?: "未知错误"
+        val message = json["message"]?.jsonPrimitive?.contentOrNull
         /** 40001「已添加」要求调用方刷新收藏，而非宣告新增成功。 */
-        if (message.contains("已添加")) throw StickerAlreadyCollectedException(message)
-        throw IllegalStateException("表情上传失败：$message")
+        if (message != null && message.contains("已添加")) throw StickerAlreadyCollectedException(message)
+        throw DisplayFailure { DomainStrings.stickerUploadFailed(message ?: DomainStrings.unknownError) }
     }
     val stickers = json["data"]
         ?.jsonObject
@@ -246,7 +248,7 @@ suspend fun uploadCommentSticker(
                     ZhihuJson.snakeCaseToCamelCase(item),
                 ).copy(collected = true)
         }.filter { it.id.isNotBlank() && it.commentUrl.isNotBlank() }
-    check(stickers.isNotEmpty()) { "表情上传失败：服务端未返回新增表情" }
+    if (stickers.isEmpty()) throw DisplayFailure { DomainStrings.stickerNotReturned }
     return stickers
 }
 

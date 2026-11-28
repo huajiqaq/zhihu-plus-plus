@@ -20,6 +20,8 @@
   script.src = chrome.runtime.getURL('injected.js');
   script.type = 'text/javascript';
   script.async = false;
+  script.dataset.filtered = chrome.i18n.getMessage('filtered', '{title}');
+  script.dataset.untitled = chrome.i18n.getMessage('untitled');
 
   (document.head || document.documentElement).appendChild(script);
   script.remove();

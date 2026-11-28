@@ -48,8 +48,8 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.window.Dialog
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
+import com.github.zly2006.zhihu.theme.ThemeSnapshot
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import kotlin.test.Test
@@ -60,134 +60,122 @@ import kotlin.test.assertTrue
 class ExpressiveControlsTest {
     @Test
     fun actionDropdownKeepsTrailingActionIndependentInsideItsWindow() {
-        val original = ThemeManager.snapshot()
-        try {
-            for ((style, inDialog) in ThemeStyle.entries.flatMap { style -> listOf(style to false, style to true) }) {
-                ThemeManager.load(original.copy(themeStyle = style, themeMode = ThemeMode.LIGHT))
-                var expanded by mutableStateOf(false)
-                var selections = 0
-                var deletions = 0
-                runDesktopComposeUiTest(width = 412, height = 400) {
-                    setContent {
-                        ZhihuTheme(settings = null) {
-                            val owner = LocalNavigationEventDispatcherOwner.current ?: rememberNavigationEventDispatcherOwner(parent = null)
-                            CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
-                                AppScaffold {
-                                    val actions: @Composable () -> Unit = {
-                                        Box(Modifier.fillMaxSize().testTag("actions_window")) {
-                                            Box(Modifier.align(Alignment.BottomEnd)) {
-                                                AppTextButton("打开操作", { expanded = true }, Modifier.testTag("actions_anchor"))
-                                                AppDropdownMenu(
-                                                    expanded = expanded,
-                                                    onDismissRequest = { expanded = false },
-                                                    modifier = Modifier.testTag("actions_menu"),
-                                                    renderInRootScaffold = !inDialog,
-                                                ) {
-                                                    AppDropdownMenuItem(
-                                                        text = { Text("选择收藏夹") },
-                                                        modifier = Modifier.testTag("folder_action"),
-                                                        onClick = {
-                                                            selections++
+        for ((style, inDialog) in ThemeStyle.entries.flatMap { style -> listOf(style to false, style to true) }) {
+            var expanded by mutableStateOf(false)
+            var selections = 0
+            var deletions = 0
+            runDesktopComposeUiTest(width = 412, height = 400) {
+                setContent {
+                    ZhihuTheme(snapshot = ThemeSnapshot(themeStyle = style, themeMode = ThemeMode.LIGHT)) {
+                        val owner = LocalNavigationEventDispatcherOwner.current ?: rememberNavigationEventDispatcherOwner(parent = null)
+                        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
+                            AppScaffold {
+                                val actions: @Composable () -> Unit = {
+                                    Box(Modifier.fillMaxSize().testTag("actions_window")) {
+                                        Box(Modifier.align(Alignment.BottomEnd)) {
+                                            AppTextButton("打开操作", { expanded = true }, Modifier.testTag("actions_anchor"))
+                                            AppDropdownMenu(
+                                                expanded = expanded,
+                                                onDismissRequest = { expanded = false },
+                                                modifier = Modifier.testTag("actions_menu"),
+                                                renderInRootScaffold = !inDialog,
+                                            ) {
+                                                AppDropdownMenuItem(
+                                                    text = { Text("选择收藏夹") },
+                                                    modifier = Modifier.testTag("folder_action"),
+                                                    onClick = {
+                                                        selections++
+                                                        expanded = false
+                                                    },
+                                                    trailingIcon = {
+                                                        AppTextButton("删除收藏夹", {
+                                                            deletions++
                                                             expanded = false
-                                                        },
-                                                        trailingIcon = {
-                                                            AppTextButton("删除收藏夹", {
-                                                                deletions++
-                                                                expanded = false
-                                                            }, Modifier.testTag("folder_delete"))
-                                                        },
-                                                    )
-                                                }
+                                                        }, Modifier.testTag("folder_delete"))
+                                                    },
+                                                )
                                             }
                                         }
                                     }
-                                    if (inDialog) {
-                                        Dialog(onDismissRequest = { error("菜单不能关闭父窗口") }) {
-                                            AppScaffold { actions() }
-                                        }
-                                    } else {
-                                        actions()
+                                }
+                                if (inDialog) {
+                                    Dialog(onDismissRequest = { error("菜单不能关闭父窗口") }) {
+                                        AppScaffold { actions() }
                                     }
+                                } else {
+                                    actions()
                                 }
                             }
                         }
                     }
-                    onNodeWithTag("actions_anchor").performTouchInput { click() }
-                    val window = onNodeWithTag("actions_window").fetchSemanticsNode()
-                    val anchor = onNodeWithTag("actions_anchor").fetchSemanticsNode()
-                    val menu = onNodeWithTag("actions_menu").assertIsDisplayed().fetchSemanticsNode()
-                    assertTrue(menu.positionOnScreen.x >= window.positionOnScreen.x - 1f, "$style/$inDialog 菜单左边界")
-                    assertTrue(menu.positionOnScreen.x + menu.size.width <= window.positionOnScreen.x + window.size.width + 1f, "$style/$inDialog 菜单右边界")
-                    assertTrue(menu.positionOnScreen.y >= window.positionOnScreen.y - 1f, "$style/$inDialog 菜单上边界")
-                    assertTrue(menu.positionOnScreen.y + menu.size.height <= anchor.positionOnScreen.y + 1f, "$style/$inDialog 底部锚点应向上展开")
-                    onNodeWithTag("folder_action").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
-                    if (style == ThemeStyle.MIUIX) {
-                        onNodeWithTag("folder_action").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
-                    }
-                    onNodeWithTag("folder_delete", useUnmergedTree = true).performTouchInput { click() }
-                    waitForIdle()
-                    assertEquals(1, deletions, style.name)
-                    assertEquals(0, selections, "独立尾部动作不能触发行选择")
-                    onNodeWithTag("actions_menu").assertDoesNotExist()
-                    onNodeWithTag("actions_anchor").performTouchInput { click() }
-                    onNodeWithText("选择收藏夹", useUnmergedTree = true).assertIsDisplayed().performTouchInput { click() }
-                    waitForIdle()
-                    assertEquals(1, selections, style.name)
-                    assertEquals(1, deletions, style.name)
-                    onNodeWithTag("actions_menu").assertDoesNotExist()
                 }
+                onNodeWithTag("actions_anchor").performTouchInput { click() }
+                val window = onNodeWithTag("actions_window").fetchSemanticsNode()
+                val anchor = onNodeWithTag("actions_anchor").fetchSemanticsNode()
+                val menu = onNodeWithTag("actions_menu").assertIsDisplayed().fetchSemanticsNode()
+                assertTrue(menu.positionOnScreen.x >= window.positionOnScreen.x - 1f, "$style/$inDialog 菜单左边界")
+                assertTrue(menu.positionOnScreen.x + menu.size.width <= window.positionOnScreen.x + window.size.width + 1f, "$style/$inDialog 菜单右边界")
+                assertTrue(menu.positionOnScreen.y >= window.positionOnScreen.y - 1f, "$style/$inDialog 菜单上边界")
+                assertTrue(menu.positionOnScreen.y + menu.size.height <= anchor.positionOnScreen.y + 1f, "$style/$inDialog 底部锚点应向上展开")
+                onNodeWithTag("folder_action").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+                if (style == ThemeStyle.MIUIX) {
+                    onNodeWithTag("folder_action").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
+                }
+                onNodeWithTag("folder_delete", useUnmergedTree = true).performTouchInput { click() }
+                waitForIdle()
+                assertEquals(1, deletions, style.name)
+                assertEquals(0, selections, "独立尾部动作不能触发行选择")
+                onNodeWithTag("actions_menu").assertDoesNotExist()
+                onNodeWithTag("actions_anchor").performTouchInput { click() }
+                onNodeWithText("选择收藏夹", useUnmergedTree = true).assertIsDisplayed().performTouchInput { click() }
+                waitForIdle()
+                assertEquals(1, selections, style.name)
+                assertEquals(1, deletions, style.name)
+                onNodeWithTag("actions_menu").assertDoesNotExist()
             }
-        } finally {
-            ThemeManager.load(original)
         }
     }
 
     @Test
     fun confirmationAboveAnotherDialogPreservesTheParentInput() {
-        val original = ThemeManager.snapshot()
-        try {
-            for (style in ThemeStyle.entries) {
-                ThemeManager.load(original.copy(themeStyle = style, themeMode = ThemeMode.LIGHT))
-                var confirm by mutableStateOf(false)
-                var parentDismissals = 0
-                runDesktopComposeUiTest(width = 600, height = 800) {
-                    setContent {
-                        ZhihuTheme(settings = null) {
-                            val owner = LocalNavigationEventDispatcherOwner.current
-                                ?: rememberNavigationEventDispatcherOwner(parent = null)
-                            CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
-                                AppScaffold {
-                                    Dialog(onDismissRequest = { parentDismissals++ }) {
-                                        Column {
-                                            var draft by remember { mutableStateOf("") }
-                                            TextField(draft, { draft = it }, modifier = Modifier.testTag("parent_input"))
-                                            AppTextButton("打开确认", { confirm = true })
-                                        }
+        for (style in ThemeStyle.entries) {
+            var confirm by mutableStateOf(false)
+            var parentDismissals = 0
+            runDesktopComposeUiTest(width = 600, height = 800) {
+                setContent {
+                    ZhihuTheme(snapshot = ThemeSnapshot(themeStyle = style, themeMode = ThemeMode.LIGHT)) {
+                        val owner = LocalNavigationEventDispatcherOwner.current
+                            ?: rememberNavigationEventDispatcherOwner(parent = null)
+                        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner) {
+                            AppScaffold {
+                                Dialog(onDismissRequest = { parentDismissals++ }) {
+                                    Column {
+                                        var draft by remember { mutableStateOf("") }
+                                        TextField(draft, { draft = it }, modifier = Modifier.testTag("parent_input"))
+                                        AppTextButton("打开确认", { confirm = true })
                                     }
-                                    if (confirm) {
-                                        AppAlertDialog(
-                                            onDismissRequest = { confirm = false },
-                                            title = { Text("二次确认") },
-                                            confirmButton = { AppTextButton("取消确认", { confirm = false }) },
-                                        )
-                                    }
+                                }
+                                if (confirm) {
+                                    AppAlertDialog(
+                                        onDismissRequest = { confirm = false },
+                                        title = { Text("二次确认") },
+                                        confirmButton = { AppTextButton("取消确认", { confirm = false }) },
+                                    )
                                 }
                             }
                         }
                     }
-                    onNodeWithTag("parent_input").performTextInput("尚未提交的内容")
-                    onNodeWithText("打开确认").performTouchInput { click() }
-                    onNodeWithText("二次确认").assertIsDisplayed().assert(hasAnyAncestor(isDialog()))
-                    onNodeWithText("取消确认").performTouchInput { click() }
-                    waitForIdle()
-                    onNodeWithText("二次确认").assertDoesNotExist()
-                    onNodeWithTag("parent_input").assertIsDisplayed()
-                    onNodeWithText("尚未提交的内容").assertExists()
-                    assertEquals(0, parentDismissals, "取消确认不能关闭下层窗口")
                 }
+                onNodeWithTag("parent_input").performTextInput("尚未提交的内容")
+                onNodeWithText("打开确认").performTouchInput { click() }
+                onNodeWithText("二次确认").assertIsDisplayed().assert(hasAnyAncestor(isDialog()))
+                onNodeWithText("取消确认").performTouchInput { click() }
+                waitForIdle()
+                onNodeWithText("二次确认").assertDoesNotExist()
+                onNodeWithTag("parent_input").assertIsDisplayed()
+                onNodeWithText("尚未提交的内容").assertExists()
+                assertEquals(0, parentDismissals, "取消确认不能关闭下层窗口")
             }
-        } finally {
-            ThemeManager.load(original)
         }
     }
 }

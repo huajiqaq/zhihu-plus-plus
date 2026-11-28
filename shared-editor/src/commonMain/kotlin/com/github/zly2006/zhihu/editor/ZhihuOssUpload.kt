@@ -27,11 +27,10 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import kotlin.io.encoding.Base64
+import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.time.Clock
 
 internal data class ZhihuOssCredentials(
     val accessId: String,
@@ -108,7 +107,6 @@ internal fun rfc1123Now(): String {
         "${now.hour.twoDigitString()}:${now.minute.twoDigitString()}:${now.second.twoDigitString()} GMT"
 }
 
-@OptIn(ExperimentalEncodingApi::class)
 internal fun hmacSha1Base64(secret: String, message: String): String =
     Base64.Default.encode(hmacSha1(secret.encodeToByteArray(), message.encodeToByteArray()))
 

@@ -26,7 +26,6 @@ import androidx.compose.material3.WideNavigationRailItem
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 fun AppNavigationRail(
@@ -45,7 +44,7 @@ fun AppNavigationRail(
                     railExpanded = false,
                     selected = item.selected,
                     onClick = item.onClick,
-                    icon = { Icon(item.icon, contentDescription = null) },
+                    icon = { AppIcon(item.icon, contentDescription = null) },
                     label = { Text(item.label) },
                     modifier = Modifier.testTag(item.testTag),
                 )

@@ -21,10 +21,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
+import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.data.CommentSortOrder
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.data.ZhihuPaging
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.CommentHolder
@@ -32,12 +35,14 @@ import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
-import com.github.zly2006.zhihu.util.Log
-import com.github.zly2006.zhihu.util.jsonObject
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.DisplayFailure
+import com.github.zly2006.zhihu.util.SegmentHighlightSpan
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
@@ -59,16 +64,12 @@ class RootCommentViewModel(
     private val initialCommentId: String? = null,
     private val sentenceOnly: Boolean = false,
     /** 精确片段索引与正文快照同源，不是评论接口的引用 map。 */
-    var commentSegments: () -> Map<String, com.github.zly2006.zhihu.util.SegmentHighlightSpan> = { emptyMap() },
+    var commentSegments: () -> Map<String, SegmentHighlightSpan> = { emptyMap() },
 ) : BaseCommentViewModel(content) {
     @Serializable
     private data class Counts(
-        val segmentCommentCounts: Int? = null,
-    )
-
-    @Serializable
-    private data class MultiSegmentCounts(
         val totalCounts: Int? = null,
+        val segmentCommentCounts: Int? = null,
     )
 
     @Serializable
@@ -85,7 +86,14 @@ class RootCommentViewModel(
     private var countClient: HttpClient? = null
     private var countAccount: ZhihuAccountClient? = null
     private var countRequest: Job? = null
+    private var confirmedTotalCount by mutableStateOf<Int?>(null)
     private var confirmedSentenceCount by mutableStateOf<Int?>(null)
+
+    var rootPageReady by mutableStateOf(false)
+        private set
+
+    val totalCommentCount: Int?
+        get() = confirmedTotalCount.takeUnless { countAccount?.isCurrent == false }
 
     /** 只向当前会话提供官方计数；null 是未知，不是服务端的 0。 */
     val sentenceCommentCount: Int?
@@ -99,7 +107,7 @@ class RootCommentViewModel(
     /** 评论 API 可能不给句评数；正文同源片段的正数可证明有句评，不能拿普通总数或仅有划线代替。 */
     val hasKnownSentenceComments: Boolean get() = knownCommentedSegments().isNotEmpty()
 
-    private fun knownCommentedSegments(): Map<String, com.github.zly2006.zhihu.util.SegmentHighlightSpan> {
+    private fun knownCommentedSegments(): Map<String, SegmentHighlightSpan> {
         val target = article as? Article ?: return emptyMap()
         return commentSegments().filter { (id, span) ->
             id.isNotBlank() &&
@@ -132,6 +140,7 @@ class RootCommentViewModel(
         countRequest = null
         countClient = null
         countAccount = null
+        confirmedTotalCount = null
         confirmedSentenceCount = null
     }
 
@@ -147,51 +156,54 @@ class RootCommentViewModel(
                 article.rootCommentUrl.removeSuffix("/root_comment") +
                     "/segment/root_comment?segment_id=${segId.encodeURLParameter()}&limit=20&offset=&order_by=$orderBy"
             )
-            check(visited.add(url)) { "句子评论分页未前进，请重试" }
-            val json = environment.fetchJson(url, include) ?: error("句子评论加载失败，请重试")
+            if (!visited.add(url)) throw DisplayFailure { DomainStrings.segmentStalled }
+            val json = environment.fetchJson(url, include) ?: throw DisplayFailure { DomainStrings.segmentCommentsFailed }
             currentCoroutineContext().ensureActive()
             if (generation != pagingGeneration || environment.httpClient() !== client) return
-            val data = json["data"] as? JsonArray ?: error("句子评论响应缺少 data")
-            val rawPaging = json["paging"] as? JsonObject ?: error("句子评论响应缺少 paging")
+            val data = json["data"] as? JsonArray ?: throw DisplayFailure { DomainStrings.segmentMissingData }
+            val rawPaging = json["paging"] as? JsonObject ?: throw DisplayFailure { DomainStrings.segmentMissingPaging }
             val terminal = rawPaging["is_end"] == JsonPrimitive(true)
-            val paging = ZhihuJson.decodeJson<com.github.zly2006.zhihu.data.ZhihuPaging>(
+            val paging = ZhihuJson.decodeJson<ZhihuPaging>(
                 if (terminal && "next" !in rawPaging) JsonObject(rawPaging + ("next" to JsonPrimitive(""))) else rawPaging,
             )
-            check(paging.isEnd || (paging.next.isNotBlank() && paging.next != url)) { "句子评论分页未前进，请重试" }
+            if (!paging.isEnd && (paging.next.isBlank() || paging.next == url)) throw DisplayFailure { DomainStrings.segmentStalled }
             val decoded = decodePage(environment, data)
-            ZhihuJson.decodeJson<PageMetadata>(json)
             val previousCount = if (isRefreshPending) 0 else allData.size
-            processResponse(environment, decoded, data)
-            handlePageMetadata(json)
-            if (paging.isEnd) cursor++
-            lastPaging = paging.takeUnless { it.isEnd }
-            segmentFallbackCursor = if (cursor >= segmentFallbackIds.size) Int.MAX_VALUE else cursor
+            currentCoroutineContext().ensureActive()
+            if (generation != pagingGeneration || environment.httpClient() !== client) return
+            commitPage(environment, decoded, data, metadata = json) {
+                if (paging.isEnd) cursor++
+                lastPaging = paging.takeUnless { it.isEnd }
+                segmentFallbackCursor = if (cursor >= segmentFallbackIds.size) Int.MAX_VALUE else cursor
+            }
             if (allData.size > previousCount || isEnd) return
         }
         segmentFallbackCursor = Int.MAX_VALUE
     }
 
-    override fun handlePageMetadata(json: JsonObject) {
+    override fun preparePageMetadata(json: JsonObject): () -> Unit {
         val metadata = ZhihuJson.decodeJson<PageMetadata>(json)
-        super.handlePageMetadata(json)
-        if (!sentenceOnly && article is Article) {
-            metadata.counts?.segmentCommentCounts?.takeIf { it >= 0 }?.let {
-                countRequest?.cancel()
-                confirmedSentenceCount = it
+        val quotes = metadata.segmentInfos?.mapValues { Ksoup.parseBodyFragment(it.value.content).text() }
+        val commit = super.preparePageMetadata(json)
+        return {
+            commit()
+            if (!sentenceOnly) metadata.counts?.totalCounts?.takeIf { it >= 0 }?.let { confirmedTotalCount = it }
+            if (!sentenceOnly && article is Article) {
+                metadata.counts?.segmentCommentCounts?.takeIf { it >= 0 }?.let {
+                    countRequest?.cancel()
+                    confirmedSentenceCount = it
+                }
             }
-        }
-        metadata.segmentInfos?.let { quotes ->
-            sentenceQuotes = sentenceQuotes + quotes.mapValues {
-                com.fleeksoft.ksoup.Ksoup
-                    .parseBodyFragment(it.value.content)
-                    .text()
-            }
+            if (quotes != null) sentenceQuotes = sentenceQuotes + quotes
         }
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<DataHolder.Comment>, rawData: JsonArray) {
-        if (isRefreshPending) sentenceQuotes = emptyMap()
-        super.processResponse(environment, data, rawData)
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<DataHolder.Comment>, rawData: JsonArray): () -> Unit {
+        val commit = super.prepareResponse(environment, data, rawData)
+        return {
+            if (isRefreshPending) sentenceQuotes = emptyMap()
+            commit()
+        }
     }
 
     private var initialCommentLoaded = false
@@ -271,9 +283,12 @@ class RootCommentViewModel(
         }
 
     override fun loadMore(environment: PaginationEnvironment) {
-        if (!sentenceOnly && article is Article) {
+        if (!sentenceOnly) {
             val client = environment.httpClient()
-            if (countClient != null && countClient !== client) resetForRefresh()
+            if (countClient != null && countClient !== client) {
+                rootPageReady = false
+                resetForRefresh()
+            }
             countClient = client
             countAccount = environment.accountClient
         }
@@ -289,10 +304,10 @@ class RootCommentViewModel(
     private suspend fun fetchMultiSegmentCount(environment: PaginationEnvironment): Int? {
         val response = environment.get(multiSegmentUrl(limit = 1))
         if (!response.status.isSuccess()) return null
-        val json = response.jsonObject()
+        val json = response.body<JsonObject>()
         if (json["error"] != null && json["error"] != JsonNull) return null
         val counts = json["counts"] as? JsonObject ?: return null
-        return ZhihuJson.decodeJson<MultiSegmentCounts>(counts).totalCounts?.takeIf { it >= 0 }
+        return ZhihuJson.decodeJson<Counts>(counts).totalCounts?.takeIf { it >= 0 }
     }
 
     override suspend fun fetchFeeds(environment: PaginationEnvironment) {
@@ -304,21 +319,21 @@ class RootCommentViewModel(
             val generation = pagingGeneration
             val client = environment.httpClient()
             val url = resolvePageUrl()
-            val json = environment.fetchJson(url, include) ?: error("句子评论加载失败，请重试")
+            val json = environment.fetchJson(url, include) ?: throw DisplayFailure { DomainStrings.segmentCommentsFailed }
             currentCoroutineContext().ensureActive()
             if (generation != pagingGeneration || environment.httpClient() !== client) return
             /** 全回答终止空态使用 data=null。 */
             val data = when (val value = json["data"]) {
                 JsonNull -> JsonArray(emptyList())
                 is JsonArray -> value
-                else -> error("句子评论响应缺少 data")
+                else -> throw DisplayFailure { DomainStrings.segmentMissingData }
             }
-            val rawPaging = json["paging"] as? JsonObject ?: error("句子评论响应缺少 paging")
+            val rawPaging = json["paging"] as? JsonObject ?: throw DisplayFailure { DomainStrings.segmentMissingPaging }
             val terminal = rawPaging["is_end"] == JsonPrimitive(true)
-            val paging = ZhihuJson.decodeJson<com.github.zly2006.zhihu.data.ZhihuPaging>(
+            val paging = ZhihuJson.decodeJson<ZhihuPaging>(
                 if (terminal && "next" !in rawPaging) JsonObject(rawPaging + ("next" to JsonPrimitive(""))) else rawPaging,
             )
-            check(paging.isEnd || (paging.next.isNotBlank() && paging.next != url)) { "句子评论分页未前进，请重试" }
+            if (!paging.isEnd && (paging.next.isBlank() || paging.next == url)) throw DisplayFailure { DomainStrings.segmentStalled }
             val knownIds = knownCommentedSegments().keys
             if (data.isEmpty() && paging.isEnd && lastPaging == null && (!hasLoaded || isRefreshPending) && knownIds.isNotEmpty()) {
                 segmentFallbackIds = knownIds
@@ -327,10 +342,9 @@ class RootCommentViewModel(
                 return
             }
             val decoded = decodePage(environment, data)
-            ZhihuJson.decodeJson<PageMetadata>(json)
-            processResponse(environment, decoded, data)
-            handlePageMetadata(json)
-            lastPaging = paging
+            currentCoroutineContext().ensureActive()
+            if (generation != pagingGeneration || environment.httpClient() !== client) return
+            commitPage(environment, decoded, data, paging, json)
             return
         }
         val firstPage = lastPaging == null
@@ -348,19 +362,20 @@ class RootCommentViewModel(
                 currentCoroutineContext().ensureActive()
                 if (!isCurrentPage()) return
                 initialChildComment = resolvedAnchor.target.takeIf { it.id != resolvedAnchor.root.id }
-                processResponse(
+                commitPage(
                     environment = environment,
                     data = listOf(resolvedAnchor.root),
                     rawData = JsonArray(emptyList()),
                 )
             } catch (error: Exception) {
-                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-                Log.e("RootCommentViewModel", "Failed to resolve comment anchor", error)
+                if (error is CancellationException) throw error
+                AppLog.e("RootCommentViewModel", "Failed to resolve comment anchor", error)
             }
         }
         currentCoroutineContext().ensureActive()
         if (!isCurrentPage()) return
         super.fetchFeeds(environment)
+        if (firstPage && hasLoaded && !isLoading && errorMessage == null && isCurrentPage()) rootPageReady = true
         if (firstPage &&
             article is Article &&
             confirmedSentenceCount == null &&
@@ -433,7 +448,6 @@ class RootCommentViewModel(
         }
         val clickTarget = CommentHolder(comment.id, target)
         val commentItem = CommentItem(comment, clickTarget)
-        commentsMap[comment.id] = commentItem
         return commentItem
     }
 }
@@ -506,7 +520,7 @@ internal fun NavDestination.buildSubmitCommentBody(
                 buildJsonObject {
                     put("segment_id", segmentId)
                     if (segmentId.isEmpty()) {
-                        require(segmentContent.length >= 5) { "请至少选择5个字后再评论" }
+                        if (segmentContent.length < 5) throw DisplayFailure { DomainStrings.segmentTooShort }
                         put("content", segmentContent)
                         put(
                             "position",

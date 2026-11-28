@@ -45,6 +45,12 @@ sealed interface SystemUpdateState {
 
     data object Latest : SystemUpdateState
 
+    data object Unpublished : SystemUpdateState
+
+    data class WebUpdateAvailable(
+        val buildId: String,
+    ) : SystemUpdateState
+
     data class UpdateAvailable(
         val version: String,
         val isNightly: Boolean,
@@ -63,10 +69,15 @@ sealed interface SystemUpdateState {
     ) : SystemUpdateState
 
     data class Error(
-        val message: String,
+        private val messageProvider: () -> String,
         val step: UpdateStep = UpdateStep.Check,
         val update: UpdateAvailable? = null,
-    ) : SystemUpdateState
+    ) : SystemUpdateState {
+        constructor(message: String, step: UpdateStep = UpdateStep.Check, update: UpdateAvailable? = null) :
+            this({ message }, step, update)
+
+        val message: String get() = messageProvider()
+    }
 }
 
 val SystemUpdateState.pendingUpdate: SystemUpdateState.UpdateAvailable?
@@ -145,6 +156,6 @@ internal suspend fun checkReleasePageUpdate(
         state.value = SystemUpdateState.NoUpdate
         throw error
     } catch (error: Exception) {
-        state.value = SystemUpdateState.Error(describeUpdateFailure(error), UpdateStep.Check)
+        state.value = SystemUpdateState.Error({ describeUpdateFailure(error) }, UpdateStep.Check)
     }
 }

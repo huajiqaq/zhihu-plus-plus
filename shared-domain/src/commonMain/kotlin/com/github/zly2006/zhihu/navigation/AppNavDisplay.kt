@@ -18,10 +18,13 @@
 package com.github.zly2006.zhihu.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import kotlin.reflect.KClass
 import top.yukonga.miuix.kmp.nav.core.LocalNavTransitionScope
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
@@ -29,7 +32,9 @@ import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
 import top.yukonga.miuix.kmp.nav.transition.NavTransitionScope
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
-import kotlin.reflect.KClass
+
+/** 当前正在组合的访问实例；退场条目仍保留自身身份，不能用实时栈顶反推。 */
+val LocalAppNavEntry = staticCompositionLocalOf<AppNavEntry?> { null }
 
 class AppNavEntryBuilder {
     @PublishedApi
@@ -90,7 +95,9 @@ fun AppNavDisplay(
                 onDispose { scopedEntries.remove(scope) }
             }
         }
-        definitions.Content(entry, entryWrapper)
+        CompositionLocalProvider(LocalAppNavEntry provides entry) {
+            definitions.Content(entry, entryWrapper)
+        }
     }
 
     @Composable

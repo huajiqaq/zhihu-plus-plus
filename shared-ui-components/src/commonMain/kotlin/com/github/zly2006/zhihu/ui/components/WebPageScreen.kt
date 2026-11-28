@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
@@ -68,7 +69,7 @@ internal abstract class WebPageBrowser(
         protected set
     var canGoForward by mutableStateOf(false)
         protected set
-    var errorMessage by mutableStateOf<String?>(null)
+    var errorMessage by mutableStateOf<(() -> String)?>(null)
         protected set
 
     abstract fun goBack()
@@ -82,12 +83,13 @@ internal abstract class WebPageBrowser(
 }
 
 @Composable
-internal expect fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser
+internal expect fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser?
 
 @Composable
 fun WebPageScreen(url: String, onClose: () -> Unit) = key(url) {
-    val browser = if (remember(url) { isWebPageUrl(url) }) rememberWebPageBrowser(url) else null
-    val address = browser?.currentUrl
+    val valid = remember(url) { isWebPageUrl(url) }
+    val browser = if (valid) rememberWebPageBrowser(url) else null
+    val address = browser?.currentUrl ?: url.takeIf { valid }
     val site = remember(address) {
         address?.let { Url(it) }?.run {
             if (port == protocol.defaultPort) "${protocol.name}://$host" else "${protocol.name}://$host:$port"
@@ -104,20 +106,20 @@ fun WebPageScreen(url: String, onClose: () -> Unit) = key(url) {
         sampleContent = false,
         topBar = {
             AppCompactTopBar(
-                title = browser?.title?.takeIf { it.isNotBlank() } ?: "网页",
+                title = browser?.title?.takeIf { it.isNotBlank() } ?: WidgetsStrings.webPage,
                 subtitle = site,
                 containerColor = readableToolbarColor(Color(browserColor)),
                 onBack = back,
                 backTag = "web_page_back",
                 actions = {
-                    if (browser != null && address != null) {
-                        if (browser.canGoForward) {
-                            WebPageAction("前进", Icons.AutoMirrored.Filled.ArrowForward, browser::goForward)
+                    if (address != null) {
+                        if (browser != null && browser.canGoForward) {
+                            WebPageAction(WidgetsStrings.webForward, Icons.AutoMirrored.Filled.ArrowForward, browser::goForward)
                         }
-                        WebPageAction("复制当前网址", Icons.Default.ContentCopy) { clipboard("网页地址", address) }
-                        WebPageAction("在浏览器打开", Icons.Default.OpenInBrowser) { openSystemUrl(address) }
-                        if (browser.canGoBack) {
-                            WebPageAction("关闭网页", Icons.Default.Close, onClose)
+                        WebPageAction(WidgetsStrings.copyCurrentUrl, Icons.Default.ContentCopy) { clipboard(WidgetsStrings.webAddress, address) }
+                        WebPageAction(WidgetsStrings.openInBrowser, Icons.Default.OpenInBrowser) { openSystemUrl(address) }
+                        if (browser?.canGoBack == true) {
+                            WebPageAction(WidgetsStrings.closeWebPage, Icons.Default.Close, onClose)
                         }
                     }
                 },
@@ -125,14 +127,22 @@ fun WebPageScreen(url: String, onClose: () -> Unit) = key(url) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            val error = if (browser == null) "无法打开：不是有效的 HTTP 或 HTTPS 网页地址" else browser.errorMessage
+            val error = if (!valid) WidgetsStrings.invalidWebUrl else browser?.errorMessage?.invoke()
+            if (valid && browser == null) {
+                AppEmptyState(
+                    title = WidgetsStrings.externalWebPage,
+                    description = url,
+                    modifier = Modifier.fillMaxSize(),
+                    action = { AppTextButton(WidgetsStrings.openInNewTab, onClick = { openSystemUrl(url) }) },
+                )
+            }
             if (error != null) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = AppDimens.Space16, vertical = AppDimens.Space8),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(error, modifier = Modifier.weight(1f))
-                    if (browser != null) AppTextButton("重新加载", onClick = browser::reload)
+                    if (browser != null) AppTextButton(WidgetsStrings.reload, onClick = browser::reload)
                 }
             }
             browser?.Content(Modifier.fillMaxSize())

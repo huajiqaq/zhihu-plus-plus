@@ -29,7 +29,9 @@ import com.github.zly2006.zhihu.data.SEARCH_RESULT_VERB
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.decodeSearchText
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.platformSettingsStore
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
@@ -48,7 +50,14 @@ open class SearchViewModel(
     val searchQuery: String,
     private val restrictedMemberHashId: String = "",
 ) : BaseFeedViewModel() {
-    val entities = mutableStateListOf<SearchEntity>()
+    private val committedEntities = mutableStateListOf<SearchEntity>()
+    val entities: List<SearchEntity>
+        get() {
+            val preview = previewDisplayItems?.let(::createPageEntities)?.takeIf { it.isNotEmpty() } ?: return committedEntities
+            return ((if (isRefreshPending) emptyList() else committedEntities) + preview).distinctBy(SearchEntity::id)
+        }
+    override val previewBeforeFiltering: Boolean get() = searchTab == SearchTab.General
+    override val hasCommittedPageItems: Boolean get() = committedEntities.isNotEmpty()
     private var pendingGeneralEntities = emptyList<PendingGeneralEntity>()
     private var pendingTabEntities = emptyList<SearchEntity>()
     val changingTopicIds = mutableStateListOf<String>()
@@ -85,21 +94,21 @@ open class SearchViewModel(
         topicId: String,
         following: Boolean,
     ): Result<Unit> {
-        val index = entities.indexOfFirst { it is SearchEntity.Topic && it.id == topicId }
-        val previous = entities.getOrNull(index) as? SearchEntity.Topic
+        val index = committedEntities.indexOfFirst { it is SearchEntity.Topic && it.id == topicId }
+        val previous = committedEntities.getOrNull(index) as? SearchEntity.Topic
             ?: return Result.success(Unit)
         if (topicId in changingTopicIds || previous.isFollowing == following) return Result.success(Unit)
 
         changingTopicIds += topicId
-        entities[index] = previous.copy(isFollowing = following)
+        committedEntities[index] = previous.copy(isFollowing = following)
         return runCatching {
             val endpoint = "https://www.zhihu.com/api/v4/topics/$topicId/followers"
             val response = if (following) environment.post(endpoint) else environment.delete(endpoint)
             response.raiseForStatus()
             Unit
         }.onFailure {
-            val currentIndex = entities.indexOfFirst { it.id == topicId }
-            if (currentIndex >= 0) entities[currentIndex] = previous
+            val currentIndex = committedEntities.indexOfFirst { it.id == topicId }
+            if (currentIndex >= 0) committedEntities[currentIndex] = previous
         }.also { result ->
             changingTopicIds -= topicId
             (result.exceptionOrNull() as? CancellationException)?.let { throw it }
@@ -123,14 +132,14 @@ open class SearchViewModel(
             isLoading = true
             super.fetchFeeds(environment)
             if (generation != pagingGeneration || environment.httpClient() !== client) return
-        } while (entities.isEmpty() && errorMessage == null && !isEnd && resolvePageUrl() !in visitedUrls)
+        } while (committedEntities.isEmpty() && errorMessage == null && !isEnd && resolvePageUrl() !in visitedUrls)
     }
 
-    override fun decodePage(
+    override suspend fun decodePage(
         environment: PaginationEnvironment,
         rawData: JsonArray,
     ): List<Feed> {
-        val existingIds = if (pendingRefresh.value) mutableSetOf() else entities.mapTo(mutableSetOf(), SearchEntity::id)
+        val existingIds = if (isRefreshPending) mutableSetOf() else committedEntities.mapTo(mutableSetOf(), SearchEntity::id)
         val decodedEntities = mutableListOf<SearchEntity>()
         var decodedTopicCount = 0
         val indexedEntries = rawData.withIndex().sortedBy { (responseOrder, element) ->
@@ -205,43 +214,38 @@ open class SearchViewModel(
             }
         }
         if (searchTab == SearchTab.Topic && rawData.isNotEmpty() && decodedTopicCount == 0) {
-            error("服务端返回了 ${rawData.size} 条话题搜索结果，但均无法解码")
+            val count = rawData.size
+            throw DisplayFailure { DomainStrings.unreadableTopicResults(count) }
         }
         pendingTabEntities = decodedEntities
         return feeds
     }
 
-    override fun processResponse(
-        environment: PaginationEnvironment,
-        data: List<Feed>,
-        rawData: JsonArray,
-    ) {
-        val blockedUserIds = environment.blockedUserIds()
-        val replacesResults = pendingRefresh.value
-        super.processResponse(
-            environment,
-            data.filterNot { it.target?.author?.id in blockedUserIds },
-            rawData,
-        )
-        // 三种结果都只在请求成功解码、处理完成后替换；失败继续展示原列表与原 badge/强调文本。
-        if (replacesResults) entities.clear()
-        if (searchTab != SearchTab.General) {
-            entities.addAll(pendingTabEntities)
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): () -> Unit {
+        val blockedUserIds = if (searchTab == SearchTab.General && data.isNotEmpty()) environment.blockedUserIds() else emptySet()
+        val filteredData = data.filterNot { it.target?.author?.id in blockedUserIds }
+        val settings = FeedDisplaySettings(platformSettingsStore())
+        val items = createDisplayItems(settings, filteredData)
+        val newEntities = createPageEntities(items)
+        return {
+            if (isRefreshPending) committedEntities.clear()
+            commitDisplayPage(items, filteredData, rawData)
+            val ids = committedEntities.mapTo(hashSetOf(), SearchEntity::id)
+            committedEntities.addAll(newEntities.filter { ids.add(it.id) })
             pendingTabEntities = emptyList()
-            return
+            pendingGeneralEntities = emptyList()
         }
-        val loadedContent = latestLoadedDisplayItems.value.associateBy(FeedDisplayItem::stableKey)
-        val existingIds = entities.mapTo(mutableSetOf(), SearchEntity::id)
-        val displaySettings = FeedDisplaySettings(platformSettingsStore())
-        pendingGeneralEntities.forEach { pending ->
-            val entity = when (pending) {
+    }
+
+    private fun createPageEntities(items: List<FeedDisplayItem>): List<SearchEntity> {
+        if (searchTab != SearchTab.General) return pendingTabEntities
+        val loadedContent = items.associateBy(FeedDisplayItem::stableKey)
+        val settings = FeedDisplaySettings(platformSettingsStore())
+        return pendingGeneralEntities.mapNotNull { pending ->
+            when (pending) {
                 is PendingGeneralEntity.Person -> SearchEntity.Person(pending.person)
-                is PendingGeneralEntity.Content -> createDisplayItem(displaySettings, pending.feed)
-                    .stableKey
-                    .let(loadedContent::get)
-                    ?.let { SearchEntity.Content(it) }
+                is PendingGeneralEntity.Content -> loadedContent[createDisplayItem(settings, pending.feed).stableKey]?.let { SearchEntity.Content(it) }
             }
-            if (entity != null && existingIds.add(entity.id)) entities += entity
         }
     }
 }
@@ -338,44 +342,77 @@ data class SearchFilters(
 )
 
 enum class SearchSortOption(
-    val label: String,
     val parameter: String,
 ) {
-    Default("综合排序", ""),
-    Latest("最新发布", "created_time"),
-    MostVoted("最多赞同", "upvoted_count"),
+    Default(""),
+    Latest("created_time"),
+    MostVoted("upvoted_count"),
+    ;
+
+    val label: String
+        get() = when (this) {
+            Default -> DomainStrings.searchRelevance
+            Latest -> DomainStrings.searchLatest
+            MostVoted -> DomainStrings.searchUpvotes
+        }
 }
 
 enum class SearchContentType(
-    val label: String,
     val parameter: String,
 ) {
-    All("全部内容", ""),
-    Answer("回答", "answer"),
-    Article("文章", "article"),
-    Video("视频", "zvideo"),
+    All(""),
+    Answer("answer"),
+    Article("article"),
+    Video("zvideo"),
+    ;
+
+    val label: String
+        get() = when (this) {
+            All -> DomainStrings.searchAllContent
+            Answer -> DomainStrings.searchAnswers
+            Article -> DomainStrings.searchArticles
+            Video -> DomainStrings.searchVideos
+        }
 }
 
 enum class SearchTab(
-    val label: String,
     val parameter: String,
 ) {
-    General("全站", "general"),
-    People("用户", "people"),
-    Topic("话题", "topic"),
+    General("general"),
+    People("people"),
+    Topic("topic"),
+    ;
+
+    val label: String
+        get() = when (this) {
+            General -> DomainStrings.searchEverything
+            People -> DomainStrings.searchPeople
+            Topic -> DomainStrings.searchTopics
+        }
 }
 
 enum class SearchTimeRange(
-    val label: String,
     val parameter: String,
 ) {
-    All("不限时间", ""),
-    Day("一天内", "a_day"),
-    Week("一周内", "a_week"),
-    Month("一个月内", "a_month"),
-    ThreeMonths("三个月内", "three_months"),
-    HalfYear("半年内", "half_a_year"),
-    Year("一年内", "a_year"),
+    All(""),
+    Day("a_day"),
+    Week("a_week"),
+    Month("a_month"),
+    ThreeMonths("three_months"),
+    HalfYear("half_a_year"),
+    Year("a_year"),
+    ;
+
+    val label: String
+        get() = when (this) {
+            All -> DomainStrings.searchAnyTime
+            Day -> DomainStrings.searchDay
+            Week -> DomainStrings.searchWeek
+            Month -> DomainStrings.searchMonth
+            ThreeMonths -> DomainStrings.searchThreeMonths
+            HalfYear -> DomainStrings.searchHalfYear
+            Year -> DomainStrings.searchYear
+        }
 }
 
 fun zhihuSearchUrl(

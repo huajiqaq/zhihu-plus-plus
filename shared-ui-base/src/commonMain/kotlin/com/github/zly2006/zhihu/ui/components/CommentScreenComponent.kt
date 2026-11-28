@@ -54,8 +54,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -63,6 +65,7 @@ import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
+import com.github.zly2006.zhihu.ui.CommentPanelTab
 import com.github.zly2006.zhihu.ui.CommentScreen
 import com.github.zly2006.zhihu.ui.commentThreadKey
 import com.github.zly2006.zhihu.ui.consumePendingCommentId
@@ -112,7 +115,7 @@ private fun CommentDialogSheet(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClickLabel = "关闭评论",
+                            onClickLabel = CommentsStrings.closeComments,
                             onClick = onDismissRequest,
                         ),
                 )
@@ -178,8 +181,12 @@ fun CommentScreenComponent(
     var commentDrafts by rememberSaveable(contentStateKey) {
         mutableStateOf<Map<String, String>>(emptyMap())
     }
-    val sentenceCommentsState = rememberSaveable(contentStateKey) { mutableStateOf(false) }
+    val commentClient = rememberZhihuAccountStore().client
+    val tabState = rememberSaveable(contentStateKey, commentClient, pendingCommentId) { mutableStateOf(CommentPanelTab.Normal) }
     var rootListResetToken by rememberSaveable(contentStateKey) { mutableIntStateOf(0) }
+    val forwardListState = rememberSaveable(contentStateKey, commentClient, rootListResetToken, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     val sentenceListState = rememberSaveable(contentStateKey, rootListResetToken, saver = LazyListState.Saver) {
         LazyListState()
     }
@@ -243,8 +250,9 @@ fun CommentScreenComponent(
                     onCommentInputChange = { updateCommentDraft(contentStateKey, it) },
                     listState = rootListState,
                     commentSegments = commentSegments,
-                    sentenceCommentsState = sentenceCommentsState,
+                    tabState = tabState,
                     sentenceListState = sentenceListState,
+                    forwardListState = forwardListState,
                     pageTurnEnabled =
                         (content is Article || content is Pin) &&
                             activeChildComment == null &&
@@ -286,16 +294,15 @@ fun CommentScreenComponent(
         AppAlertDialog(
             modifier = Modifier.testTag(ZH_PLUS_AUTHOR_COMMENT_POLICY_DIALOG_TAG),
             onDismissRequest = {},
-            title = { Text("评论区使用须知") },
+            title = { Text(CommentsStrings.commentGuidelines) },
             text = {
                 Column {
                     Text(
-                        "请勿通过知乎提交任何 Bug 反馈或功能建议。所有反馈仅在 GitHub Issues 处理；" +
-                            "不要发送到任何交流群，也不要发送到知乎++作者的回答或想法评论区。",
+                        CommentsStrings.commentGuidelinesFeedback,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "评论区只可发布与当前回答或想法相关的内容。无关内容将被无视，严重时会被直接拉黑。",
+                        text = CommentsStrings.commentGuidelinesTopic,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold,
                     )
@@ -309,7 +316,7 @@ fun CommentScreenComponent(
                         authorCommentPolicyAcknowledged = true
                     },
                 ) {
-                    Text("我已知晓并确认")
+                    Text(CommentsStrings.acknowledgeGuidelines)
                 }
             },
         )

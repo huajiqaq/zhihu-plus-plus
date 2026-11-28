@@ -24,9 +24,11 @@ import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.account.CommentSender
 import com.github.zly2006.zhihu.data.CommentSortOrder
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.SegmentCommentHolder
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.CommentItem
@@ -43,6 +45,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -50,7 +53,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.reflect.typeOf
 
 abstract class BaseCommentViewModel(
     val article: NavDestination,
@@ -58,8 +60,8 @@ abstract class BaseCommentViewModel(
     protected val commentsMap = mutableMapOf<String, CommentItem>()
     open val supportsSorting: Boolean get() = article !is SegmentCommentHolder && article !is CommentHolder
     var sortOrder by mutableStateOf(CommentSortOrder.SCORE)
-    var commentClosedMessage by mutableStateOf<String?>(null)
-        private set
+    private var closedReason by mutableStateOf<String?>(null)
+    val commentClosedMessage: String? get() = closedReason?.ifBlank { DomainStrings.commentsClosed }
 
     var hasLoaded by mutableStateOf(false)
         private set
@@ -72,35 +74,38 @@ abstract class BaseCommentViewModel(
 
     internal override fun resetForRefresh() {
         super.resetForRefresh()
-        commentClosedMessage = null
+        closedReason = null
     }
 
-    override fun handlePageMetadata(json: JsonObject) {
-        val status = json["comment_status"] as? JsonObject ?: return
-        if (status["type"]?.jsonPrimitive?.intOrNull != 1) return
+    override fun preparePageMetadata(json: JsonObject): () -> Unit {
+        val status = json["comment_status"] as? JsonObject ?: return {}
+        if (status["type"]?.jsonPrimitive?.intOrNull != 1) return {}
+        val reason = status["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
         /** 关闭评论仍返回非终止空页，必须停止跟随 next；https://github.com/zly2006/zhihu-plus-plus/issues/758 */
-        commentClosedMessage = status["text"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-            ?: "评论区已关闭"
+        return { closedReason = reason }
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<DataHolder.Comment>, rawData: JsonArray) {
-        if (isRefreshPending) commentsMap.clear()
-        super.processResponse(environment, emptyList(), rawData)
-        filterBlockedComments(environment, data).forEach { comment ->
-            if (allData.none { it.id == comment.id }) {
-                allData.add(comment)
-            }
-            val commentItem = createCommentItem(comment, article)
-            commentsMap[comment.id] = commentItem
-            comment.childComments.forEach {
-                val childCommentItem = createCommentItem(it, commentItem.clickTarget?.article ?: article)
-                commentsMap[it.id] = childCommentItem
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<DataHolder.Comment>, rawData: JsonArray): () -> Unit {
+        val filtered = filterBlockedComments(environment, data)
+        val mapped = buildMap {
+            filtered.forEach { comment ->
+                val item = createCommentItem(comment, article)
+                put(comment.id, item)
+                comment.childComments.forEach { put(it.id, createCommentItem(it, item.clickTarget?.article ?: article)) }
             }
         }
-        hasLoaded = true
+        val commit = super.prepareResponse(environment, emptyList(), rawData)
+        return {
+            if (isRefreshPending) commentsMap.clear()
+            commit()
+            val ids = allData.mapTo(hashSetOf()) { it.id }
+            allData.addAll(filtered.filter { ids.add(it.id) })
+            commentsMap.putAll(mapped)
+            hasLoaded = true
+        }
     }
 
-    private fun filterBlockedComments(
+    private suspend fun filterBlockedComments(
         environment: ContentBlocklistEnvironment,
         comments: List<DataHolder.Comment>,
     ): List<DataHolder.Comment> {
@@ -147,12 +152,14 @@ abstract class BaseCommentViewModel(
         val owner = environment.accountClient
         val thread = content as? CommentHolder
         val target = thread?.article ?: content
-        errorMessage = null
+        errorText = null
         viewModelScope.launch {
             var accepted = false
             var decoded = false
             try {
-                check(sender == null || (images.isEmpty() && stickers.isEmpty() && voiceId.isNullOrBlank())) { "请使用添加附件时的账号发送" }
+                if (sender != null && (images.isNotEmpty() || stickers.isNotEmpty() || !voiceId.isNullOrBlank())) {
+                    throw DisplayFailure { DomainStrings.sendAsAttachmentOwner }
+                }
                 val body = target.buildSubmitCommentBody(commentText, replyToCommentId ?: thread?.commentId, images, stickers, mentions, syncToPin, voiceId)
                 val hasVoice = !voiceId.isNullOrBlank()
                 val url = if (hasVoice) target.submitCommentUrl.replace("https://www.zhihu.com/api/v4/", "https://api.zhihu.com/") else target.submitCommentUrl
@@ -172,7 +179,7 @@ abstract class BaseCommentViewModel(
                     if (response.status.isSuccess()) {
                         val model = response.json<DataHolder.Comment>()
                         accepted = true
-                        check(sender == null || model.author.id == sender.profile.id) { "服务端返回的评论作者与所选身份不一致" }
+                        check(sender == null || model.author.id == sender.profile.id) { DomainStrings.commentAuthorMismatch }
                         if (sender == null || (!model.isVisibleOnlyToMyself && !model.reviewing)) {
                             /** 别的发送身份拥有的操作权限不能带入当前阅读账号。 */
                             allData.add(0, if (sender == null) model else model.copy(canDelete = false, canCollapse = false, liked = false, disliked = false))
@@ -182,7 +189,8 @@ abstract class BaseCommentViewModel(
                         }
                         decoded = true
                     } else {
-                        errorMessage = "评论发送失败: ${response.status}"
+                        val status = response.status
+                        errorText = { DomainStrings.commentSendStatus(status) }
                     }
                 }
                 if (sender == null) {
@@ -193,10 +201,12 @@ abstract class BaseCommentViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                errorMessage = when {
-                    decoded -> "评论已发送，未能恢复原账号。请联网后重试，无需重发评论"
-                    accepted -> "评论已发送，但返回的作者与所选身份不一致，请刷新列表，不要重复发送"
-                    else -> "评论发送异常: ${error.message}"
+                errorText = {
+                    when {
+                        decoded -> DomainStrings.commentSentRestoreFailed
+                        accepted -> DomainStrings.commentSentAuthorMismatch
+                        else -> DomainStrings.commentSendError(error.message.orEmpty())
+                    }
                 }
             } finally {
                 try {
@@ -232,12 +242,13 @@ abstract class BaseCommentViewModel(
                 if (response.status.isSuccess()) {
                     onSuccess()
                 } else {
-                    errorMessage = "操作失败：${response.status}"
+                    val status = response.status
+                    errorText = { DomainStrings.operationFailed(status) }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                errorMessage = "操作失败：${e.message}"
+                errorText = { DomainStrings.operationFailed(e.message.orEmpty()) }
             } finally {
                 isLikeLoading = false
             }
@@ -248,11 +259,11 @@ abstract class BaseCommentViewModel(
         commentData: DataHolder.Comment,
         environment: ZhihuApiEnvironment,
         onSuccess: () -> Unit,
-        onFailure: (String) -> Unit,
+        onFailure: (() -> String) -> Unit,
         ownComment: Boolean,
     ) {
         if (!commentData.canDelete) {
-            onFailure("当前账号无权删除这条评论")
+            onFailure { DomainStrings.commentDeleteDenied }
             return
         }
 
@@ -285,12 +296,13 @@ abstract class BaseCommentViewModel(
                     segment?.let { SegmentCommentEvents.notifyChanged(requestClient, it, -1, ownComment) }
                     onSuccess()
                 } else {
-                    onFailure("删除失败：${response.status}")
+                    val status = response.status
+                    onFailure { DomainStrings.deleteFailed(status) }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                onFailure("删除失败：${e.message}")
+                onFailure { DomainStrings.deleteFailed(e.message.orEmpty()) }
             }
         }
     }

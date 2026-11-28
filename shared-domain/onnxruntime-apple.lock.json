@@ -1,0 +1,25 @@
+{
+  "version": "1.32.0",
+  "apiVersion": 32,
+  "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.32.0/microsoft.ml.onnxruntime.1.32.0.nupkg",
+  "sha256": "a9150bc2992cbbb6722070da9910e1ffa989a8bfc67bdd5bb8e745ca755641db",
+  "size": 184391411,
+  "iosArchive": "runtimes/ios/native/onnxruntime.xcframework.zip",
+  "iosArchiveSha256": "339162cb352a4220321548b8387bc753e1b845633106c8c9cb9791ef2668b65e",
+  "header": "onnxruntime.xcframework/ios-arm64/onnxruntime.framework/Headers/onnxruntime_c_api.h",
+  "headerSha256": "4a8df643e1667147db6a9de16570aac452cc17fb2423984530c964363d6ff5f8",
+  "additionalHeaderSha256": {
+    "onnxruntime_error_code.h": "5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721",
+    "onnxruntime_ep_c_api.h": "7ca769301114baeb8cb7e0aed901b44a0b3726079fd908daada68fb47bd33bb2"
+  },
+  "macosArm64": {
+    "entry": "runtimes/osx-arm64/native/libonnxruntime.dylib",
+    "sha256": "21ff304871400e846a30c8a1165d15173add56598afb45f98227e2dfc716a497",
+    "size": 47622768,
+    "fileName": "libonnxruntime.1.dylib",
+    "installName": "@rpath/libonnxruntime.1.dylib",
+    "minimumOS": "14.0"
+  },
+  "iosSlices": ["ios-arm64", "ios-arm64_x86_64-simulator"],
+  "source": "https://github.com/microsoft/onnxruntime/tree/v1.32.0"
+}

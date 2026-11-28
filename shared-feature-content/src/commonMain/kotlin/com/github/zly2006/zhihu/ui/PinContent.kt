@@ -59,10 +59,12 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.officialBadge
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.LocalMarkdownWidthManagedByHost
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
+import com.github.zly2006.zhihu.navigation.Topic
 import com.github.zly2006.zhihu.navigation.resolveNavigationUrl
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppChip
@@ -120,21 +122,21 @@ internal fun PinContent(
     ) {
         if (loadError != null) {
             Text(
-                text = "更新失败：$loadError，已保留原内容",
+                text = ContentStrings.pinRefreshError(loadError),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(PIN_SCREEN_ERROR_TAG),
             )
-            AppTextButton(text = "重试", onClick = onRetry, modifier = Modifier.testTag(PIN_SCREEN_RETRY_TAG))
+            AppTextButton(text = ContentStrings.retry, onClick = onRetry, modifier = Modifier.testTag(PIN_SCREEN_RETRY_TAG))
         }
         if (operationError != null) {
             Text(
-                text = "操作失败：$operationError",
+                text = ContentStrings.operationError(operationError),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag(PIN_SCREEN_OPERATION_ERROR_TAG),
             )
-            AppTextButton(text = "重试点赞", onClick = onRetryLike)
+            AppTextButton(text = ContentStrings.retryLike, onClick = onRetryLike)
         }
         val textMeasurer = rememberTextMeasurer()
         val minimumAuthorWidth = with(LocalDensity.current) {
@@ -179,9 +181,9 @@ internal fun PinContent(
             val firstLiker = pin.likers.firstOrNull()
             Text(
                 text = if (firstLiker != null) {
-                    "${firstLiker.name} 等 ${formatCompactCount(likeCount)} 人赞同了该想法"
+                    ContentStrings.pinNamedLikes(likeCount, firstLiker.name, formatCompactCount(likeCount))
                 } else {
-                    "${formatCompactCount(likeCount)} 人赞同了该想法"
+                    ContentStrings.pinLikes(likeCount, formatCompactCount(likeCount))
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -193,8 +195,8 @@ internal fun PinContent(
 
         if (pin.contentHtml.isBlank() && pin.content.isEmpty() && pin.bottomPoll == null) {
             AppEmptyState(
-                title = "暂无可显示的正文",
-                description = "可以查看作者主页或评论，也可以下拉刷新",
+                title = ContentStrings.noVisibleBody,
+                description = ContentStrings.pinNoBodyHelp,
                 modifier = Modifier.testTag(PIN_SCREEN_BODY_EMPTY_TAG),
             )
         } else {
@@ -217,11 +219,8 @@ internal fun PinContent(
         val linkCard = pin.content.firstNotNullOfOrNull { it as? DataHolder.Pin.ContentLinkCard }
         if (linkCard != null) {
             Spacer(modifier = Modifier.height(AppDimens.Space16))
-            var relatedTitle by remember(linkCard.dataContentType, linkCard.dataContentId, linkCard.url) {
-                mutableStateOf<String?>(null)
-            }
             var relatedPreview by remember(linkCard.dataContentType, linkCard.dataContentId, linkCard.url) {
-                mutableStateOf<String?>(null)
+                mutableStateOf<PinLinkCardPreview?>(null)
             }
             var isRelatedLoading by remember(linkCard.dataContentType, linkCard.dataContentId, linkCard.url) {
                 mutableStateOf(true)
@@ -229,16 +228,14 @@ internal fun PinContent(
 
             LaunchedEffect(linkCard.dataContentType, linkCard.dataContentId, linkCard.url) {
                 isRelatedLoading = true
-                val preview = fetchPinLinkCardPreview(linkCard, environment)
-                relatedTitle = preview?.title
-                relatedPreview = preview?.preview
+                relatedPreview = fetchPinLinkCardPreview(linkCard, environment)
                 isRelatedLoading = false
             }
 
             PinContentRelatedCard(
                 linkCard = linkCard,
-                relatedTitle = relatedTitle,
-                relatedPreview = relatedPreview,
+                relatedTitle = relatedPreview?.displayTitle,
+                relatedPreview = relatedPreview?.preview,
                 isRelatedLoading = isRelatedLoading,
                 onClick = {
                     resolveNavigationUrl(linkCard.url)?.let(navigator.onNavigate)
@@ -259,8 +256,7 @@ internal fun PinContent(
                         selected = false,
                         onClick = {
                             navigator.onNavigate(
-                                com.github.zly2006.zhihu.navigation
-                                    .Topic(topic.id, topic.name),
+                                Topic(topic.id, topic.name),
                             )
                         },
                     )
@@ -274,14 +270,14 @@ internal fun PinContent(
             ) {
                 if (pin.created > 0) {
                     Text(
-                        text = "发布于 ${formatFullDateTime(pin.created)}",
+                        text = ContentStrings.publishedAt(formatFullDateTime(pin.created)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (pin.updated > 0 && pin.updated != pin.created) {
                     Text(
-                        text = "编辑于 ${formatFullDateTime(pin.updated)}",
+                        text = ContentStrings.editedAt(formatFullDateTime(pin.updated)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -321,7 +317,7 @@ private fun PinContentAuthorHeader(
         ) {
             AsyncImage(
                 model = pin.author.avatarUrl,
-                contentDescription = "头像",
+                contentDescription = ContentStrings.avatar,
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
@@ -353,7 +349,7 @@ private fun PinContentAuthorHeader(
         }
         if (canFollowAuthor) {
             AppTextButton(
-                text = if (pin.author.isFollowing) "已关注" else "关注",
+                text = if (pin.author.isFollowing) ContentStrings.following else ContentStrings.follow,
                 onClick = onFollowAuthor,
                 enabled = !authorFollowChanging,
                 modifier = Modifier.testTag(PIN_SCREEN_AUTHOR_FOLLOW_TAG),
@@ -384,14 +380,14 @@ private fun PinContentRelatedCard(
             modifier = Modifier.padding(16.dp),
         ) {
             Text(
-                "关联内容",
+                ContentStrings.relatedContent,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(8.dp))
             if (isRelatedLoading) {
                 Text(
-                    text = "正在加载关联内容...",
+                    text = ContentStrings.loadingRelatedContent,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -432,11 +428,11 @@ private fun PinContentRelatedCard(
 }
 
 private fun linkCardTypeLabel(dataContentType: String): String = when (dataContentType.lowercase()) {
-    "answer" -> "回答"
-    "article" -> "文章"
-    "question" -> "问题"
-    "pin" -> "想法"
-    "people" -> "用户"
-    "video", "zvideo" -> "视频"
+    "answer" -> ContentStrings.answer
+    "article" -> ContentStrings.article
+    "question" -> ContentStrings.question
+    "pin" -> ContentStrings.pin
+    "people" -> ContentStrings.user
+    "video", "zvideo" -> ContentStrings.video
     else -> dataContentType
 }

@@ -22,8 +22,9 @@ import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import io.ktor.client.HttpClient
+import kotlin.time.Clock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -31,7 +32,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import kotlin.time.Clock
 
 /** 详情含账号关系和权限，缓存随客户端身份隔离。 */
 object ContentDetailCache {
@@ -62,7 +62,7 @@ object ContentDetailCache {
         mutex.withLock {
             cache[key]?.let { entry ->
                 if (Clock.System.now().toEpochMilliseconds() - entry.timestamp < CACHE_EXPIRY_MS) {
-                    Log.d("ContentDetailCache", "Cache hit for $contentType:$contentId")
+                    AppLog.d("ContentDetailCache", "Cache hit for $contentType:$contentId")
                     return entry.content
                 } else {
                     cache.remove(key)
@@ -70,7 +70,7 @@ object ContentDetailCache {
             }
         }
 
-        Log.d("ContentDetailCache", "Cache miss for $contentType:$contentId, fetching...")
+        AppLog.d("ContentDetailCache", "Cache miss for $contentType:$contentId, fetching...")
         val content = fetcher(navDestination) ?: return null
 
         mutex.withLock {

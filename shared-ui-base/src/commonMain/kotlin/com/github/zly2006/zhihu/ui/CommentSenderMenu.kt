@@ -52,6 +52,7 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.account.CommentSender
 import com.github.zly2006.zhihu.account.ZhihuAccountProfileSnapshot
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
@@ -99,7 +100,7 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
             Modifier
                 .sizeIn(minWidth = AppDimens.TouchTarget, minHeight = AppDimens.TouchTarget)
                 .clickable(enabled = enabled, role = Role.Button) { expanded = true }
-                .semantics { contentDescription = "发表评论的账号：${shown?.name.orEmpty()}，选择账号" }
+                .semantics { contentDescription = CommentsStrings.senderDescription(shown?.name.orEmpty()) }
                 .testTag("comment_account_selector"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -107,12 +108,12 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
             AppIcon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
         AppDropdownMenu(expanded, { expanded = false }, Modifier.testTag("comment_account_menu"), renderInRootScaffold = false) {
-            Text("选择发表评论的账号", Modifier.padding(AppDimens.Space12).semantics { heading() }, style = LocalAppSkinTokens.current.footnote2)
+            Text(CommentsStrings.chooseSender, Modifier.padding(AppDimens.Space12).semantics { heading() }, style = LocalAppSkinTokens.current.footnote2)
             for (option in (local + sources.flatMap { remote[it.first].orEmpty() }).distinctBy { it.profile.id }) {
                 AppDropdownMenuItem(
                     text = { Text(option.profile.name) },
                     leadingIcon = { SenderAvatar(option.profile) },
-                    trailingIcon = { if (shown?.id == option.profile.id) AppIcon(Icons.Default.Check, "当前发送账号") },
+                    trailingIcon = { if (shown?.id == option.profile.id) AppIcon(Icons.Default.Check, CommentsStrings.currentSender) },
                     modifier = Modifier.testTag("comment_account_${option.profile.id}"),
                     onClick = {
                         expanded = false
@@ -120,10 +121,10 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
                     },
                 )
             }
-            if (loading) Text("正在加载关联账号…", Modifier.padding(AppDimens.Space12))
+            if (loading) Text(CommentsStrings.loadingLinkedAccounts, Modifier.padding(AppDimens.Space12))
             if (!loading && failed.isNotEmpty()) {
                 AppDropdownMenuItem(
-                    text = { Text("部分关联账号加载失败，重试") },
+                    text = { Text(CommentsStrings.linkedAccountsLoadFailed) },
                     onClick = {
                         failed.clear()
                         attempt++

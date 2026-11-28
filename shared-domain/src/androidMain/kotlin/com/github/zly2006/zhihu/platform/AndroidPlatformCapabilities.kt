@@ -42,6 +42,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.currentAndroidApplicationContext
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.isWebPageUrl
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.util.clipboardManager
@@ -51,6 +52,9 @@ import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import com.github.zly2006.zhihu.viewmodel.filter.androidKeywordSemanticMatcher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
 
@@ -59,7 +63,7 @@ const val ACTION_OPEN_ZHIHU_ACCOUNT_WEB = "com.github.zly2006.zhihu.OPEN_ACCOUNT
 
 fun openInSystemBrowser(context: Context, url: String) {
     if (!isWebPageUrl(url)) {
-        androidUserMessageSink(context).showShortMessage("不是有效的网页地址")
+        androidUserMessageSink(context).showShortMessage(DomainStrings.invalidWebAddress)
         return
     }
     val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
@@ -70,9 +74,9 @@ fun openInSystemBrowser(context: Context, url: String) {
     try {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        androidUserMessageSink(context).showShortMessage("未找到系统浏览器")
+        androidUserMessageSink(context).showShortMessage(DomainStrings.noSystemBrowser)
     } catch (_: SecurityException) {
-        androidUserMessageSink(context).showShortMessage("系统拒绝打开浏览器")
+        androidUserMessageSink(context).showShortMessage(DomainStrings.systemBrowserDenied)
     }
 }
 
@@ -92,7 +96,7 @@ actual fun rememberExternalUrlOpener(): ExternalUrlOpener {
                 try {
                     context.startActivity(intent)
                 } catch (_: ActivityNotFoundException) {
-                    androidUserMessageSink(context).showShortMessage("系统无法打开此链接")
+                    androidUserMessageSink(context).showShortMessage(DomainStrings.systemOpenLinkFailed)
                 }
             }
         }
@@ -113,9 +117,13 @@ actual val isArticleHtmlExportSupported: Boolean = true
 
 actual val isArticleImageExportSupported: Boolean = true
 
+actual val isArticlePdfExportSupported: Boolean = true
+
 actual val isPageTurnSupported: Boolean = true
 
 actual val isAnswerSwipeSupported: Boolean = true
+
+actual val defaultAnswerSwitchMode: String = "vertical"
 
 @Composable
 actual fun rememberSystemUrlOpener(): SystemUrlOpener {
@@ -186,9 +194,11 @@ actual fun appPrivateDirectory(): Path = Path(currentAndroidApplicationContext()
 actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
     get() = androidKeywordSemanticMatcher
 
+actual val platformSemanticRuntimeGeneration: StateFlow<Long> = MutableStateFlow(0L).asStateFlow()
+
 actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
     if (blocked.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        androidUserMessageSink(currentAndroidApplicationContext()).showShortMessage("NLP 已屏蔽 ${blocked.first().title.take(10)}... 等 ${blocked.size} 条内容")
+        androidUserMessageSink(currentAndroidApplicationContext()).showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
     }
 }
 
@@ -200,52 +210,49 @@ actual fun rememberSettingsStore(): SettingsStore {
 
 actual fun Modifier.exportTestTagsForUiAutomation(): Modifier = semantics { testTagsAsResourceId = true }
 
-@Composable
-actual fun rememberAppPrivateDirectory(): Path {
-    val context = LocalContext.current.applicationContext
-    return remember(context) { Path(context.filesDir.absolutePath) }
-}
-
 fun androidSettingsStore(context: Context): SettingsStore {
     val preferences = context.applicationContext.getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
-    return object : SettingsStore {
-        override fun getBoolean(key: String, defaultValue: Boolean) = preferences.getBoolean(key, defaultValue)
+    fun android.content.SharedPreferences.Editor.putValue(key: String, value: SettingValue) {
+        when (value) {
+            is SettingValue.BooleanValue -> putBoolean(key, value.value)
+            is SettingValue.IntValue -> putInt(key, value.value)
+            is SettingValue.LongValue -> putLong(key, value.value)
+            is SettingValue.FloatValue -> putFloat(key, value.value)
+            is SettingValue.StringValue -> putString(key, value.value)
+            is SettingValue.StringSetValue -> putStringSet(key, value.value)
+        }
+    }
+    return object : SettingsStore() {
+        // 平台类型只在适配器解码；类型错配交由 common getter 返回默认值。
+        private fun valueOf(value: Any?): SettingValue? = when (value) {
+            null -> null
+            is Boolean -> SettingValue.BooleanValue(value)
+            is Int -> SettingValue.IntValue(value)
+            is Long -> SettingValue.LongValue(value)
+            is Float -> SettingValue.FloatValue(value.toRawBits())
+            is String -> SettingValue.StringValue(value)
+            is Set<*> -> SettingValue.StringSetValue(value.map { it as String }.toSet())
+            else -> error("Unsupported SharedPreferences value type")
+        }
 
-        override fun putBoolean(key: String, value: Boolean) = preferences.edit { putBoolean(key, value) }
+        override fun readValue(key: String): SettingValue? = valueOf(preferences.all[key])
 
-        override fun getString(key: String, defaultValue: String) = preferences.getString(key, defaultValue) ?: defaultValue
+        override fun commit(updates: Map<String, SettingValue?>) = synchronized(preferences) {
+            val current = preferences.all
+            val changed = updates.filter { (key, value) -> valueOf(current[key]) != value }
+            if (changed.isEmpty()) return@synchronized
+            // 一个 Editor 原子发布整批内存值；仍沿用 SharedPreferences 的异步落盘语义。
+            preferences.edit {
+                changed.forEach { (key, value) -> if (value == null) remove(key) else putValue(key, value) }
+            }
+        }
 
-        override fun putString(key: String, value: String) = preferences.edit { putString(key, value) }
+        override fun readEntries(): Map<String, SettingValue> = preferences.all.mapNotNull { (key, value) ->
+            valueOf(value)?.let { key to it }
+        }.toMap()
 
-        override fun getStringOrNull(key: String) = preferences.getString(key, null)
-
-        override fun putStringSet(key: String, value: Set<String>) = preferences.edit { putStringSet(key, value) }
-
-        override fun getStringSet(key: String, defaultValue: Set<String>) = preferences.getStringSet(key, defaultValue)?.toSet() ?: defaultValue
-
-        override fun getInt(key: String, defaultValue: Int) = preferences.getInt(key, defaultValue)
-
-        override fun putInt(key: String, value: Int) = preferences.edit { putInt(key, value) }
-
-        override fun getLong(key: String, defaultValue: Long) = preferences.getLong(key, defaultValue)
-
-        override fun putLong(key: String, value: Long) = preferences.edit { putLong(key, value) }
-
-        override fun getFloat(key: String, defaultValue: Float) = preferences.getFloat(key, defaultValue)
-
-        override fun putFloat(key: String, value: Float) = preferences.edit { putFloat(key, value) }
-
-        override fun remove(key: String) = preferences.edit { remove(key) }
-
-        override fun allEntries(): Map<String, Any> = preferences.all
-            .mapNotNull { (key, value) ->
-                value?.let { key to it }
-            }.toMap()
-
-        override fun removeByPrefix(prefix: String) = preferences.edit {
-            preferences.all.keys
-                .filter { it.startsWith(prefix) }
-                .forEach(::remove)
+        override fun removeByPrefix(prefix: String) = synchronized(preferences) {
+            commit(preferences.all.keys.filter { it.startsWith(prefix) }.associateWith { null })
         }
 
         override fun observeKeyChanges(onChanged: (String) -> Unit): AutoCloseable {

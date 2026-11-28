@@ -20,11 +20,11 @@ package com.github.zly2006.zhihu.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import kotlin.random.Random
 import kotlinx.serialization.Serializable
 import top.yukonga.miuix.kmp.nav.core.NavBackStack
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
-import kotlin.random.Random
 
 /** 每次访问独立持有 ViewModel 与保存状态，不复用内容的 equals。 */
 @Serializable
@@ -93,6 +93,13 @@ class AppNavHost internal constructor(
         )
     }
 
+    /** 浏览器前进恢复已有访问身份，不重建同业务目标的另一条记录。 */
+    fun restore(entry: AppNavEntry) {
+        require(entry !is AppNavEntry.Root && entry.destination != MainTabs && entry.destination != EmptyDetail)
+        require(entry.id.isNotBlank() && !containsEntry(entry.id))
+        entries.add(entry)
+    }
+
     fun back(): Boolean {
         if (entries.size <= 1) return false
         entries.removeAt(entries.lastIndex)
@@ -108,8 +115,9 @@ class AppNavHost internal constructor(
     }
 }
 
+/** 路由序列化结构变更时更新命名空间；旧返回栈不解码，直接从当前根开始。 */
 @Composable
-fun rememberAppNavHost(startDestination: NavDestination): AppNavHost = key("page-instance-stack-v1") {
+fun rememberAppNavHost(startDestination: NavDestination): AppNavHost = key("page-instance-stack-v2") {
     val stack = rememberNavBackStack<AppNavEntry>(AppNavEntry.Root("root", startDestination))
     remember(stack) { AppNavHost(stack) }
 }

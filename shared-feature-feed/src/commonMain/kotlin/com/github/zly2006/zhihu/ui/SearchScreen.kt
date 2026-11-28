@@ -39,9 +39,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.decodeSearchText
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Search
@@ -115,8 +115,8 @@ fun SearchScreen(
     val generalListState = rememberLazyListState()
     val suggestionScrollState = rememberScrollState()
     val isMemberSearch = search.isRestrictedToMember
-    val memberSearchName = search.restrictedMemberName.ifBlank { "TA" }
-    val searchPlaceholder = if (isMemberSearch) "搜索 $memberSearchName 的创作" else "搜索内容"
+    val memberSearchName = search.restrictedMemberName.ifBlank { FeedStrings.unnamedMember }
+    val searchPlaceholder = if (isMemberSearch) FeedStrings.searchMemberPosts(memberSearchName) else FeedStrings.searchContent
     val shouldAutoFocusSearchInput = search.query.isBlank()
 
     val showHotSearch = remember { mutableStateOf(!isMemberSearch && settings.getBoolean("showSearchHotSearch", true)) }
@@ -194,7 +194,7 @@ fun SearchScreen(
             onDisableHistory = {
                 showSearchHistory.value = false
                 settings.putBoolean("showSearchHistory", false)
-                userMessages.showShortMessage("已关闭搜索历史，可在 导航与交互 › 搜索 中重新开启")
+                userMessages.showShortMessage(FeedStrings.searchHistoryDisabled)
             },
         )
     }
@@ -220,7 +220,7 @@ fun SearchScreen(
         }
     }
 
-    LaunchedEffect(viewModel.errorMessage) {
+    LaunchedEffect(viewModel.errorText) {
         viewModel.errorMessage?.let {
             userMessages.showMessage(it, UserMessageDuration.Long)
         }
@@ -277,7 +277,7 @@ fun SearchScreen(
                     onDisableHotSearch = {
                         showHotSearch.value = false
                         settings.putBoolean("showSearchHotSearch", false)
-                        userMessages.showShortMessage("已关闭热搜显示，可在 导航与交互 › 搜索 中重新开启")
+                        userMessages.showShortMessage(FeedStrings.trendingSearchesDisabled)
                     },
                 )
             } else if (viewModel.entities.isEmpty() && viewModel.errorMessage == null && !viewModel.isLoading && viewModel.isEnd) {
@@ -306,7 +306,7 @@ fun SearchScreen(
                     onNavigatePerson = { person ->
                         navigator.onNavigate(Person(person.id, person.urlToken.orEmpty(), person.name.decodeSearchText()))
                     },
-                    onFollowFailure = { userMessages.showShortMessage("关注操作失败：${it.message}") },
+                    onFollowFailure = { userMessages.showShortMessage(FeedStrings.followFailed(it.message.orEmpty())) },
                 )
             } else {
                 SearchScreenGeneralResults(
@@ -373,7 +373,7 @@ fun SearchScreen(
             }
         },
         feedAuthorBlockRequest = feedAuthorBlockRequest,
-        displayItems = viewModel.displayItems,
+        viewModel = viewModel,
         onDismissBlock = { feedAuthorBlockRequest = null },
         onConfirmBlock = {
             viewModel.refresh(paginationEnvironment)
@@ -389,7 +389,7 @@ private fun SearchScreenOverlays(
     onDismissFilter: () -> Unit,
     onApplyFilter: (SearchFilters) -> Unit,
     feedAuthorBlockRequest: FeedAuthorBlockRequest?,
-    displayItems: List<FeedDisplayItem>,
+    viewModel: SearchViewModel,
     onDismissBlock: () -> Unit,
     onConfirmBlock: () -> Unit,
 ) {
@@ -403,7 +403,7 @@ private fun SearchScreenOverlays(
     }
     FeedAuthorBlockConfirmDialog(
         request = feedAuthorBlockRequest,
-        displayItems = displayItems,
+        viewModel = viewModel,
         onDismiss = onDismissBlock,
         onConfirm = onConfirmBlock,
     )

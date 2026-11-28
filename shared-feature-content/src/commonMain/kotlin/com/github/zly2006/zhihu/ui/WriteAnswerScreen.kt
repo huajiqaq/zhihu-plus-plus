@@ -67,6 +67,7 @@ import com.github.zly2006.zhihu.editor.parsePublishContentId
 import com.github.zly2006.zhihu.editor.rememberImagePickerLauncher
 import com.github.zly2006.zhihu.editor.uploadZhihuImage
 import com.github.zly2006.zhihu.editor.zhihuHtmlToEditorMarkdown
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -81,11 +82,11 @@ import com.github.zly2006.zhihu.ui.components.WriteContentPreviewSheet
 import com.github.zly2006.zhihu.ui.components.isRichEditorSupported
 import com.github.zly2006.zhihu.ui.components.replaceSelection
 import com.github.zly2006.zhihu.util.json
-import com.github.zly2006.zhihu.util.jsonObject
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.fetchContentDetail
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
+import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -156,7 +157,7 @@ fun WriteAnswerScreen(
     var draftLoadAttempt by remember(draftKey, accountClient) { mutableStateOf(0) }
     var lastAutoSavedText by remember(draftKey, accountClient) { mutableStateOf<Pair<String, Boolean>?>(null) }
     var remoteSettings by remember(draftKey, accountClient) { mutableStateOf<kotlinx.serialization.json.JsonObject?>(null) }
-    var draftSaveStatus by remember(draftKey, accountClient) { mutableStateOf("") }
+    var draftSaveStatus by remember(draftKey, accountClient) { mutableStateOf<() -> String>({ "" }) }
     var isSubmitting by remember(accountClient) { mutableStateOf(false) }
     var existingAnswerId by remember(accountClient) { mutableStateOf<Long?>(null) }
     var isDetecting by remember(accountClient) { mutableStateOf(false) }
@@ -198,16 +199,16 @@ fun WriteAnswerScreen(
         if (cached != null) return cached
         if (account.client !== accountClient) throw kotlinx.coroutines.CancellationException("账号已切换")
         val element = accountClient.withAuthenticatedClient { client, cookies ->
-            check(!cookies["d_c0"].isNullOrBlank()) { "尚未登录，无法确认已有回答" }
+            check(if (account.usesBrowserSession) accountClient.load().login else !cookies["d_c0"].isNullOrBlank()) { ContentStrings.existingAnswerLoginRequired }
             accountClient
                 .get("https://api.zhihu.com/questions/${destination.questionId}") {
                     url.parameters["include"] = "relationship,relationship.my_answer"
-                }.jsonObject()
-        } ?: error("无法确认已有回答，请重试加载草稿")
+                }.body<JsonObject>()
+        }
         currentCoroutineContext().ensureActive()
         if (account.client !== accountClient) throw kotlinx.coroutines.CancellationException("账号已切换")
         val relationship = ZhihuJson.decodeJson(DataHolder.QuestionRelationshipApiResponse.serializer(), element).relationship
-            ?: error("已有回答状态缺失，请重试加载草稿")
+            ?: error(ContentStrings.existingAnswerStateMissing)
         val answerId = relationship.myAnswer
             ?.takeUnless { it.isDeleted == true }
             ?.answerId
@@ -231,7 +232,7 @@ fun WriteAnswerScreen(
                     throw error
                 } catch (error: Exception) {
                     if (account.client !== accountClient) return@launch
-                    errorDialogMessage = buildWriteOperationErrorMessage("生成预览失败", error)
+                    errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.previewFailed, error)
                 }
             }
             return
@@ -256,7 +257,7 @@ fun WriteAnswerScreen(
             }.onSuccess { html ->
                 previewHtml = html
             }.onFailure { e ->
-                errorDialogMessage = buildWriteOperationErrorMessage("生成预览失败", e)
+                errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.previewFailed, e)
                 showPreviewSheet = false
             }
             isPreviewLoading = false
@@ -265,7 +266,7 @@ fun WriteAnswerScreen(
 
     fun submitAnswer(publish: Boolean, silent: Boolean = false) {
         if (publish && !hasContent) {
-            userMessages.showShortMessage("内容为空")
+            userMessages.showShortMessage(ContentStrings.contentEmpty)
             return
         }
         if (account.client !== accountClient || isSubmitting || isUploadingImage || !editorAvailable || !initialContentLoaded) return
@@ -280,8 +281,9 @@ fun WriteAnswerScreen(
                 val answerId = ensureAnswerId()
                 val client = accountClient.httpClient()
                 val cookies = accountClient.load().cookies
+                val browserSession = account.usesBrowserSession
                 val xsrf = cookies["_xsrf"]
-                    ?: error("缺少 _xsrf Cookie，无法写入回答草稿；请先确保已登录。")
+                check(browserSession && accountClient.load().login || xsrf != null) { ContentStrings.answerDraftXsrfMissing }
                 client
                     .post("https://www.zhihu.com/api/v4/questions/${destination.questionId}/draft") {
                         contentType(ContentType.Application.Json)
@@ -289,7 +291,7 @@ fun WriteAnswerScreen(
                             HttpHeaders.Referrer,
                             "https://www.zhihu.com/question/${destination.questionId}/answer/${answerId ?: ""}",
                         )
-                        header("x-xsrftoken", xsrf)
+                        xsrf?.let { header("x-xsrftoken", it) }
                         val draftBody = ZhihuJson.json.encodeToJsonElement(
                             PatchDraftRequest.serializer(),
                             PatchDraftRequest(content = html, settings = PatchDraftSettings(tableOfContentsEnabled = snapshot.second)),
@@ -305,7 +307,7 @@ fun WriteAnswerScreen(
                                 ),
                             ),
                         )
-                        signZhihuFetchRequest(cookies)
+                        if (!account.usesBrowserSession) signZhihuFetchRequest(cookies)
                     }.raiseForStatus()
                 currentCoroutineContext().ensureActive()
                 if (account.client !== accountClient) throw kotlinx.coroutines.CancellationException("账号已切换")
@@ -313,7 +315,7 @@ fun WriteAnswerScreen(
                     val response = client
                         .post("https://www.zhihu.com/api/v4/content/publish") {
                             contentType(ContentType.Application.Json)
-                            header("x-xsrftoken", xsrf)
+                            xsrf?.let { header("x-xsrftoken", it) }
                             setBody(
                                 PublishAnswerRequest(
                                     data = PublishAnswerData(
@@ -331,17 +333,17 @@ fun WriteAnswerScreen(
                                     ),
                                 ),
                             )
-                            signZhihuFetchRequest(cookies)
+                            if (!account.usesBrowserSession) signZhihuFetchRequest(cookies)
                         }.raiseForStatus()
                         .json<DataHolder.ContentPublishResponse>()
                     if (response.message != "success") {
                         if (response.code == 103003) {
-                            error(response.message ?: "已回答过该问题，创建回答失败")
+                            error(response.message ?: ContentStrings.alreadyAnswered)
                         }
-                        error("发布失败: ${response.message ?: "unknown"}\n$response")
+                        error(ContentStrings.publishErrorResponse(response.message ?: "unknown", response))
                     }
-                    parsePublishContentId(response.data?.result ?: error("发布成功但返回缺少 data.result"))
-                        ?: error("发布成功但无法解析 publish.id")
+                    parsePublishContentId(response.data?.result ?: error(ContentStrings.publishResultMissing))
+                        ?: error(ContentStrings.publishIdMissing)
                 } else {
                     null
                 }
@@ -349,26 +351,26 @@ fun WriteAnswerScreen(
                 currentCoroutineContext().ensureActive()
                 if (account.client !== accountClient) return@onSuccess
                 lastAutoSavedText = snapshot
-                draftSaveStatus = "草稿已保存"
+                draftSaveStatus = { ContentStrings.draftSaved }
                 if (publish) {
                     draftPublished = true
                     settings.remove(draftKey)
                     settings.remove("$draftKey.toc")
                     settings.remove("$draftKey.html")
                     settings.remove("$draftKey.rich")
-                    userMessages.showShortMessage("发布成功")
+                    userMessages.showShortMessage(ContentStrings.published)
                     navigator.onNavigateBack()
                     navigator.onNavigate(Article(type = ArticleType.Answer, id = answerId ?: return@onSuccess))
                 } else if (!silent) {
-                    userMessages.showShortMessage("已保存草稿")
+                    userMessages.showShortMessage(ContentStrings.draftSavedConfirmation)
                 }
             }.onFailure { e ->
                 if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                 if (account.client !== accountClient) return@onFailure
-                draftSaveStatus = "云端保存失败，内容仍保存在本机"
+                draftSaveStatus = { ContentStrings.cloudSaveFailedLocalKept }
                 if (!silent) {
                     errorDialogMessage = buildWriteOperationErrorMessage(
-                        title = if (publish) "发布失败" else "保存草稿失败",
+                        title = if (publish) ContentStrings.publishFailed else ContentStrings.draftSaveFailed,
                         throwable = e,
                     )
                 }
@@ -412,14 +414,14 @@ fun WriteAnswerScreen(
                         content.edit { replaceSelection(snippet, cursorOffsetInInsert = snippet.length) }
                     }
                     persistDraft()
-                    userMessages.showShortMessage("图片已插入")
+                    userMessages.showShortMessage(ContentStrings.imageInserted)
                 }.onFailure { e ->
                     if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                     if (account.client !== accountClient) return@onFailure
                     if (e is UnknownImageFormatException) {
-                        userMessages.showShortMessage(e.message ?: "无法识别图片格式，已取消上传")
+                        userMessages.showShortMessage(e.message ?: ContentStrings.unsupportedImageFormat)
                     } else {
-                        errorDialogMessage = buildWriteOperationErrorMessage("插入图片失败", e)
+                        errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.insertImageFailed, e)
                     }
                 }
                 isUploadingImage = false
@@ -436,8 +438,8 @@ fun WriteAnswerScreen(
         try {
             existingAnswerId = ensureAnswerId()
             val draft = accountClient.withAuthenticatedClient { client, cookies ->
-                accountClient.get("https://www.zhihu.com/api/v4/questions/${destination.questionId}/draft").jsonObject()
-            } ?: error("云端草稿未加载成功，请重试")
+                accountClient.get("https://www.zhihu.com/api/v4/questions/${destination.questionId}/draft").body<JsonObject>()
+            }
             currentCoroutineContext().ensureActive()
             if (account.client !== accountClient) return@LaunchedEffect
             val remoteHtml = draft["editable_content"]?.jsonPrimitive?.contentOrNull
@@ -456,16 +458,16 @@ fun WriteAnswerScreen(
                             selection = TextRange.Zero
                         }
                     }
-                    draftSaveStatus = "已恢复云端草稿"
+                    draftSaveStatus = { ContentStrings.cloudDraftRestored }
                 } else {
-                    draftSaveStatus = "云端草稿已加载"
+                    draftSaveStatus = { ContentStrings.cloudDraftLoaded }
                 }
             }
             if (!hasContent) {
                 existingAnswerId?.let { answerId ->
                     isLoadingExistingAnswer = true
                     val answer = environment.fetchContentDetail(Article(type = ArticleType.Answer, id = answerId)) as? DataHolder.Answer
-                        ?: error("已有回答未加载成功，请重试")
+                        ?: error(ContentStrings.existingAnswerLoadFailedRetry)
                     currentCoroutineContext().ensureActive()
                     if (account.client !== accountClient) return@LaunchedEffect
                     if (!hasContent) {
@@ -486,7 +488,7 @@ fun WriteAnswerScreen(
             throw error
         } catch (error: Exception) {
             if (account.client !== accountClient) return@LaunchedEffect
-            draftSaveStatus = "云端草稿加载失败，本机内容仍可编辑；重试成功前不会写入云端"
+            draftSaveStatus = { ContentStrings.cloudDraftUnavailableLocalEditable }
         } finally {
             isLoadingExistingAnswer = false
             isDetecting = false
@@ -567,7 +569,7 @@ fun WriteAnswerScreen(
                                     throw error
                                 } catch (error: Exception) {
                                     if (account.client !== accountClient) return@launch
-                                    errorDialogMessage = buildWriteOperationErrorMessage("切换编辑模式失败", error)
+                                    errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.editorModeSwitchFailed, error)
                                 } finally {
                                     isEditorConverting = false
                                 }
@@ -578,7 +580,7 @@ fun WriteAnswerScreen(
                 )
             }
             WriteAnswerEditorSection(
-                draftSaveStatus = draftSaveStatus,
+                draftSaveStatus = draftSaveStatus(),
                 initialContentLoaded = initialContentLoaded,
                 isDetecting = isDetecting,
                 richMode = richMode,
@@ -632,7 +634,7 @@ fun WriteAnswerScreen(
         onDismissRequest = { errorDialogMessage = null },
         onCopy = { message ->
             copyToClipboard("write-answer-error", message)
-            userMessages.showShortMessage("已复制错误信息")
+            userMessages.showShortMessage(ContentStrings.errorCopied)
         },
     )
 }

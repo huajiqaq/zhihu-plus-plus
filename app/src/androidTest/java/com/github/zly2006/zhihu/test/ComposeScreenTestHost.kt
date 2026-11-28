@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import com.github.zly2006.zhihu.MainActivity
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.navigation.AppNavHost
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.MainTabs
@@ -64,18 +65,19 @@ class RecordingNavigator {
 }
 
 fun MainActivityComposeRule.resetAppPreferences(forceMock: Boolean = false) {
-    val dataMode = if (forceMock || InstrumentedTestEnvironment.isMockMode()) {
+    val environment = activity.instrumentedTestEnvironment
+    val dataMode = if (forceMock || environment.isMockMode()) {
         InstrumentedTestEnvironment.DataMode.MOCK
     } else {
         InstrumentedTestEnvironment.DataMode.REAL
     }
-    if (InstrumentedTestEnvironment.installedDataMode != dataMode) {
+    if (environment.installedDataMode != dataMode) {
         // 切换数据模式前销毁现有组合与 ViewModel，避免继续持有已关闭的账号存储。
         activity.setContent { }
         waitForIdle()
         runOnIdle { activity.viewModelStore.clear() }
     }
-    InstrumentedTestEnvironment.reseed(activity, forceMock = forceMock)
+    environment.reseed(activity, forceMock = forceMock)
     waitForIdle()
 }
 
@@ -88,6 +90,7 @@ fun MainActivityComposeRule.setScreenContent(
     activity.setContent {
         ZhihuTheme {
             CompositionLocalProvider(
+                LocalZhihuAccountStore provides activity.instrumentedTestEnvironment.accountStore,
                 LocalNavigator provides recordingNavigator.asNavigator(),
                 LocalViewModelStoreOwner provides activity,
             ) {
@@ -107,18 +110,20 @@ fun MainActivityComposeRule.setZhihuMainContent(
     activity.setContent { }
     waitForIdle()
     activity.setContent {
-        ZhihuTheme {
-            val navHost = rememberAppNavHost(MainTabs)
-            LaunchedEffect(navHost) {
-                activity.navHost = navHost
-                onNavHostReady(navHost)
-            }
-            if (windowSize == null) {
-                AndroidZhihuMain(navHost = navHost)
-            } else {
-                DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(windowSize)) {
-                    CompositionLocalProvider(LocalActivity provides activity) {
-                        AndroidZhihuMain(navHost = navHost)
+        CompositionLocalProvider(LocalZhihuAccountStore provides activity.instrumentedTestEnvironment.accountStore) {
+            ZhihuTheme {
+                val navHost = rememberAppNavHost(MainTabs)
+                LaunchedEffect(navHost) {
+                    activity.navHost = navHost
+                    onNavHostReady(navHost)
+                }
+                if (windowSize == null) {
+                    AndroidZhihuMain(navHost = navHost)
+                } else {
+                    DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(windowSize)) {
+                        CompositionLocalProvider(LocalActivity provides activity) {
+                            AndroidZhihuMain(navHost = navHost)
+                        }
                     }
                 }
             }

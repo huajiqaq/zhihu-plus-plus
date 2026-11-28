@@ -10,8 +10,8 @@
 			attributes = { BuildIndependentTargetsInParallel = YES; };
 			buildConfigurationList = 370000000000000000000031;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = "zh-Hans";
-			knownRegions = ("zh-Hans", Base);
+			developmentRegion = en;
+			knownRegions = (en, "zh-Hans", Base);
 			mainGroup = 370000000000000000000003;
 			productRefGroup = 370000000000000000000004;
 			projectDirPath = "";
@@ -27,6 +27,7 @@
 				370000000000000000000023 /* Frameworks */,
 				370000000000000000000024 /* Resources */,
 				370000000000000000000025 /* Emoji resources */,
+				370000000000000000000026 /* Export resources */,
 			);
 			buildRules = ();
 			dependencies = ();
@@ -40,12 +41,16 @@
 			children = (
 				370000000000000000000006 /* ZhihuPlusPlusApp.swift */,
 				370000000000000000000007 /* Info.plist */,
+				370000000000000000000015 /* InfoPlist.strings */,
 				370000000000000000000008 /* Config.xcconfig */,
 				370000000000000000000009 /* build-shared.sh */,
 				37000000000000000000000A /* LICENSE */,
 				37000000000000000000000B /* aboutlibraries.json */,
+				37000000000000000000001D /* licenses */,
 				37000000000000000000000C /* emoji_mapping.json */,
 				37000000000000000000000D /* emojis */,
+				370000000000000000000019 /* article_export_template.html */,
+				37000000000000000000001A /* footnotes.js */,
 				370000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -57,7 +62,7 @@
 		370000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		370000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-shared.sh"; sourceTree = "<group>"; };
 		37000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text; path = ../LICENSE; sourceTree = "<group>"; };
-		37000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../app/build/generated/aboutLibraries/liteDebug/res/raw/aboutlibraries.json; sourceTree = "<group>"; };
+		37000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = text.json; path = aboutlibraries.json; sourceTree = ZHIHU_IOS_LICENSE_STAGING_DIR; };
 		37000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../misc/emoji_mapping.json; sourceTree = "<group>"; };
 		37000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = folder; path = ../misc/emojis; sourceTree = "<group>"; };
 		370000000000000000000010 /* Swift source */ = {isa = PBXBuildFile; fileRef = 370000000000000000000006; };
@@ -65,16 +70,29 @@
 		370000000000000000000012 /* Library licenses */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000B; };
 		370000000000000000000013 /* Emoji names */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000C; };
 		370000000000000000000014 /* Emoji images */ = {isa = PBXBuildFile; fileRef = 37000000000000000000000D; };
+		370000000000000000000015 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (370000000000000000000016, 370000000000000000000017); name = InfoPlist.strings; sourceTree = "<group>"; };
+		370000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = DERIVED_FILE_DIR; };
+		370000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = DERIVED_FILE_DIR; };
+		370000000000000000000018 /* Localized app name */ = {isa = PBXBuildFile; fileRef = 370000000000000000000015; };
+		370000000000000000000019 /* article_export_template.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = "../shared-domain/src/commonMain/resources/article_export_template.html"; sourceTree = "<group>"; };
+		37000000000000000000001A /* footnotes.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "../shared-domain/src/commonMain/resources/footnotes.js"; sourceTree = "<group>"; };
+		37000000000000000000001B /* Export template */ = {isa = PBXBuildFile; fileRef = 370000000000000000000019; };
+		37000000000000000000001C /* Export footnotes */ = {isa = PBXBuildFile; fileRef = 37000000000000000000001A; };
+		37000000000000000000001D /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = licenses; sourceTree = ZHIHU_IOS_LICENSE_STAGING_DIR; };
+		37000000000000000000001E /* Third-party notices */ = {isa = PBXBuildFile; fileRef = 37000000000000000000001D; };
 		370000000000000000000021 /* Build Shared */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = ();
 			name = "Build Shared";
-			inputPaths = ("$(SRCROOT)/build-shared.sh", "$(SRCROOT)/Info.plist", "$(SRCROOT)/../gradle.properties");
+			inputPaths = ("$(SRCROOT)/build-shared.sh", "$(SRCROOT)/Info.plist", "$(SRCROOT)/en.lproj/InfoPlist.strings", "$(SRCROOT)/zh-Hans.lproj/InfoPlist.strings", "$(SRCROOT)/../gradle.properties");
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/ZhihuPlusPlus-Info.plist",
-				"$(SRCROOT)/../app/build/generated/aboutLibraries/liteDebug/res/raw/aboutlibraries.json",
+				"$(DERIVED_FILE_DIR)/en.lproj/InfoPlist.strings",
+				"$(DERIVED_FILE_DIR)/zh-Hans.lproj/InfoPlist.strings",
+				"$(ZHIHU_IOS_LICENSE_STAGING_DIR)/aboutlibraries.json",
+				"$(ZHIHU_IOS_LICENSE_STAGING_DIR)/licenses",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -82,7 +100,7 @@
 		};
 		370000000000000000000022 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (370000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
 		370000000000000000000023 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		370000000000000000000024 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (370000000000000000000011, 370000000000000000000012); runOnlyForDeploymentPostprocessing = 0; };
+		370000000000000000000024 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (370000000000000000000011, 370000000000000000000012, 370000000000000000000018, 37000000000000000000001E); runOnlyForDeploymentPostprocessing = 0; };
 		370000000000000000000025 /* Emoji resources */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -92,12 +110,25 @@
 			name = "Emoji resources";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		370000000000000000000031 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000033, 370000000000000000000034); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		370000000000000000000032 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000035, 370000000000000000000036); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		370000000000000000000026 /* Export resources */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = export;
+			dstSubfolderSpec = 7;
+			files = (37000000000000000000001B, 37000000000000000000001C);
+			name = "Export resources";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		370000000000000000000031 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000033, 370000000000000000000034, 370000000000000000000037, 370000000000000000000038); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		370000000000000000000032 = {isa = XCConfigurationList; buildConfigurations = (370000000000000000000035, 370000000000000000000036, 370000000000000000000039, 37000000000000000000003A); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		370000000000000000000033 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = Debug; };
 		370000000000000000000034 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = Release; };
 		370000000000000000000035 = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
 		370000000000000000000036 = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {}; name = Release; };
+		370000000000000000000037 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = DebugLite; };
+		370000000000000000000038 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos;}; name = ReleaseLite; };
+		370000000000000000000039 = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {SWIFT_OPTIMIZATION_LEVEL = "-Onone"; ZHIHU_IOS_VARIANT = lite; KOTLIN_FRAMEWORK_BUILD_TYPE = Debug;}; name = DebugLite; };
+		37000000000000000000003A = {isa = XCBuildConfiguration; baseConfigurationReference = 370000000000000000000008; buildSettings = {ZHIHU_IOS_VARIANT = lite; KOTLIN_FRAMEWORK_BUILD_TYPE = Release;}; name = ReleaseLite; };
 	};
 	rootObject = 370000000000000000000001;
 }

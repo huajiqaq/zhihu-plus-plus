@@ -25,7 +25,7 @@ data class PickedImage(
     val fileName: String?,
 )
 
-interface ImagePickerLauncher {
+fun interface ImagePickerLauncher {
     fun launch()
 }
 

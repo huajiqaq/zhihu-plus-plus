@@ -24,7 +24,10 @@
 #include <wrl.h>
 #include <jni.h>
 #include <winrt/Windows.ApplicationModel.h>
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+#include <winrt/Windows.ApplicationModel.Resources.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.UI.Notifications.h>
 #include <algorithm>
@@ -319,7 +322,7 @@ jstring JNICALL takeReceipt(JNIEnv* env, jobject) {
         return toJava(env, receipt);
     } catch (...) { fail(env); return nullptr; }
 }
-void JNICALL publish(JNIEnv* env, jobject, jstring value) {
+void JNICALL publish(JNIEnv* env, jobject, jstring value, jboolean chinese) {
     try {
         Apartment apartment;
         requireConnected();
@@ -327,10 +330,16 @@ void JNICALL publish(JNIEnv* env, jobject, jstring value) {
         require(validReceipt(receipt));
         auto notifier = ToastNotificationManager::CreateToastNotifier(aumid);
         require(notifier.Setting() == NotificationSetting::Enabled);
+        using namespace winrt::Windows::ApplicationModel::Resources::Core;
+        const auto context = ResourceContext::GetForViewIndependentUse().Clone();
+        context.Languages({chinese == JNI_TRUE ? L"zh-CN" : L"en-US"});
+        const auto strings = ResourceManager::Current().MainResourceMap().GetSubtree(L"Resources");
         winrt::Windows::Data::Xml::Dom::XmlDocument xml;
         xml.LoadXml(L"<toast activationType=\"foreground\" launch=\"" + receipt +
-            L"\"><visual><binding template=\"ToastGeneric\"><text>知乎++</text>"
-            L"<text>有新的消息，点击查看</text></binding></visual></toast>");
+            L"\"><visual><binding template=\"ToastGeneric\"><text/><text/></binding></visual></toast>");
+        const auto text = xml.GetElementsByTagName(L"text");
+        text.Item(0).AppendChild(xml.CreateTextNode(strings.GetValue(L"AppName", context).ValueAsString()));
+        text.Item(1).AppendChild(xml.CreateTextNode(strings.GetValue(L"NewMessage", context).ValueAsString()));
         ToastNotification toast(xml);
         // 保守采用 Tag / Group 各 16 字符；两段无损表示同一随机回执，不用业务 key。
         toast.Tag(receipt.substr(0, 16));
@@ -418,7 +427,7 @@ int runApplication() {
         {const_cast<char*>("newReceipt"), const_cast<char*>("()Ljava/lang/String;"), reinterpret_cast<void*>(newReceipt)},
         {const_cast<char*>("permissionGranted"), const_cast<char*>("()Z"), reinterpret_cast<void*>(permissionGranted)},
         {const_cast<char*>("takeReceipt"), const_cast<char*>("()Ljava/lang/String;"), reinterpret_cast<void*>(takeReceipt)},
-        {const_cast<char*>("publish"), const_cast<char*>("(Ljava/lang/String;)V"), reinterpret_cast<void*>(publish)},
+        {const_cast<char*>("publish"), const_cast<char*>("(Ljava/lang/String;Z)V"), reinterpret_cast<void*>(publish)},
         {const_cast<char*>("withdraw"), const_cast<char*>("(Ljava/lang/String;)V"), reinterpret_cast<void*>(withdraw)},
         {const_cast<char*>("disconnect"), const_cast<char*>("()V"), reinterpret_cast<void*>(closeBridge)},
     };
@@ -456,7 +465,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR command, int) {
         }
         return runApplication();
     } catch (...) {
-        MessageBoxW(nullptr, L"无法启动 Windows MSIX 应用。请重新安装正式签名包，或使用不带系统通知的常规桌面版本。", L"知乎++", MB_OK | MB_ICONERROR);
+        try {
+            Apartment apartment;
+            const auto strings = winrt::Windows::ApplicationModel::Resources::ResourceLoader::GetForViewIndependentUse();
+            MessageBoxW(nullptr, strings.GetString(L"LaunchFailure").c_str(), strings.GetString(L"AppName").c_str(), MB_OK | MB_ICONERROR);
+        } catch (...) {
+            // 包资源本身也可能损坏；不要为错误提示加载外部文件。
+            MessageBoxW(nullptr, L"Could not start Zhihu++. / 无法启动知乎++。", L"Zhihu++", MB_OK | MB_ICONERROR);
+        }
         return 1;
     }
 }

@@ -40,11 +40,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppFilledTonalIconButton
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
 import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
@@ -56,7 +58,6 @@ import com.github.zly2006.zhihu.ui.components.rememberAppPageTitleBarScrollState
 import com.github.zly2006.zhihu.viewmodel.NotificationViewModel
 import com.github.zly2006.zhihu.viewmodel.shouldShowNotification
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val NOTIFICATION_SCREEN_BACK_BUTTON_TAG = "notification_screen_back_button"
 
@@ -86,7 +87,7 @@ fun NotificationScreen() {
         modifier = Modifier.fillMaxSize().appPageTitleBarScroll(titleBarScrollState),
         topBar = {
             AppPageTitleBar(
-                title = "消息",
+                title = NotificationsStrings.messages,
                 onBack = navigator.onNavigateBack,
                 backTag = NOTIFICATION_SCREEN_BACK_BUTTON_TAG,
                 scrollState = titleBarScrollState,
@@ -101,7 +102,7 @@ fun NotificationScreen() {
                                         try {
                                             val succeeded = viewModel.markAllAsRead(environment)
                                             if (accountStore.client === accountClient) {
-                                                userMessages.showMessage(if (succeeded) "通知分类已标为已读" else "部分分类未能标为已读")
+                                                userMessages.showMessage(if (succeeded) NotificationsStrings.markCategoriesReadSuccess else NotificationsStrings.markCategoriesReadPartial)
                                             }
                                         } finally {
                                             markingAllRead = false
@@ -110,11 +111,11 @@ fun NotificationScreen() {
                                 }
                             },
                         ) {
-                            Icon(Icons.Default.MarkChatRead, contentDescription = "所有通知分类标为已读")
+                            AppIcon(Icons.Default.MarkChatRead, contentDescription = NotificationsStrings.markCategoriesRead)
                         }
                     }
                     AppIconButton(onClick = { navigator.onNavigate(Notification.NotificationSettings()) }) {
-                        Icon(Icons.Default.Settings, contentDescription = "通知设置")
+                        AppIcon(Icons.Default.Settings, contentDescription = NotificationsStrings.settingsTitle)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -145,7 +146,7 @@ fun NotificationScreen() {
                             showUnreadBadges = settingsStore.getUnreadBadgeEnabled(),
                             onCategoryClick = { category ->
                                 navigator.onNavigate(
-                                    Notification.Entry(category.entryName, category.detailTitle),
+                                    Notification.Entry(category.entryName, title = ""),
                                 )
                             },
                         )

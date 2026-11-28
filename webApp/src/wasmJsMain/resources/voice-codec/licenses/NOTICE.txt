@@ -1,0 +1,34 @@
+ffmpeg.wasm single-thread core 0.12.10
+
+The unmodified UMD JavaScript and WebAssembly binaries are supplied by the
+@ffmpeg/core 0.12.10 npm package. They are loaded locally only when recording
+needs transcoding. No CDN, multi-thread core, or SharedArrayBuffer is required.
+
+The npm package declares GPL-2.0-or-later for the compiled core. This is not
+the MIT license of @ffmpeg/ffmpeg (that wrapper is not included). The actual
+compiled FFmpeg core enables GPL components, including x264 and x265.
+Each third-party component retains the copyright, license and patent notices
+in its own directory. FFmpeg's upstream license explanation is preserved in
+ffmpeg/LICENSE.txt; the original filename was LICENSE.md.
+
+Source and build instructions for this exact core release:
+https://github.com/ffmpegwasm/ffmpeg.wasm/tree/71aa99d37c02a7b4c435275ca9ef50e612f6efa1
+https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/Dockerfile
+https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/build/ffmpeg-wasm.sh
+
+sources.json lists the source revision and original licenses for all external
+libraries selected by that Dockerfile, plus the SDL2 and Emscripten runtimes.
+The release recipe names x264's 4-cores branch and LAME's master branch; the
+recorded commits are their unchanged heads before publication, not a claim
+that the upstream binary provides a separate reproducible-build attestation.
+The upstream v0.12.10 Git tag names an older wrapper/core combination and is
+NOT the source reference for @ffmpeg/core 0.12.10.
+
+This software is based in part on the work of the Independent JPEG Group.
+Portions of this software are copyright (c) 2020 The FreeType Project
+(www.freetype.org). All rights reserved. The original upstream binaries and
+component sources have not been modified by Zhihu++.
+
+Redistributors must retain these notices and comply with the applicable
+source-code and relinking requirements. A list of upstream source links does
+not replace any corresponding-source delivery obligation for a distribution.

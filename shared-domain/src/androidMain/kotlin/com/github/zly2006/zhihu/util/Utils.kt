@@ -28,10 +28,10 @@ import io.ktor.client.request.post
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import java.security.MessageDigest
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import java.security.MessageDigest
 
 fun HttpRequestBuilder.signFetchRequest() {
     signZhihuFetchRequest(AccountData.data.cookies)
@@ -49,7 +49,6 @@ fun telemetry(context: Context, usage: String) {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull() ?: "unknown"
         GlobalScope.launch {
-            @OptIn(ExperimentalStdlibApi::class)
             runCatching {
                 val hash = MessageDigest
                     .getInstance("MD5")

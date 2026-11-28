@@ -30,7 +30,6 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withResumed
-import com.github.zly2006.zhihu.theme.AndroidThemeSettings
 import com.github.zly2006.zhihu.ui.components.AppSplashScreen
 import com.github.zly2006.zhihu.util.enableEdgeToEdgeCompat
 import kotlinx.coroutines.launch
@@ -42,7 +41,6 @@ class SplashActivity : ComponentActivity() {
         installSplashScreen().setOnExitAnimationListener { it.remove() }
         enableEdgeToEdgeCompat()
         super.onCreate(savedInstanceState)
-        AndroidThemeSettings.initialize(this)
         setContent {
             Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                 AppSplashScreen {

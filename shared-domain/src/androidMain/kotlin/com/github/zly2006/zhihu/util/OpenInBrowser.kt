@@ -17,10 +17,9 @@
 
 package com.github.zly2006.zhihu.util
 
-import android.content.Context
-import com.github.zly2006.zhihu.account.androidZhihuAccountStore
-import com.github.zly2006.zhihu.data.AccountData
-import com.github.zly2006.zhihu.data.Collection
+import com.github.zly2006.zhihu.account.ZhihuAccountClient
+import com.github.zly2006.zhihu.data.Person
+import com.github.zly2006.zhihu.data.ZhihuCollection
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.asApiEnvironment
 import com.github.zly2006.zhihu.navigation.Article
@@ -28,7 +27,6 @@ import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.viewmodel.postSigned
 import io.ktor.client.call.body
-import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -40,14 +38,17 @@ import kotlinx.serialization.json.put
 const val OPEN_IN_BROWSER_PLUGIN_VERSION = "1.0.0"
 
 object OpenInBrowser {
-    suspend fun openUrlInBrowser(context: Context, destination: NavDestination): Boolean {
-        val urlToken = AccountData.data.self?.urlToken ?: return false
-        val environment = context.asApiEnvironment()
+    suspend fun openUrlInBrowser(account: ZhihuAccountClient, destination: NavDestination): Boolean {
+        val session = account.load()
+        val urlToken = session.profile?.urlToken?.takeIf(String::isNotBlank)
+            ?: session.self?.let { runCatching { ZhihuJson.decodeJson<Person>(it).urlToken }.getOrNull() }
+            ?: return false
+        val environment = account.asApiEnvironment()
         val jojo = environment.fetchJson("https://www.zhihu.com/api/v4/people/$urlToken/collections?limit=50", "")!!
         val collection = ZhihuJson
-            .decodeJson<List<Collection>>(jojo["data"]!!)
+            .decodeJson<List<ZhihuCollection>>(jojo["data"]!!)
             .firstOrNull { it.description == "com.github.zly2006.zhplus.openinbrowser" }
-            ?: ZhihuJson.decodeJson<Collection>(
+            ?: ZhihuJson.decodeJson<ZhihuCollection>(
                 environment
                     .postSigned("https://www.zhihu.com/api/v4/collections") {
                         contentType(ContentType.Application.Json)
@@ -67,15 +68,10 @@ object OpenInBrowser {
             }
             val url = "https://api.zhihu.com/collections/contents/$contentType/${destination.id}"
             val body = "add_collections=${collection.id}"
-            return androidZhihuAccountStore(context)
-                .client
-                .httpClient()
-                .put(url) {
-                    signFetchRequest()
-                    contentType(ContentType.Application.FormUrlEncoded)
-                    setBody(body)
-                }.status
-                .isSuccess()
+            return account.put(url) {
+                contentType(ContentType.Application.FormUrlEncoded)
+                setBody(body)
+            }.status.isSuccess()
         }
         return false
     }

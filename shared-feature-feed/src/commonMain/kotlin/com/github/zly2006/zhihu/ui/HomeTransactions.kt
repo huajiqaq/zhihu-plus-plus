@@ -40,13 +40,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCard
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppTextButton
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 internal data class HomeTransaction(
     val key: String,
@@ -68,13 +69,13 @@ internal fun HomeScreenTransactionsToggle(
     val skin = LocalAppSkinTokens.current
     AppCard(
         onClick = onClick,
-        containerColor = if (ThemeManager.isDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest else skin.surfaceContainer,
+        containerColor = if (LocalAppTheme.current.isDarkTheme) MaterialTheme.colorScheme.surfaceContainerHighest else skin.surfaceContainer,
         contentColor = skin.onSurface,
         modifier = Modifier
             .padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space4)
             .fillMaxWidth()
             .testTag("home_transactions_toggle")
-            .semantics { stateDescription = if (expanded) "已展开" else "已收起" },
+            .semantics { stateDescription = if (expanded) FeedStrings.expanded else FeedStrings.collapsed },
     ) {
         Row(
             modifier = Modifier
@@ -84,7 +85,7 @@ internal fun HomeScreenTransactionsToggle(
             horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
+            AppIcon(
                 Icons.Default.Notifications,
                 contentDescription = null,
                 tint = skin.primary,
@@ -94,7 +95,7 @@ internal fun HomeScreenTransactionsToggle(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(AppDimens.Space4),
             ) {
-                Text("通知与动态", style = skin.body2, fontWeight = FontWeight.SemiBold)
+                Text(FeedStrings.updatesTitle, style = skin.body2, fontWeight = FontWeight.SemiBold)
                 if (!expanded) {
                     Text(
                         transactions.first().title,
@@ -105,10 +106,10 @@ internal fun HomeScreenTransactionsToggle(
                     )
                 }
             }
-            Text("${transactions.size} 条", style = skin.footnote2, color = skin.onSurfaceVariantSummary)
-            Icon(
+            Text(FeedStrings.updatesCount(transactions.size), style = skin.footnote2, color = skin.onSurfaceVariantSummary)
+            AppIcon(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "收起" else "展开",
+                contentDescription = if (expanded) FeedStrings.collapse else FeedStrings.expand,
                 tint = skin.onSurfaceVariantSummary,
                 modifier = Modifier.size(AppDimens.IconSizeMedium),
             )
@@ -121,7 +122,7 @@ internal fun HomeTransactionRow(transaction: HomeTransaction) {
     val skin = LocalAppSkinTokens.current
     val compact = transaction.key == NEW_UI_NOTICE_TAG
     AppCard(
-        containerColor = if (ThemeManager.isDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHighest else skin.surfaceContainer,
+        containerColor = if (LocalAppTheme.current.isDarkTheme) MaterialTheme.colorScheme.surfaceContainerHighest else skin.surfaceContainer,
         contentColor = skin.onSurface,
         modifier = Modifier
             .padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space4)
@@ -143,7 +144,7 @@ internal fun HomeTransactionRow(transaction: HomeTransaction) {
                 verticalAlignment = if (compact) Alignment.CenterVertically else Alignment.Top,
             ) {
                 transaction.icon?.let { icon ->
-                    Icon(
+                    AppIcon(
                         icon,
                         contentDescription = null,
                         tint = skin.primary,

@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.data.HISTORY_RECORDING_ENABLED_KEY
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.PlatformBackHandler
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -109,7 +110,7 @@ fun LegacyLocalHistoryScreen() {
         modifier = Modifier.fillMaxSize().appPageTitleBarScroll(titleBarState).testTag(LEGACY_LOCAL_HISTORY_SCREEN_TAG),
         topBar = {
             AppPageTitleBar(
-                title = if (selectionMode) "已选 ${selectedKeys.size} 项" else "本地浏览历史",
+                title = if (selectionMode) AccountStrings.historySelected(selectedKeys.size) else AccountStrings.historyLocalTitle,
                 scrollState = titleBarState,
                 onBack = if (selectionMode) {
                     (
@@ -123,7 +124,7 @@ fun LegacyLocalHistoryScreen() {
                 },
                 backTag = LEGACY_LOCAL_HISTORY_BACK_BUTTON_TAG,
                 actions = {
-                    AppTextButton(text = if (recordingEnabled) "停止记录" else "开始记录", onClick = {
+                    AppTextButton(text = if (recordingEnabled) AccountStrings.historyStopRecording else AccountStrings.historyStartRecording, onClick = {
                         val enabled = !recordingEnabled
                         storage.setRecordingEnabled(enabled)
                         recordingEnabled = enabled
@@ -149,13 +150,13 @@ fun LegacyLocalHistoryScreen() {
     ) { padding ->
         FeedPullToRefresh(model, environment, padding = padding) {
             Column(Modifier.fillMaxSize().padding(padding)) {
-                if (!recordingEnabled) Text("已停止记录新浏览，本地已有记录保留。", modifier = Modifier.padding(AppDimens.PageHorizontalPadding))
+                if (!recordingEnabled) Text(AccountStrings.historyLocalStopped, modifier = Modifier.padding(AppDimens.PageHorizontalPadding))
                 HistoryTypeFilterRow(selectedType, model.displayItems.mapNotNullTo(linkedSetOf()) { it.historyType }, {
                     selectedType = it
                     listState.requestScrollToItem(0)
                 })
                 if (items.isEmpty() && !model.isLoading && model.errorMessage == null) {
-                    AppEmptyState("暂无本地历史", modifier = Modifier.weight(1f), icon = Icons.Default.History)
+                    AppEmptyState(AccountStrings.historyLocalEmpty, modifier = Modifier.weight(1f), icon = Icons.Default.History)
                 } else {
                     PaginatedList(
                         items = items,
@@ -180,12 +181,12 @@ fun LegacyLocalHistoryScreen() {
                                 titleTrailingContent = { HistoryTypeBadge(item.historyType, item.titleBadges) },
                                 onClick = if (selectionMode) ({ _, _ -> toggle() }) else null,
                                 menuItems = { dismiss ->
-                                    AppDropdownMenuItem(text = { Text("删除此条浏览记录") }, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyDeleteItem) }, onClick = {
                                         dismiss()
                                         try {
                                             model.removeItems(setOf(item.stableKey))
                                         } catch (e: Exception) {
-                                            messages.showShortMessage("删除失败：${e.message}")
+                                            messages.showShortMessage(AccountStrings.deleteFailedDetail(e.message))
                                         }
                                     })
                                 },
@@ -199,10 +200,10 @@ fun LegacyLocalHistoryScreen() {
     }
     if (showDelete) {
         AppDialog(
-            title = "删除选中的 ${selectedKeys.size} 条本地历史？",
-            summary = "只删除本机选中记录，不影响知乎账号的在线历史。",
-            confirmText = "删除",
-            dismissText = "取消",
+            title = AccountStrings.historyDeleteLocalTitle(selectedKeys.size),
+            summary = AccountStrings.historyDeleteLocalSummary,
+            confirmText = AccountStrings.delete,
+            dismissText = AccountStrings.cancel,
             destructive = true,
             confirmEnabled = selectedKeys.isNotEmpty(),
             onDismissRequest = { showDelete = false },
@@ -214,7 +215,7 @@ fun LegacyLocalHistoryScreen() {
                     selectionMode = false
                     selectedKeys = emptySet()
                 } catch (e: Exception) {
-                    messages.showShortMessage("删除失败：${e.message}")
+                    messages.showShortMessage(AccountStrings.deleteFailedDetail(e.message))
                 }
             },
         )

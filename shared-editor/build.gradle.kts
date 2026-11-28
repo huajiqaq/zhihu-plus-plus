@@ -43,6 +43,10 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
+        val directUploadMain = create("directUploadMain") { dependsOn(commonMain.get()) }
+        androidMain.get().dependsOn(directUploadMain)
+        jvmMain.get().dependsOn(directUploadMain)
+        findByName("nativeMain")?.dependsOn(directUploadMain)
         commonMain.dependencies {
             api(project(":shared-domain"))
             implementation(libs.jb.compose.runtime)

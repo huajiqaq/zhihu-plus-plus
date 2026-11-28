@@ -47,9 +47,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Navigator
+import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.Topic
 import com.github.zly2006.zhihu.theme.AppSkinTokens
@@ -107,7 +109,7 @@ internal fun ArticleMainHeader(
                 modifier = Modifier.weight(1f),
                 onClick = {
                     navigator.onNavigate(
-                        com.github.zly2006.zhihu.navigation.Person(
+                        Person(
                             id = viewModel.authorId,
                             urlToken = viewModel.authorUrlToken,
                             name = viewModel.authorName,
@@ -128,7 +130,7 @@ internal fun ArticleMainHeader(
     if (article.type == ArticleType.Answer) {
         viewModel.ipInfo?.takeIf { it.isNotBlank() }?.let { ipInfo ->
             Text(
-                text = "IP属地：$ipInfo",
+                text = ContentStrings.ipLocation(ipInfo),
                 modifier = Modifier.testTag(ARTICLE_IP_INFO_TAG),
                 color = skin.onSurfaceVariantSummary,
                 style = skin.footnote2,
@@ -197,14 +199,14 @@ internal fun ArticleDateTexts(viewModel: ArticleViewModel) {
     val skin = LocalAppSkinTokens.current
     if (viewModel.createdAt > 0) {
         Text(
-            "发布于 " + formatFullDateTime(viewModel.createdAt),
+            ContentStrings.publishedAt(formatFullDateTime(viewModel.createdAt)),
             color = skin.onSurfaceVariantSummary,
             style = skin.footnote2,
         )
     }
     if (viewModel.updatedAt > 0 && viewModel.createdAt != viewModel.updatedAt) {
         Text(
-            "编辑于 " + formatFullDateTime(viewModel.updatedAt),
+            ContentStrings.editedAt(formatFullDateTime(viewModel.updatedAt)),
             color = skin.onSurfaceVariantSummary,
             style = skin.footnote2,
         )
@@ -219,10 +221,6 @@ private fun ArticleVotersSocialCredit(
     onShowVoters: () -> Unit,
 ) {
     val density = LocalDensity.current
-    val contentLabel = when (article.type) {
-        ArticleType.Answer -> "回答"
-        ArticleType.Article -> "文章"
-    }
     Spacer(modifier = Modifier.height(8.dp))
     Box(
         modifier = Modifier.fillMaxWidth().height(
@@ -233,7 +231,10 @@ private fun ArticleVotersSocialCredit(
         ),
     ) {
         val text = viewModel.votersSocialText.ifBlank {
-            "${formatCompactCount(viewModel.votersTotal)} 人赞同了该$contentLabel"
+            when (article.type) {
+                ArticleType.Answer -> ContentStrings.answerUpvotes(viewModel.votersTotal, formatCompactCount(viewModel.votersTotal))
+                ArticleType.Article -> ContentStrings.articleUpvotes(viewModel.votersTotal, formatCompactCount(viewModel.votersTotal))
+            }
         }
         val votersTextModifier = if (article.type == ArticleType.Answer) {
             Modifier.clickable {
@@ -257,7 +258,10 @@ private fun ArticleVotersSocialCredit(
     if (viewModel.aigcSupportVoterCount > 0) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "有 ${formatCompactCount(viewModel.aigcSupportVoterCount)} 人认为此${contentLabel}包含AIGC内容",
+            text = when (article.type) {
+                ArticleType.Answer -> ContentStrings.answerAiVotes(viewModel.aigcSupportVoterCount, formatCompactCount(viewModel.aigcSupportVoterCount))
+                ArticleType.Article -> ContentStrings.articleAiVotes(viewModel.aigcSupportVoterCount, formatCompactCount(viewModel.aigcSupportVoterCount))
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
@@ -281,7 +285,7 @@ private fun ArticleAuthorIdentity(
         if (viewModel.authorAvatarSrc.isNotEmpty()) {
             AsyncImage(
                 model = viewModel.authorAvatarSrc,
-                contentDescription = "作者头像",
+                contentDescription = ContentStrings.authorAvatar,
                 modifier = Modifier
                     .size(AppDimens.Space40)
                     .clip(CircleShape),
@@ -338,7 +342,7 @@ private fun ArticleAuthorFollowButton(
         modifier = Modifier.testTag(ARTICLE_AUTHOR_FOLLOW_TAG),
     ) {
         Text(
-            text = if (following) "已关注" else "关注",
+            text = if (following) ContentStrings.following else ContentStrings.follow,
             style = skin.footnote1,
             maxLines = 1,
         )

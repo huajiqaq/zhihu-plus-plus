@@ -52,9 +52,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.account.webViewFailureObserver
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -63,7 +66,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.ByteArrayInputStream
 
 actual val isRichEditorSupported: Boolean = true
 
@@ -85,7 +87,7 @@ actual fun WriteContentRichEditor(
     val foreground = "#%06x".format(MaterialTheme.colorScheme.onSurface.toArgb() and 0xffffff)
     val background = "#%06x".format(backgroundColor.toArgb() and 0xffffff)
     val muted = "#%06x".format(MaterialTheme.colorScheme.onSurfaceVariant.toArgb() and 0xffffff)
-    val configuration = rememberUpdatedState("editorConfigure($enabled,${Json.encodeToString(placeholder)},${Json.encodeToString(foreground)},${Json.encodeToString(background)},${Json.encodeToString(muted)})")
+    val configuration = rememberUpdatedState("editorConfigure($enabled,${Json.encodeToString(placeholder)},${Json.encodeToString(foreground)},${Json.encodeToString(background)},${Json.encodeToString(muted)},${Json.encodeToString(richEditorUiLabels())})")
     val view = remember(state, account) { mutableStateOf<WebView?>(null) }
 
     key(state, account) {
@@ -194,7 +196,7 @@ actual fun WriteContentRichEditor(
                     ) {
                         AppSpinner()
                         Text(
-                            text = "正在加载图文编辑器",
+                            text = ContentStrings.loadingRichEditor,
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center,
@@ -220,20 +222,20 @@ actual fun WriteContentRichEditor(
                     is RichEditorCommand.Snapshot -> {
                         view.value?.evaluateJavascript("JSON.stringify({html:quill.getSemanticHTML(),text:quill.getText()})") { value ->
                             runCatching {
-                                check(active.value) { "编辑器已关闭" }
+                                check(active.value) { ContentStrings.editorClosed }
                                 val result = Json.parseToJsonElement(Json.decodeFromString<String>(value)).jsonObject
                                 val html = result.getValue("html").jsonPrimitive.content
                                 val text = result.getValue("text").jsonPrimitive.content
                                 state.update(html, text)
                                 command.result.complete(html)
                             }.onFailure { command.result.completeExceptionally(it) }
-                        } ?: command.result.completeExceptionally(IllegalStateException("编辑器已关闭"))
+                        } ?: command.result.completeExceptionally(IllegalStateException(ContentStrings.editorClosed))
                     }
                 }
             }
         }
     }
-    LaunchedEffect(state, account, state.isReady, enabled, placeholder, foreground, background, muted) {
+    LaunchedEffect(state, account, state.isReady, enabled, placeholder, foreground, background, muted, AppLocale.current) {
         if (!state.isReady) return@LaunchedEffect
         ready.await()
         withContext(Dispatchers.Main.immediate) {

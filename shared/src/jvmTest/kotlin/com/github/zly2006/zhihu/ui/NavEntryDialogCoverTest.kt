@@ -52,6 +52,8 @@ import com.github.zly2006.zhihu.account.ZhihuAccountProfileSnapshot
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
 import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccounts
+import com.github.zly2006.zhihu.account.ZhihuSavedAccount
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
 import com.github.zly2006.zhihu.navigation.AppNavHost
@@ -63,20 +65,19 @@ import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.platform.desktopSettingsStore
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.serialization.encodeToString
 import java.nio.file.Files
 import java.util.Properties
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.serialization.encodeToString
 import kotlinx.io.files.Path as KotlinxPath
 
 /** 被覆盖的条目隐藏窗口，返回后恢复；宿主生命周期在 NavDisplay 外提供。 */
@@ -85,7 +86,6 @@ class NavEntryDialogCoverTest {
     @Test
     fun questionContextKeepsTheOriginalReadingEntryAcrossWidths() {
         val oldHome = System.getProperty("user.home")
-        val oldTheme = ThemeManager.snapshot()
         val directory = Files.createTempDirectory("zhihu-pane-contract-")
         val profile = ZhihuAccountProfileSnapshot(
             id = "pane-contract-fixture",
@@ -112,11 +112,9 @@ class NavEntryDialogCoverTest {
         try {
             System.setProperty("user.home", directory.toString())
             val accountFile = directory.resolve("fixture-account.json")
-            Files.writeString(accountFile, ZhihuJson.json.encodeToString(session))
-            val fixtureStore = ZhihuAccountStore(
-                ZhihuAccountRepository(KotlinxPath(accountFile.toString())),
-                engine = engine,
-            )
+            val repository = ZhihuAccountRepository(KotlinxPath(accountFile.toString()))
+            repository.saveAccounts(ZhihuAccounts(profile.id, listOf(ZhihuSavedAccount(profile.id, session))))
+            val fixtureStore = ZhihuAccountStore(repository, engine = engine)
             store = fixtureStore
             val initialRatio = 0.42f
             val settings = desktopSettingsStore().apply {
@@ -145,16 +143,13 @@ class NavEntryDialogCoverTest {
                                     .wrapContentSize(Alignment.TopStart)
                                     .requiredSize(width, 600.dp),
                                 navHost = host,
-                                mainTabNavigationTarget = null,
                                 navigate = host::open,
                                 navigateContent = { destination, target ->
                                     if (destination == question) questionHost = target
                                     target.open(destination)
                                 },
                                 enableLandscapeListDetail = true,
-                                setCurrentMainTabOpenFrom = {},
-                                consumeMainTabNavigationTarget = {},
-                                preferenceState = remember {
+                                tabsState = rememberZhihuMainTabsState(remember {
                                     ZhihuMainPreferenceState {
                                         ZhihuMainPreferenceSnapshot(
                                             tapToScrollToTopEnabled = false,
@@ -164,8 +159,7 @@ class NavEntryDialogCoverTest {
                                             startDestination = Home,
                                         )
                                     }
-                                },
-                                isDarkTheme = ThemeManager.isDarkTheme(),
+                                }),
                                 articleContent = {
                                     val navigator = LocalNavigator.current
                                     val model = viewModel { VisitCounter() }
@@ -192,7 +186,7 @@ class NavEntryDialogCoverTest {
                 onNodeWithText("进度 1").assertIsDisplayed()
                 onNodeWithText("阅读中打开问题").performSemanticsAction(SemanticsActions.OnClick)
                 runOnIdle {
-                    assertSame(firstEntry, mainHost!!.pageEntries.last(), "打开问题不能替换主栈阅读条目")
+                    assertSame(firstEntry, mainHost.pageEntries.last(), "打开问题不能替换主栈阅读条目")
                     assertTrue(questionHost !== mainHost, "问题应进入详情栈")
                     assertEquals(question, questionHost?.top, "实际详情栈没有打开所点的问题")
                 }
@@ -204,7 +198,7 @@ class NavEntryDialogCoverTest {
                 val left = onNodeWithTag(QUESTION_SCREEN_LIST_TAG).fetchSemanticsNode().boundsInRoot
                 val right = onNodeWithTag("pane_contract_article").fetchSemanticsNode().boundsInRoot
                 assertTrue(left.width > 0f && right.width > 0f && left.right <= right.left)
-                assertSame(firstEntry, mainHost!!.pageEntries.last())
+                assertSame(firstEntry, mainHost.pageEntries.last())
                 assertEquals(firstEntry.id, readingHost!!.topEntryId)
                 assertSame(firstModel, models.single())
                 onNodeWithText("进度 1").assertExists()
@@ -251,13 +245,12 @@ class NavEntryDialogCoverTest {
                     listPane.fetchSemanticsNode().boundsInRoot.width,
                     1f,
                 )
-                assertSame(firstEntry, mainHost!!.pageEntries.last())
+                assertSame(firstEntry, mainHost.pageEntries.last())
                 assertSame(firstModel, models.single())
             }
         } finally {
             store?.close()
             engine.close()
-            ThemeManager.load(oldTheme)
             if (oldHome == null) System.clearProperty("user.home") else System.setProperty("user.home", oldHome)
             directory.toFile().deleteRecursively()
         }

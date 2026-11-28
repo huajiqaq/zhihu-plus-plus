@@ -49,6 +49,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +77,7 @@ import com.github.zly2006.zhihu.editor.ZhihuImageUploadSource
 import com.github.zly2006.zhihu.editor.isImagePickerSupported
 import com.github.zly2006.zhihu.editor.rememberImagePickerLauncher
 import com.github.zly2006.zhihu.editor.uploadZhihuImage
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -96,6 +98,7 @@ import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.comment.BaseCommentViewModel
 import com.github.zly2006.zhihu.viewmodel.comment.ChildCommentViewModel
+import com.github.zly2006.zhihu.viewmodel.comment.CommentForwardList
 import com.github.zly2006.zhihu.viewmodel.comment.CommentImageAttachment
 import com.github.zly2006.zhihu.viewmodel.comment.CommentLinkInfo
 import com.github.zly2006.zhihu.viewmodel.comment.CommentMention
@@ -123,8 +126,9 @@ fun CommentScreen(
     onCommentInputChange: (String) -> Unit,
     listState: LazyListState = rememberLazyListState(),
     commentSegments: Map<String, com.github.zly2006.zhihu.util.SegmentHighlightSpan> = emptyMap(),
-    sentenceCommentsState: MutableState<Boolean> = rememberSaveable(content().commentThreadKey()) { mutableStateOf(false) },
+    tabState: MutableState<CommentPanelTab> = rememberSaveable(content().commentThreadKey(), initialCommentId) { mutableStateOf(CommentPanelTab.Normal) },
     sentenceListState: LazyListState = rememberLazyListState(),
+    forwardListState: LazyListState = rememberLazyListState(),
     initialComment: DataHolder.Comment? = null,
     onInitialChildCommentResolved: (CommentItem, DataHolder.Comment) -> Unit = { _, _ -> },
     pageTurnEnabled: Boolean = false,
@@ -137,6 +141,7 @@ fun CommentScreen(
 ) {
     val paginationEnvironment = rememberPaginationEnvironment(allowGuestAccess = false)
     val commentAccount = rememberZhihuAccountStore()
+    val readOnly = commentAccount.usesBrowserSession
     val commentClient = commentAccount.client
     val readingSettings = rememberSettingsStore()
     val squarePopups by rememberSetting(readingSettings, DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY, false)
@@ -144,7 +149,7 @@ fun CommentScreen(
         loadReadingPreferences(readingSettings).commentOrder
     }
     val resolvedContent = content()
-    var showSentenceComments by sentenceCommentsState
+    var selectedTab by tabState
     val currentCommentSegments by rememberUpdatedState(commentSegments)
     val isSendingState = remember { mutableStateOf(false) }
     var isSending by isSendingState
@@ -152,7 +157,7 @@ fun CommentScreen(
     var showEmojiPicker by emojiPickerState
     var commentPendingDeletion by remember(resolvedContent, commentClient) { mutableStateOf<CommentItem?>(null) }
     var isDeletingComment by remember(resolvedContent, commentClient) { mutableStateOf(false) }
-    var deleteCommentError by remember(resolvedContent, commentClient) { mutableStateOf<String?>(null) }
+    var deleteCommentError by remember(resolvedContent, commentClient) { mutableStateOf<(() -> String)?>(null) }
     var isCommentInputFocused by remember { mutableStateOf(false) }
     val initialTargetId = initialCommentId ?: initialComment?.id
     val viewModelKey = resolvedContent.commentThreadKey() + initialTargetId?.let { ":initial:$it" }.orEmpty()
@@ -198,7 +203,27 @@ fun CommentScreen(
     }
     val hasOfficialSentenceComments = (normalComments?.sentenceCommentCount ?: 0) > 0
     val hasSentenceTabs = resolvedContent is Article && (hasOfficialSentenceComments || normalComments?.hasKnownSentenceComments == true)
-    val sentenceMode = showSentenceComments && hasSentenceTabs
+    val forwards = remember(resolvedContent, commentClient) { CommentForwardList.forContent(resolvedContent, commentClient) }
+    val forwardScope = key(forwards) { rememberCoroutineScope() }
+    var tabChecked by remember(forwards) { mutableStateOf(false) }
+    LaunchedEffect(forwards) {
+        forwards?.loadTab(refresh = true)
+        if (forwards?.tab?.isShowTab == false && selectedTab == CommentPanelTab.Forward) selectedTab = CommentPanelTab.Normal
+        tabChecked = true
+    }
+    val hasForwards = tabChecked &&
+        forwards?.tab?.isShowTab == true &&
+        (normalComments?.rootPageReady == true || selectedTab == CommentPanelTab.Forward)
+    val activeTab = when (selectedTab) {
+        CommentPanelTab.Normal -> CommentPanelTab.Normal
+        CommentPanelTab.Sentence -> if (hasSentenceTabs) selectedTab else CommentPanelTab.Normal
+        CommentPanelTab.Forward -> if (hasForwards) selectedTab else CommentPanelTab.Normal
+    }
+    val sentenceMode = activeTab == CommentPanelTab.Sentence
+    val forwardMode = activeTab == CommentPanelTab.Forward
+    LaunchedEffect(forwards, forwardMode, forwards?.tab) {
+        if (forwardMode) forwards?.loadFirstPage()
+    }
     val activeListState = if (sentenceMode) sentenceListState else listState
     val viewModel: BaseCommentViewModel = when (resolvedContent) {
         is CommentHolder -> remember(viewModelKey) {
@@ -217,7 +242,7 @@ fun CommentScreen(
         (viewModel as? RootCommentViewModel)?.commentSegments = { currentCommentSegments }
     }
     LaunchedEffect(hasSentenceTabs) {
-        if (!hasSentenceTabs) showSentenceComments = false
+        if (!hasSentenceTabs && selectedTab == CommentPanelTab.Sentence) selectedTab = CommentPanelTab.Normal
     }
     val pageTurnActive = pageTurnEnabled &&
         !composerOpen &&
@@ -225,15 +250,15 @@ fun CommentScreen(
         !isCommentInputFocused &&
         commentPendingDeletion == null
     val pageTurnTarget = rememberPageTurnTarget(
-        listState = activeListState,
+        listState = if (forwardMode) forwardListState else activeListState,
         enabled = pageTurnActive,
     )
     var restoredListPosition by remember(viewModel, activeListState) {
         mutableStateOf(activeListState.firstVisibleItemIndex to activeListState.firstVisibleItemScrollOffset)
     }
     var restoredListPositionApplied by remember(viewModel, activeListState) { mutableStateOf(false) }
-    LaunchedEffect(viewModel, activeListState, viewModel.isLoading, viewModel.allData.size, restoredListPosition, restoredListPositionApplied) {
-        if (!restoredListPositionApplied && !viewModel.isLoading && viewModel.allData.isNotEmpty()) {
+    LaunchedEffect(viewModel, activeListState, forwardMode, viewModel.isLoading, viewModel.allData.size, restoredListPosition, restoredListPositionApplied) {
+        if (!forwardMode && !restoredListPositionApplied && !viewModel.isLoading && viewModel.allData.isNotEmpty()) {
             /** 数据到达后恢复位置，避免按旧评论 ID 锚回。 */
             activeListState.requestScrollToItem(
                 restoredListPosition.first.coerceAtMost(viewModel.allData.size),
@@ -251,7 +276,7 @@ fun CommentScreen(
     val canReplyToCurrentThread = resolvedContent !is CommentHolder ||
         activeCommentItem?.item?.resourceType != "segment" ||
         resolvedContent.article is SegmentCommentHolder
-    val composerAllowed = viewModel.commentClosedMessage == null && !sentenceMode && canReplyToCurrentThread
+    val composerAllowed = !readOnly && activeTab == CommentPanelTab.Normal && viewModel.commentClosedMessage == null && canReplyToCurrentThread
     val initialChildComment = (viewModel as? RootCommentViewModel)?.initialChildComment
     var initialChildCommentHandled by remember(viewModelKey) { mutableStateOf(false) }
     LaunchedEffect(initialChildComment?.id, viewModel.allData.size) {
@@ -275,7 +300,7 @@ fun CommentScreen(
     commentPendingDeletion?.let { target ->
         CommentScreenDeleteDialog(
             isDeletingComment = isDeletingComment,
-            deleteCommentError = deleteCommentError,
+            deleteCommentError = deleteCommentError?.invoke(),
             onDismissRequest = {
                 if (!isDeletingComment) {
                     commentPendingDeletion = null
@@ -283,7 +308,7 @@ fun CommentScreen(
                 }
             },
             onConfirm = confirm@{
-                if (commentAccount.client !== commentClient) return@confirm
+                if (readOnly || commentAccount.client !== commentClient) return@confirm
                 isDeletingComment = true
                 deleteCommentError = null
                 viewModel.deleteComment(
@@ -319,13 +344,14 @@ fun CommentScreen(
         }
     }
 
-    LaunchedEffect(viewModel, loadMore.value) {
-        if (loadMore.value && viewModel.errorMessage == null) {
+    LaunchedEffect(viewModel, forwardMode, loadMore.value) {
+        if (!forwardMode && loadMore.value && viewModel.errorMessage == null) {
             viewModel.loadMore(paginationEnvironment)
         }
     }
 
-    LaunchedEffect(viewModel) {
+    LaunchedEffect(viewModel, forwardMode) {
+        if (forwardMode) return@LaunchedEffect
         if (viewModel.article.commentThreadKey() != resolvedContent.commentThreadKey()) {
             error("Internal Error: Detected content mismatch")
         }
@@ -345,7 +371,7 @@ fun CommentScreen(
 
     fun canAttachMedia(): Boolean {
         if (sender == null) return true
-        userMessages.showShortMessage("添加附件请先选择当前登录账号")
+        userMessages.showShortMessage(CommentsStrings.attachmentsRequireCurrentAccount)
         return false
     }
     var isUploadingImage by remember { mutableStateOf(false) }
@@ -375,7 +401,7 @@ fun CommentScreen(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    userMessages.showShortMessage("图片上传失败：${e.message}")
+                    userMessages.showShortMessage(CommentsStrings.imageUploadFailed(e.message.orEmpty()))
                 } finally {
                     isUploadingImage = false
                 }
@@ -411,16 +437,20 @@ fun CommentScreen(
         coroutineScope = coroutineScope,
     )
 
-    val voice = rememberCommentVoiceState(
-        resolvedContent = resolvedContent,
-        isSendingState = isSendingState,
-        paginationEnvironment = paginationEnvironment,
-        coroutineScope = coroutineScope,
-        userMessages = userMessages,
-        onPickerLaunched = onPickerLaunched,
-    )
+    val voice = key(resolvedContent, commentClient) {
+        rememberCommentVoiceState(
+            resolvedContent = resolvedContent,
+            accountClient = commentClient,
+            paginationEnvironment = paginationEnvironment,
+            isSendingState = isSendingState,
+            isCurrentAccount = { commentAccount.client === commentClient },
+            coroutineScope = coroutineScope,
+            userMessages = userMessages,
+            onPickerLaunched = onPickerLaunched,
+        )
+    }
     var showCommentTools by remember { mutableStateOf(false) }
-    val commentToolsRequired = voice.recorder.isRecording ||
+    val commentToolsRequired = voice.recorder.isRecording || voice.recorder.isBusy ||
         voice.recordedVoice != null ||
         voice.voiceUploadError != null ||
         voice.isUploadingVoice ||
@@ -446,7 +476,7 @@ fun CommentScreen(
             throw e
         } catch (e: Exception) {
             mentionResults = emptyList()
-            userMessages.showShortMessage("搜索用户失败：${e.message}")
+            userMessages.showShortMessage(CommentsStrings.userSearchFailed(e.message.orEmpty()))
         } finally {
             mentionLoading = false
         }
@@ -488,7 +518,7 @@ fun CommentScreen(
             voice.isUploadingVoice ||
             isUploadingImage ||
             stickerPanel.isUploadingSticker ||
-            voice.recorder.isRecording
+            voice.recorder.isRecording || voice.recorder.isBusy
         ) {
             return
         }
@@ -534,7 +564,13 @@ fun CommentScreen(
         }
     }
 
-    val commentTitle = if (resolvedContent is CommentHolder) "回复" else "评论"
+    val commentTitle = if (resolvedContent is CommentHolder) {
+        CommentsStrings.replies
+    } else if (forwardMode) {
+        CommentsStrings.forwards
+    } else {
+        CommentsStrings.normalComments
+    }
     val skin = LocalAppSkinTokens.current
     Box(
         modifier = Modifier.fillMaxSize().semantics { paneTitle = commentTitle },
@@ -559,8 +595,13 @@ fun CommentScreen(
                 CommentScreenHeader(
                     commentTitle = commentTitle,
                     skin = skin,
-                    viewModel = viewModel,
-                    activeCommentItem = activeCommentItem,
+                    loadedCount = if (forwardMode) checkNotNull(forwards).items.size else viewModel.allData.size,
+                    sortOrder = viewModel.sortOrder.takeIf { !forwardMode && activeCommentItem == null && viewModel.supportsSorting },
+                    onRetryForwards = if (tabChecked && forwards != null && forwards.tabError != null) {
+                        { forwardScope.launch { forwards.loadTab(refresh = true) } }
+                    } else {
+                        null
+                    },
                     onDismiss = onDismiss,
                     onSelectSort = { index ->
                         val order = if (index == 0) CommentSortOrder.SCORE else CommentSortOrder.TIME
@@ -578,13 +619,31 @@ fun CommentScreen(
                         )
                     },
                 )
-                if (hasSentenceTabs) {
-                    CommentScreenSentenceTabs(sentenceMode) { showSentenceComments = it }
+                if (hasSentenceTabs || hasForwards) {
+                    CommentScreenTabs(
+                        selected = activeTab,
+                        hasSentences = hasSentenceTabs,
+                        hasForwards = hasForwards,
+                        normalCount = normalComments?.totalCommentCount,
+                        sentenceCount = normalComments?.sentenceCommentCount,
+                        forwardCount = forwards?.tab?.count,
+                    ) { tab ->
+                        if (tab == CommentPanelTab.Forward) {
+                            showEmojiPicker = false
+                            isCommentInputFocused = false
+                        }
+                        selectedTab = tab
+                    }
+                }
+                if (forwardMode && forwards != null) {
+                    CommentScreenForwardList(forwards, forwardListState, pageTurnTarget, modifier = Modifier.weight(1f))
+                    return@Column
                 }
                 CommentScreenList(
                     viewModel = viewModel,
                     paginationEnvironment = paginationEnvironment,
                     activeCommentItem = activeCommentItem,
+                    readOnly = readOnly,
                     sentenceMode = sentenceMode,
                     activeListState = activeListState,
                     pageTurnTarget = pageTurnTarget,
@@ -613,8 +672,10 @@ fun CommentScreen(
                     modifier = Modifier.weight(1f),
                 )
 
-                if (!canReplyToCurrentThread) {
-                    Text("当前片段缺少可验证的位置，请从正文打开后回复。", modifier = Modifier.padding(12.dp))
+                if (readOnly) {
+                    Text(CommentsStrings.webCommentsReadOnly, style = skin.footnote1, color = skin.onSurfaceVariantSummary, modifier = Modifier.padding(12.dp))
+                } else if (!canReplyToCurrentThread) {
+                    Text(CommentsStrings.segmentReplyLocationMissing, modifier = Modifier.padding(12.dp))
                 }
                 if (!composerAllowed) return@Column
                 val commentLinkTitles = remember { mutableStateMapOf<String, CommentLinkInfo>() }
@@ -680,7 +741,7 @@ fun CommentScreen(
                                 onShowEmojiPickerChange = { showEmojiPicker = it },
                                 onInputFocusChange = { isCommentInputFocused = it },
                                 isSending = isSending,
-                                sendEnabled = !isSending && !isUploadingImage && !stickerPanel.isUploadingSticker && !voice.isUploadingVoice && !voice.recorder.isRecording && (commentFieldState.text.isNotBlank() || pendingImages.isNotEmpty() || pendingStickers.isNotEmpty() || voice.uploadedVoiceId != null),
+                                sendEnabled = !isSending && !isUploadingImage && !stickerPanel.isUploadingSticker && !voice.isUploadingVoice && !voice.recorder.isRecording && !voice.recorder.isBusy && (commentFieldState.text.isNotBlank() || pendingImages.isNotEmpty() || pendingStickers.isNotEmpty() || voice.uploadedVoiceId != null),
                                 onSend = {
                                     submitComment {
                                         focusManager.clearFocus(force = true)
@@ -701,7 +762,7 @@ fun CommentScreen(
                                 senderMenu = {
                                     CommentSenderMenu(commentAccount, sender, !isSending) { newSender ->
                                         if (newSender != null && commentToolsRequired) {
-                                            userMessages.showShortMessage("请先移除已添加的附件，或使用当前账号发送")
+                                            userMessages.showShortMessage(CommentsStrings.removeAttachmentsBeforeSwitching)
                                         } else {
                                             sender = newSender
                                         }
@@ -763,7 +824,7 @@ fun CommentScreen(
                     editor()
                 } else {
                     CommentScreenMobileComposer(
-                        editorTitle = if (resolvedContent is CommentHolder) "写回复" else "写评论",
+                        editorTitle = if (resolvedContent is CommentHolder) CommentsStrings.writeReply else CommentsStrings.writeComment,
                         composerOpen = composerOpen,
                         onOpen = { composerOpen = true },
                         onClose = {

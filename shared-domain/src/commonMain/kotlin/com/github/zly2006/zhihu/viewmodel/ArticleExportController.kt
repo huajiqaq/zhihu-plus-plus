@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.viewmodel
 
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.decodeZhihuCommentData
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.markdown.htmlToMdAst
 import com.github.zly2006.zhihu.markdown.toMarkdown
 import com.github.zly2006.zhihu.navigation.Article
@@ -26,19 +27,15 @@ import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.isArticleHtmlExportSupported
 import com.github.zly2006.zhihu.platform.isArticleImageExportSupported
-import com.github.zly2006.zhihu.platform.isJvm
+import com.github.zly2006.zhihu.platform.isArticlePdfExportSupported
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.ArticleExportComment
-import com.github.zly2006.zhihu.util.Log
 import com.github.zly2006.zhihu.util.buildArticleExportCommentsHtml
-import com.github.zly2006.zhihu.util.buildArticleExportFileName
-import com.github.zly2006.zhihu.util.buildArticleExportHtml
-import com.github.zly2006.zhihu.util.buildOfflineArticleExportHtml
 import com.github.zly2006.zhihu.util.formatFullDateTime
 import com.github.zly2006.zhihu.util.prepareArticleExportComment
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 internal class ArticleExportController(
@@ -71,7 +68,6 @@ internal class ArticleExportController(
             includeComments = false,
             commentCount = 0,
             includeAppAttribution = includeAppAttribution,
-            successMessage = "图片已保存到相册",
             onComplete = onComplete,
         )
     }
@@ -87,9 +83,36 @@ internal class ArticleExportController(
             includeComments = true,
             commentCount = commentCount,
             includeAppAttribution = includeAppAttribution,
-            successMessage = "带评论图片已保存到相册",
             onComplete = onComplete,
         )
+    }
+
+    suspend fun exportToPdf(
+        environment: ArticleExportContentEnvironment,
+        includeAppAttribution: Boolean,
+        onComplete: (Boolean) -> Unit,
+    ) {
+        if (!isArticlePdfExportSupported) {
+            withContext(Dispatchers.Main) { onComplete(false) }
+            return
+        }
+        try {
+            withExportAccount(environment, httpClient) {
+                val source = requireExportSourceContent()
+                // 系统打印/Files 均由系统授权目标，不申请照片库或旧公共目录权限。
+                ensureExportAccountActive()
+                val result = environment.exportPdf(source, includeAppAttribution)
+                completeExport(result, onComplete)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLog.e("ArticleViewModel", "PDF export failed", error)
+            withContext(Dispatchers.Main) {
+                userMessages.showShortMessage(DomainStrings.pdfExportFailed(error.message.orEmpty()))
+                onComplete(false)
+            }
+        }
     }
 
     suspend fun exportToHtml(
@@ -102,55 +125,31 @@ internal class ArticleExportController(
             return
         }
         runCatching {
-            check(httpClient == null || environment.httpClient() === httpClient) { "账户已切换，请重新打开内容" }
+            check(httpClient == null || environment.httpClient() === httpClient) { DomainStrings.accountChangedReopen }
             requireExportSourceContent()
         }.onFailure { error ->
             withContext(Dispatchers.Main) {
-                userMessages.showShortMessage(error.message ?: "内容未加载完成")
-                onComplete(false)
-            }
-            return
-        }
-
-        if (environment.requiresHtmlExportPermission() && !environment.hasImageExportPermission()) {
-            withContext(Dispatchers.Main) {
-                environment.requestImageExportPermission()
-                onPermissionRequested()
-                userMessages.showShortMessage("需要存储权限才能导出 HTML，正在请求权限")
+                userMessages.showShortMessage(error.message ?: DomainStrings.contentNotReady)
                 onComplete(false)
             }
             return
         }
 
         try {
-            val htmlContent = withContext(Dispatchers.Default) {
-                buildOfflineArticleExportHtml(
-                    loadAssetText = environment::loadExportAssetText,
-                    content = requireExportSourceContent(),
-                    includeAppAttribution = includeAppAttribution,
-                    httpClient = environment.httpClient(),
-                    useOriginalOnImageFetchFailure = isJvm,
-                )
-            }
-            val savedLocation = withContext(Dispatchers.Default) {
-                environment.saveHtmlToDownloads(
-                    displayName = buildArticleExportFileName(
-                        content = requireExportSourceContent(),
-                        extension = "html",
-                    ),
-                    htmlContent = htmlContent,
-                )
-            }
-            withContext(Dispatchers.Main) {
-                userMessages.showLongMessage("HTML 已保存到 $savedLocation")
-                onComplete(true)
+            withExportAccount(environment, httpClient) {
+                if (environment.requiresHtmlExportPermission() && !ensureExportPermission(environment, DomainStrings.htmlPermission, onComplete)) return@withExportAccount
+                ensureExportAccountActive()
+                val result = withContext(Dispatchers.Default) {
+                    environment.exportHtml(requireExportSourceContent(), includeAppAttribution)
+                }
+                completeExport(result, onComplete)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("ArticleViewModel", "HTML export failed", e)
+            AppLog.e("ArticleViewModel", "HTML export failed", e)
             withContext(Dispatchers.Main) {
-                userMessages.showShortMessage("HTML 导出失败: ${e.message}")
+                userMessages.showShortMessage(DomainStrings.htmlExportFailed(e.message.orEmpty()))
                 onComplete(false)
             }
         }
@@ -161,7 +160,6 @@ internal class ArticleExportController(
         includeComments: Boolean,
         commentCount: Int,
         includeAppAttribution: Boolean,
-        successMessage: String,
         onComplete: (Boolean) -> Unit,
     ) {
         if (!isArticleImageExportSupported) {
@@ -169,32 +167,20 @@ internal class ArticleExportController(
             return
         }
         runCatching {
-            check(httpClient == null || environment.httpClient() === httpClient) { "账户已切换，请重新打开内容" }
+            check(httpClient == null || environment.httpClient() === httpClient) { DomainStrings.accountChangedReopen }
             requireExportSourceContent()
         }.onFailure { error ->
             withContext(Dispatchers.Main) {
-                userMessages.showShortMessage(error.message ?: "内容未加载完成")
+                userMessages.showShortMessage(error.message ?: DomainStrings.contentNotReady)
                 onComplete(false)
             }
             return
         }
 
-        if (!environment.hasImageExportPermission()) {
-            withContext(Dispatchers.Main) {
-                environment.requestImageExportPermission()
-                onPermissionRequested()
-                userMessages.showShortMessage("需要存储权限才能导出图片，正在请求权限")
-                onComplete(false)
-            }
-            return
-        }
-
-        var preparedWebView: PreparedArticleExportContent? = null
-        var bitmap: Any? = null
-        val renderer = environment.articleImageExportRenderer()
-        var exportError: Throwable? = null
         try {
-            try {
+            withExportAccount(environment, httpClient) {
+                if (!ensureExportPermission(environment, DomainStrings.imagePermission, onComplete)) return@withExportAccount
+                ensureExportAccountActive()
                 val commentsHtml = if (includeComments && commentCount > 0) {
                     buildArticleExportCommentsHtml(
                         comments = fetchExportComments(environment, commentCount),
@@ -203,54 +189,55 @@ internal class ArticleExportController(
                 } else {
                     ""
                 }
-                preparedWebView = renderer.prepareExportWebView(
-                    htmlContent = buildArticleExportHtml(
-                        loadAssetText = environment::loadExportAssetText,
-                        content = requireExportSourceContent(),
-                        includeAppAttribution = includeAppAttribution,
-                        extraSectionsHtml = commentsHtml,
-                    ),
-                    timeoutMs = if (includeComments) 18_000L else 15_000L,
+                ensureExportAccountActive()
+                val result = environment.exportImage(
+                    content = requireExportSourceContent(),
+                    includeAppAttribution = includeAppAttribution,
+                    extraSectionsHtml = commentsHtml,
+                    includeComments = includeComments,
                 )
-                val capturedBitmap = renderer.captureExportBitmap(preparedWebView)
-                bitmap = capturedBitmap
-                withContext(Dispatchers.Default) {
-                    environment.saveImageToMediaStore(
-                        displayName = buildArticleExportFileName(
-                            content = requireExportSourceContent(),
-                            extension = "jpg",
-                        ),
-                        bitmap = capturedBitmap,
-                    )
-                }
-                withContext(Dispatchers.Main) {
-                    userMessages.showLongMessage(successMessage)
+                completeExport(result, onComplete)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.e("ArticleViewModel", "Image export failed", e)
+            withContext(Dispatchers.Main) {
+                userMessages.showShortMessage(
+                    if (includeComments) DomainStrings.imageCommentsExportFailed(e.message.orEmpty()) else DomainStrings.imageExportFailed(e.message.orEmpty()),
+                )
+                onComplete(false)
+            }
+        }
+    }
+
+    private suspend fun ensureExportPermission(
+        environment: ArticleExportEnvironment,
+        permissionMessage: String,
+        onComplete: (Boolean) -> Unit,
+    ): Boolean {
+        val permission = environment.ensureImageExportPermission()
+        if (permission == ArticleExportPermission.Granted) return true
+        withContext(Dispatchers.Main) {
+            if (permission == ArticleExportPermission.RequestStarted) {
+                onPermissionRequested()
+                userMessages.showShortMessage(permissionMessage)
+            } else {
+                userMessages.showShortMessage(DomainStrings.photosPermissionDenied)
+            }
+            onComplete(false)
+        }
+        return false
+    }
+
+    private suspend fun completeExport(result: ArticleExportResult, onComplete: (Boolean) -> Unit) {
+        withContext(Dispatchers.Main) {
+            when (result) {
+                is ArticleExportResult.Completed -> {
+                    userMessages.showLongMessage(result.completionMessage)
                     onComplete(true)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Image export failed", e)
-                val errorPrefix = if (includeComments) "带评论图片导出失败" else "图片导出失败"
-                withContext(Dispatchers.Main) {
-                    userMessages.showShortMessage("$errorPrefix: ${e.message}")
-                    onComplete(false)
-                }
-            }
-        } catch (error: Throwable) {
-            exportError = error
-            throw error
-        } finally {
-            withContext(NonCancellable) {
-                val recycleError = runCatching { bitmap?.let { renderer.recycleExportBitmap(it) } }.exceptionOrNull()
-                val destroyError = runCatching { preparedWebView?.let { renderer.destroyExportWebView(it) } }.exceptionOrNull()
-                val primary = exportError ?: recycleError ?: destroyError
-                for (error in arrayOf(recycleError, destroyError)) {
-                    if (primary != null && error != null && error !== primary && primary.suppressedExceptions.none { it === error }) {
-                        primary.addSuppressed(error)
-                    }
-                }
-                if (exportError == null && primary != null) throw primary
+                ArticleExportResult.Cancelled -> onComplete(false)
             }
         }
     }
@@ -281,16 +268,16 @@ internal class ArticleExportController(
     }
 
     private fun requireExportSourceContent(): DataHolder.Content = exportSourceContent()
-        ?: throw IllegalStateException("内容未加载完成")
+        ?: throw IllegalStateException(DomainStrings.contentNotReady)
 
     fun convertToMarkdown(): String {
         val sb = StringBuilder()
 
         sb.append("# $title\n\n")
 
-        sb.append("**作者**: $authorName\n\n")
+        sb.append(DomainStrings.markdownAuthor(authorName)).append("\n\n")
         if (authorBio.isNotEmpty()) {
-            sb.append("**简介**: $authorBio\n\n")
+            sb.append(DomainStrings.markdownBio(authorBio)).append("\n\n")
         }
 
         sb.append("---\n\n")
@@ -302,8 +289,8 @@ internal class ArticleExportController(
     fun exportToClipboard(environment: ClipboardEnvironment) {
         val markdown = convertToMarkdown()
 
-        environment.setPlainTextClipboard("Zhihu Article", markdown)
+        environment.setPlainTextClipboard(DomainStrings.articleClipboard, markdown)
 
-        userMessages.showShortMessage("文章已复制到剪贴板")
+        userMessages.showShortMessage(DomainStrings.articleCopied)
     }
 }

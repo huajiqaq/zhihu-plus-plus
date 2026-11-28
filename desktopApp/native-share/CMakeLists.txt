@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.24)
+project(ZhihuFileShare LANGUAGES CXX)
+
+find_package(JNI REQUIRED)
+
+if(WIN32)
+    add_library(ZhihuFileShare SHARED WindowsFileShare.cpp)
+    target_compile_features(ZhihuFileShare PRIVATE cxx_std_20)
+    target_compile_definitions(ZhihuFileShare PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(ZhihuFileShare PRIVATE /EHsc /permissive- /utf-8)
+    target_link_libraries(ZhihuFileShare PRIVATE windowsapp user32 ole32 JNI::AWT)
+elseif(APPLE)
+    enable_language(OBJCXX)
+    add_library(ZhihuFileShare SHARED MacosFileShare.mm)
+    target_compile_features(ZhihuFileShare PRIVATE cxx_std_17)
+    target_compile_options(ZhihuFileShare PRIVATE -fobjc-arc)
+    target_link_libraries(ZhihuFileShare PRIVATE "-framework AppKit")
+else()
+    message(FATAL_ERROR "No system file-sharing API is implemented for this desktop platform")
+endif()
+
+target_include_directories(ZhihuFileShare PRIVATE ${JNI_INCLUDE_DIRS})
+install(TARGETS ZhihuFileShare RUNTIME DESTINATION native-share LIBRARY DESTINATION native-share)

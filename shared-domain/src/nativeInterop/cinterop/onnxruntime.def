@@ -1,0 +1,4 @@
+language = C
+headers = zhihu_ort.h
+headerFilter = zhihu_ort.h onnxruntime_c_api.h
+package = com.github.zly2006.zhihu.nlp.ort

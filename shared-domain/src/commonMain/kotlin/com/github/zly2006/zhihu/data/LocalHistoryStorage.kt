@@ -21,26 +21,28 @@ import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.WebPage
 import com.github.zly2006.zhihu.navigation.withReadingQueueSource
+import com.github.zly2006.zhihu.platform.AppTextFile
+import com.github.zly2006.zhihu.platform.DiskTextFile
 import com.github.zly2006.zhihu.platform.SettingsStore
-import com.github.zly2006.zhihu.platform.appPrivateDirectory
+import com.github.zly2006.zhihu.platform.appPrivateTextFile
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.json.Json
 
 const val HISTORY_RECORDING_ENABLED_KEY = "historyRecordingEnabled"
 
 /** 每个文件共享一个同步所有者；读改写串行，损坏数据不能被空快照覆盖。 */
-class LocalHistoryStorage(
-    private val file: Path = Path(appPrivateDirectory(), "history.json"),
-    private val settings: SettingsStore = platformSettingsStore(),
+class LocalHistoryStorage private constructor(
+    file: AppTextFile,
+    private val settings: SettingsStore,
 ) {
-    private val owner = fileOwnersLock.withLock { fileOwners.getOrPut(file.toString()) { FileOwner(file) } }
+    constructor(settings: SettingsStore = platformSettingsStore()) : this(appPrivateTextFile("history.json"), settings)
+
+    constructor(file: Path, settings: SettingsStore = platformSettingsStore()) : this(DiskTextFile(file), settings)
+
+    private val owner = fileOwnersLock.withLock { fileOwners.getOrPut(file.key) { FileOwner(file) } }
 
     val recordingEnabled: Boolean
         get() = settings.getBoolean(HISTORY_RECORDING_ENABLED_KEY, true)
@@ -89,18 +91,12 @@ class LocalHistoryStorage(
     }
 
     private class FileOwner(
-        private val file: Path,
+        private val file: AppTextFile,
     ) {
         val lock = reentrantLock()
 
         fun read(): LinkedHashMap<NavDestination, NavDestination> {
-            val entries = if (SystemFileSystem.exists(file)) {
-                SystemFileSystem.source(file).buffered().use { source ->
-                    Json.decodeFromString<Array<NavDestination>>(source.readString())
-                }
-            } else {
-                emptyArray()
-            }
+            val entries = file.read()?.let { Json.decodeFromString<Array<NavDestination>>(it) }.orEmpty()
             return linkedMapOf<NavDestination, NavDestination>().apply {
                 for (entry in entries) {
                     val destination = entry.withReadingQueueSource(null)
@@ -112,17 +108,7 @@ class LocalHistoryStorage(
 
         fun update(change: LinkedHashMap<NavDestination, NavDestination>.() -> Unit) = lock.withLock {
             val entries = read().apply(change)
-            val directory = checkNotNull(file.parent)
-            SystemFileSystem.createDirectories(directory)
-            val temporary = Path(directory, file.name + ".tmp")
-            try {
-                SystemFileSystem.sink(temporary).buffered().use { sink ->
-                    sink.writeString(Json.encodeToString(entries.values.toTypedArray()))
-                }
-                SystemFileSystem.atomicMove(temporary, file)
-            } finally {
-                SystemFileSystem.delete(temporary, mustExist = false)
-            }
+            file.write(Json.encodeToString(entries.values.toTypedArray()))
         }
     }
 }

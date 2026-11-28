@@ -21,9 +21,13 @@ package com.github.zly2006.zhihu.viewmodel
 sealed interface LoadState<out T> {
     data object Loading : LoadState<Nothing>
 
-    data class Failed(
-        val message: String,
-    ) : LoadState<Nothing>
+    class Failed(
+        private val text: () -> String,
+    ) : LoadState<Nothing> {
+        constructor(message: String) : this({ message })
+
+        val message: String get() = text()
+    }
 
     data class Ready<T>(
         val value: T,

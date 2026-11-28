@@ -1,0 +1,4 @@
+interface:
+  display_name: "界面可用性评审"
+  short_description: "检查页面是否易懂、常用操作是否顺手"
+  default_prompt: "使用 ui-usability-review 评审指定页面的可用性，结合未关闭意见，报告首次使用和日常操作中有证据的问题、建议与未验范围。"

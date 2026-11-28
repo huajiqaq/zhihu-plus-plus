@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2024-2026, zly2006. SPDX-License-Identifier: AGPL-3.0-only -->
+<Include xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!-- 仅随 per-user MSI 安装/卸载；运行应用不会自行登记 COM 或抢占其他通知身份。 -->
+  <Fragment>
+    <DirectoryRef Id="TARGETDIR">
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ZhihuNotificationsProgramMenu" Name="Zhihu++" />
+      </Directory>
+    </DirectoryRef>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="ZhihuPortableNotificationCom" Guid="{52D1D753-2C87-45DB-B4E9-6D6AB5809EB1}">
+        <RegistryKey Root="HKCU" Key="Software\Classes\CLSID\{B7243AF7-29EA-49D5-8AF2-66AA06C78D55}\LocalServer32" ForceDeleteOnUninstall="yes">
+          <RegistryValue Type="string" Value="&quot;[INSTALLDIR]app\resources\native-notifications\ZhihuNotificationActivator.exe&quot;" KeyPath="yes" />
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\AppUserModelId\com.github.zly2006.zhihu.desktop" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="DisplayName" Type="string" Value="Zhihu++" />
+          <RegistryValue Name="IconUri" Type="string" Value="[INSTALLDIR]Zhihu++.exe" />
+          <RegistryValue Name="CustomActivator" Type="string" Value="{B7243AF7-29EA-49D5-8AF2-66AA06C78D55}" />
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="ZhihuNotificationsProgramMenu">
+      <Component Id="ZhihuPortableNotificationShortcut" Guid="{5B9F6FB6-F662-4B0C-8429-88AD161D1AC7}">
+        <Shortcut Id="ZhihuPortableNotificationStartMenu" Name="Zhihu++" Description="Free and ad-free Zhihu client"
+                  Target="[INSTALLDIR]Zhihu++.exe" WorkingDirectory="INSTALLDIR">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="com.github.zly2006.zhihu.desktop" />
+          <ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID" Value="{B7243AF7-29EA-49D5-8AF2-66AA06C78D55}" />
+        </Shortcut>
+        <RegistryValue Root="HKCU" Key="Software\ZhihuPlusPlus\Notifications" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="ZhihuPortableNotificationMenuCleanup" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+    <ComponentGroup Id="ZhihuPortableNotificationRegistration">
+      <ComponentRef Id="ZhihuPortableNotificationCom" />
+      <ComponentRef Id="ZhihuPortableNotificationShortcut" />
+    </ComponentGroup>
+  </Fragment>
+</Include>

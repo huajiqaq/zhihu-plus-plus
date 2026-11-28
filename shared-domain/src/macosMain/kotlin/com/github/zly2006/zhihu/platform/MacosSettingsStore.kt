@@ -19,6 +19,7 @@
 
 package com.github.zly2006.zhihu.platform
 
+import platform.Foundation.NSDataWritingAtomic
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSRecursiveLock
 import platform.Foundation.NSString
@@ -26,12 +27,11 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
+import platform.Foundation.writeToURL
 
 /** 同一物理文件共用设置实例，避免独立消费者用过期快照相互覆盖。 */
 private val macosSettingsStores = mutableMapOf<String, SettingsStore>()
 private val macosSettingsStoreLock = NSRecursiveLock()
-
-private const val STRING_SET_SEPARATOR = '\u001F'
 
 internal actual fun nativeSettingsStore(relativePath: String): SettingsStore {
     val filePath = NSURL
@@ -50,59 +50,23 @@ internal actual fun nativeSettingsStore(relativePath: String): SettingsStore {
 private fun createMacosSettingsStore(filePath: String): SettingsStore {
     val propertiesFile = MacosPropertiesFile(filePath)
 
-    return object : SettingsStore {
+    return object : SettingsStore() {
         override fun observeKeyChanges(onChanged: (String) -> Unit): AutoCloseable = propertiesFile.observe(onChanged)
 
-        override fun getBoolean(key: String, defaultValue: Boolean) = propertiesFile[key]?.toBooleanStrictOrNull() ?: defaultValue
+        override fun readValue(key: String): SettingValue? = propertiesFile[key]
 
-        override fun putBoolean(key: String, value: Boolean) {
-            propertiesFile[key] = value.toString()
-        }
+        override fun commit(updates: Map<String, SettingValue?>) = propertiesFile.commit(updates)
 
-        override fun getString(key: String, defaultValue: String) = propertiesFile[key] ?: defaultValue
-
-        override fun putString(key: String, value: String) {
-            propertiesFile[key] = value
-        }
-
-        override fun getStringOrNull(key: String) = propertiesFile[key]
-
-        override fun putStringSet(key: String, value: Set<String>) {
-            propertiesFile[key] = value.joinToString(STRING_SET_SEPARATOR.toString())
-        }
-
-        override fun getStringSet(key: String, defaultValue: Set<String>) = propertiesFile[key]?.split(STRING_SET_SEPARATOR)?.filter(String::isNotEmpty)?.toSet() ?: defaultValue
-
-        override fun getInt(key: String, defaultValue: Int) = propertiesFile[key]?.toIntOrNull() ?: defaultValue
-
-        override fun putInt(key: String, value: Int) {
-            propertiesFile[key] = value.toString()
-        }
-
-        override fun getLong(key: String, defaultValue: Long) = propertiesFile[key]?.toLongOrNull() ?: defaultValue
-
-        override fun putLong(key: String, value: Long) {
-            propertiesFile[key] = value.toString()
-        }
-
-        override fun getFloat(key: String, defaultValue: Float) = propertiesFile[key]?.toFloatOrNull() ?: defaultValue
-
-        override fun putFloat(key: String, value: Float) {
-            propertiesFile[key] = value.toString()
-        }
-
-        override fun remove(key: String) = propertiesFile.remove(key)
+        override fun readEntries(): Map<String, SettingValue> = propertiesFile.entries()
 
         override fun removeByPrefix(prefix: String) = propertiesFile.removeByPrefix(prefix)
-
-        override fun allEntries(): Map<String, Any> = propertiesFile.entries()
     }
 }
 
 private class MacosPropertiesFile(
     private val filePath: String,
 ) {
-    private var values = linkedMapOf<String, String>()
+    private var values: Map<String, SettingValue> = emptyMap()
     private val listeners = mutableListOf<(String) -> Unit>()
     private val lock = NSRecursiveLock()
 
@@ -123,27 +87,21 @@ private class MacosPropertiesFile(
     init {
         val fileManager = NSFileManager.defaultManager
         if (fileManager.fileExistsAtPath(filePath)) {
-            val data = fileManager.contentsAtPath(filePath)
-            val text = data?.let { NSString.create(data = it, encoding = NSUTF8StringEncoding)?.toString() }
-            if (text != null) {
-                read(text)
-            }
+            val data = checkNotNull(fileManager.contentsAtPath(filePath)) { "无法读取 macOS 设置" }
+            val text = checkNotNull(NSString.create(data = data, encoding = NSUTF8StringEncoding)?.toString()) { "无法解码 macOS 设置" }
+            values = SettingsFileCodec.decode(text) ?: readLegacyProperties(text)
         }
     }
 
-    operator fun get(key: String): String? = locked { values[key] }
+    operator fun get(key: String): SettingValue? = locked { values[key] }
 
-    fun entries(): Map<String, String> = locked { values.toMap() }
-
-    operator fun set(key: String, value: String) = commit(mapOf(key to value))
-
-    fun remove(key: String) = commit(mapOf(key to null))
+    fun entries(): Map<String, SettingValue> = locked { values.toMap() }
 
     fun removeByPrefix(prefix: String) = locked {
         commit(values.keys.filter { it.startsWith(prefix) }.associateWith { null })
     }
 
-    private fun commit(updates: Map<String, String?>) = locked {
+    fun commit(updates: Map<String, SettingValue?>) = locked {
         val changed = updates.filter { (key, value) -> values[key] != value }
         if (changed.isEmpty()) return@locked
         val next = LinkedHashMap(values).apply {
@@ -154,7 +112,8 @@ private class MacosPropertiesFile(
         changed.keys.forEach { key -> listeners.toList().forEach { it(key) } }
     }
 
-    private fun read(text: String) {
+    private fun readLegacyProperties(text: String): Map<String, SettingValue> {
+        val result = linkedMapOf<String, SettingValue>()
         val logicalLines = mutableListOf<String>()
         var currentLine = ""
         text.lineSequence().forEach { physicalLine ->
@@ -194,11 +153,13 @@ private class MacosPropertiesFile(
                 valueStart += 1
             }
             while (valueStart < trimmedStart.length && trimmedStart[valueStart].isWhitespace()) valueStart += 1
-            values[unescape(rawKey)] = unescape(trimmedStart.substring(valueStart))
+            val key = unescape(rawKey)
+            result[key] = decodeLegacySetting(key, unescape(trimmedStart.substring(valueStart)))
         }
+        return result
     }
 
-    private fun save(next: Map<String, String>) {
+    private fun save(next: Map<String, SettingValue>) {
         val parentDirectory = filePath.substringBeforeLast('/')
         val fileManager = NSFileManager.defaultManager
         if (!fileManager.fileExistsAtPath(parentDirectory)) {
@@ -211,19 +172,11 @@ private class MacosPropertiesFile(
                 ),
             ) { "无法创建 macOS 设置目录" }
         }
-        val text = buildString {
-            append("#Zhihu++ desktop settings\n")
-            next.forEach { (key, value) ->
-                append(escape(key))
-                append('=')
-                append(escape(value))
-                append('\n')
-            }
-        }
+        val text = SettingsFileCodec.encode(next)
         val data = checkNotNull(NSString.create(string = text).dataUsingEncoding(NSUTF8StringEncoding)) {
             "无法编码 macOS 设置"
         }
-        check(fileManager.createFileAtPath(filePath, contents = data, attributes = null)) {
+        check(data.writeToURL(NSURL.fileURLWithPath(filePath), NSDataWritingAtomic, null)) {
             "无法保存 macOS 设置"
         }
     }
@@ -259,22 +212,4 @@ private class MacosPropertiesFile(
         }
     }
 
-    private fun escape(value: String): String = buildString {
-        value.forEachIndexed { index, character ->
-            when {
-                character == ' ' && index == 0 -> append("\\ ")
-                character == '\\' -> append("\\\\")
-                character == '\t' -> append("\\t")
-                character == '\n' -> append("\\n")
-                character == '\r' -> append("\\r")
-                character == '\u000C' -> append("\\f")
-                character == '=' || character == ':' || character == '#' || character == '!' -> {
-                    append('\\')
-                    append(character)
-                }
-                character.code !in 0x20..0x7E -> append("\\u${character.code.toString(16).uppercase().padStart(4, '0')}")
-                else -> append(character)
-            }
-        }
-    }
 }

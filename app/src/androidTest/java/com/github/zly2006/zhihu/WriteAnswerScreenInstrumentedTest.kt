@@ -29,7 +29,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -47,6 +47,8 @@ import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_CONTENT_TAG
 import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_PREVIEW_TAG
 import com.github.zly2006.zhihu.ui.WRITE_ARTICLE_TITLE_TAG
 import com.github.zly2006.zhihu.ui.WriteArticleScreen
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertTrue
@@ -54,8 +56,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class WriteAnswerScreenInstrumentedTest {

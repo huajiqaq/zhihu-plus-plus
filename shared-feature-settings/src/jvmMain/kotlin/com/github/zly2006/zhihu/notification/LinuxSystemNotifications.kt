@@ -17,6 +17,11 @@
 
 package com.github.zly2006.zhihu.notification
 
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
+import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.freedesktop.dbus.Marshalling
@@ -28,10 +33,6 @@ import org.freedesktop.dbus.interfaces.DBusSigHandler
 import org.freedesktop.dbus.messages.DBusSignal
 import org.freedesktop.dbus.types.UInt32
 import org.freedesktop.dbus.types.Variant
-import java.nio.file.Path
-import java.util.UUID
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** freedesktop 的公开协议模型；方法与嵌套信号名称由 D-Bus 反射使用，不可混淆。 */
 @Suppress("FunctionName")
@@ -99,11 +100,11 @@ internal class LinuxSystemNotifications private constructor(
 
     override val availabilityDescription: String
         get() = if (!serviceAvailable) {
-            "本次连接的桌面通知服务已不可用，请检查桌面会话后重新启动应用；退出后不能从通知启动。"
+            NotificationsStrings.linuxServiceLost
         } else if (withdrawalFailed) {
-            "部分通知未能撤回，请在桌面通知中心清理；当前仅支持应用运行期间的点击。"
+            NotificationsStrings.linuxWithdrawFailed
         } else {
-            "仅应用运行期间检查和接收点击；退出后不能从通知启动。桌面服务可接收请求，但是否显示由系统通知设置和勿扰模式决定。"
+            NotificationsStrings.linuxAvailability
         }
 
     private fun listen() {
@@ -163,7 +164,7 @@ internal class LinuxSystemNotifications private constructor(
     }
 
     override suspend fun requestAuthorization() {
-        check(authorization().appNotificationsEnabled) { "桌面通知服务不可用，请检查桌面会话并重新启动应用" }
+        check(authorization().appNotificationsEnabled) { NotificationsStrings.linuxPermissionHint }
     }
 
     override fun publish(accountId: String, event: SystemNotificationEvent, receipt: String, onComplete: (Throwable?) -> Unit) {
@@ -174,23 +175,23 @@ internal class LinuxSystemNotifications private constructor(
         }
         val delivery = Delivery(accountId, event.key, receipt)
         try {
-            check(claimed.get() && !closed.get()) { "通知宿主已关闭" }
-            synchronized(monitor) { check(deliveries.putIfAbsent(receipt, delivery) == null) { "通知回执已存在" } }
+            check(claimed.get() && !closed.get()) { NotificationsStrings.hostClosed }
+            synchronized(monitor) { check(deliveries.putIfAbsent(receipt, delivery) == null) { NotificationsStrings.receiptExists } }
             executor.execute {
                 try {
-                    check(synchronized(monitor) { !closed.get() && deliveries[receipt] === delivery }) { "通知已撤回" }
-                    check(connection.getDBusOwnerName(SERVICE_NAME) == serviceOwner) { "桌面通知服务已更换，请重新启动应用" }
+                    check(synchronized(monitor) { !closed.get() && deliveries[receipt] === delivery }) { NotificationsStrings.withdrawn }
+                    check(connection.getDBusOwnerName(SERVICE_NAME) == serviceOwner) { NotificationsStrings.linuxServiceChanged }
                     val id = service.Notify(
                         appName = "Zhihu++",
                         replacesId = UInt32(0),
                         appIcon = "",
-                        summary = "知乎++：${event.type.displayName}",
-                        body = "有新的消息，点击查看",
-                        actions = listOf(DEFAULT_ACTION, "查看"),
+                        summary = NotificationsStrings.linuxNotificationTitle(event.type.displayName),
+                        body = NotificationsStrings.newMessage,
+                        actions = listOf(DEFAULT_ACTION, NotificationsStrings.view),
                         hints = mapOf("transient" to Variant(true)),
                         expireTimeout = -1,
                     )
-                    check(id.toLong() != 0L) { "桌面通知服务未接受通知" }
+                    check(id.toLong() != 0L) { NotificationsStrings.linuxDeliveryRejected }
                     synchronized(monitor) { delivery.id = id }
                     complete(null)
                 } catch (error: Exception) {
@@ -217,7 +218,7 @@ internal class LinuxSystemNotifications private constructor(
         }
     }
 
-    override fun openSystemSettings(): Nothing = throw UnsupportedOperationException("请在当前桌面环境的系统设置中打开通知设置；Linux 没有统一的通知设置入口")
+    override fun openSystemSettings(): Nothing = throw SystemNotificationUnavailableException { NotificationsStrings.linuxSettingsHint }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -243,20 +244,20 @@ internal class LinuxSystemNotifications private constructor(
         fun connect(): LinuxSystemNotifications {
             /** 正式包自检反射签名；R8/ProGuard 丢失泛型时在接通能力前失败，不能发送畸形协议。 */
             val notify = FreedesktopNotifications::class.java.methods.single { it.name == "Notify" }
-            check(Marshalling.getDBusType(notify.genericParameterTypes) == "susssasa{sv}i") { "D-Bus 通知协议签名不完整" }
-            val address = System.getenv("DBUS_SESSION_BUS_ADDRESS") ?: error("当前桌面没有提供 D-Bus 会话地址")
-            require(address.length <= 4096 && !address.contains(';')) { "仅支持单个本机 Unix D-Bus 会话地址" }
-            require(address.startsWith("unix:path=")) { "当前 D-Bus 地址不是受支持的 Unix 文件套接字" }
+            check(Marshalling.getDBusType(notify.genericParameterTypes) == "susssasa{sv}i") { NotificationsStrings.dbusSignatureInvalid }
+            val address = System.getenv("DBUS_SESSION_BUS_ADDRESS") ?: error(NotificationsStrings.dbusSessionMissing)
+            require(address.length <= 4096 && !address.contains(';')) { NotificationsStrings.dbusSingleUnixOnly }
+            require(address.startsWith("unix:path=")) { NotificationsStrings.dbusSocketUnsupported }
             val options = address.removePrefix("unix:").split(',')
-            require(options.size in 1..2 && options.drop(1).all { it.matches(Regex("guid=[0-9a-fA-F]{32}")) }) { "不支持的 D-Bus 地址参数" }
+            require(options.size in 1..2 && options.drop(1).all { it.matches(Regex("guid=[0-9a-fA-F]{32}")) }) { NotificationsStrings.dbusParametersUnsupported }
             val path = options.first().removePrefix("path=")
-            require(path.isNotBlank() && Path.of(path).isAbsolute && path.none { it == '%' || it == '\u0000' }) { "D-Bus 套接字路径无效" }
+            require(path.isNotBlank() && Path.of(path).isAbsolute && path.none { it == '%' || it == '\u0000' }) { NotificationsStrings.dbusSocketInvalid }
             val connection = DBusConnectionBuilder.forAddress(address).withShared(false).build()
             try {
                 val owner = connection.getDBusOwnerName(SERVICE_NAME)
-                check(!owner.isNullOrBlank() && owner.startsWith(':')) { "没有运行中的桌面通知服务" }
+                check(!owner.isNullOrBlank() && owner.startsWith(':')) { NotificationsStrings.dbusServiceMissing }
                 val service = connection.getRemoteObject(owner, OBJECT_PATH, FreedesktopNotifications::class.java, false)
-                check("actions" in service.GetCapabilities()) { "桌面通知服务不支持点击操作" }
+                check("actions" in service.GetCapabilities()) { NotificationsStrings.dbusActionsUnsupported }
                 return LinuxSystemNotifications(connection, service, owner).also { it.listen() }
             } catch (error: Exception) {
                 connection.close()

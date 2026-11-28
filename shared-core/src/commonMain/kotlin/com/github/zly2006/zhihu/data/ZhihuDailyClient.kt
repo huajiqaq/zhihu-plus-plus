@@ -22,12 +22,13 @@ import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.resolveContent
-import com.github.zly2006.zhihu.util.jsonObject
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
 import io.ktor.util.network.UnresolvedAddressException
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 private const val DAILY_PRIMARY_API_BASE = "https://news-at.zhihu.com/api/4/stories"
@@ -49,7 +50,7 @@ suspend fun HttpClient.fetchDailyStoriesBefore(date: String): DailyStoriesRespon
  * 的 originUrl 指向回答，而 view-more 只指向所属问题；正文中的普通引用不算来源。
  */
 suspend fun HttpClient.fetchDailyStoryDestination(story: DailyStory): NavDestination? {
-    val response = get("https://daily.zhihu.com/api/7/story/${story.id}") { expectSuccess = true }.jsonObject()
+    val response = get("https://daily.zhihu.com/api/7/story/${story.id}") { expectSuccess = true }.body<JsonObject>()
     val body = response["body"]?.jsonPrimitive?.content ?: return null
     val doc = Ksoup.parse(body)
     var question: Question? = null
@@ -65,13 +66,13 @@ suspend fun HttpClient.fetchDailyStoryDestination(story: DailyStory): NavDestina
 
 private suspend fun HttpClient.fetchDailyStories(path: String): DailyStoriesResponse = ZhihuJson.decodeJson(
     try {
-        get("$DAILY_PRIMARY_API_BASE$path").jsonObject()
+        get("$DAILY_PRIMARY_API_BASE$path").body<JsonObject>()
     } catch (e: Exception) {
         if (e is CancellationException || !e.isHostResolutionFailure()) {
             throw e
         }
         // 仅域名解析失败可切换备用域名，不能扩展为任意网络错误的重试策略。
-        get("$DAILY_FALLBACK_API_BASE$path").jsonObject()
+        get("$DAILY_FALLBACK_API_BASE$path").body<JsonObject>()
     },
 )
 

@@ -23,13 +23,13 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
@@ -39,17 +39,12 @@ import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuRequestProfile
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-import com.github.zly2006.zhihu.data.AIGC_MARKING_ENABLED_PREFERENCE_KEY
-import com.github.zly2006.zhihu.data.AigcVoteVoter
 import com.github.zly2006.zhihu.data.DataHolder
-import com.github.zly2006.zhihu.data.Person
-import com.github.zly2006.zhihu.data.ZhihuJson
-import com.github.zly2006.zhihu.data.ZhihuJson.json
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
-import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 import com.github.zly2006.zhihu.util.HttpStatusException
 import com.github.zly2006.zhihu.util.ResolvedCollectionHtmlExportItem
@@ -62,42 +57,26 @@ import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpMethod
-import io.ktor.serialization.kotlinx.json.json
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.put
-import java.io.File
-import java.util.UUID
 import com.github.zly2006.zhihu.navigation.Article as ArticleDestination
 
 interface AndroidContextPaginationEnvironment : PaginationEnvironment {
     val context: Context
 }
 
-private const val AIGC_VOTE_CLIENT_ID_KEY = "aigcVoteClientId"
-internal const val AIGC_VOTE_SERVER_URL_KEY = "aigcVoteServerUrl"
-private const val DEFAULT_ANDROID_AIGC_VOTE_SERVER_URL = "https://aigc-vote.ai.fintechedu.cn"
-
 open class SharedAndroidPaginationEnvironment(
     override val context: Context,
     override val allowGuestAccess: Boolean,
-    private val accountStore: ZhihuAccountStore = androidZhihuAccountStore(context),
+    private val accountStore: ZhihuAccountStore,
 ) : AndroidContextPaginationEnvironment,
-    CollectionContentEnvironment,
-    AutoCloseable {
-    private val settingsStore by lazy { androidSettingsStore(context) }
+    CollectionContentEnvironment {
     private val userMessageSink by lazy { androidUserMessageSink(context) }
-    private val aigcVoteClient = lazy {
-        HttpClient {
-            install(ContentNegotiation) {
-                json(json)
-            }
-        }
-    }
 
     override val accountClient: ZhihuAccountClient
         get() = accountStore.client
@@ -122,34 +101,6 @@ open class SharedAndroidPaginationEnvironment(
         return owner.request(url, method, profile, useCookies, block)
     }
 
-    override fun close() {
-        if (aigcVoteClient.isInitialized()) aigcVoteClient.value.close()
-    }
-
-    override fun isAigcVoteEnabled(): Boolean =
-        settingsStore.getBoolean(AIGC_MARKING_ENABLED_PREFERENCE_KEY, false)
-
-    override fun aigcVoteHttpClient(): HttpClient = aigcVoteClient.value
-
-    override fun aigcVoteBaseUrl(): String = aigcVoteServerUrl()
-
-    override fun aigcVoteClientId(): String = aigcVoteClientIdValue()
-
-    override fun aigcVoteVoter(): AigcVoteVoter? =
-        accountStore.client
-            .load()
-            .self
-            ?.let { raw ->
-                runCatching { ZhihuJson.decodeJson<Person>(raw) }.getOrNull()
-            }?.let { self ->
-                AigcVoteVoter(
-                    id = self.id,
-                    name = self.name,
-                    urlToken = self.urlToken,
-                    avatarUrl = self.avatarUrl,
-                )
-            }
-
     override suspend fun <T> withAuthenticatedClient(
         block: suspend (client: HttpClient, cookies: Map<String, String>) -> T,
     ): T = accountStore.client.withAuthenticatedClient(block)
@@ -159,32 +110,18 @@ open class SharedAndroidPaginationEnvironment(
         return session.cookies.takeIf { session.login }.orEmpty()
     }
 
-    private fun aigcVoteServerUrl(): String =
-        settingsStore
-            .getString(AIGC_VOTE_SERVER_URL_KEY, DEFAULT_ANDROID_AIGC_VOTE_SERVER_URL)
-            .ifBlank { DEFAULT_ANDROID_AIGC_VOTE_SERVER_URL }
-
-    private fun aigcVoteClientIdValue(): String {
-        settingsStore.getStringOrNull(AIGC_VOTE_CLIENT_ID_KEY)?.takeIf { it.isNotBlank() }?.let {
-            return it
-        }
-        val id = UUID.randomUUID().toString()
-        settingsStore.putString(AIGC_VOTE_CLIENT_ID_KEY, id)
-        return id
-    }
-
     override suspend fun handleFetchFailure(
         tag: String?,
         error: Exception,
     ) {
         Log.e(tag, "Failed to fetch feeds")
         if (error is com.github.zly2006.zhihu.account.ZhihuLoginRequiredException || (error is HttpStatusException && error.status.value in setOf(401, 403))) return
-        userMessageSink.showShortMessage("加载失败: ${zhihuFetchFailureMessage(error)}")
+        userMessageSink.showShortMessage(DomainStrings.loadFailed(zhihuFetchFailureMessage(error)))
     }
 
     override suspend fun handleMobileHomeFeedFailure(error: Exception) {
         Log.e("AndroidHomeFeedViewModel", "Failed to fetch feeds", error)
-        userMessageSink.showShortMessage("安卓端推荐加载失败: ${error.message}")
+        userMessageSink.showShortMessage(DomainStrings.mobileFeedFailed(error.message.orEmpty()))
     }
 
     override suspend fun isUserBlocked(userId: String): Boolean =
@@ -197,15 +134,11 @@ open class SharedAndroidPaginationEnvironment(
             database.blockedQuestionAuthorDao().isUserBlocked(userId)
         }
 
-    override fun blockedUserIds(): Set<String> =
-        kotlinx.coroutines.runBlocking {
-            val database = getContentFilterDatabase(context)
-            database
-                .blockedUserDao()
-                .getAllUsers()
-                .map { it.userId }
-                .toSet()
-        }
+    override suspend fun blockedUserIds(): Set<String> = getContentFilterDatabase(context)
+        .blockedUserDao()
+        .getAllUsers()
+        .map { it.userId }
+        .toSet()
 
     override suspend fun addBlockedUser(
         userId: String,
@@ -268,9 +201,9 @@ open class SharedAndroidPaginationEnvironment(
         withContext(Dispatchers.Main) {
             AlertDialog
                 .Builder(context)
-                .setTitle("数据库错误")
-                .setMessage("本地推荐系统的数据库未正确初始化。请尝试重启应用或清除应用数据。")
-                .setPositiveButton("确定") { dialog, _ -> dialog.dismiss() }
+                .setTitle(DomainStrings.databaseError)
+                .setMessage(DomainStrings.localDatabaseUnavailable)
+                .setPositiveButton(DomainStrings.confirm) { dialog, _ -> dialog.dismiss() }
                 .show()
         }
     }
@@ -282,7 +215,7 @@ open class SharedAndroidPaginationEnvironment(
         onProgress: suspend (CollectionHtmlExportProgress) -> Unit,
     ): CollectionHtmlExportResult {
         val outputDir = context.getExternalFilesDir(null)
-            ?: throw IllegalStateException("外部文件目录不可用")
+            ?: throw IllegalStateException(DomainStrings.externalStorageUnavailable)
         val exportHttpClient = httpClient()
         val result = withContext(Dispatchers.IO) {
             exportCollectionItemsToZip(
@@ -327,7 +260,7 @@ open class SharedAndroidPaginationEnvironment(
 
     override suspend fun handleCollectionExportFailure(error: Exception) {
         Log.e("CollectionContentViewModel", "Failed to export collection HTML zip", error)
-        userMessageSink.showShortMessage("导出失败: ${error.message}")
+        userMessageSink.showShortMessage(DomainStrings.exportErrorDetail(error.message.orEmpty()))
     }
 
     private suspend fun resolveCollectionItemForHtmlExport(
@@ -337,7 +270,7 @@ open class SharedAndroidPaginationEnvironment(
     ): ResolvedCollectionHtmlExportItem? {
         val navDestination = item.content.navDestination as? ArticleDestination ?: return null
         val content = getOrFetchContentDetail(navDestination)
-            ?: throw IllegalStateException("无法加载「${item.content.title}」详情")
+            ?: throw IllegalStateException(DomainStrings.itemDetailError(item.content.title))
         if (content !is DataHolder.Answer && content !is DataHolder.Article) {
             return null
         }
@@ -379,12 +312,12 @@ open class SharedAndroidPaginationEnvironment(
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                ?: throw IllegalStateException("无法创建下载文件")
+                ?: throw IllegalStateException(DomainStrings.cannotCreateDownloadFile)
 
             return try {
                 resolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
                     writer.write(htmlContent)
-                } ?: throw IllegalStateException("无法打开下载文件")
+                } ?: throw IllegalStateException(DomainStrings.cannotOpenDownloadFile)
 
                 contentValues.clear()
                 contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
@@ -402,11 +335,19 @@ open class SharedAndroidPaginationEnvironment(
             "Zhihu++",
         )
         if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
-            throw IllegalStateException("无法创建下载目录")
+            throw IllegalStateException(DomainStrings.cannotCreateDownloadDirectory)
         }
         val file = File(downloadsDir, displayName)
         file.writeText(htmlContent)
         return file.absolutePath
+    }
+
+    override suspend fun exportPdf(content: DataHolder.Content, includeAppAttribution: Boolean): ArticleExportResult {
+        val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext?.takeUnless { base -> base === it } }
+            .filterIsInstance<Activity>()
+            .firstOrNull()
+            ?: error(DomainStrings.exportHostUnavailable)
+        return exportAndroidArticlePdf(activity, content, includeAppAttribution, httpClient(), AndroidArticleExportRenderer(activity, accountStore))
     }
 
     override fun articleImageExportRenderer(): ArticleImageExportRenderer =
@@ -447,15 +388,13 @@ class SharedAndroidNotificationEnvironment(
     NotificationEnvironment
 
 fun PaginationViewModel<*>.paginationEnvironment(context: Context): AndroidContextPaginationEnvironment =
-    SharedAndroidPaginationEnvironment(context, allowGuestAccess)
+    SharedAndroidPaginationEnvironment(context, allowGuestAccess, androidZhihuAccountStore(context))
 
 @Composable
 actual fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationEnvironment {
     val context = LocalContext.current
     val store = rememberZhihuAccountStore()
-    val environment = remember(context, allowGuestAccess, store) { SharedAndroidPaginationEnvironment(context, allowGuestAccess, store) }
-    DisposableEffect(environment) { onDispose(environment::close) }
-    return environment
+    return remember(context, allowGuestAccess, store) { SharedAndroidPaginationEnvironment(context, allowGuestAccess, store) }
 }
 
 fun PaginationViewModel<*>.refresh(context: Context) {

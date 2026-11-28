@@ -29,7 +29,7 @@ private var contentFilterDatabase: ContentFilterDatabase? = null
 fun getContentFilterDatabase(context: Context): ContentFilterDatabase =
     contentFilterDatabase ?: synchronized(ContentFilterDatabase::class) {
         contentFilterDatabase ?: buildContentFilterDatabase(
-            Room.databaseBuilder<ContentFilterDatabase>(
+            Room.databaseBuilder<RoomContentFilterDatabase>(
                 context.applicationContext,
                 CONTENT_FILTER_DATABASE_NAME,
             ),

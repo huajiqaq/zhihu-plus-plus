@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Dp
 import com.github.zly2006.zhihu.editor.PinTopicSuggestion
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.markdownToMdAst
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -71,13 +72,12 @@ internal fun typedPinTopicStart(before: Pair<String, TextRange>, after: Pair<Str
     while (probe in old) probe += "x"
 
     fun blocked(node: MarkdownNode, inLink: Boolean = false): Boolean = when (node) {
-        is FencedCodeBlock, is IndentedCodeBlock, is InlineCode, is HtmlBlock -> probe in (node as LeafNode).literal
+        is FencedCodeBlock, is IndentedCodeBlock, is InlineCode, is HtmlBlock -> probe in node.literal
         is LinkReferenceDefinition -> probe in node.label || probe in node.destination || probe in node.title.orEmpty()
         is Link -> probe in node.destination || probe in node.title.orEmpty() || node.children.any { blocked(it, inLink = true) }
         is Image -> probe in node.destination || probe in node.title.orEmpty() || node.children.any { blocked(it, inLink = true) }
         is ContainerNode -> node.children.any { blocked(it, inLink) }
         is LeafNode -> inLink && probe in node.literal
-        else -> false
     }
     return start.takeUnless { markdownToMdAst(new.replaceRange(start, end, probe)).children.any { blocked(it) } }
 }
@@ -112,14 +112,14 @@ internal fun WritePinTopicSuggestions(
                 AppTextField(
                     state = topicQuery,
                     inputTransformation = InputTransformation.maxLengthTrim(50),
-                    placeholder = "搜索话题",
+                    placeholder = ContentStrings.searchTopics,
                     modifier = Modifier.weight(1f).focusRequester(searchFocus),
                 )
-                AppTextButton(text = "取消", onClick = onCancel)
+                AppTextButton(text = ContentStrings.cancel, onClick = onCancel)
             }
             topicSuggestionError?.let { message ->
                 AppTextButton(
-                    text = "话题加载失败：$message，点击重试",
+                    text = ContentStrings.topicSuggestionsError(message),
                     onClick = onRetry,
                     modifier = Modifier.fillMaxWidth(),
                 )

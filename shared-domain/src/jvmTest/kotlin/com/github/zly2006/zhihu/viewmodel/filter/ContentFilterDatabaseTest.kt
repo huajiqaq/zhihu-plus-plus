@@ -17,11 +17,11 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlinx.coroutines.test.runTest
 
 class ContentFilterDatabaseTest {
     @Test
@@ -41,6 +41,8 @@ class ContentFilterDatabaseTest {
             for (type in KeywordType.entries) {
                 for (scope in KeywordScope.entries) dao.insertKeyword(BlockedKeyword(keyword = "同字词", keywordType = type.name, scope = scope.name))
             }
+            dao.insertKeyword(BlockedKeyword(keyword = "同字词", isRegex = true))
+            dao.insertKeyword(BlockedKeyword(keyword = "同字词", caseSensitive = true))
             val before = dao.getAllKeywords()
             val exported = encodeBlocklistBackup(dao, database.blockedUserDao(), database.blockedQuestionAuthorDao(), database.blockedTopicDao())
             for (type in KeywordType.entries) {
@@ -48,7 +50,11 @@ class ContentFilterDatabaseTest {
             }
             importBackup(exported)
             assertEquals(before.map { listOf(it.keyword, it.keywordType, it.scope, it.caseSensitive.toString(), it.isRegex.toString()) }.toSet(), dao.getAllKeywords().map { listOf(it.keyword, it.keywordType, it.scope, it.caseSensitive.toString(), it.isRegex.toString()) }.toSet())
-            assertEquals(8, dao.getKeywordCount())
+            assertEquals(10, dao.getKeywordCount())
+            dao.insertKeyword(BlockedKeyword(keyword = "local-only"))
+            val mergedRows = dao.getAllKeywords().toSet()
+            importBackup(exported)
+            assertEquals(mergedRows, dao.getAllKeywords().toSet())
         } finally {
             database.close()
             check(directory.toFile().deleteRecursively())

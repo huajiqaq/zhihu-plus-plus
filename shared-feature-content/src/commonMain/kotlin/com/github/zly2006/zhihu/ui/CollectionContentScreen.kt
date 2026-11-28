@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.util.fastJoinToString
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.CollectionAnswerNavigator
@@ -59,6 +60,7 @@ import com.github.zly2006.zhihu.ui.components.AppCheckbox
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppLinearProgress
 import com.github.zly2006.zhihu.ui.components.AppLinearProgressIndeterminate
@@ -78,7 +80,6 @@ import com.github.zly2006.zhihu.viewmodel.CollectionContentViewModel
 import com.github.zly2006.zhihu.viewmodel.CollectionHtmlExportDialogState
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val COLLECTION_CONTENT_TITLE_TAG = "collection_content_title"
 const val COLLECTION_CONTENT_BACK_BUTTON_TAG = "collection_content_back_button"
@@ -133,7 +134,7 @@ fun CollectionContentScreen(
                                 enabled = screenViewModel.exportDialogState?.isCompleted != false,
                                 modifier = Modifier.testTag("collection_content_more_button"),
                             ) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                                AppIcon(Icons.Filled.MoreVert, contentDescription = ContentStrings.more)
                             }
                             AppDropdownMenu(
                                 expanded = showActionsMenu,
@@ -142,7 +143,7 @@ fun CollectionContentScreen(
                             ) {
                                 AppDropdownMenuItem(
                                     modifier = Modifier.testTag("collection_content_export_action"),
-                                    text = { Text("全部导出HTML") },
+                                    text = { Text(ContentStrings.exportAllHtml) },
                                     enabled = screenViewModel.exportDialogState?.isCompleted != false,
                                     onClick = {
                                         showActionsMenu = false
@@ -226,10 +227,10 @@ internal fun CollectionContentBody(
             item(0) {
                 header()
                 val summary = listOfNotNull(
-                    viewModel.collection?.itemCount?.let { "$it 条收藏" },
-                    viewModel.collection?.likeCount?.let { "$it 个赞同" },
-                    viewModel.collection?.commentCount?.let { "$it 条评论" },
-                    viewModel.collection?.updatedTime?.let { "${formatFullDateTime(it)} 更新" },
+                    viewModel.collection?.itemCount?.let { ContentStrings.savedItemCount(it) },
+                    viewModel.collection?.likeCount?.let { ContentStrings.upvoteCount(it) },
+                    viewModel.collection?.commentCount?.let { ContentStrings.commentCount(it) },
+                    viewModel.collection?.updatedTime?.let { ContentStrings.updatedAt(formatFullDateTime(it)) },
                 ).fastJoinToString(" · ")
                 if (summary.isNotBlank()) {
                     AppCard(
@@ -288,7 +289,7 @@ private fun CollectionHtmlExportOptionsDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("导出收藏夹 HTML") },
+        title = { Text(ContentStrings.exportCollectionHtml) },
         text = {
             Row(
                 modifier = Modifier
@@ -302,10 +303,10 @@ private fun CollectionHtmlExportOptionsDialog(
                     onCheckedChange = null,
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("导出图片（更慢）")
+                    Text(ContentStrings.exportImagesSlower)
                     Spacer(modifier = Modifier.height(AppDimens.SettingTitleDescriptionSpacing))
                     Text(
-                        text = "勾选可离线查看图片，否则只保存图片链接。",
+                        text = ContentStrings.exportImagesHelp,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -314,14 +315,14 @@ private fun CollectionHtmlExportOptionsDialog(
         },
         confirmButton = {
             AppTextButton(
-                text = "开始导出",
+                text = ContentStrings.startExport,
                 onClick = { onConfirm(includeImages) },
                 modifier = Modifier.testTag("collection_content_export_confirm"),
             )
         },
         dismissButton = {
             AppTextButton(
-                text = "取消",
+                text = ContentStrings.cancel,
                 onClick = onDismiss,
                 modifier = Modifier.testTag("collection_content_export_cancel"),
             )
@@ -341,14 +342,14 @@ private fun CollectionHtmlExportDialog(
             }
         },
         title = {
-            Text(if (state.isCompleted) state.phaseText else "正在导出收藏夹")
+            Text(if (state.isCompleted) state.phaseText else ContentStrings.exportingCollection)
         },
         text = {
             androidx.compose.foundation.layout.Column {
                 Text(state.phaseText)
                 if (state.currentTitle.isNotBlank()) {
                     Spacer(modifier = Modifier.height(AppDimens.Space8))
-                    Text("当前：${state.currentTitle}")
+                    Text(ContentStrings.exportCurrentItem(state.currentTitle))
                 }
                 Spacer(modifier = Modifier.height(AppDimens.Space12))
                 if (state.isIndeterminate) {
@@ -360,12 +361,12 @@ private fun CollectionHtmlExportDialog(
                     )
                 }
                 Spacer(modifier = Modifier.height(AppDimens.Space12))
-                Text("成功 ${state.successCount} · 跳过 ${state.skippedCount} · 失败 ${state.failedCount}")
+                Text(ContentStrings.exportResults(state.successCount, state.skippedCount, state.failedCount))
                 state.resultMessage?.takeIf { it.isNotBlank() }?.let { message ->
                     Spacer(modifier = Modifier.height(AppDimens.Space12))
                     Text(message)
                 }
-                state.zipFilePath?.takeIf { it.isNotBlank() }?.let { zipFilePath ->
+                state.zipFilePath?.takeIf { state.delivery == null && it.isNotBlank() }?.let { zipFilePath ->
                     Spacer(modifier = Modifier.height(AppDimens.Space8))
                     Text(zipFilePath)
                 }
@@ -374,7 +375,7 @@ private fun CollectionHtmlExportDialog(
         confirmButton = {
             if (state.isCompleted) {
                 AppTextButton(
-                    text = "确定",
+                    text = ContentStrings.confirm,
                     onClick = onDismiss,
                 )
             }

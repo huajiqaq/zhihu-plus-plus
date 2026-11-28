@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Daily
 import com.github.zly2006.zhihu.navigation.Follow
@@ -44,6 +45,7 @@ import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.MyCollections
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.platform.platformBottomBarItemLimit
+import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
@@ -60,7 +62,8 @@ import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.rememberSetting
 
 const val NAVIGATION_SETTINGS_BACK_BUTTON_TAG = "navigation_settings_back_button"
-internal const val LANDSCAPE_LIST_DETAIL_DESCRIPTION = "平板和电脑的横屏窗口能同时容纳列表和详情时使用双栏。手机、竖屏和窄窗口保持单栏，侧边导航不受影响。"
+internal val landscapeListDetailDescription: String
+    get() = SettingsStrings.landscapeListDetailDescription
 
 val NAVIGATION_SETTINGS_KEYS: Set<String> = setOf(
     APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY,
@@ -77,15 +80,16 @@ val NAVIGATION_SETTINGS_KEYS: Set<String> = setOf(
     "showSearchHistory",
 )
 
-private val bottomBarItemLabels: Map<String, String> = linkedMapOf(
-    Home.name to "主页",
-    Follow.name to "关注",
-    HotList.name to "热榜",
-    Daily.name to "日报",
-    OnlineHistory.name to "历史",
-    MyCollections.name to "收藏夹",
-    Account.name to "账号设置",
-)
+private val bottomBarItemLabels: Map<String, String>
+    get() = linkedMapOf(
+        Home.name to SettingsStrings.home,
+        Follow.name to SettingsStrings.following,
+        HotList.name to SettingsStrings.trending,
+        Daily.name to SettingsStrings.daily,
+        OnlineHistory.name to SettingsStrings.history,
+        MyCollections.name to SettingsStrings.collections,
+        Account.name to SettingsStrings.accountSettings,
+    )
 
 /** 退出时只重新读取主壳偏好，不重建返回栈或已加载页面。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,7 +175,7 @@ fun NavigationSettingsScreen(
     }
 
     AppSettingsPage(
-        title = "导航与交互",
+        title = SettingsStrings.navigationInteraction,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = NAVIGATION_SETTINGS_BACK_BUTTON_TAG,
         highlightedKey = highlightedKey,
@@ -186,12 +190,12 @@ fun NavigationSettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                         Text(
-                            text = "底部导航栏项目",
+                            text = SettingsStrings.bottomBarItems,
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding).padding(top = AppDimens.Space8),
                         )
                         Text(
-                            text = "建议选择 3-5 项，可用箭头调整显示和滑动顺序。",
+                            text = SettingsStrings.bottomBarItemsDescription,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -206,7 +210,7 @@ fun NavigationSettingsScreen(
                                             SortableCheckItem(
                                                 key = key,
                                                 title = label,
-                                                lockedReason = if (key == Account.name && Home.name !in selectedBottomBarItemKeys) "底栏需要账号入口以保留设置出口" else null,
+                                                lockedReason = if (key == Account.name && Home.name !in selectedBottomBarItemKeys) SettingsStrings.accountEntryRequired else null,
                                             )
                                         }
                                     },
@@ -215,12 +219,12 @@ fun NavigationSettingsScreen(
                                 onMove = ::moveBottomBarItem,
                                 minChecked = 3,
                                 maxChecked = platformBottomBarItemLimit,
-                                minCheckedReason = "至少保留 3 项",
+                                minCheckedReason = SettingsStrings.minimumNavigationItems,
                                 testTagPrefix = "appearanceSettings:bottomBar",
                             )
                         }
                         AppButton(
-                            text = "完成",
+                            text = SettingsStrings.done,
                             onClick = { showBottomBarItemsSheet = false },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -232,21 +236,21 @@ fun NavigationSettingsScreen(
         },
     ) {
         SettingItemGroup(
-            title = "导航",
+            title = SettingsStrings.navigation,
             settingKey = APPEARANCE_SETTINGS_BOTTOM_BAR_SECTION_KEY,
         ) {
             val selectedBottomBarItems = selectedBottomBarItemKeys.mapNotNull { key ->
                 bottomBarItemLabels[key]?.let { label -> key to label }
             }
             SettingItemSelect(
-                title = { Text("应用启动默认页面") },
-                description = { Text("仅可选择已在底部导航栏中显示的页面。") },
+                title = { Text(SettingsStrings.startupPage) },
+                description = { Text(SettingsStrings.startupPageDescription) },
                 options = selectedBottomBarItems.map { it.second },
                 selectedIndex = selectedBottomBarItems.indexOfFirst { it.first == startDestinationKey },
                 onSelect = { index ->
                     val (key, label) = selectedBottomBarItems[index]
                     storedStartDestination = key
-                    userMessages.showShortMessage("已设置启动页：$label，重启后生效")
+                    userMessages.showShortMessage(SettingsStrings.startupPageChanged(label))
                 },
                 enabled = selectedBottomBarItems.isNotEmpty(),
                 fieldModifier = Modifier.testTag(APPEARANCE_SETTINGS_START_DESTINATION_TAG),
@@ -254,16 +258,16 @@ fun NavigationSettingsScreen(
             )
 
             SettingItem(
-                title = { Text("底部导航栏项目") },
-                description = { Text(selectedBottomBarItems.joinToString("、") { it.second }) },
+                title = { Text(SettingsStrings.bottomBarItems) },
+                description = { Text(selectedBottomBarItems.joinToString(SettingsStrings.listSeparator) { it.second }) },
                 onClick = { showBottomBarItemsSheet = true },
                 settingKey = BOTTOM_BAR_ITEMS_PREFERENCE_KEY,
             )
 
             var tapToRefresh by rememberSetting(settings, "bottomBarTapScrollToTop", true)
             SettingItemWithSwitch(
-                title = { Text("点击底部导航栏回到顶部/刷新") },
-                description = { Text("点击底部导航栏当前页面按钮回到顶部，已在顶部时则刷新页面。双击可直接刷新。") },
+                title = { Text(SettingsStrings.bottomBarTapToTop) },
+                description = { Text(SettingsStrings.bottomBarTapToTopDescription) },
                 checked = tapToRefresh,
                 onCheckedChange = { tapToRefresh = it },
                 settingKey = "bottomBarTapScrollToTop",
@@ -271,8 +275,8 @@ fun NavigationSettingsScreen(
 
             var autoHideBottomBar by rememberSetting(settings, "autoHideBottomBar", false)
             SettingItemWithSwitch(
-                title = { Text("滚动时自动隐藏底部导航栏") },
-                description = { Text("上划时隐藏底部导航栏，下划时重新显示。") },
+                title = { Text(SettingsStrings.autoHideBottomBar) },
+                description = { Text(SettingsStrings.autoHideBottomBarDescription) },
                 checked = autoHideBottomBar,
                 onCheckedChange = { autoHideBottomBar = it },
                 settingKey = "autoHideBottomBar",
@@ -281,20 +285,20 @@ fun NavigationSettingsScreen(
             var landscapeListDetail by rememberSetting(settings, LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY, true)
             SettingItemWithSwitch(
                 modifier = Modifier.testTag(APPEARANCE_SETTINGS_LANDSCAPE_LIST_DETAIL_TAG),
-                title = { Text("横屏双栏布局") },
-                description = { Text(LANDSCAPE_LIST_DETAIL_DESCRIPTION) },
+                title = { Text(SettingsStrings.landscapeListDetail) },
+                description = { Text(landscapeListDetailDescription) },
                 checked = landscapeListDetail,
                 onCheckedChange = { landscapeListDetail = it },
                 settingKey = LANDSCAPE_LIST_DETAIL_PREFERENCE_KEY,
             )
         }
 
-        SettingItemGroup(title = "返回与分享") {
+        SettingItemGroup(title = SettingsStrings.backAndSharing) {
             var pageTransition by rememberSetting(settings, PAGE_TRANSITION_PREFERENCE_KEY, "miuix")
-            val pageTransitionOptions = arrayOf("none" to "无动画", "miuix" to "侧滑", "aosp" to "AOSP")
+            val pageTransitionOptions = arrayOf("none" to SettingsStrings.noAnimation, "miuix" to SettingsStrings.slideTransition, "aosp" to "AOSP")
             SettingItemSelect(
                 modifier = Modifier.testTag("navigation_settings_page_transition"),
-                title = { Text("页面转场") },
+                title = { Text(SettingsStrings.pageTransition) },
                 options = pageTransitionOptions.map { it.second },
                 selectedIndex = if (predictiveBackEnabled) pageTransitionOptions.indexOfFirst { it.first == pageTransition }.coerceAtLeast(1) else 0,
                 onSelect = { index ->
@@ -306,36 +310,36 @@ fun NavigationSettingsScreen(
 
             var shareActionMode by rememberSetting(settings, "shareActionMode", "ask")
             val shareActionOptions = listOf(
-                "ask" to "询问",
-                "copy" to "复制链接",
-                "share" to "Android分享",
+                "ask" to SettingsStrings.ask,
+                "copy" to SettingsStrings.copyLink,
+                "share" to if (platformName == "iOS") SettingsStrings.systemShare else SettingsStrings.androidShare,
             )
             SettingItemSelect(
-                title = { Text("分享操作") },
+                title = { Text(SettingsStrings.shareAction) },
                 options = shareActionOptions.map { it.second },
                 selectedIndex = shareActionOptions.indexOfFirst { it.first == shareActionMode },
                 onSelect = { index ->
                     val (mode, label) = shareActionOptions[index]
                     shareActionMode = mode
-                    userMessages.showShortMessage("已设置为：$label")
+                    userMessages.showShortMessage(SettingsStrings.settingChanged(label))
                 },
                 settingKey = "shareAction",
             )
         }
 
-        SettingItemGroup(title = "搜索") {
+        SettingItemGroup(title = SettingsStrings.search) {
             var showSearchHotSearch by rememberSetting(settings, "showSearchHotSearch", true)
             SettingItemWithSwitch(
-                title = { Text("搜索界面显示热搜") },
-                description = { Text("在搜索界面空白时显示知乎热搜关键词。") },
+                title = { Text(SettingsStrings.showHotSearches) },
+                description = { Text(SettingsStrings.showHotSearchesDescription) },
                 checked = showSearchHotSearch,
                 onCheckedChange = { showSearchHotSearch = it },
                 settingKey = "showSearchHotSearch",
             )
             var showSearchHistory by rememberSetting(settings, "showSearchHistory", true)
             SettingItemWithSwitch(
-                title = { Text("记录并显示搜索历史") },
-                description = { Text("在搜索界面显示最近搜索过的关键词，关闭后不再记录新的搜索。") },
+                title = { Text(SettingsStrings.recordSearchHistory) },
+                description = { Text(SettingsStrings.recordSearchHistoryDescription) },
                 checked = showSearchHistory,
                 onCheckedChange = { showSearchHistory = it },
                 settingKey = "showSearchHistory",

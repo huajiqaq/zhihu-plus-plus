@@ -27,7 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /** 仅替换已确认的同义图标，品牌与业务图标保留原图。 */
 @Composable
 fun appIconVector(image: ImageVector): ImageVector =
-    if (settingSkinIsMiuix()) MiuixAppIconVector(image) else image
+    if (settingSkinIsMiuix()) miuixAppIconVector(image) else image
 
 @Composable
 fun AppIcon(
@@ -45,4 +45,4 @@ fun AppIcon(
 }
 
 @Composable
-internal expect fun MiuixAppIconVector(image: ImageVector): ImageVector
+internal expect fun miuixAppIconVector(image: ImageVector): ImageVector

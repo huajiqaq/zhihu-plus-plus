@@ -65,6 +65,7 @@ import coil3.compose.AsyncImage
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -77,6 +78,7 @@ import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -88,14 +90,12 @@ import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.viewmodel.MobileNotificationCategory
 import com.github.zly2006.zhihu.viewmodel.NotificationTimelineViewModel
 import com.github.zly2006.zhihu.viewmodel.shouldShowNotification
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val NOTIFICATION_TIMELINE_BACK_BUTTON_TAG = "notification_timeline_back_button"
 
@@ -131,7 +131,13 @@ fun NotificationTimelineScreen(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             AppCompactTopBar(
-                title = title,
+                title = title.ifBlank {
+                    if (invitations) {
+                        NotificationsStrings.invitationTitle
+                    } else {
+                        MobileNotificationCategory.entries.firstOrNull { it.entryName == entryName }?.detailTitle ?: NotificationsStrings.messages
+                    }
+                },
                 onBack = navigator.onNavigateBack,
                 backTag = NOTIFICATION_TIMELINE_BACK_BUTTON_TAG,
                 centered = true,
@@ -161,7 +167,7 @@ fun NotificationTimelineScreen(
                 when {
                     notification.type == "empty" -> {
                         AppEmptyState(
-                            title = notification.emptyInfo?.text?.takeIf(String::isNotBlank) ?: "暂无通知",
+                            title = notification.emptyInfo?.text?.takeIf(String::isNotBlank) ?: NotificationsStrings.empty,
                             icon = Icons.Outlined.Notifications,
                             modifier = Modifier.padding(top = 32.dp),
                         )
@@ -178,12 +184,12 @@ fun NotificationTimelineScreen(
                                 notification.commentActionTarget?.let { target ->
                                     val enabled = !viewModel.isCommentActionPending(target.commentId)
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
-                                        AppTextButton("回复", { replyItem = notification }, enabled = enabled)
+                                        AppTextButton(NotificationsStrings.reply, { replyItem = notification }, enabled = enabled)
                                         notification.extraAction?.data?.voting?.let { liked ->
-                                            AppTextButton(if (liked) "取消喜欢" else "喜欢", {
+                                            AppTextButton(if (liked) NotificationsStrings.unlike else NotificationsStrings.like, {
                                                 scope.launch {
                                                     val ok = viewModel.toggleCommentLike(environment, notification)
-                                                    if (!ok && accountStore.client === accountClient) userMessages.showMessage("喜欢状态未更新，请重试")
+                                                    if (!ok && accountStore.client === accountClient) userMessages.showMessage(NotificationsStrings.likeFailed)
                                                 }
                                             }, enabled = enabled)
                                         }
@@ -211,22 +217,22 @@ fun NotificationTimelineScreen(
                     item.extraAction
                         ?.authorName
                         ?.takeIf(String::isNotBlank)
-                        ?.let { "回复 $it" } ?: "回复评论",
+                        ?.let { NotificationsStrings.replyTo(it) } ?: NotificationsStrings.replyComment,
                 )
             },
             text = {
                 Column {
                     AppTextField(
                         state = draft,
-                        placeholder = "写下回复",
+                        placeholder = NotificationsStrings.replyPlaceholder,
                         lineLimits = TextFieldLineLimits.MultiLine(),
                         enabled = !pending,
                     )
-                    if (failed) Text("回复未发送，请重试", color = MaterialTheme.colorScheme.error)
+                    if (failed) Text(NotificationsStrings.replyFailed, color = MaterialTheme.colorScheme.error)
                 }
             },
             confirmButton = {
-                AppTextButton("发送", {
+                AppTextButton(NotificationsStrings.send, {
                     val content = draft.text.toString()
                     scope.launch {
                         if (accountStore.client !== accountClient) return@launch
@@ -234,14 +240,14 @@ fun NotificationTimelineScreen(
                         if (accountStore.client !== accountClient) return@launch
                         if (ok) {
                             replyItem = null
-                            userMessages.showMessage("回复已发送")
+                            userMessages.showMessage(NotificationsStrings.replySent)
                         } else {
                             failed = true
                         }
                     }
                 }, enabled = !pending && draft.text.isNotBlank())
             },
-            dismissButton = { AppTextButton("取消", { replyItem = null }, enabled = !pending) },
+            dismissButton = { AppTextButton(NotificationsStrings.cancel, { replyItem = null }, enabled = !pending) },
         )
     }
 }
@@ -261,7 +267,7 @@ private fun InvitationAnswerItem(notification: MobileNotificationTimelineItem) {
     val answer = question?.let {
         when {
             existingAnswer?.type == ArticleType.Answer -> existingAnswer
-            target?.hasAnswer == true -> null
+            target.hasAnswer -> null
             else -> WriteAnswer(it.questionId, it.title)
         }
     }
@@ -363,7 +369,7 @@ private fun InvitationAnswerItem(notification: MobileNotificationTimelineItem) {
                     Spacer(Modifier.height(8.dp))
                 }
                 Text(
-                    text = if (deleted) "该内容已被删除" else target?.title.orEmpty().ifBlank { notification.targetSource?.text.orEmpty() },
+                    text = if (deleted) NotificationsStrings.contentDeleted else target?.title.orEmpty().ifBlank { notification.targetSource?.text.orEmpty() },
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
@@ -380,13 +386,13 @@ private fun InvitationAnswerItem(notification: MobileNotificationTimelineItem) {
                         onClick = { navigate(answer) },
                         modifier = Modifier.width(IntrinsicSize.Max).align(Alignment.End).testTag("invitation_answer_${notification.stableId}"),
                     ) {
-                        Icon(
+                        AppIcon(
                             if (answer is Article) Icons.Default.Visibility else Icons.Default.Edit,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text(if (answer is Article) "查看回答" else "写回答")
+                        Text(if (answer is Article) NotificationsStrings.viewAnswer else NotificationsStrings.writeAnswer)
                     }
                 }
             }
@@ -394,7 +400,6 @@ private fun InvitationAnswerItem(notification: MobileNotificationTimelineItem) {
     }
 }
 
-@OptIn(ExperimentalTime::class)
 private fun MobileNotificationTimelineItem.invitationTime(): String {
     if (created <= 0) return ""
     val timeZone = TimeZone.currentSystemDefault()
@@ -406,7 +411,7 @@ private fun MobileNotificationTimelineItem.invitationTime(): String {
     val date = dateTime.date
     return when {
         date == today -> "${dateTime.hour.toString().padStart(2, '0')}:${dateTime.minute.toString().padStart(2, '0')}"
-        date.toEpochDays() == today.toEpochDays() - 1 -> "昨天"
+        date.toEpochDays() == today.toEpochDays() - 1 -> NotificationsStrings.yesterday
         else -> "${date.month.number.toString().padStart(2, '0')}-${date.day.toString().padStart(2, '0')}"
     }
 }

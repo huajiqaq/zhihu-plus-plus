@@ -18,43 +18,14 @@
 package com.github.zly2006.zhihu.theme
 
 import android.app.Activity
-import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import com.github.zly2006.zhihu.platform.androidSettingsStore
-
-object AndroidThemeSettings {
-    fun initialize(context: Context) {
-        ThemeManager.load(readThemeSnapshot(androidSettingsStore(context)))
-    }
-
-    fun setUseDynamicColor(context: Context, useDynamic: Boolean) {
-        context.settings.putBoolean("useDynamicColor", useDynamic)
-    }
-
-    fun setCustomColor(context: Context, color: Color) {
-        context.settings.putInt("customThemeColor", color.toArgb())
-    }
-
-    fun setBackgroundColor(context: Context, color: Color, isDark: Boolean) {
-        val key = if (isDark) "backgroundColorDark" else "backgroundColorLight"
-        context.settings.putInt(key, color.toArgb())
-    }
-
-    fun setThemeMode(context: Context, mode: ThemeMode) {
-        context.settings.putString("themeMode", mode.name)
-    }
-
-    private val Context.settings
-        get() = androidSettingsStore(this)
-}
 
 @Composable
 actual fun currentSystemInDarkTheme(): Boolean = isSystemInDarkTheme()

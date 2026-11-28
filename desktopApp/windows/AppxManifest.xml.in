@@ -7,17 +7,17 @@
          IgnorableNamespaces="uap desktop com rescap">
   <Identity Name="@NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>知乎++</DisplayName>
+    <DisplayName>ms-resource:AppName</DisplayName>
     <PublisherDisplayName>zly2006</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
-  <Resources><Resource Language="zh-cn" /></Resources>
+  <Resources><Resource Language="en-us" /><Resource Language="zh-cn" /></Resources>
   <Applications>
     <Application Id="Zhihu" Executable="ZhihuNotifications.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="知乎++" Description="Free and ad-free third-party Zhihu client"
+      <uap:VisualElements DisplayName="ms-resource:AppName" Description="ms-resource:AppDescription"
                           BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
@@ -26,8 +26,8 @@
         </desktop:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:ExeServer Executable="ZhihuNotifications.exe" Arguments="-ToastActivated" DisplayName="知乎++通知">
-              <com:Class Id="A198161D-C0D7-4500-87F0-AC2A791570E1" DisplayName="知乎++通知" />
+            <com:ExeServer Executable="ZhihuNotifications.exe" Arguments="-ToastActivated" DisplayName="ms-resource:NotificationName">
+              <com:Class Id="A198161D-C0D7-4500-87F0-AC2A791570E1" DisplayName="ms-resource:NotificationName" />
             </com:ExeServer>
           </com:ComServer>
         </com:Extension>

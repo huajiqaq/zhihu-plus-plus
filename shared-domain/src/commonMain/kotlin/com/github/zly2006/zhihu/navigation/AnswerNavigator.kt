@@ -28,10 +28,14 @@ import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.data.toDisplayItem
 import com.github.zly2006.zhihu.filter.ContentOpenEventSupport
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.platform.platformSettingsStore
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel.CachedAnswerContent
 import com.github.zly2006.zhihu.viewmodel.CollectionItem
+import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.ContentType
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
@@ -40,6 +44,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -89,12 +94,14 @@ fun zhihuQuestionFeedsUrl(
 /**
  * 回答导航器：封装回答切换的来源、历史记录和预取逻辑。
  *
- * @param sourceName 来源名称，用于 UI 标签，例如 "此问题"、"「收藏夹名称」"
+ * @param sourceTitle 来源名称，用于 UI 标签，例如 "此问题"、"「收藏夹名称」"
  */
 abstract class AnswerNavigator(
-    val sourceName: String,
+    private val sourceTitle: String?,
     protected val environment: ZhihuApiEnvironment,
 ) {
+    val sourceName: String get() = sourceTitle ?: DomainStrings.thisQuestion
+
     // ── 历史记录 ──────────────────────────────────────────────────────────────
 
     val answerHistory = mutableStateListOf<CachedAnswerContent>()
@@ -241,7 +248,8 @@ class QuestionAnswerNavigator(
     initialNextUrl: String = "",
     private val order: String? = null,
     environment: ZhihuApiEnvironment,
-) : AnswerNavigator("此问题", environment) {
+    private val displaySettings: () -> FeedDisplaySettings = { FeedDisplaySettings(platformSettingsStore()) },
+) : AnswerNavigator(null, environment) {
     private val pendingInitialNextAnswers = ArrayDeque<Article>().also { deque ->
         initialNextAnswers
             .filter { it.type == ArticleType.Answer }
@@ -260,6 +268,7 @@ class QuestionAnswerNavigator(
     private val knownOpenedIds = mutableSetOf<Long>()
     private var initialNextAnswersProcessed = false
     private var nextSourceExhausted = false
+    private val fetchedUrls = mutableSetOf<String>()
     private val destinationsMutex = Mutex()
 
     override suspend fun remainingAnswersSnapshot(
@@ -320,7 +329,6 @@ class QuestionAnswerNavigator(
     ) {
         if (destinations.size >= minimumCount || nextSourceExhausted) return
         val historyIds = answerHistory.map { it.article.id }.toSet()
-        val fetchedUrls = mutableSetOf<String>()
         while (destinations.size < minimumCount && !nextSourceExhausted) {
             val processingInitialNextAnswers = hasInitialNextAnswers && !initialNextAnswersProcessed
             var fetchedUrl: String? = null
@@ -335,7 +343,7 @@ class QuestionAnswerNavigator(
                     }
                     zhihuQuestionFeedsUrl(questionId, limit = 6, order = order)
                 }
-                if (!fetchedUrls.add(url)) {
+                if (url in fetchedUrls) {
                     nextSourceExhausted = true
                     return
                 }
@@ -348,8 +356,14 @@ class QuestionAnswerNavigator(
                         }
                     }
                 } ?: AnswerNavigatorPage(emptyList(), "")
-                fetchedNextUrl = page.nextUrl
-                page.items.mapNotNull { feed -> feed.target?.navDestination as? Article }
+                val paging = response?.get("paging")?.jsonObject
+                val isEnd = (paging?.get("is_end") ?: paging?.get("isEnd"))?.jsonPrimitive?.booleanOrNull == true
+                fetchedNextUrl = page.nextUrl.takeUnless { isEnd }
+                val settings = displaySettings()
+                page.items.mapNotNull { feed ->
+                    if (feed.target !is Feed.AnswerTarget) return@mapNotNull null
+                    settings.applyQualityFilter(feed.toDisplayItem(enableQualityFilter = false))?.navDestination as? Article
+                }
             }
             val idsToLookup = candidates
                 .asSequence()
@@ -395,6 +409,7 @@ class QuestionAnswerNavigator(
                 initialNextAnswersProcessed = true
                 if (nextUrl.isEmpty()) nextSourceExhausted = true
             } else {
+                fetchedUrl?.let(fetchedUrls::add)
                 nextUrl = fetchedNextUrl.orEmpty()
                 if (nextUrl.isEmpty() || nextUrl == fetchedUrl) nextSourceExhausted = true
             }
@@ -412,7 +427,7 @@ class QuestionAnswerNavigator(
         val cached = try {
             fetchCached(article)
         } catch (e: Exception) {
-            Log.w("QuestionAnswerNavigator", "Failed to load previous answer content", e)
+            AppLog.w("QuestionAnswerNavigator", "Failed to load previous answer content", e)
             null
         }
         if (cached == null) {
@@ -439,7 +454,7 @@ class QuestionAnswerNavigator(
         try {
             previousAnswerContent = fetchCached(article)
         } catch (e: Exception) {
-            Log.w("QuestionAnswerNavigator", "Failed to pre-load previous answer content", e)
+            AppLog.w("QuestionAnswerNavigator", "Failed to pre-load previous answer content", e)
         }
     }
 
@@ -451,7 +466,7 @@ class QuestionAnswerNavigator(
         try {
             nextAnswerContent = fetchCached(nextDest)
         } catch (e: Exception) {
-            Log.w("QuestionAnswerNavigator", "Failed to pre-load next answer content", e)
+            AppLog.w("QuestionAnswerNavigator", "Failed to pre-load next answer content", e)
         }
     }
 }
@@ -588,7 +603,7 @@ class CollectionAnswerNavigator(
                 return@withLock null
             }
         } catch (e: Exception) {
-            Log.w("CollectionAnswerNavigator", "Failed to load previous answer content", e)
+            AppLog.w("CollectionAnswerNavigator", "Failed to load previous answer content", e)
             previousQueue.add(0, article)
             return@withLock null
         }
@@ -622,7 +637,7 @@ class CollectionAnswerNavigator(
                 sourceLabel = sourceName,
             )
         } catch (e: Exception) {
-            Log.w("CollectionAnswerNavigator", "Failed to pre-load previous answer content", e)
+            AppLog.w("CollectionAnswerNavigator", "Failed to pre-load previous answer content", e)
         }
     }
 
@@ -657,7 +672,7 @@ class CollectionAnswerNavigator(
                 sourceLabel = sourceName,
             )
         } catch (e: Exception) {
-            Log.w("CollectionAnswerNavigator", "Failed to pre-load next answer content", e)
+            AppLog.w("CollectionAnswerNavigator", "Failed to pre-load next answer content", e)
         }
     }
 
@@ -689,7 +704,7 @@ class PaginationInfoNavigator(
     val questionId: Long,
     initialPaginationInfo: DataHolder.Answer.PaginationInfo,
     environment: ZhihuApiEnvironment,
-) : AnswerNavigator("此问题", environment) {
+) : AnswerNavigator(null, environment) {
     // 仅用于 nextQueue 去重，与 prevQueue 无关
     private val enqueuedNextIds = mutableSetOf<Long>()
 
@@ -728,7 +743,7 @@ class PaginationInfoNavigator(
             val id = prevQueue.firstOrNull() ?: return null
             return CachedAnswerContent(
                 article = Article(id = id, type = ArticleType.Answer),
-                title = "加载中...",
+                title = DomainStrings.loading,
                 authorName = "",
                 authorBio = "",
                 authorAvatarUrl = "",
@@ -807,7 +822,7 @@ class PaginationInfoNavigator(
         val cached = try {
             fetchCached(id)
         } catch (e: Exception) {
-            Log.w("PaginationInfoNavigator", "Failed to load previous answer content", e)
+            AppLog.w("PaginationInfoNavigator", "Failed to load previous answer content", e)
             null
         }
         if (cached == null) {
@@ -824,7 +839,7 @@ class PaginationInfoNavigator(
             // prefetchNext 使用 firstOrNull() 不弹出队列，此处消费时统一弹出
             val dequeued = nextQueue.removeFirstOrNull()
             if (dequeued != null && dequeued != prefetched.article.id) {
-                Log.w(
+                AppLog.w(
                     "PaginationInfoNavigator",
                     "Queue head $dequeued != prefetched ${prefetched.article.id}, possible state mismatch",
                 )
@@ -844,7 +859,7 @@ class PaginationInfoNavigator(
         try {
             nextAnswerContent = fetchCached(id)
         } catch (e: Exception) {
-            Log.w("PaginationInfoNavigator", "Failed to pre-load next answer content", e)
+            AppLog.w("PaginationInfoNavigator", "Failed to pre-load next answer content", e)
         }
     }
 
@@ -854,7 +869,7 @@ class PaginationInfoNavigator(
         try {
             previousAnswerContent = fetchCached(id)
         } catch (e: Exception) {
-            Log.w("PaginationInfoNavigator", "Failed to pre-load previous answer content", e)
+            AppLog.w("PaginationInfoNavigator", "Failed to pre-load previous answer content", e)
         }
     }
 }

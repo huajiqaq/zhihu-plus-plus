@@ -18,17 +18,18 @@
 package com.github.zly2006.zhihu.platform
 
 import androidx.compose.runtime.Composable
-import kotlinx.io.RawSource
-import kotlinx.io.asSource
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
+import kotlinx.io.RawSource
+import kotlinx.io.asSource
 
 @Composable
 internal actual fun rememberFilePicker(
     title: String,
     mimeTypes: List<String>,
     extensions: List<String>,
-    onPicked: (() -> Pair<String, RawSource>) -> Unit,
+    maxBytes: Int?,
+    onPicked: (suspend () -> Pair<String, RawSource>) -> Unit,
 ): () -> Unit = {
     val chooser = JFileChooser().apply {
         dialogTitle = title

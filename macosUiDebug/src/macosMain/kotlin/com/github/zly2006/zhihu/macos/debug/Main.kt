@@ -23,6 +23,7 @@
 
 package com.github.zly2006.zhihu.macos.debug
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -52,14 +53,20 @@ import androidx.navigationevent.DirectNavigationEventInput
 import androidx.navigationevent.NavigationEventDispatcher
 import androidx.navigationevent.NavigationEventDispatcherOwner
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.LoginScreen
+import com.github.zly2006.zhihu.account.createNativeAccountStore
 import com.github.zly2006.zhihu.data.BACKGROUND_UI_DEBUG_DATA_HOME_ENV
 import com.github.zly2006.zhihu.data.macosBackgroundUiDebugDataDirectoryPath
-import com.github.zly2006.zhihu.platform.MacosUserMessageHost
+import com.github.zly2006.zhihu.i18n.APP_LANGUAGE_KEY
 import com.github.zly2006.zhihu.platform.UserMessageDuration
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
+import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.platform.showMacosUserMessage
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.MacosZhihuMain
+import com.github.zly2006.zhihu.ui.components.MacosUserMessageHost
+import kotlin.time.TimeSource
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.serialization.json.Json
@@ -95,7 +102,6 @@ import platform.posix.fputs
 import platform.posix.getpid
 import platform.posix.setenv
 import platform.posix.unsetenv
-import kotlin.time.TimeSource
 
 private const val PROTOCOL = "ZHPP_BACKGROUND_UI_DEBUG_V1"
 private const val DEFAULT_TIMEOUT_MS = 5_000L
@@ -148,8 +154,12 @@ fun main(args: Array<String>) {
             "Cannot open the UI debug protocol stream"
         }
 
+        val settings = platformSettingsStore()
+        settings.putString(APP_LANGUAGE_KEY, "zh")
+        applySavedAppLanguage(settings)
         val uiTest = SkikoComposeUiTest(width = 1280, height = 900)
         val backController = BackgroundBackController()
+        val accountStore = createNativeAccountStore()
         try {
             uiTest.runTest {
                 setContent {
@@ -160,19 +170,21 @@ fun main(args: Array<String>) {
                     SideEffect {
                         backController.connect(navigationEventDispatcherOwner)
                     }
-                    if (rootName == "login") {
-                        ZhihuTheme {
-                            MacosUserMessageHost {
-                                LoginScreen(
-                                    onLoginComplete = {},
-                                    onOpenTelemetrySettings = {},
-                                )
+                    CompositionLocalProvider(LocalZhihuAccountStore provides accountStore) {
+                        if (rootName == "login") {
+                            ZhihuTheme {
+                                MacosUserMessageHost {
+                                    LoginScreen(
+                                        onLoginComplete = {},
+                                        onOpenTelemetrySettings = {},
+                                    )
+                                }
                             }
-                        }
-                    } else {
-                        ZhihuTheme {
-                            MacosUserMessageHost {
-                                MacosZhihuMain()
+                        } else {
+                            ZhihuTheme {
+                                MacosUserMessageHost {
+                                    MacosZhihuMain()
+                                }
                             }
                         }
                     }
@@ -222,6 +234,7 @@ fun main(args: Array<String>) {
             }
         } finally {
             backController.close()
+            accountStore.close()
         }
     } finally {
         unsetenv(BACKGROUND_UI_DEBUG_DATA_HOME_ENV)

@@ -77,14 +77,15 @@ import androidx.navigationevent.NavigationEventDispatcher
 import androidx.navigationevent.NavigationEventDispatcherOwner
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
+import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccounts
+import com.github.zly2006.zhihu.account.ZhihuSavedAccount
 import com.github.zly2006.zhihu.data.SegmentInfoMark
 import com.github.zly2006.zhihu.data.SegmentInfoMeta
 import com.github.zly2006.zhihu.data.SegmentInfoParagraph
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Navigator
-import com.github.zly2006.zhihu.theme.ThemeManager
-import com.github.zly2006.zhihu.theme.ThemeSnapshot
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.COMMENT_INPUT_TAG
 import com.github.zly2006.zhihu.ui.COMMENT_SCREEN_LIST_TAG
@@ -105,13 +106,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.junit.AfterClass
-import org.junit.BeforeClass
 import java.awt.datatransfer.DataFlavor
 import java.nio.file.Files
 import java.nio.file.Path
@@ -123,6 +117,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.AfterClass
+import org.junit.BeforeClass
 
 @OptIn(ExperimentalTestApi::class, ExperimentalComposeUiApi::class)
 class RenderMarkdownSegmentUiTest {
@@ -635,7 +636,6 @@ class RenderMarkdownSegmentUiTest {
         @Volatile
         private var cancellationStatus = HttpStatusCode.NoContent
         private var originalHome: String? = null
-        private var originalTheme: ThemeSnapshot? = null
         private var fixtureStarted = false
         private var home: Path? = null
         private var engine: MockEngine? = null
@@ -645,18 +645,19 @@ class RenderMarkdownSegmentUiTest {
         @JvmStatic
         fun setUpIsolatedAccount() {
             originalHome = System.getProperty("user.home")
-            originalTheme = ThemeManager.snapshot()
             fixtureStarted = true
             try {
                 val directory = Files.createTempDirectory("zhihu-segment-selection-ui-")
                 home = directory
                 System.setProperty("user.home", directory.toString())
                 val accountFile = directory.resolve(".zhihu-plus-plus/account.json")
-                Files.createDirectories(accountFile.parent)
-                Files.writeString(
-                    accountFile,
-                    """{"login":true,"username":"segment-ui-fixture","cookies":{"d_c0":"$DEVICE_COOKIE","z_c0":"synthetic-session"}}""",
+                val repository = ZhihuAccountRepository(kotlinx.io.files.Path(accountFile.toString()))
+                val session = ZhihuAccountSession(
+                    login = true,
+                    username = "segment-ui-fixture",
+                    cookies = mutableMapOf("d_c0" to DEVICE_COOKIE, "z_c0" to "synthetic-session"),
                 )
+                repository.saveAccounts(ZhihuAccounts(session.username, listOf(ZhihuSavedAccount(session.username, session))))
                 val mock = MockEngine { request ->
                     requests += request
                     when {
@@ -692,7 +693,7 @@ class RenderMarkdownSegmentUiTest {
                     }
                 }
                 engine = mock
-                fixtureStore = ZhihuAccountStore(ZhihuAccountRepository(kotlinx.io.files.Path(accountFile.toString())), mock)
+                fixtureStore = ZhihuAccountStore(repository, mock)
                 check(fixtureStore?.session?.username == "segment-ui-fixture") { "未加载隔离测试账户" }
                 assertSame(mock, fixtureStore?.client?.httpClient()?.engine, "账户客户端必须使用 MockEngine")
             } catch (error: Throwable) {
@@ -710,8 +711,6 @@ class RenderMarkdownSegmentUiTest {
             fixtureStore = null
             engine?.close()
             engine = null
-            originalTheme?.let(ThemeManager::load)
-            originalTheme = null
             if (originalHome == null) System.clearProperty("user.home") else System.setProperty("user.home", originalHome)
             originalHome = null
             home?.toFile()?.deleteRecursively()

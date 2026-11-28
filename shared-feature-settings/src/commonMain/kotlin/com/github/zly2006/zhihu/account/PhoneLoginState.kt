@@ -36,6 +36,7 @@ import androidx.compose.runtime.snapshotFlow
 import com.github.zly2006.zhihu.data.HttpFailureRecord
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.toCookieHeaderString
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.util.ZhihuMessageBodyEncryptor
 import com.github.zly2006.zhihu.util.hmacSha1Hex
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
@@ -55,6 +56,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.formUrlEncode
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
@@ -62,7 +64,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.time.Clock
 
 private const val PHONE_LOGIN_API_BASE_URL = "https://api.zhihu.com"
 private const val DEVICE_GUEST_INIT_PATH = "/api/account/prod/init/udid_guest"
@@ -126,6 +127,9 @@ private data class SupportedCountriesResponse(
 
 private val DEFAULT_COUNTRY = PhoneLoginCountry(code = "+86", name = "中国", abbr = "CN")
 
+internal val PhoneLoginCountry.displayName: String
+    get() = if (this == DEFAULT_COUNTRY) AccountStrings.china else name
+
 /**
  * LoginScreen 持有表单与访客会话，切登录方式不重建。
  * 仅手机号、地区和同意状态随配置保存；验证码、访客凭据和冷却属于本次登录。
@@ -146,8 +150,8 @@ class PhoneLoginState internal constructor(
         private set
     internal var isLoadingCountries by mutableStateOf(false)
         private set
-    internal var countryLoadError by mutableStateOf<String?>(null)
-        private set
+    private var countryLoadErrorText by mutableStateOf<(() -> String)?>(null)
+    internal val countryLoadError: String? get() = countryLoadErrorText?.invoke()
     var agreementAccepted by mutableStateOf(agreementAccepted)
     val digits = TextFieldState()
     val captchaInput = TextFieldState()
@@ -168,8 +172,8 @@ class PhoneLoginState internal constructor(
         private set
     var resendSeconds by mutableIntStateOf(0)
         private set
-    var errorMessage by mutableStateOf<String?>(null)
-        private set
+    private var errorText by mutableStateOf<(() -> String)?>(null)
+    val errorMessage: String? get() = errorText?.invoke()
 
     private val cookies = initialCookies.toMutableMap()
     private val loginHttpClient = lazy {
@@ -206,19 +210,19 @@ class PhoneLoginState internal constructor(
     internal suspend fun loadCountries(httpClient: HttpClient) {
         if (isLoadingCountries || countries != null) return
         isLoadingCountries = true
-        countryLoadError = null
+        countryLoadErrorText = null
         try {
             val response = httpClient.get(SUPPORTED_COUNTRIES_URL)
             check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
             val result = ZhihuJson.decodeJson<SupportedCountriesResponse>(
                 ZhihuJson.json.parseToJsonElement(response.bodyAsText()),
             )
-            check(result.data.isNotEmpty()) { "服务器未返回地区列表" }
+            if (result.data.isEmpty()) throw LoginMessageException { AccountStrings.countriesMissing }
             countries = result.data
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            countryLoadError = "获取地区列表失败：${error.message ?: "请检查网络"}"
+            countryLoadErrorText = { AccountStrings.countriesFailed(error.message ?: AccountStrings.checkNetwork) }
         } finally {
             isLoadingCountries = false
         }
@@ -254,7 +258,7 @@ class PhoneLoginState internal constructor(
         captchaImageBase64 = null
         captchaInput.clearText()
         captchaInput.undoState.clearHistory()
-        errorMessage = null
+        errorText = null
     }
 
     suspend fun requestDigits() {
@@ -264,10 +268,10 @@ class PhoneLoginState internal constructor(
             invalidateDigits()
             requestedPhone = number
         }
-        errorMessage = null
+        errorText = null
         isSendingDigits = true
         try {
-            val username = requireNotNull(normalizePhoneNumber(number, country.code)) {
+            val username = normalizePhoneNumber(number, country.code) ?: throw LoginMessageException {
                 if (country.code == "+86") INVALID_PHONE_NUMBER_MESSAGE else INVALID_INTERNATIONAL_PHONE_NUMBER_MESSAGE
             }
             ensureGuestToken()
@@ -298,7 +302,7 @@ class PhoneLoginState internal constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (currentRequestPhone == number) errorMessage = error.message ?: "发送验证码失败"
+            if (currentRequestPhone == number) errorText = { error.message ?: AccountStrings.smsFailed }
         } finally {
             isSendingDigits = false
         }
@@ -307,7 +311,7 @@ class PhoneLoginState internal constructor(
     suspend fun refreshCaptcha() {
         val number = currentRequestPhone ?: return
         if (isBusy || !needsCaptcha) return
-        errorMessage = null
+        errorText = null
         isSendingDigits = true
         try {
             ensureGuestToken()
@@ -317,7 +321,7 @@ class PhoneLoginState internal constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (currentRequestPhone == number) errorMessage = error.message ?: "刷新图形验证码失败"
+            if (currentRequestPhone == number) errorText = { error.message ?: AccountStrings.captchaRefreshFailed }
         } finally {
             isSendingDigits = false
         }
@@ -326,11 +330,11 @@ class PhoneLoginState internal constructor(
     suspend fun verifyCaptchaAndRequestDigits() {
         val number = currentRequestPhone ?: return
         if (isBusy || !needsCaptcha) return
-        errorMessage = null
+        errorText = null
         isSendingDigits = true
         val verified = try {
             val captcha = captchaInput.text.toString().trim()
-            require(captcha.isNotEmpty()) { "图形验证码不能为空" }
+            if (captcha.isEmpty()) throw LoginMessageException { AccountStrings.captchaRequired }
             ensureGuestToken()
             if (currentRequestPhone != number) return
             val response = loginHttpClient.value.post("$PHONE_LOGIN_API_BASE_URL$CAPTCHA_PATH") {
@@ -338,12 +342,12 @@ class PhoneLoginState internal constructor(
                 setEncryptedForm("input_text" to captcha)
             }
             val body = response.bodyAsText()
-            check(response.status.isSuccess()) { "验证图形验证码失败（HTTP ${response.status.value}）" }
+            if (!response.status.isSuccess()) throw LoginMessageException { AccountStrings.captchaVerifyHttp(response.status.value) }
             ZhihuJson.decodeJson<CaptchaVerificationResponse>(ZhihuJson.json.parseToJsonElement(body)).success
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (currentRequestPhone == number) errorMessage = error.message ?: "验证图形验证码失败"
+            if (currentRequestPhone == number) errorText = { error.message ?: AccountStrings.captchaVerifyFailed }
             return
         } finally {
             isSendingDigits = false
@@ -352,21 +356,22 @@ class PhoneLoginState internal constructor(
         if (verified) {
             requestDigits()
         } else {
-            errorMessage = "图形验证码不正确"
+            errorText = { AccountStrings.captchaIncorrect }
         }
     }
 
-    suspend fun signIn(accountStore: ZhihuAccountStore): String? {
+    suspend fun signIn(accountStore: ZhihuAccountStore, owner: ZhihuAccountClient): String? {
+        if (!owner.isCurrent || accountStore.client !== owner) return null
         val number = currentRequestPhone ?: return null
         if (isBusy || !smsSent) return null
-        errorMessage = null
+        errorText = null
         isLoggingIn = true
         try {
-            val username = requireNotNull(normalizePhoneNumber(number, country.code)) {
+            val username = normalizePhoneNumber(number, country.code) ?: throw LoginMessageException {
                 if (country.code == "+86") INVALID_PHONE_NUMBER_MESSAGE else INVALID_INTERNATIONAL_PHONE_NUMBER_MESSAGE
             }
             val code = digits.text.toString().trim()
-            require(code.isNotEmpty()) { "短信验证码不能为空" }
+            if (code.isEmpty()) throw LoginMessageException { AccountStrings.smsRequired }
             ensureGuestToken()
             if (currentRequestPhone != number) return null
             val timestamp = Clock.System.now().epochSeconds
@@ -390,12 +395,12 @@ class PhoneLoginState internal constructor(
                     val root = ZhihuJson.json.parseToJsonElement(body).jsonObject
                     (root["error"]?.jsonObject ?: root)["message"]?.jsonPrimitive?.content
                 }.getOrNull()
-                error(message?.let { "手机号登录失败：$it" } ?: "手机号登录失败（HTTP ${response.status.value}）")
+                throw LoginMessageException { message?.let { AccountStrings.phoneSignInFailedDetail(it) } ?: AccountStrings.phoneSignInFailedHttp(response.status.value) }
             }
             val responseToken = ZhihuJson.decodeJson<TokenResponse>(ZhihuJson.json.parseToJsonElement(body))
-            check(responseToken.accessToken.isNotBlank()) { "服务器未返回登录凭证" }
+            if (responseToken.accessToken.isBlank()) throw LoginMessageException { AccountStrings.loginTokenMissing }
             cookies.putAll(responseToken.cookie.filterValues(String::isNotBlank))
-            if (cookies["d_c0"].isNullOrBlank()) cookies["d_c0"] = checkNotNull(webDeviceCookie) { "服务器未返回必要的 Cookie d_c0" }
+            if (cookies["d_c0"].isNullOrBlank()) cookies["d_c0"] = webDeviceCookie ?: throw LoginMessageException { AccountStrings.deviceCookieMissing }
             val token = ZhihuMobileLoginToken(
                 accessToken = responseToken.accessToken,
                 refreshToken = responseToken.refreshToken,
@@ -403,14 +408,14 @@ class PhoneLoginState internal constructor(
                 expiresAt = responseToken.expiresIn?.let(timestamp::plus),
                 cookies = cookies.toMap(),
             )
-            if (accountStore.login(token)) {
+            if (accountStore.login(owner, token)) {
                 return accountStore.session.username
             }
-            errorMessage = "登录凭证验证失败，请重试"
+            errorText = { AccountStrings.loginTokenInvalid }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (currentRequestPhone == number) errorMessage = error.message ?: "登录失败"
+            if (currentRequestPhone == number) errorText = { error.message ?: AccountStrings.loginFailed }
         } finally {
             isLoggingIn = false
         }
@@ -457,10 +462,10 @@ class PhoneLoginState internal constructor(
             }
         }
         val errorMessage = error?.get("message")?.jsonPrimitive?.content
-        error(
-            errorMessage?.let { "发送短信验证码失败：$it" }
-                ?: "发送短信验证码失败（HTTP ${response.status.value}）",
-        )
+        throw LoginMessageException {
+            errorMessage?.let { AccountStrings.smsFailedDetail(it) }
+                ?: AccountStrings.smsFailedHttp(response.status.value)
+        }
     }
 
     private suspend fun ensureGuestToken() {
@@ -481,8 +486,8 @@ class PhoneLoginState internal constructor(
                 cookies.clear()
                 cookies.putAll(mobileCookies)
             }
-            check(response.status.isSuccess()) { "初始化网页设备凭证失败（HTTP ${response.status.value}）" }
-            webDeviceCookie = checkNotNull(fetchedDeviceCookie) { "服务器未返回必要的 Cookie d_c0" }
+            if (!response.status.isSuccess()) throw LoginMessageException { AccountStrings.webDeviceFailedHttp(response.status.value) }
+            webDeviceCookie = fetchedDeviceCookie ?: throw LoginMessageException { AccountStrings.deviceCookieMissing }
         }
 
         val timestamp = (Clock.System.now().epochSeconds).toString()
@@ -531,15 +536,15 @@ class PhoneLoginState internal constructor(
                 val root = ZhihuJson.json.parseToJsonElement(body).jsonObject
                 (root["error"]?.jsonObject ?: root)["message"]?.jsonPrimitive?.content
             }.getOrNull()
-            error(
-                message?.let { "初始化手机号登录失败：$it" }
-                    ?: "初始化手机号登录失败（HTTP ${response.status.value}）",
-            )
+            throw LoginMessageException {
+                message?.let { AccountStrings.phoneInitFailedDetail(it) }
+                    ?: AccountStrings.phoneInitFailedHttp(response.status.value)
+            }
         }
         val initialization = ZhihuJson.decodeJson<DeviceGuestInitializationResponse>(ZhihuJson.json.parseToJsonElement(body))
         val guest = initialization.guest
-        check(guest.accessToken.isNotBlank()) { "服务器未返回访客凭证" }
-        check(initialization.udid.isNotBlank()) { "服务器未返回设备凭证" }
+        if (guest.accessToken.isBlank()) throw LoginMessageException { AccountStrings.guestTokenMissing }
+        if (initialization.udid.isBlank()) throw LoginMessageException { AccountStrings.deviceTokenMissing }
         cookies.putAll(guest.cookie.filterValues(String::isNotBlank))
         deviceId = initialization.udid
         authorization = "${guest.tokenType.ifBlank { "bearer" }} ${guest.accessToken}"
@@ -550,7 +555,7 @@ class PhoneLoginState internal constructor(
             applyMobileHeaders()
         }
         val body = response.bodyAsText()
-        check(response.status.isSuccess()) { "检查图形验证码失败（HTTP ${response.status.value}）" }
+        if (!response.status.isSuccess()) throw LoginMessageException { AccountStrings.captchaCheckHttp(response.status.value) }
         return ZhihuJson.decodeJson(ZhihuJson.json.parseToJsonElement(body))
     }
 
@@ -592,7 +597,7 @@ class PhoneLoginState internal constructor(
             applyMobileHeaders()
         }
         val body = response.bodyAsText()
-        check(response.status.isSuccess()) { "获取图形验证码失败（HTTP ${response.status.value}）" }
+        if (!response.status.isSuccess()) throw LoginMessageException { AccountStrings.captchaFetchHttp(response.status.value) }
         return ZhihuJson.decodeJson<CaptchaResponse>(ZhihuJson.json.parseToJsonElement(body)).imgBase64
     }
 
@@ -653,8 +658,8 @@ internal expect val phoneLoginDeviceInfo: ZhihuPhoneLoginDeviceInfo
 
 internal const val MAINLAND_PHONE_NUMBER_LENGTH = 11
 internal const val MAX_PHONE_NUMBER_DIGITS = 15
-internal const val INVALID_PHONE_NUMBER_MESSAGE = "请输入正确的中国大陆手机号"
-internal const val INVALID_INTERNATIONAL_PHONE_NUMBER_MESSAGE = "请输入正确的手机号，含区号最多 15 位数字"
+internal val INVALID_PHONE_NUMBER_MESSAGE: String get() = AccountStrings.invalidMainlandPhone
+internal val INVALID_INTERNATIONAL_PHONE_NUMBER_MESSAGE: String get() = AccountStrings.invalidInternationalPhone
 
 /** 表单和请求共用归一化规则，非大陆号码只限制 E.164 的总长度与字符。 */
 internal fun normalizePhoneNumber(phoneNumber: String, countryCode: String): String? {
@@ -717,3 +722,10 @@ private data class TokenResponse(
 
 private val CAPTCHA_INVALID_ERROR_CODES = setOf(120001, 120002)
 private const val CAPTCHA_NEEDED_ERROR_CODE = 120005
+
+/** 保留本地错误的语义，语言切换时重新解析，不重建登录表单或重发请求。 */
+internal class LoginMessageException(
+    private val text: () -> String,
+) : IllegalStateException() {
+    override val message: String get() = text()
+}

@@ -49,10 +49,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppLoadStateContent
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
@@ -66,7 +68,6 @@ import com.github.zly2006.zhihu.viewmodel.filter.BlockedTopic
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordScope
 import com.github.zly2006.zhihu.viewmodel.readyValue
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun BlocklistSettingsLists(
@@ -159,10 +160,10 @@ private fun BlocklistSettingsKeywordList(
         state = state,
         onRetry = onRetry,
         description = keywordScopeDescription(keywordScope),
-        emptyTitle = "暂无精确匹配关键词",
-        emptyDescription = "点击右下角的 + 按钮添加传统关键词屏蔽。",
-        clearTitle = { count -> "清空当前范围的 $count 个屏蔽关键词？" },
-        clearSummary = "仅清空当前作用范围的精确关键词，不影响其他范围或 NLP 短语。清空后无法撤销，如需保留请先导出规则。",
+        emptyTitle = AccountStrings.keywordsEmpty,
+        emptyDescription = AccountStrings.keywordsEmptyHint,
+        clearTitle = { count -> AccountStrings.keywordsClearTitle(count) },
+        clearSummary = AccountStrings.keywordsClearSummary,
         onClearAll = onClearAll,
         itemKey = { it.id },
         listState = listState,
@@ -186,10 +187,10 @@ private fun BlocklistSettingsKeywordList(
         BlocklistItemRow(
             title = keyword.keyword,
             description = listOfNotNull(
-                "区分大小写".takeIf { keyword.caseSensitive },
-                "正则表达式".takeIf { keyword.isRegex },
-            ).joinToString(" · ").ifEmpty { "精确匹配" },
-            deleteDescription = "删除屏蔽关键词“${keyword.keyword}”",
+                AccountStrings.caseSensitive.takeIf { keyword.caseSensitive },
+                AccountStrings.regularExpression.takeIf { keyword.isRegex },
+            ).joinToString(" · ").ifEmpty { AccountStrings.exactMatch },
+            deleteDescription = AccountStrings.keywordDeleteDescription(keyword.keyword),
             onDelete = { onDelete(keyword) },
             modifier = Modifier.testTag("blocklistSettings:keywords:item:${keyword.id}"),
             deleteTag = "blocklistSettings:keywords:delete:${keyword.id}",
@@ -210,11 +211,11 @@ private fun BlocklistSettingsUserList(
     BlocklistItemList(
         state = state,
         onRetry = onRetry,
-        description = "这些用户的内容在首页、问题、搜索和评论区都会被隐藏。",
-        emptyTitle = "暂无屏蔽用户",
-        emptyDescription = "点击右下角的 + 按钮添加，也可以在内容卡片的更多菜单里屏蔽作者。",
-        clearTitle = { count -> "清空 $count 个屏蔽用户？" },
-        clearSummary = "这些用户的内容会重新显示。清空后无法撤销，如需保留请先导出规则。",
+        description = AccountStrings.usersBlockSummary,
+        emptyTitle = AccountStrings.usersEmpty,
+        emptyDescription = AccountStrings.usersEmptyHint,
+        clearTitle = { count -> AccountStrings.usersClearTitle(count) },
+        clearSummary = AccountStrings.usersClearSummary,
         onClearAll = onClearAll,
         itemKey = { it.userId },
         listState = listState,
@@ -225,7 +226,7 @@ private fun BlocklistSettingsUserList(
     ) { user ->
         BlockedPersonRow(
             category = "users",
-            noun = "屏蔽用户",
+            noun = AccountStrings.blockedUsers,
             userId = user.userId,
             userName = user.userName,
             avatarUrl = user.avatarUrl,
@@ -248,11 +249,11 @@ private fun BlocklistSettingsQuestionAuthorList(
     BlocklistItemList(
         state = state,
         onRetry = onRetry,
-        description = "屏蔽这些用户提出的问题，不影响他们回答别人的问题。",
-        emptyTitle = "暂无屏蔽提问者",
-        emptyDescription = "点击右下角的 + 按钮添加。",
-        clearTitle = { count -> "清空 $count 个屏蔽提问者？" },
-        clearSummary = "这些用户提出的问题会重新出现在首页。清空后无法撤销，如需保留请先导出规则。",
+        description = AccountStrings.questionAuthorsSummary,
+        emptyTitle = AccountStrings.questionAuthorsEmpty,
+        emptyDescription = AccountStrings.addBottomRightHint,
+        clearTitle = { count -> AccountStrings.questionAuthorsClearTitle(count) },
+        clearSummary = AccountStrings.questionAuthorsClearSummary,
         onClearAll = onClearAll,
         itemKey = { it.userId },
         listState = listState,
@@ -263,7 +264,7 @@ private fun BlocklistSettingsQuestionAuthorList(
     ) { author ->
         BlockedPersonRow(
             category = "questionAuthors",
-            noun = "屏蔽提问者",
+            noun = AccountStrings.blockedQuestionAuthors,
             userId = author.userId,
             userName = author.userName,
             avatarUrl = author.avatarUrl,
@@ -285,11 +286,11 @@ private fun BlocklistSettingsTopicList(
     BlocklistItemList(
         state = state,
         onRetry = onRetry,
-        description = "命中的屏蔽主题数达到阈值的内容不会出现在首页。",
-        emptyTitle = "暂无屏蔽主题",
-        emptyDescription = "点击右下角的 + 按钮添加要屏蔽的主题。",
-        clearTitle = { count -> "清空 $count 个屏蔽主题？" },
-        clearSummary = "首页将不再按这些主题屏蔽内容。清空后无法撤销，如需保留请先导出规则。",
+        description = AccountStrings.topicsSummary,
+        emptyTitle = AccountStrings.topicsEmpty,
+        emptyDescription = AccountStrings.topicsEmptyHint,
+        clearTitle = { count -> AccountStrings.topicsClearTitle(count) },
+        clearSummary = AccountStrings.topicsClearSummary,
         onClearAll = onClearAll,
         itemKey = { it.topicId },
         listState = listState,
@@ -300,8 +301,8 @@ private fun BlocklistSettingsTopicList(
     ) { topic ->
         BlocklistItemRow(
             title = topic.topicName,
-            description = "ID: ${topic.topicId}",
-            deleteDescription = "删除屏蔽主题“${topic.topicName}”",
+            description = AccountStrings.topicIdValue(topic.topicId),
+            deleteDescription = AccountStrings.topicDeleteDescription(topic.topicName),
             onDelete = { onDelete(topic) },
             modifier = Modifier.testTag("blocklistSettings:topics:item:${topic.topicId}"),
             deleteTag = "blocklistSettings:topics:delete:${topic.topicId}",
@@ -310,9 +311,9 @@ private fun BlocklistSettingsTopicList(
 }
 
 fun keywordScopeDescription(scope: KeywordScope): String = when (scope) {
-    KeywordScope.ALL -> "匹配原有标题、摘要和正文，包括文章、想法等内容。"
-    KeywordScope.QUESTION -> "只匹配问题标题和问题描述，不匹配回答正文或摘要。"
-    KeywordScope.ANSWER -> "只匹配回答正文和摘要，不匹配问题标题或描述。"
+    KeywordScope.ALL -> AccountStrings.keywordScopeAllHint
+    KeywordScope.QUESTION -> AccountStrings.keywordScopeQuestionHint
+    KeywordScope.ANSWER -> AccountStrings.keywordScopeAnswerHint
 }
 
 /** 精确关键词与 NLP 管理共用字段来源语义，选择不会改变既有启用开关。 */
@@ -324,11 +325,11 @@ fun KeywordScopeSettingItem(
     testTagPrefix: String,
 ) {
     SettingItem(
-        title = { Text("作用范围") },
+        title = { Text(AccountStrings.keywordScope) },
         description = { Text(keywordScopeDescription(scope)) },
         bottomAction = {
             AppSegmentedControl(
-                options = listOf("全部内容", "问题", "回答"),
+                options = listOf(AccountStrings.allContent, AccountStrings.question, AccountStrings.answer),
                 selectedIndex = scope.ordinal,
                 onSelect = { onSelect(KeywordScope.entries[it]) },
                 enabled = enabled,
@@ -385,7 +386,7 @@ fun <T> BlocklistItemList(
                     )
                     headerActions()
                     AppTextButton(
-                        text = "清空",
+                        text = AccountStrings.clear,
                         onClick = { showClearDialog = true },
                         modifier = clearTag?.let { Modifier.testTag(it) } ?: Modifier,
                         enabled = rows.isNotEmpty(),
@@ -417,7 +418,7 @@ fun <T> BlocklistItemList(
             onDismissRequest = { showClearDialog = false },
             title = clearTitle(rows.size),
             summary = clearSummary,
-            confirmText = "清空",
+            confirmText = AccountStrings.clear,
             confirmEnabled = rows.isNotEmpty(),
             onConfirm = {
                 if (showClearDialog && rows.isNotEmpty()) {
@@ -425,7 +426,7 @@ fun <T> BlocklistItemList(
                     onClearAll()
                 }
             },
-            dismissText = "取消",
+            dismissText = AccountStrings.cancel,
             destructive = true,
             modifier = clearDialogTag?.let { Modifier.testTag(it) } ?: Modifier,
         )
@@ -457,14 +458,14 @@ fun BlocklistItemRow(
                     onClick = onDelete,
                     modifier = deleteTag?.let { Modifier.testTag(it) } ?: Modifier,
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.Default.Delete,
                         contentDescription = deleteDescription,
                         tint = LocalAppSkinTokens.current.error,
                     )
                 }
                 if (onClick != null) {
-                    Icon(
+                    AppIcon(
                         Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,
                         modifier = Modifier.size(AppDimens.SettingChevronSize),
@@ -488,8 +489,8 @@ private fun BlockedPersonRow(
 ) {
     BlocklistItemRow(
         title = userName,
-        description = "ID: $userId",
-        deleteDescription = "删除$noun“$userName”",
+        description = AccountStrings.userIdValue(userId),
+        deleteDescription = AccountStrings.blockedPersonDelete(noun, userName),
         onDelete = onDelete,
         modifier = Modifier.testTag("blocklistSettings:$category:item:$userId"),
         deleteTag = "blocklistSettings:$category:delete:$userId",

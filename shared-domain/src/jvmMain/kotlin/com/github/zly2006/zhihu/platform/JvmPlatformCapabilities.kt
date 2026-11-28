@@ -20,27 +20,42 @@ package com.github.zly2006.zhihu.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationEventHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.desktop.DesktopFileShareBridge
 import com.github.zly2006.zhihu.desktop.copyDesktopPlainText
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataDir
 import com.github.zly2006.zhihu.desktop.desktopZhihuDataFile
 import com.github.zly2006.zhihu.desktop.openDesktopExternalUrl
 import com.github.zly2006.zhihu.desktop.saveImageToDownloads
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.nlp.OfflineNlpController
+import com.github.zly2006.zhihu.nlp.OfflineNlpModelState
 import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
+import java.awt.KeyboardFocusManager
+import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.Properties
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
-import java.io.File
-import java.util.Properties
 
 actual fun platformSettingsStore(): SettingsStore = desktopSettingsStore()
 
 actual fun appPrivateDirectory(): Path = Path(desktopZhihuDataDir().absolutePath)
 
-actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher? = null
+actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
+    get() = OfflineNlpController.takeIf { it.state.value == OfflineNlpModelState.Ready }
+
+actual val platformSemanticRuntimeGeneration: StateFlow<Long>
+    get() = OfflineNlpController.policyGeneration
 
 actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
 
@@ -52,69 +67,35 @@ actual fun isSoftwareKeyboardVisible(): Boolean = false
 
 actual fun Modifier.exportTestTagsForUiAutomation(): Modifier = this
 
-@Composable
-actual fun rememberAppPrivateDirectory(): Path = remember { Path(desktopZhihuDataDir().absolutePath) }
-
 private val desktopSettingsOwners = mutableMapOf<File, SettingsStore>()
 
-fun desktopSettingsStore(): SettingsStore = synchronized(desktopSettingsOwners) {
-    val file = desktopZhihuDataFile("settings.properties").canonicalFile
+fun desktopSettingsStore(relativePath: String = "settings.properties"): SettingsStore = synchronized(desktopSettingsOwners) {
+    val file = desktopZhihuDataFile(relativePath).canonicalFile
     desktopSettingsOwners.getOrPut(file) { DesktopSettingsStore(file) }
 }
 
 private class DesktopSettingsStore(
     private val file: File,
-) : SettingsStore {
-    private var properties = Properties().apply {
-        if (file.isFile) file.inputStream().use(::load)
+) : SettingsStore() {
+    private var values: Map<String, SettingValue> = if (!file.exists()) {
+        emptyMap()
+    } else {
+        SettingsFileCodec.decode(file.readText()) ?: Properties().run {
+            file.inputStream().use(::load)
+            stringPropertyNames().associateWith { decodeLegacySetting(it, getProperty(it)) }
+        }
     }
     private val listeners = linkedSetOf<(String) -> Unit>()
 
     @Synchronized
-    override fun getBoolean(key: String, defaultValue: Boolean) = properties.getProperty(key)?.toBooleanStrictOrNull() ?: defaultValue
-
-    override fun putBoolean(key: String, value: Boolean) = commit(mapOf(key to value.toString()))
+    override fun readValue(key: String): SettingValue? = values[key]
 
     @Synchronized
-    override fun getString(key: String, defaultValue: String) = properties.getProperty(key) ?: defaultValue
-
-    override fun putString(key: String, value: String) = commit(mapOf(key to value))
-
-    @Synchronized
-    override fun getStringOrNull(key: String) = properties.getProperty(key)
-
-    override fun putStringSet(key: String, value: Set<String>) = commit(mapOf(key to value.joinToString("\u001F")))
-
-    @Synchronized
-    override fun getStringSet(key: String, defaultValue: Set<String>) = properties
-        .getProperty(key)
-        ?.split("\u001F")
-        ?.filter(String::isNotEmpty)
-        ?.toSet() ?: defaultValue
-
-    @Synchronized
-    override fun getInt(key: String, defaultValue: Int) = properties.getProperty(key)?.toIntOrNull() ?: defaultValue
-
-    override fun putInt(key: String, value: Int) = commit(mapOf(key to value.toString()))
-
-    @Synchronized
-    override fun getLong(key: String, defaultValue: Long) = properties.getProperty(key)?.toLongOrNull() ?: defaultValue
-
-    override fun putLong(key: String, value: Long) = commit(mapOf(key to value.toString()))
-
-    @Synchronized
-    override fun getFloat(key: String, defaultValue: Float) = properties.getProperty(key)?.toFloatOrNull() ?: defaultValue
-
-    override fun putFloat(key: String, value: Float) = commit(mapOf(key to value.toString()))
-
-    @Synchronized
-    override fun allEntries(): Map<String, Any> = properties.stringPropertyNames().associateWith { properties.getProperty(it) }
-
-    override fun remove(key: String) = commit(mapOf(key to null))
+    override fun readEntries(): Map<String, SettingValue> = values.toMap()
 
     @Synchronized
     override fun removeByPrefix(prefix: String) = commit(
-        properties.stringPropertyNames().filter { it.startsWith(prefix) }.associateWith { null },
+        values.keys.filter { it.startsWith(prefix) }.associateWith { null },
     )
 
     @Synchronized
@@ -124,16 +105,26 @@ private class DesktopSettingsStore(
     }
 
     @Synchronized
-    private fun commit(updates: Map<String, String?>) {
-        val changed = updates.filter { (key, value) -> properties.getProperty(key) != value }
+    override fun commit(updates: Map<String, SettingValue?>) {
+        val changed = updates.filter { (key, value) -> values[key] != value }
         if (changed.isEmpty()) return
-        val next = Properties().apply {
-            putAll(properties)
-            changed.forEach { (key, value) -> if (value == null) remove(key) else setProperty(key, value) }
+        val next = values.toMutableMap().apply {
+            changed.forEach { (key, value) -> if (value == null) remove(key) else put(key, value) }
         }
-        file.parentFile?.mkdirs()
-        file.outputStream().use { next.store(it, "Zhihu++ desktop settings") }
-        properties = next
+        val target = file.toPath()
+        Files.createDirectories(target.parent)
+        val temporary = Files.createTempFile(target.parent, ".settings-", ".tmp")
+        try {
+            Files.writeString(temporary, SettingsFileCodec.encode(next))
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+        values = next
         changed.keys.forEach { key -> listeners.toList().forEach { it(key) } }
     }
 }
@@ -153,7 +144,7 @@ actual fun rememberSystemUrlOpener(): SystemUrlOpener {
     return remember(messages) {
         object : SystemUrlOpener {
             override fun invoke(url: String) {
-                if (!openDesktopExternalUrl(url)) messages.showShortMessage("无法打开系统浏览器")
+                if (!openDesktopExternalUrl(url)) messages.showShortMessage(DomainStrings.systemBrowserOpenFailed)
             }
         }
     }
@@ -180,9 +171,10 @@ actual fun rememberImageSaver(): ImageSaver {
                     runCatching {
                         store.saveImageToDownloads(url, "image")
                     }.onSuccess { file ->
-                        userMessages.showShortMessage("已保存图片: ${file.absolutePath}")
+                        userMessages.showShortMessage(DomainStrings.imageSavedTo(file.absolutePath))
                     }.onFailure { error ->
-                        userMessages.showShortMessage("保存失败: ${error.message}")
+                        if (error is CancellationException) throw error
+                        userMessages.showShortMessage(DomainStrings.imageSaveFailed(error.message.orEmpty()))
                     }
                 }
             }
@@ -192,15 +184,28 @@ actual fun rememberImageSaver(): ImageSaver {
 
 @Composable
 actual fun rememberImageSharer(): ImageSharer {
+    val scope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
-    return remember(userMessages) {
+    val store = rememberZhihuAccountStore()
+    return remember(scope, userMessages, store) {
         object : ImageSharer {
             override fun invoke(url: String) {
-                runCatching {
-                    copyDesktopPlainText(url)
-                    userMessages.showShortMessage("已复制图片链接")
-                }.onFailure { error ->
-                    userMessages.showShortMessage("分享失败: ${error.message}")
+                val activeWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow
+                val window = generateSequence(activeWindow) { it.owner }.lastOrNull()
+                if (window == null) {
+                    userMessages.showShortMessage(DomainStrings.imageShareFailed(DomainStrings.desktopFileShareUnsupported))
+                    return
+                }
+                scope.launch {
+                    try {
+                        DesktopFileShareBridge.shareImage(store, url, window)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        userMessages.showShortMessage(DomainStrings.imageShareFailed(error.message.orEmpty()))
+                    } catch (_: LinkageError) {
+                        userMessages.showShortMessage(DomainStrings.imageShareFailed(DomainStrings.desktopFileShareUnavailable))
+                    }
                 }
             }
         }
@@ -208,34 +213,31 @@ actual fun rememberImageSharer(): ImageSharer {
 }
 
 @Composable
-actual fun rememberPlainTextClipboard(): PlainTextClipboard =
-    remember {
+actual fun rememberPlainTextClipboard(): PlainTextClipboard {
+    val messages = rememberUserMessageSink()
+    return remember(messages) {
         object : PlainTextClipboard {
             override fun invoke(label: String, text: String) {
                 runCatching { copyDesktopPlainText(text) }
-            }
-        }
-    }
-
-@Composable
-actual fun rememberUserMessageSink(): UserMessageSink = remember {
-    object : UserMessageSink {
-        override fun showShortMessage(message: String) {
-            println(message)
-            runCatching {
-                ProcessBuilder("terminal-notifier", "-message", message, "-sound", "default")
-                    .start()
+                    .onFailure { messages.showLongMessage(DomainStrings.clipboardDenied) }
             }
         }
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+actual fun rememberUserMessageSink(): UserMessageSink = LocalWindowUserMessages.current
+
 @Composable
 actual fun PlatformBackHandler(
     enabled: Boolean,
     onBack: () -> Unit,
-) = BackHandler(enabled = enabled, onBack = onBack)
+) = NavigationEventHandler(
+    state = rememberNavigationEventState(NavigationEventInfo.None),
+    isForwardEnabled = false,
+    isBackEnabled = enabled,
+    onBackCompleted = onBack,
+)
 
 @Composable
 actual fun PlatformPredictiveBackHandler(
@@ -255,16 +257,18 @@ actual val isJvm: Boolean = true
 
 actual val isNative: Boolean = false
 
-actual val isAigcVoteSupported: Boolean = false
+actual val isAigcVoteSupported: Boolean = true
 
-actual val isBlocklistNlpSupported: Boolean = false
-
-actual val includesFullVariantLicenses: Boolean = false
+actual val isBlocklistNlpSupported: Boolean = true
 
 actual val isArticleHtmlExportSupported: Boolean = true
 
+actual val isArticlePdfExportSupported: Boolean = true
+
 actual val isArticleImageExportSupported: Boolean = true
 
-actual val isPageTurnSupported: Boolean = false
+actual val isPageTurnSupported: Boolean = true
 
-actual val isAnswerSwipeSupported: Boolean = false
+actual val isAnswerSwipeSupported: Boolean = true
+
+actual val defaultAnswerSwitchMode: String = "off"

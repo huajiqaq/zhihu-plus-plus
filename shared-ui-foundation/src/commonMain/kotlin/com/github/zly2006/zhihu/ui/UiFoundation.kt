@@ -17,17 +17,25 @@
 
 package com.github.zly2006.zhihu.ui
 
+import com.github.zly2006.zhihu.i18n.AppLanguage
+import com.github.zly2006.zhihu.i18n.AppLocale
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
+
 fun formatTopicCount(raw: String): String {
     val value = raw.toLongOrNull() ?: return raw
-
-    fun scaled(divisor: Double, unit: String): String {
-        val number = (value / divisor * 10).toLong() / 10.0
-        val text = if (number % 1.0 == 0.0) number.toLong().toString() else number.toString()
-        return "$text $unit"
+    val base = when (AppLocale.current) {
+        AppLanguage.Chinese -> 10_000L
+        AppLanguage.English -> 1_000L
+    }
+    fun scaled(divisor: Long): String {
+        val whole = value / divisor
+        val tenth = value % divisor / (divisor / 10)
+        return if (tenth == 0L) whole.toString() else "$whole.$tenth"
     }
     return when {
-        value >= 100_000_000 -> scaled(100_000_000.0, "亿")
-        value >= 10_000 -> scaled(10_000.0, "万")
+        value >= base * base * base -> WidgetsStrings.topicCountCompactHigh(scaled(base * base * base))
+        value >= base * base -> WidgetsStrings.topicCountCompactMiddle(scaled(base * base))
+        value >= base -> WidgetsStrings.topicCountCompactLow(scaled(base))
         else -> value.toString()
     }
 }

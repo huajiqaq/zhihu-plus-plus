@@ -17,13 +17,11 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
-@Entity(tableName = "blocked_topics")
+@Serializable
 data class BlockedTopic(
-    @PrimaryKey
     val topicId: String,
     val topicName: String,
     val addedTime: Long = currentEpochMillis(),

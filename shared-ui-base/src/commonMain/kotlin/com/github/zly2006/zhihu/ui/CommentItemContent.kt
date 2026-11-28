@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.fleeksoft.ksoup.Ksoup
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -68,17 +69,18 @@ import com.github.zly2006.zhihu.ui.subscreens.PREF_FONT_SIZE
 import com.github.zly2006.zhihu.ui.subscreens.PREF_LINE_HEIGHT
 import com.github.zly2006.zhihu.util.twoDigitString
 import com.github.zly2006.zhihu.viewmodel.CommentItem
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
-import kotlin.time.Instant
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun CommentItem(
     comment: CommentItem,
+    readOnly: Boolean,
     voicePlayer: VoiceCommentPlayer,
     modifier: Modifier = Modifier,
     localVoice: RecordedVoiceComment? = null,
@@ -86,7 +88,7 @@ internal fun CommentItem(
     likeCount: Int = 0,
     isLikeLoading: Boolean = false,
     toggleLike: () -> Unit = {},
-    onChildCommentClick: (CommentItem) -> Unit,
+    onChildCommentClick: ((CommentItem) -> Unit)?,
     onDelete: (() -> Unit)? = null,
     quotedSentence: String? = null,
 ) {
@@ -110,11 +112,11 @@ internal fun CommentItem(
         ) {
             AsyncImage(
                 model = commentData.author.avatarUrl,
-                contentDescription = "头像",
+                contentDescription = CommentsStrings.avatar,
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .clickable(onClickLabel = "打开个人主页") { navigator.onNavigate(authorPerson) },
+                    .clickable(onClickLabel = CommentsStrings.openProfile) { navigator.onNavigate(authorPerson) },
                 contentScale = ContentScale.Crop,
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -240,6 +242,7 @@ internal fun CommentItem(
 
             CommentItemActions(
                 comment = comment,
+                readOnly = readOnly,
                 showMoreMenu = showMoreMenu,
                 onShowMoreMenu = { showMoreMenu = true },
                 onDismissMoreMenu = { showMoreMenu = false },

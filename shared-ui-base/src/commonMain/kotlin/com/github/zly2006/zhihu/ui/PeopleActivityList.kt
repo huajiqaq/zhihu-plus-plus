@@ -58,10 +58,11 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.authorDestination
 import com.github.zly2006.zhihu.data.decodeFeedNavDestinationOrNull
+import com.github.zly2006.zhihu.data.encodeStoredNavDestination
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.target
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -125,7 +126,7 @@ fun PeopleActivityList(
         modifier = modifier,
     ) { activity ->
         PeopleActivityCard(activity, model.person, model.readingQueueSourceId) { destination ->
-            commentKey = destination.toFeedDisplayItemNavDestinationJson()
+            commentKey = destination.encodeStoredNavDestination()
             authorCommentPolicy = activity.item.feed
                 ?.target
                 ?.author
@@ -161,13 +162,13 @@ private fun PeopleActivityCard(
         modifier = Modifier.testTag("people_screen_activity_item_${item.stableKey}"),
         menuItems = { dismiss ->
             if (destination != null) {
-                AppDropdownMenuItem(text = { Text("查看内容") }, onClick = {
+                AppDropdownMenuItem(text = { Text(ReaderStrings.viewContent) }, onClick = {
                     dismiss()
                     navigator.onNavigate(destination)
                 })
             }
             if (author != null && author != profile) {
-                AppDropdownMenuItem(text = { Text("查看内容作者") }, onClick = {
+                AppDropdownMenuItem(text = { Text(ReaderStrings.viewContentAuthor) }, onClick = {
                     dismiss()
                     navigator.onNavigate(author)
                 })
@@ -179,7 +180,7 @@ private fun PeopleActivityCard(
                     Row(
                         modifier = Modifier.weight(1f).then(
                             if (actorDestination != null && actorDestination != profile) {
-                                Modifier.clickable(role = Role.Button, onClickLabel = "查看发布者主页") { navigator.onNavigate(actorDestination) }
+                                Modifier.clickable(role = Role.Button, onClickLabel = ReaderStrings.viewActorProfile) { navigator.onNavigate(actorDestination) }
                             } else {
                                 Modifier
                             },
@@ -194,7 +195,7 @@ private fun PeopleActivityCard(
                             if (name != null) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(AppDimens.Space4), verticalAlignment = Alignment.CenterVertically) {
                                     Text(name, style = skin.body2.copy(fontWeight = FontWeight.SemiBold), color = skin.onSurface, modifier = Modifier.weight(1f, fill = false))
-                                    AuthorBadge(actor?.badgeV2.officialBadge(), compact = true)
+                                    AuthorBadge(actor.badgeV2.officialBadge(), compact = true)
                                 }
                             }
                             val byline = listOfNotNull(action, activity.time?.let { formatRelativeTime(it) }).joinToString(" · ")
@@ -220,7 +221,7 @@ private fun PeopleActivityCard(
                         activity.imageUrls.forEachIndexed { index, url ->
                             AsyncImage(
                                 model = url,
-                                contentDescription = "查看配图 ${index + 1}",
+                                contentDescription = ReaderStrings.viewAttachedImage(index + 1),
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .weight(1f)
@@ -237,14 +238,14 @@ private fun PeopleActivityCard(
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     activity.likes?.let { count ->
-                        ActivityStat(Icons.Outlined.ThumbUp, "赞", count, "打开详情查看赞") { destination?.let(navigator.onNavigate) }
+                        ActivityStat(Icons.Outlined.ThumbUp, ReaderStrings.likes, count, ReaderStrings.viewLikesDetail) { destination?.let(navigator.onNavigate) }
                     }
                     activity.favorites?.let { count ->
-                        ActivityStat(Icons.Outlined.BookmarkBorder, "收藏", count, if (destination is Article) "在详情中管理收藏" else null) { destination?.let(navigator.onNavigate) }
+                        ActivityStat(Icons.Outlined.BookmarkBorder, ReaderStrings.saves, count, if (destination is Article) ReaderStrings.manageSavesDetail else null) { destination?.let(navigator.onNavigate) }
                     }
                     activity.comments?.let { count ->
                         val supported = destination is Article || destination is Pin || destination is Question
-                        ActivityStat(Icons.Outlined.ChatBubbleOutline, "评论", count, if (supported) "查看评论" else null) { destination?.let(onComments) }
+                        ActivityStat(Icons.Outlined.ChatBubbleOutline, ReaderStrings.comments, count, if (supported) ReaderStrings.viewComments else null) { destination?.let(onComments) }
                     }
                 }
             }

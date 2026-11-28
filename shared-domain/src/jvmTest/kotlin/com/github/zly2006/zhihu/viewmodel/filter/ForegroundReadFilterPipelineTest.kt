@@ -21,13 +21,12 @@ import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.Person
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
-import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 
 class ForegroundReadFilterPipelineTest {
     @Test
@@ -44,7 +43,7 @@ class ForegroundReadFilterPipelineTest {
         )
         assertEquals(emptyList(), fixture.pipeline().filter(listOf(item)))
         assertEquals(0, fixture.database.contentFilterDao().getRecordCount())
-        fixture.database.close()
+        fixture.database.closeDatabase()
     }
 
     private fun fixture(settings: FeedFilterSettings = FeedFilterSettings()): Fixture {
@@ -78,7 +77,7 @@ class ForegroundReadFilterPipelineTest {
                 title = title,
             ),
         ),
-        navDestinationJson = Article(type = ArticleType.Article, id = id).toFeedDisplayItemNavDestinationJson(),
+        destination = Article(type = ArticleType.Article, id = id),
     )
 
     private fun person(isFollowing: Boolean): Person = Person(

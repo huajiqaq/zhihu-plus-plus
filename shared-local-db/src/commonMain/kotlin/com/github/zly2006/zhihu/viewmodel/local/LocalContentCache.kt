@@ -17,13 +17,11 @@
 
 package com.github.zly2006.zhihu.viewmodel.local
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.github.zly2006.zhihu.viewmodel.currentEpochMillis
+import kotlinx.serialization.Serializable
 
-@Entity(tableName = "crawling_tasks")
+@Serializable
 data class CrawlingTask(
-    @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val url: String,
     val reason: CrawlingReason,
@@ -34,9 +32,8 @@ data class CrawlingTask(
     val errorMessage: String? = null,
 )
 
-@Entity(tableName = "crawling_results")
+@Serializable
 data class CrawlingResult(
-    @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val taskId: Long,
     /** 内容类型与 ID 组成的键，如 `answer:12345678`。 */
@@ -47,11 +44,12 @@ data class CrawlingResult(
     val reason: CrawlingReason,
     val score: Double = 0.0,
     val createdAt: Long = currentEpochMillis(),
+    /** 来源列表提供的过滤依据；旧候选和未提供依据的内容保持为空。 */
+    val filterFactsJson: String? = null,
 )
 
-@Entity(tableName = "local_feeds")
+@Serializable
 data class LocalFeed(
-    @PrimaryKey
     val id: String,
     val resultId: Long,
     val title: String,
@@ -62,9 +60,8 @@ data class LocalFeed(
     val createdAt: Long = currentEpochMillis(),
 )
 
-@Entity(tableName = "user_behaviors")
+@Serializable
 data class UserBehavior(
-    @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val contentId: String,
     val action: String, // "like", "dislike", "share", "comment", "view"

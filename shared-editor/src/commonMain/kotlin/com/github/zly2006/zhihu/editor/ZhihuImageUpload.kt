@@ -18,8 +18,8 @@
 package com.github.zly2006.zhihu.editor
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.EditorStrings
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
-import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
@@ -32,13 +32,23 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import kotlin.math.min
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlin.math.min
+import kotlinx.serialization.json.JsonElement
+
+/** Web 的上传事务在请求桥闭包内执行；其他宿主沿用现有 OSS 实现。 */
+expect suspend fun uploadZhihuImage(
+    environment: ZhihuApiEnvironment,
+    bytes: ByteArray,
+    mimeType: String?,
+    fileName: String?,
+    source: ZhihuImageUploadSource,
+): UploadedZhihuImage
 
 /** 来源：zhihu_obsidian/src/image_service.ts；GIF 使用 OSS 分片上传。 */
-suspend fun uploadZhihuImage(
+internal suspend fun uploadZhihuImageDirect(
     environment: ZhihuApiEnvironment,
     bytes: ByteArray,
     mimeType: String?,
@@ -46,7 +56,7 @@ suspend fun uploadZhihuImage(
     source: ZhihuImageUploadSource,
 ): UploadedZhihuImage {
     if (bytes.isEmpty()) {
-        throw IllegalStateException("无法读取所选图片的内容，请重试或换一张图片")
+        throw IllegalStateException(EditorStrings.imageReadFailed)
     }
     val client = environment.httpClient()
     val contentType = mimeType?.takeIf { it.startsWith("image/") }
@@ -61,7 +71,7 @@ suspend fun uploadZhihuImage(
             contentType(ContentType.Application.Json)
             setBody(ApplyImageUploadRequest(imageHash = md5Hex, source = source.apiValue))
         }.raiseForStatus()
-        .json()
+        .body<JsonElement>()
     val applyResponse = ZhihuJson.decodeJson(ApplyImageUploadResponse.serializer(), applyJson)
     val imageId = applyResponse.uploadFile.imageId
     val uploadFileState = applyResponse.uploadFile.state
@@ -69,7 +79,7 @@ suspend fun uploadZhihuImage(
     if (uploadFileState == 2) {
         val uploadToken = applyResponse.uploadToken
             ?: throw IllegalStateException(
-                "知乎返回的图片需要重新上传，但响应里缺少 uploadToken。imageId=$imageId, state=$uploadFileState",
+                EditorStrings.imageUploadTokenMissing(imageId, uploadFileState),
             )
         if (contentType.equals("image/gif", ignoreCase = true)) {
             uploadGifMultipart(client, md5Hex, bytes, uploadToken)
@@ -95,7 +105,7 @@ suspend fun uploadZhihuImage(
     val status = pollImageStatus(client, imageId)
     val src = status.originalSrc?.takeIf(String::isNotBlank)
         ?: status.src?.takeIf(String::isNotBlank)
-        ?: error("知乎图片处理成功但没有返回图片地址。imageId=$imageId")
+        ?: error(EditorStrings.imageUrlMissing(imageId))
     val original = status.originalSrc ?: src
     val watermarkSrc = status.watermarkSrc
     val watermark = status.watermarkFlag
@@ -115,7 +125,7 @@ suspend fun uploadZhihuImage(
         rawHeight = status.height.takeIf { it > 0 } ?: rawHeight,
         imageId = imageId,
         hash = status.originalHash?.takeIf(String::isNotBlank)
-            ?: error("知乎图片处理成功但没有返回 original_hash。imageId=$imageId"),
+            ?: error(EditorStrings.imageHashMissing(imageId)),
     )
 }
 
@@ -182,7 +192,7 @@ private suspend fun initMultipartUpload(
 
     val xml = response.body<String>()
     return Regex("<UploadId>([^<]+)</UploadId>").find(xml)?.groupValues?.get(1)
-        ?: throw IllegalStateException("无法解析 OSS UploadId: $xml")
+        ?: throw IllegalStateException(EditorStrings.ossUploadIdInvalid(xml))
 }
 
 private suspend fun uploadMultipartPart(
@@ -220,7 +230,7 @@ private suspend fun uploadMultipartPart(
 
     return response.headers[HttpHeaders.ETag]
         ?: response.headers["etag"]
-        ?: throw IllegalStateException("OSS 分片上传未返回 ETag")
+        ?: throw IllegalStateException(EditorStrings.ossEtagMissing)
 }
 
 private suspend fun completeMultipartUpload(
@@ -286,15 +296,15 @@ private suspend fun pollImageStatus(
         val response = client
             .get("https://api.zhihu.com/images/$imageId")
             .raiseForStatus()
-            .json()
+            .body<JsonElement>()
         val status = ZhihuJson.decodeJson(ImageStatus.serializer(), response)
         when (status.status) {
             "success" -> return status
-            "process_fail", "upload_fail" -> error("知乎图片处理失败：${status.status}，imageId=$imageId")
+            "process_fail", "upload_fail" -> error(EditorStrings.imageProcessingFailed(status.status, imageId))
         }
         if (attempt < 9) delay(2_000)
     }
-    error("等待知乎图片处理超时，imageId=$imageId")
+    error(EditorStrings.imageProcessingTimeout(imageId))
 }
 
 @Serializable
@@ -347,7 +357,7 @@ private data class ImageStatus(
 private const val OSS_USER_AGENT =
     "aliyun-sdk-js/6.8.0 Chrome 99.0.4844.84 on Windows 10 64-bit"
 
-private fun decodeImageSize(bytes: ByteArray): Pair<Int, Int> =
+internal fun decodeImageSize(bytes: ByteArray): Pair<Int, Int> =
     decodePngSize(bytes)
         ?: decodeJpegSize(bytes)
         ?: decodeGifSize(bytes)
@@ -484,7 +494,7 @@ private fun ByteArray.hasAscii(offset: Int, value: String): Boolean {
 private fun ByteArray.ascii(offset: Int, length: Int): String =
     CharArray(length) { index -> this[offset + index].toInt().toChar() }.concatToString()
 
-private fun guessMimeTypeFromFileName(fileName: String?): String? = when {
+internal fun guessMimeTypeFromFileName(fileName: String?): String? = when {
     fileName == null -> null
     fileName.endsWith(".png", ignoreCase = true) -> "image/png"
     fileName.endsWith(".jpg", ignoreCase = true) || fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"

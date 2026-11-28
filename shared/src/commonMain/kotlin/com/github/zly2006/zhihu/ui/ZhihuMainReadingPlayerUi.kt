@@ -55,12 +55,11 @@ internal fun rememberZhihuMainReadingPlayerUiState(readingPlayerState: ReadingPl
 @Composable
 internal fun ZhihuMainReadingPlayerEffects(
     ui: ZhihuMainReadingPlayerUiState,
-    readingPlayer: ReadingPlayerController,
+    readingPlayerState: ReadingPlayerState,
     currentDestination: NavDestination?,
     isOnArticle: Boolean,
     onOpenReadingDestination: (NavDestination) -> Unit,
 ) {
-    val readingPlayerState by readingPlayer.state
     LaunchedEffect(readingPlayerState.hasSession) {
         if (!readingPlayerState.hasSession) {
             ui.showQueue = false
@@ -69,6 +68,7 @@ internal fun ZhihuMainReadingPlayerEffects(
         }
     }
     val currentOpenReadingDestination by rememberUpdatedState(onOpenReadingDestination)
+    val currentReadingPlayerState by rememberUpdatedState(readingPlayerState)
     LaunchedEffect(readingPlayerState.currentItem?.key) {
         val currentItem = readingPlayerState.currentItem
         val currentItemKey = currentItem?.key
@@ -80,7 +80,7 @@ internal fun ZhihuMainReadingPlayerEffects(
         val itemChanged = ui.previousItemKey != null && ui.previousItemKey != currentItemKey
         ui.previousItemKey = currentItemKey
         if (itemChanged && currentItem != null) {
-            currentOpenReadingDestination(currentItem.toDestination(readingPlayerState.sourceId))
+            currentOpenReadingDestination(currentItem.toDestination(currentReadingPlayerState.sourceId))
         }
     }
 

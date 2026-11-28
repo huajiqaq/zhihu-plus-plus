@@ -17,21 +17,86 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
+import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.data.Person
+import com.github.zly2006.zhihu.data.toDisplayItem
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.buildJsonObject
+import com.github.zly2006.zhihu.platform.MapSettingsStore
+import com.github.zly2006.zhihu.viewmodel.ANSWER_VOTEUP_THRESHOLD_PREFERENCE_KEY
+import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
+import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
+import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
 
 class FeedDisplayFilterPipelineTest {
+    @Test
+    fun lowVoteRulesPlaceholderStillMatchesBlockedWordsInTheOriginalBody() = runTest {
+        val settings = MapSettingsStore().apply {
+            putString(QUALITY_FILTER_MODE_PREFERENCE_KEY, QualityFilterMode.RULES.name)
+            putInt(ANSWER_VOTEUP_THRESHOLD_PREFERENCE_KEY, 1000)
+        }
+        val rules = FeedDisplaySettings(settings)
+        val target = Feed.AnswerTarget(
+            id = 42,
+            url = "",
+            voteupCount = 999,
+            question = Feed.QuestionTarget(id = 8, _title = "合成问题", url = "", type = "question"),
+            excerpt = "合成摘要",
+            content = "<p>原文合成禁词</p>",
+        )
+        val normal = CommonFeed(target = target).toDisplayItem(enableQualityFilter = false)
+        val placeholder = assertNotNull(rules.applyQualityFilter(normal.copy(content = target.content)))
+        assertTrue(placeholder.isQualityFiltered)
+        assertEquals(target.content, placeholder.content, "质量规则不能覆盖被自定义词表匹配的原文")
+        val fixture = fixture(FeedFilterSettings(enableNlpBlocking = false))
+        try {
+            fixture.database.blockedKeywordDao().insertKeyword(BlockedKeyword(keyword = "合成禁词"))
+            val pipeline = fixture.pipeline(ContentDetailProvider { null }, rules)
+            assertTrue(pipeline.filter(listOf(placeholder)).isEmpty(), "RULES 占位也必须经过显式词表")
+            val clean = normal.copy(feed = CommonFeed(target = target.copy(content = "纯净原文")), content = "纯净原文")
+            assertEquals(1, pipeline.filter(listOf(clean)).size)
+        } finally {
+            fixture.database.closeDatabase()
+        }
+    }
+
+    @Test
+    fun explicitAuthorAndTopicRulesUseFeedFactsWithoutAnotherDetailRequest() = runTest {
+        val fixture = fixture(FeedFilterSettings(enableNlpBlocking = false))
+        try {
+            val author = Person("blocked-author", "", "people", name = "author", headline = "", avatarUrl = "")
+            val target = Feed.AnswerTarget(
+                id = 9,
+                url = "",
+                author = author,
+                voteupCount = 1000,
+                question = Feed.QuestionTarget(id = 2, _title = "合成问题", url = "", type = "question", boundTopicIds = listOf(12)),
+            )
+            val card = CommonFeed(target = target).toDisplayItem(enableQualityFilter = false)
+            fixture.database.blockedUserDao().insertUser(BlockedUser(userId = author.id, userName = author.name))
+            assertTrue(fixture.pipeline(ContentDetailProvider { null }).filter(listOf(card)).isEmpty())
+            fixture.database.blockedTopicDao().insertTopic(BlockedTopic(topicId = "12", topicName = "合成主题"))
+            val otherAuthor = card.copy(feed = CommonFeed(target = target.copy(author = author.copy(id = "other"))))
+            assertTrue(fixture.pipeline(ContentDetailProvider { null }).filter(listOf(otherAuthor)).isEmpty())
+            val hydrated = otherAuthor.copy(raw = answer(9, 2, "合成问题"))
+            assertTrue(fixture.pipeline(ContentDetailProvider { error("已有详情不可重复请求") }).filter(listOf(hydrated)).isEmpty())
+        } finally {
+            fixture.database.closeDatabase()
+        }
+    }
+
     @Test
     fun filteringKeepsContentTypesSeparateWhenNumericIdsMatch() = runTest {
         for (reverse in arrayOf(false, true)) {
@@ -40,7 +105,7 @@ class FeedDisplayFilterPipelineTest {
                 val answer = answer(7, 20, "question").copy(paidInfo = buildJsonObject { })
                 val article = article("allowed article").copy(id = 7)
                 val answerCard = item("paid answer", 7).copy(
-                    navDestinationJson = Article(type = ArticleType.Answer, id = 7).toFeedDisplayItemNavDestinationJson(),
+                    destination = Article(type = ArticleType.Answer, id = 7),
                 )
                 val articleCard = item("allowed article", 7)
                 val result = fixture
@@ -68,7 +133,7 @@ class FeedDisplayFilterPipelineTest {
                     )
                 }
             } finally {
-                fixture.database.close()
+                fixture.database.closeDatabase()
             }
         }
     }
@@ -86,11 +151,13 @@ class FeedDisplayFilterPipelineTest {
     ) {
         fun pipeline(
             detailProvider: ContentDetailProvider,
+            displaySettings: FeedDisplaySettings? = null,
         ): FeedDisplayFilterPipeline = FeedDisplayFilterPipeline(
             settings = settings,
             contentDetailProvider = detailProvider,
             database = database,
             semanticMatcher = KeywordSemanticMatcher { _, _, _ -> emptyList() },
+            displaySettings = displaySettings,
         )
     }
 
@@ -104,7 +171,7 @@ class FeedDisplayFilterPipelineTest {
         summary = null,
         details = details,
         feed = feed,
-        navDestinationJson = Article(type = ArticleType.Article, id = id).toFeedDisplayItemNavDestinationJson(),
+        destination = Article(type = ArticleType.Article, id = id),
     )
 
     private fun article(

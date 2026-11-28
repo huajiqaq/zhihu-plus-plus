@@ -21,7 +21,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
 
-internal actual fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable? {
+internal actual suspend fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable? {
     val database = File(databasePath).canonicalFile
     check(database.isFile) { "抓取数据库不存在" }
     val windows = System.getProperty("os.name")?.startsWith("Windows", ignoreCase = true) == true

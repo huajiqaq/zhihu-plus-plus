@@ -66,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DailyStory
 import com.github.zly2006.zhihu.data.fetchDailyStoryDestination
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.isLiteVariant
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
@@ -75,6 +76,7 @@ import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
 import com.github.zly2006.zhihu.ui.components.AppPullToRefreshBox
@@ -92,18 +94,16 @@ import com.github.zly2006.zhihu.util.formatDailyDate
 import com.github.zly2006.zhihu.util.twoDigitString
 import com.github.zly2006.zhihu.viewmodel.DailyViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalTime::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DailyScreen(
     scrollToTopTrigger: Int = 0,
@@ -118,7 +118,8 @@ fun DailyScreen(
     var pendingDateSelection by remember { mutableStateOf<String?>(null) }
     var openingStory by remember { mutableStateOf<DailyStory?>(null) }
     var failedStory by remember { mutableStateOf<DailyStory?>(null) }
-    var storyOpenError by remember { mutableStateOf<String?>(null) }
+    var storyOpenFailure by remember { mutableStateOf<Exception?>(null) }
+    val storyOpenError = storyOpenFailure?.let { FeedStrings.originalFailedDetail(it.message.orEmpty()) }
     val scope = rememberCoroutineScope()
     val overlayPadding = LocalReadingPlayerOverlayPadding.current
     val listState = rememberLazyListState()
@@ -146,7 +147,6 @@ fun DailyScreen(
     }
     val displayedDailyDate = (visibleDailyDate.value ?: viewModel.sections.firstOrNull()?.date)
         ?.let(::formatDailyDate)
-        ?: "知乎日报"
 
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -213,24 +213,24 @@ fun DailyScreen(
         if (settingSkinIsMiuix()) {
             AppAlertDialog(
                 onDismissRequest = { showDatePicker = false },
-                title = { Text("选择日期") },
+                title = { Text(FeedStrings.chooseDate) },
                 text = { DatePicker(state = datePickerState) },
                 confirmButton = {
-                    AppTextButton(text = "确认", onClick = confirmDateSelection)
+                    AppTextButton(text = FeedStrings.confirm, onClick = confirmDateSelection)
                 },
                 dismissButton = {
-                    AppTextButton(text = "取消", onClick = { showDatePicker = false })
+                    AppTextButton(text = FeedStrings.cancel, onClick = { showDatePicker = false })
                 },
             )
         } else {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
                 confirmButton = {
-                    AppTextButton(text = "确认", onClick = confirmDateSelection)
+                    AppTextButton(text = FeedStrings.confirm, onClick = confirmDateSelection)
                 },
                 dismissButton = {
                     AppTextButton(
-                        text = "取消",
+                        text = FeedStrings.cancel,
                         onClick = { showDatePicker = false },
                     )
                 },
@@ -245,16 +245,16 @@ fun DailyScreen(
         val copyLink = rememberPlainTextClipboard()
         AppDialog(
             onDismissRequest = { missingOriginStoryUrl = null },
-            title = "知乎日报的 bug",
-            summary = "这是知乎日报的 bug：日报可能未提供文章等其他类型内容的原始链接，导致无法找到原文。建议手动复制链接打开。",
-            confirmText = "打开日报网页",
+            title = FeedStrings.dailyMissingLink,
+            summary = FeedStrings.dailyMissingLinkHint,
+            confirmText = FeedStrings.openDailyWeb,
             onConfirm = {
                 missingOriginStoryUrl = null
                 openWebPage(storyUrl)
             },
-            dismissText = "复制日报链接",
+            dismissText = FeedStrings.copyDailyLink,
             onDismiss = {
-                copyLink("日报链接", storyUrl)
+                copyLink(FeedStrings.dailyLink, storyUrl)
                 missingOriginStoryUrl = null
             },
         )
@@ -275,7 +275,7 @@ fun DailyScreen(
             throw e
         } catch (e: Exception) {
             failedStory = story
-            storyOpenError = "原文加载失败：${e.message}"
+            storyOpenFailure = e
         } finally {
             if (openingStory?.id == story.id) openingStory = null
         }
@@ -285,8 +285,8 @@ fun DailyScreen(
         containerColor = pageBackground,
         topBar = {
             AppPageTitleBar(
-                title = "知乎日报",
-                subtitle = displayedDailyDate.takeUnless { it == "知乎日报" },
+                title = FeedStrings.dailyTitle,
+                subtitle = displayedDailyDate,
                 titleTag = DAILY_SCREEN_TITLE_TAG,
                 scrollState = titleBarScrollState,
                 colors = if (settingSkinIsMiuix()) {
@@ -302,7 +302,7 @@ fun DailyScreen(
                         onClick = { showDatePicker = true },
                         modifier = Modifier.testTag(DAILY_SCREEN_DATE_PICKER_BUTTON_TAG),
                     ) {
-                        Icon(Icons.Filled.DateRange, contentDescription = "选择日期")
+                        AppIcon(Icons.Filled.DateRange, contentDescription = FeedStrings.chooseDate)
                     }
                 },
             )
@@ -339,7 +339,7 @@ fun DailyScreen(
                                 AppSpinner()
                                 Spacer(modifier = Modifier.height(AppDimens.Space16))
                                 Text(
-                                    "正在加载...",
+                                    FeedStrings.loading,
                                     style = skin.body2,
                                     color = skin.onSurfaceVariantSummary,
                                 )
@@ -354,11 +354,11 @@ fun DailyScreen(
                                 .padding(top = scaffoldPadding.calculateTopPadding(), bottom = bottomInset)
                                 .testTag(DAILY_SCREEN_ERROR_TAG),
                             icon = Icons.Default.Refresh,
-                            title = "日报加载失败",
+                            title = FeedStrings.dailyLoadFailed,
                             description = viewModel.error,
                             action = {
                                 AppTextButton(
-                                    text = "重试",
+                                    text = FeedStrings.retry,
                                     onClick = { scope.launch { viewModel.retry(httpClient) } },
                                 )
                             },
@@ -372,10 +372,10 @@ fun DailyScreen(
                                 .padding(top = scaffoldPadding.calculateTopPadding(), bottom = bottomInset)
                                 .testTag(DAILY_SCREEN_EMPTY_TAG),
                             icon = Icons.Default.DateRange,
-                            title = "这天没有日报",
-                            description = "点击右上角选择其他日期，或查看今天的日报。",
+                            title = FeedStrings.dailyEmpty,
+                            description = FeedStrings.dailyEmptyHint,
                             action = {
-                                AppTextButton(text = "查看今天", onClick = doRefresh)
+                                AppTextButton(text = FeedStrings.viewToday, onClick = doRefresh)
                             },
                         )
                     }
@@ -396,11 +396,11 @@ fun DailyScreen(
                             viewModel.error?.let { error ->
                                 item("daily_refresh_error") {
                                     SettingItem(
-                                        title = { Text("刷新失败，已保留当前日报", color = skin.error) },
+                                        title = { Text(FeedStrings.dailyRefreshFailed, color = skin.error) },
                                         description = { Text(error, style = skin.footnote2, color = skin.onSurfaceVariantSummary) },
                                         endAction = {
                                             AppTextButton(
-                                                text = "重试",
+                                                text = FeedStrings.retry,
                                                 enabled = !viewModel.isLoading,
                                                 onClick = { scope.launch { viewModel.retry(httpClient) } },
                                                 modifier = Modifier.testTag("daily_refresh_retry"),
@@ -428,7 +428,7 @@ fun DailyScreen(
                                                 onClick = {
                                                     if (openingStory == null) {
                                                         failedStory = null
-                                                        storyOpenError = null
+                                                        storyOpenFailure = null
                                                         openingStory = story
                                                     }
                                                 },
@@ -438,7 +438,7 @@ fun DailyScreen(
                                                     modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8),
                                                     title = {
                                                         Text(
-                                                            if (openingStory?.id == story.id) "正在打开原文…" else "原文加载失败",
+                                                            if (openingStory?.id == story.id) FeedStrings.openingOriginal else FeedStrings.originalFailed,
                                                             style = skin.footnote1,
                                                         )
                                                     },
@@ -450,10 +450,10 @@ fun DailyScreen(
                                                             AppSpinner(size = AppDimens.InlineSpinnerSize)
                                                         } else {
                                                             AppTextButton(
-                                                                text = "重试",
+                                                                text = FeedStrings.retry,
                                                                 onClick = {
                                                                     failedStory = null
-                                                                    storyOpenError = null
+                                                                    storyOpenFailure = null
                                                                     openingStory = story
                                                                 },
                                                                 modifier = Modifier.testTag("daily_story_${story.id}_retry"),
@@ -470,11 +470,11 @@ fun DailyScreen(
                             viewModel.loadMoreError?.let { error ->
                                 item("daily_load_more_error") {
                                     SettingItem(
-                                        title = { Text("历史日报加载失败", color = skin.error) },
+                                        title = { Text(FeedStrings.earlierDailyFailed, color = skin.error) },
                                         description = { Text(error, style = skin.footnote2, color = skin.onSurfaceVariantSummary) },
                                         endAction = {
                                             AppTextButton(
-                                                text = "重试",
+                                                text = FeedStrings.retry,
                                                 enabled = !viewModel.isLoading && !viewModel.isLoadingMore,
                                                 onClick = { scope.launch { viewModel.retryLoadMore(httpClient) } },
                                                 modifier = Modifier.testTag("daily_load_more_retry"),

@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.github.zly2006.zhihu.data.decodeFeedNavDestinationOrNull
 import com.github.zly2006.zhihu.filter.asListLoadState
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.BlocklistItemList
@@ -38,18 +39,19 @@ import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.twoDigitString
 import com.github.zly2006.zhihu.viewmodel.LoadState
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedFeedRecord
+import com.github.zly2006.zhihu.viewmodel.filter.displayBlockedReason
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 const val BLOCKED_FEED_HISTORY_BACK_BUTTON_TAG = "blocked_feed_history_back_button"
 const val BLOCKED_FEED_HISTORY_CLEAR_TAG = "blocked_feed_history_clear"
@@ -74,8 +76,8 @@ fun BlockedFeedHistoryScreen() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("BlockedFeedHistoryScreen", failurePrefix, e)
-                userMessages.showShortMessage("$failurePrefix：${e.message}")
+                AppLog.e("BlockedFeedHistoryScreen", failurePrefix, e)
+                userMessages.showShortMessage(SettingsStrings.failureWithReason(failurePrefix, e.message))
             }
         }
     }
@@ -83,7 +85,7 @@ fun BlockedFeedHistoryScreen() {
     AppScaffold(
         topBar = {
             AppCompactTopBar(
-                title = "屏蔽记录",
+                title = SettingsStrings.blockedHistory,
                 onBack = navigator.onNavigateBack,
                 backTag = BLOCKED_FEED_HISTORY_BACK_BUTTON_TAG,
             )
@@ -92,11 +94,11 @@ fun BlockedFeedHistoryScreen() {
         BlocklistItemList(
             state = records,
             onRetry = { reload++ },
-            description = "首页因广告、已读、关键词、作者或主题规则过滤掉的内容，保留最近 ${BlockedFeedRecord.MAX_RECORDS} 条。",
-            emptyTitle = "暂无屏蔽记录",
-            clearTitle = { count -> "清空 $count 条屏蔽记录？" },
-            clearSummary = "只删除这些记录，不影响屏蔽规则；之后过滤的内容仍会继续记录。清空后无法撤销。",
-            onClearAll = { launchAction("清空失败") { dao.clearAll() } },
+            description = SettingsStrings.blockedHistoryScope(BlockedFeedRecord.MAX_RECORDS),
+            emptyTitle = SettingsStrings.noBlockedHistory,
+            clearTitle = { count -> SettingsStrings.clearBlockedCount(count) },
+            clearSummary = SettingsStrings.clearBlockedHistoryWarning,
+            onClearAll = { launchAction(SettingsStrings.clearFailed) { dao.clearAll() } },
             itemKey = { it.id },
             modifier = Modifier.fillMaxSize().pageTurnViewportWithGuide(pageTurnTarget),
             listState = listState,
@@ -106,7 +108,7 @@ fun BlockedFeedHistoryScreen() {
         ) { record ->
             BlockedFeedRecordRow(
                 record = record,
-                onDelete = { launchAction("删除失败") { dao.deleteById(record.id) } },
+                onDelete = { launchAction(SettingsStrings.deleteFailed) { dao.deleteById(record.id) } },
             )
         }
     }
@@ -121,13 +123,13 @@ private fun BlockedFeedRecordRow(
     val destination = remember(record.navDestinationJson) { record.navDestinationJson?.let(::decodeFeedNavDestinationOrNull) }
     val meta = listOfNotNull(
         record.authorName?.takeIf { it.isNotBlank() },
-        record.blockedReason,
+        record.displayBlockedReason,
         formatBlockedTime(record.blockedTime),
     ).joinToString(" · ")
     BlocklistItemRow(
-        title = record.title.ifBlank { "（无标题）" },
-        description = if (destination == null) "$meta\n原内容已不可用" else meta,
-        deleteDescription = "删除这条屏蔽记录",
+        title = record.title.ifBlank { SettingsStrings.untitled },
+        description = if (destination == null) SettingsStrings.originalContentUnavailable(meta) else meta,
+        deleteDescription = SettingsStrings.deleteBlockedRecord,
         onDelete = onDelete,
         modifier = Modifier.testTag("blocked_feed_history_item_${record.id}"),
         titleMaxLines = 2,

@@ -19,10 +19,10 @@ package com.github.zly2006.zhihu
 
 import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.ConcurrentHashMap
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunListener
-import java.util.concurrent.ConcurrentHashMap
 
 class InstrumentedTestTimingListener : RunListener() {
     private val startedAtMillis = ConcurrentHashMap<Description, Long>()

@@ -52,15 +52,11 @@ fun AndroidZhihuMain(navHost: AppNavHost) {
         (activity.isInMultiWindowMode && activity.hasTabletDisplay())
     ZhihuMain(
         navHost = navHost,
-        mainTabNavigationTarget = activity.mainTabNavigationTarget,
+        tabsState = activity.tabsState,
         navigate = { route -> activity.navigate(route) },
         navigateContent = { route, targetHost -> activity.navigate(route, targetHost) },
         enableLandscapeListDetail = true,
         isListDetailCapable = isTablet,
-        setCurrentMainTabOpenFrom = activity::setCurrentMainTabOpenFrom,
-        consumeMainTabNavigationTarget = activity::consumeMainTabNavigationTarget,
-        preferenceState = rememberZhihuMainPreferenceState(),
-        isDarkTheme = com.github.zly2006.zhihu.theme.ThemeManager.isDarkTheme,
         articleContent = { article ->
             val entryLifecycle = LocalLifecycleOwner.current
             val viewModel: ArticleViewModel = viewModel {

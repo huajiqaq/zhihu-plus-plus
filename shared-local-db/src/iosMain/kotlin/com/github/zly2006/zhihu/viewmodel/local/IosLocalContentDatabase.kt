@@ -17,4 +17,13 @@
 
 package com.github.zly2006.zhihu.viewmodel.local
 
-internal actual fun nativeLocalContentDatabase(): LocalContentDatabase? = null
+import androidx.room.Room
+import com.github.zly2006.zhihu.data.iosDatabasePath
+
+private val iosLocalContentDatabase by lazy {
+    buildLocalContentDatabase(
+        Room.databaseBuilder<RoomLocalContentDatabase>(name = iosDatabasePath("local-content.db")),
+    )
+}
+
+actual fun getLocalContentDatabase(): LocalContentDatabase = iosLocalContentDatabase

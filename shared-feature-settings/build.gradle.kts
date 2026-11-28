@@ -20,6 +20,7 @@ import buildlogic.configureAppleTargets
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
@@ -43,6 +44,10 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
+        val nonAndroidMain = create("nonAndroidMain") { dependsOn(commonMain.get()) }
+        jvmMain { dependsOn(nonAndroidMain) }
+        wasmJsMain { dependsOn(nonAndroidMain) }
+        findByName("nativeMain")?.dependsOn(nonAndroidMain)
         commonMain.dependencies {
             api(project(":shared-ui-base"))
             implementation(libs.jb.compose.runtime)
@@ -70,6 +75,9 @@ kotlin {
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
         }
+        wasmJsMain.dependencies {
+            implementation(npm("qrcode-generator", "2.0.4"))
+        }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
@@ -77,34 +85,11 @@ kotlin {
             implementation(libs.androidx.work.runtime)
             implementation(libs.zxing.core)
         }
-        // Gradle 不解析 JavaFX POM 的平台 classifier；显式指定才能取得类和 JNI。
-        val osName = System.getProperty("os.name").lowercase()
-        val osArch = System.getProperty("os.arch").lowercase()
-        val fxClassifier =
-            when {
-                osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
-                osName.contains("mac") -> "mac"
-                osName.contains("win") -> "win"
-                osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
-                else -> "linux"
-            }
-        val javafxModules =
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            )
         jvmMain.dependencies {
             implementation(libs.dbus.java.core)
             implementation(libs.zxing.core)
-            // JavaFX 运行时由桌面宿主提供，共享模块只需编译类。
-            javafxModules.forEach { compileOnly(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
         }
         jvmTest.dependencies {
-            javafxModules.forEach { implementation(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.jb.compose.ui.test)

@@ -18,50 +18,22 @@
 package com.github.zly2006.zhihu.platform
 
 class MapSettingsStore(
-    private val values: MutableMap<String, Any> = mutableMapOf(),
-) : SettingsStore {
-    override fun getBoolean(key: String, defaultValue: Boolean) = values[key] as? Boolean ?: defaultValue
+    private val values: MutableMap<String, SettingValue> = mutableMapOf(),
+) : SettingsStore() {
+    private val listeners = mutableSetOf<(String) -> Unit>()
 
-    override fun putBoolean(key: String, value: Boolean) {
-        values[key] = value
+    override fun readValue(key: String): SettingValue? = values[key]
+
+    override fun readEntries(): Map<String, SettingValue> = values.toMap()
+
+    override fun commit(updates: Map<String, SettingValue?>) {
+        val changed = updates.filter { (key, value) -> values[key] != value }
+        changed.forEach { (key, value) -> if (value == null) values.remove(key) else values[key] = value }
+        changed.keys.forEach { key -> listeners.toList().forEach { it(key) } }
     }
 
-    override fun getString(key: String, defaultValue: String) = values[key] as? String ?: defaultValue
-
-    override fun putString(key: String, value: String) {
-        values[key] = value
-    }
-
-    override fun getStringOrNull(key: String) = values[key] as? String
-
-    override fun putStringSet(key: String, value: Set<String>) {
-        values[key] = value
-    }
-
-    override fun getStringSet(key: String, defaultValue: Set<String>): Set<String> =
-        (values[key] as? Iterable<*>)?.filterIsInstance<String>()?.toSet() ?: defaultValue
-
-    override fun getInt(key: String, defaultValue: Int) = values[key] as? Int ?: defaultValue
-
-    override fun putInt(key: String, value: Int) {
-        values[key] = value
-    }
-
-    override fun getLong(key: String, defaultValue: Long) = values[key] as? Long ?: defaultValue
-
-    override fun putLong(key: String, value: Long) {
-        values[key] = value
-    }
-
-    override fun getFloat(key: String, defaultValue: Float) = values[key] as? Float ?: defaultValue
-
-    override fun putFloat(key: String, value: Float) {
-        values[key] = value
-    }
-
-    override fun allEntries(): Map<String, Any> = values.toMap()
-
-    override fun remove(key: String) {
-        values.remove(key)
+    override fun observeKeyChanges(onChanged: (String) -> Unit): AutoCloseable {
+        listeners.add(onChanged)
+        return AutoCloseable { listeners.remove(onChanged) }
     }
 }

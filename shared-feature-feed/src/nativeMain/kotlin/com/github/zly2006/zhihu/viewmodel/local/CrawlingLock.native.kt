@@ -46,7 +46,7 @@ import platform.posix.open
 import platform.posix.realpath
 import platform.posix.stat
 
-internal actual fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable? = memScoped {
+internal actual suspend fun tryAcquireCrawlingLock(databasePath: String): AutoCloseable? = memScoped {
     val canonicalPath = checkNotNull(realpath(databasePath, allocArray<ByteVar>(PATH_MAX))) { "抓取数据库不存在" }.toKString()
     val info = alloc<stat>()
     /** 硬链接别名会分裂 sidecar 身份，不能安全恢复另一别名的任务。 */

@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.fleeksoft.ksoup.Ksoup
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -51,12 +52,12 @@ class RichEditorState(
     }
 
     fun insertImage(url: String, width: Int, height: Int) {
-        check(isReady) { "图文编辑器尚未就绪" }
+        check(isReady) { ContentStrings.richEditorNotReady }
         channel.trySend(RichEditorCommand.Image(url, width, height))
     }
 
     suspend fun snapshotHtml(): String = withTimeoutOrNull(10_000) {
-        check(isReady) { "图文编辑器尚未就绪" }
+        check(isReady) { ContentStrings.richEditorNotReady }
         val result = CompletableDeferred<String>()
         snapshots += result
         try {
@@ -65,16 +66,16 @@ class RichEditorState(
         } finally {
             snapshots -= result
         }
-    } ?: error("读取图文编辑器内容超时，请重试")
+    } ?: error(ContentStrings.richEditorTimeout)
 
     internal fun setReady(ready: Boolean) {
         isReady = ready
         /** 卸载后无人消费命令，需终止快照并清空旧命令；通道保留供同一草稿重新挂载。 */
         if (!ready) {
-            snapshots.forEach { it.completeExceptionally(IllegalStateException("图文编辑器已关闭")) }
+            snapshots.forEach { it.completeExceptionally(IllegalStateException(ContentStrings.richEditorClosed)) }
             while (true) {
                 val command = channel.tryReceive().getOrNull() ?: break
-                (command as? RichEditorCommand.Snapshot)?.result?.completeExceptionally(IllegalStateException("图文编辑器已关闭"))
+                (command as? RichEditorCommand.Snapshot)?.result?.completeExceptionally(IllegalStateException(ContentStrings.richEditorClosed))
             }
         }
     }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<Scheme version="1.7">
+    <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
+        <BuildActionEntries>
+            <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+                <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="370000000000000000000002" BuildableName="ZhihuPlusPlusLite.app" BlueprintName="ZhihuPlusPlus" ReferencedContainer="container:ZhihuPlusPlus.xcodeproj"/>
+            </BuildActionEntry>
+        </BuildActionEntries>
+    </BuildAction>
+    <LaunchAction buildConfiguration="DebugLite" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="NO">
+        <BuildableProductRunnable runnableDebuggingMode="0">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="370000000000000000000002" BuildableName="ZhihuPlusPlusLite.app" BlueprintName="ZhihuPlusPlus" ReferencedContainer="container:ZhihuPlusPlus.xcodeproj"/>
+        </BuildableProductRunnable>
+    </LaunchAction>
+    <AnalyzeAction buildConfiguration="DebugLite"/>
+    <ArchiveAction buildConfiguration="ReleaseLite" revealArchiveInOrganizer="YES"/>
+</Scheme>

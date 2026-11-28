@@ -1,0 +1,550 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="appearance_app_language">
+        <item>Language</item>
+        <item>English</item>
+        <item>system</item>
+        <item>Simplified Chinese</item>
+        <item>system default</item>
+        <item>language</item>
+        <item>interface language</item>
+        <item>Chinese</item>
+        <item>follow system</item>
+    </string-array>
+    <string-array name="appearance_bottom_sheet_corners">
+        <item>popup</item>
+        <item>comment corners</item>
+        <item>square corners</item>
+        <item>rounded corners</item>
+        <item>bottom sheet</item>
+    </string-array>
+    <string-array name="appearance_night_mode">
+        <item>night mode</item>
+        <item>dark theme</item>
+        <item>light theme</item>
+        <item>system default</item>
+        <item>dark mode</item>
+        <item>light mode</item>
+        <item>follow system</item>
+    </string-array>
+    <string-array name="appearance_dynamic_color">
+        <item>Monet</item>
+        <item>dynamic color</item>
+        <item>wallpaper color</item>
+        <item>theme color</item>
+    </string-array>
+    <string-array name="appearance_palette_style">
+        <item>palette</item>
+        <item>expressive</item>
+        <item>color style</item>
+    </string-array>
+    <string-array name="appearance_color_spec">
+        <item>spec 2025</item>
+        <item>color algorithm</item>
+        <item>color specification</item>
+    </string-array>
+    <string-array name="appearance_amoled">
+        <item>OLED</item>
+        <item>pure black</item>
+        <item>AMOLED</item>
+    </string-array>
+    <string-array name="appearance_landscape_list_detail">
+        <item>dual pane</item>
+        <item>split view</item>
+        <item>split screen</item>
+        <item>tablet</item>
+        <item>landscape</item>
+        <item>list detail</item>
+    </string-array>
+    <string-array name="appearance_font_scale">
+        <item>font size</item>
+        <item>text size</item>
+        <item>content font</item>
+        <item>body text size</item>
+    </string-array>
+    <string-array name="appearance_feed_card_style">
+        <item>cards</item>
+        <item>divider</item>
+        <item>separator</item>
+        <item>list style</item>
+    </string-array>
+    <string-array name="appearance_show_feed_thumbnail">
+        <item>images</item>
+        <item>cover</item>
+        <item>thumbnails</item>
+    </string-array>
+    <string-array name="appearance_show_refresh_fab">
+        <item>refresh button</item>
+        <item>floating button</item>
+    </string-array>
+    <string-array name="appearance_title_auto_hide">
+        <item>title bar</item>
+        <item>auto hide title</item>
+    </string-array>
+    <string-array name="appearance_button_skip_answer">
+        <item>next answer</item>
+        <item>skip answer</item>
+    </string-array>
+    <string-array name="appearance_answer_switch_mode">
+        <item>gestures</item>
+        <item>vertical swipe</item>
+        <item>horizontal swipe</item>
+        <item>switch answers</item>
+    </string-array>
+    <string-array name="appearance_page_turn_volume">
+        <item>e-reader</item>
+        <item>e-ink</item>
+        <item>page turn</item>
+        <item>volume key</item>
+    </string-array>
+    <string-array name="appearance_page_turn_switch_answer">
+        <item>e-reader</item>
+        <item>page turn</item>
+        <item>previous answer</item>
+        <item>next answer</item>
+    </string-array>
+    <string-array name="appearance_page_turn_fab">
+        <item>e-reader</item>
+        <item>page turn</item>
+        <item>page turn button</item>
+    </string-array>
+    <string-array name="appearance_page_turn_distance">
+        <item>e-reader</item>
+        <item>page turn</item>
+        <item>overlap</item>
+        <item>distance</item>
+    </string-array>
+    <string-array name="appearance_page_turn_guide">
+        <item>e-reader</item>
+        <item>page turn</item>
+        <item>guide line</item>
+    </string-array>
+    <string-array name="appearance_content_end_marker">
+        <item>e-reader</item>
+        <item>page turn</item>
+        <item>reading end</item>
+        <item>content end</item>
+        <item>end marker</item>
+    </string-array>
+    <string-array name="appearance_answer_double_tap_action">
+        <item>double tap</item>
+    </string-array>
+    <string-array name="appearance_bottom_bar">
+        <item>startup default page</item>
+        <item>bottom bar</item>
+        <item>home</item>
+        <item>following</item>
+        <item>daily</item>
+        <item>hot list</item>
+        <item>history</item>
+        <item>browsing history</item>
+        <item>favorites</item>
+        <item>collections</item>
+        <item>account</item>
+        <item>scroll to top</item>
+        <item>double tap refresh</item>
+        <item>auto hide bottom bar</item>
+    </string-array>
+    <string-array name="appearance_share_action">
+        <item>copy link</item>
+        <item>share link</item>
+        <item>share button</item>
+    </string-array>
+    <string-array name="appearance_show_search_hot_search">
+        <item>hot searches</item>
+        <item>trending searches</item>
+    </string-array>
+    <string-array name="appearance_show_search_history">
+        <item>search records</item>
+        <item>history</item>
+        <item>clear search history</item>
+    </string-array>
+    <string-array name="navigation_page_transition">
+        <item>AOSP</item>
+        <item>back gesture</item>
+        <item>predictive back</item>
+        <item>animation</item>
+        <item>transition</item>
+        <item>swipe</item>
+    </string-array>
+    <string-array name="appearance_app_blur">
+        <item>blur</item>
+        <item>glass</item>
+        <item>background</item>
+    </string-array>
+    <string-array name="appearance_floating_bottom_bar">
+        <item>bottom bar</item>
+        <item>floating</item>
+        <item>navigation bar</item>
+    </string-array>
+    <string-array name="appearance_floating_bottom_bar_style">
+        <item>Apple</item>
+        <item>liquid glass</item>
+        <item>bottom bar style</item>
+        <item>refraction</item>
+    </string-array>
+    <string-array name="reading_content_and_home">
+        <item>Markdown</item>
+        <item>body typography</item>
+        <item>Tiqian</item>
+        <item>reset typography</item>
+        <item>restore layout defaults</item>
+    </string-array>
+    <string-array name="reading_tiqian_markdown">
+        <item>Markdown</item>
+        <item>Tiqian</item>
+        <item>content rendering</item>
+        <item>typography engine</item>
+    </string-array>
+    <string-array name="reading_tiqian_math_font">
+        <item>Lete</item>
+        <item>STIX</item>
+        <item>formula</item>
+        <item>math font</item>
+    </string-array>
+    <string-array name="playback_preview">
+        <item>read aloud preview</item>
+        <item>template</item>
+    </string-array>
+    <string-array name="playback_fields">
+        <item>read aloud</item>
+        <item>title</item>
+        <item>author</item>
+        <item>time</item>
+        <item>order</item>
+    </string-array>
+    <string-array name="playback_published_time_mode">
+        <item>publication time</item>
+        <item>relative time</item>
+        <item>absolute time</item>
+    </string-array>
+    <string-array name="playback_relative_time_precision">
+        <item>publication time</item>
+        <item>relative time</item>
+        <item>precision</item>
+    </string-array>
+    <string-array name="playback_comments">
+        <item>comments</item>
+        <item>read aloud</item>
+    </string-array>
+    <string-array name="playback_comment_author">
+        <item>comments</item>
+        <item>author</item>
+    </string-array>
+    <string-array name="playback_comment_order">
+        <item>comments</item>
+        <item>sort</item>
+        <item>popularity</item>
+    </string-array>
+    <string-array name="playback_queue">
+        <item>queue</item>
+        <item>continuous playback</item>
+        <item>read aloud</item>
+    </string-array>
+    <string-array name="playback_transition">
+        <item>transition</item>
+        <item>item transition</item>
+        <item>read aloud</item>
+    </string-array>
+    <string-array name="recommend_recommendation_mode">
+        <item>recommendation source</item>
+        <item>Web recommendations</item>
+        <item>Android recommendations</item>
+        <item>local recommendations</item>
+        <item>mixed recommendations</item>
+    </string-array>
+    <string-array name="recommend_quality_filter_mode">
+        <item>low quality filter</item>
+        <item>blocking rules</item>
+        <item>low quality</item>
+        <item>hide</item>
+    </string-array>
+    <string-array name="recommend_enable_keyword_blocking">
+        <item>keyword filter</item>
+        <item>blocked words</item>
+        <item>keywords</item>
+    </string-array>
+    <string-array name="recommend_enable_user_blocking">
+        <item>block authors</item>
+        <item>block users</item>
+    </string-array>
+    <string-array name="recommend_enable_topic_blocking">
+        <item>topic blocking</item>
+        <item>blocked topics</item>
+    </string-array>
+    <string-array name="recommend_topic_blocking_threshold">
+        <item>topic threshold</item>
+    </string-array>
+    <string-array name="recommend_block_zhihu_ad_platform">
+        <item>advertisements</item>
+        <item>ads</item>
+    </string-array>
+    <string-array name="recommend_block_zhihu_school">
+        <item>Zhihu School</item>
+        <item>courses</item>
+    </string-array>
+    <string-array name="recommend_block_we_chat_official_account">
+        <item>WeChat</item>
+        <item>official accounts</item>
+    </string-array>
+    <string-array name="recommend_block_paid_content">
+        <item>Yanxuan</item>
+        <item>paid content</item>
+        <item>premium content</item>
+    </string-array>
+    <string-array name="recommend_blocklist">
+        <item>blacklist</item>
+        <item>blocklist</item>
+        <item>blocked words</item>
+        <item>question keywords</item>
+        <item>answer keywords</item>
+        <item>scope</item>
+        <item>block users</item>
+        <item>block topics</item>
+    </string-array>
+    <string-array name="recommend_blocklist_semantic">
+        <item>NLP</item>
+        <item>semantic</item>
+        <item>offline model</item>
+        <item>semantic blocking</item>
+        <item>similarity threshold</item>
+    </string-array>
+    <string-array name="recommend_blocked_history">
+        <item>filter records</item>
+        <item>blocked history</item>
+    </string-array>
+    <string-array name="system_github_token">
+        <item>rate limit</item>
+        <item>update check</item>
+        <item>token</item>
+        <item>GitHub</item>
+    </string-array>
+    <string-array name="system_check_nightly_updates">
+        <item>daily builds</item>
+        <item>nightly builds</item>
+    </string-array>
+    <string-array name="system_allow_telemetry">
+        <item>statistics</item>
+        <item>privacy</item>
+        <item>data collection</item>
+        <item>usage data</item>
+        <item>telemetry</item>
+    </string-array>
+    <string-array name="system_aigc_marking">
+        <item>AI</item>
+        <item>AIGC</item>
+        <item>AI-generated content</item>
+    </string-array>
+    <string-array name="system_reminder">
+        <item>continuous use</item>
+        <item>break reminder</item>
+    </string-array>
+    <string-array name="system_macos_quit_on_window_close">
+        <item>macOS</item>
+        <item>quit app</item>
+        <item>close window</item>
+        <item>exit program</item>
+    </string-array>
+    <string-array name="notification_auto_mark_as_read">
+        <item>read</item>
+        <item>mark as read</item>
+    </string-array>
+    <string-array name="notification_unread_badge">
+        <item>notification badge</item>
+        <item>unread count</item>
+        <item>badge</item>
+        <item>red dot</item>
+    </string-array>
+    <string-array name="notification_reset_read_records">
+        <item>read</item>
+        <item>clear read status</item>
+        <item>reset</item>
+        <item>announcements</item>
+        <item>author thoughts</item>
+    </string-array>
+    <string-array name="notification_system_notifications">
+        <item>system notifications</item>
+        <item>background notifications</item>
+        <item>notification permission</item>
+        <item>notification channels</item>
+    </string-array>
+    <string-array name="notification_system_category">
+        <item>system notifications</item>
+        <item>subscriptions</item>
+        <item>background notifications</item>
+    </string-array>
+    <string-array name="appearance_ui_theme_style">
+        <item>Miuix</item>
+        <item>HyperOS</item>
+        <item>Material</item>
+        <item>M3E</item>
+        <item>skin</item>
+    </string-array>
+    <string-array name="appearance_miuix_style">
+        <item>Miuix</item>
+        <item>OS3</item>
+        <item>OS4</item>
+        <item>OS 3</item>
+        <item>OS 4</item>
+        <item>HyperOS3</item>
+        <item>HyperOS4</item>
+        <item>HyperOS 3</item>
+        <item>HyperOS 4</item>
+        <item>substyle</item>
+    </string-array>
+    <string-array name="appearance_custom_color">
+        <item>theme color</item>
+        <item>accent color</item>
+        <item>color</item>
+    </string-array>
+    <string-array name="appearance_background_color">
+        <item>background color</item>
+        <item>background</item>
+    </string-array>
+    <string-array name="appearance_browser_toolbar_color">
+        <item>browser</item>
+        <item>toolbar color</item>
+    </string-array>
+    <string-array name="appearance_show_create_fab">
+        <item>publish</item>
+        <item>create</item>
+        <item>plus button</item>
+    </string-array>
+    <string-array name="appearance_fab_opacity">
+        <item>FAB</item>
+        <item>floating button</item>
+        <item>opacity</item>
+    </string-array>
+    <string-array name="navigation_start_destination">
+        <item>startup page</item>
+        <item>default page</item>
+    </string-array>
+    <string-array name="navigation_tap_scroll_to_top">
+        <item>scroll to top</item>
+        <item>double tap refresh</item>
+    </string-array>
+    <string-array name="navigation_auto_hide_bottom_bar">
+        <item>hide bottom bar</item>
+        <item>auto hide</item>
+    </string-array>
+    <string-array name="reading_line_height">
+        <item>line spacing</item>
+        <item>typography</item>
+    </string-array>
+    <string-array name="reading_block_spacing">
+        <item>paragraph spacing</item>
+        <item>typography</item>
+    </string-array>
+    <string-array name="reading_answer_switch_sensitivity">
+        <item>sensitivity</item>
+        <item>switch answers</item>
+        <item>gestures</item>
+    </string-array>
+    <string-array name="recommend_auto_refresh_home_on_startup">
+        <item>startup refresh</item>
+        <item>home refresh</item>
+    </string-array>
+    <string-array name="recommend_threshold_quality">
+        <item>quality filter</item>
+        <item>threshold</item>
+        <item>low quality</item>
+    </string-array>
+    <string-array name="recommend_clear_exposure_records">
+        <item>exposure</item>
+        <item>smart filter</item>
+        <item>reset</item>
+    </string-array>
+    <string-array name="account_identity">
+        <item>switch account</item>
+        <item>identity</item>
+        <item>multiple accounts</item>
+        <item>remove account</item>
+    </string-array>
+    <string-array name="developer_page">
+        <item>Cookie</item>
+        <item>403</item>
+        <item>unhuman</item>
+        <item>import Cookie</item>
+        <item>verify login</item>
+        <item>refresh Token</item>
+        <item>login maintenance</item>
+        <item>network diagnostics</item>
+        <item>request diagnostics</item>
+        <item>security verification</item>
+        <item>human verification</item>
+    </string-array>
+    <string-array name="about_webdav">
+        <item>backup</item>
+        <item>restore</item>
+        <item>sync</item>
+        <item>Nutstore</item>
+    </string-array>
+    <string-array name="about_webdav_check_connection">
+        <item>WebDAV</item>
+        <item>connection</item>
+        <item>Nutstore</item>
+    </string-array>
+    <string-array name="about_licenses">
+        <item>license</item>
+        <item>licenses</item>
+        <item>open source</item>
+    </string-array>
+    <string-array name="appearance_webview_render">
+        <item>WebView</item>
+        <item>legacy renderer</item>
+        <item>web rendering</item>
+    </string-array>
+    <string-array name="appearance_auto_hide_article_bottom_bar">
+        <item>auto hide toolbar</item>
+        <item>bottom toolbar</item>
+        <item>answer toolbar</item>
+    </string-array>
+    <string-array name="appearance_pin_answer_date">
+        <item>pin date</item>
+        <item>answer date</item>
+        <item>publication time</item>
+    </string-array>
+    <string-array name="recommend_login_for_recommendation">
+        <item>sign in</item>
+        <item>recommendation login</item>
+        <item>guest recommendations</item>
+    </string-array>
+    <string-array name="recommend_enable_content_filter">
+        <item>smart filter</item>
+        <item>deduplication</item>
+        <item>read content</item>
+        <item>seen content</item>
+    </string-array>
+    <string-array name="recommend_filter_followed_user_content">
+        <item>followed users</item>
+        <item>followed authors</item>
+        <item>following filter</item>
+    </string-array>
+    <string-array name="recommend_reverse_block">
+        <item>reverse blocking</item>
+        <item>show blocked content</item>
+        <item>invert filter</item>
+    </string-array>
+    <string-array name="notification_display_in_app_notifications">
+        <item>in-app notifications</item>
+        <item>notification categories</item>
+        <item>message types</item>
+    </string-array>
+    <string-array name="notification_like_answer">
+        <item>liked your answer</item>
+        <item>answer likes</item>
+    </string-array>
+    <string-array name="notification_like_comment">
+        <item>liked your comment</item>
+        <item>comment likes</item>
+    </string-array>
+    <string-array name="notification_reply_comment">
+        <item>replied to your comment</item>
+        <item>comment replies</item>
+    </string-array>
+    <string-array name="notification_invite_answer">
+        <item>invited you to answer a question</item>
+        <item>answer invitations</item>
+    </string-array>
+    <string name="system_notifications_summary">Manage notification categories and device permissions. Open notification settings to check availability and background delivery limits on this device.</string>
+</resources>

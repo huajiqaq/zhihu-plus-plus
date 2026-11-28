@@ -17,7 +17,7 @@
 
 package com.github.zly2006.zhihu.filter
 
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.LoadState
 import com.github.zly2006.zhihu.viewmodel.filter.ContentFilterDao
 import kotlinx.coroutines.CancellationException
@@ -26,7 +26,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEmpty
 import kotlinx.coroutines.flow.onStart
 
 data class ContentFilterStats(
@@ -50,16 +49,14 @@ suspend fun ContentFilterDao.clearAllData(): ContentFilterStats {
     return loadFilterStats()
 }
 
-/** 无数据库平台的 DAO 返回 emptyFlow()，按空列表显示以免页面一直加载。 */
 fun <T> Flow<List<T>>.asListLoadState(): Flow<LoadState<List<T>>> =
-    onEmpty { emit(emptyList()) }
-        .map<List<T>, LoadState<List<T>>> {
-            currentCoroutineContext().ensureActive()
-            LoadState.Ready(it)
-        }.onStart { emit(LoadState.Loading) }
+    map<List<T>, LoadState<List<T>>> {
+        currentCoroutineContext().ensureActive()
+        LoadState.Ready(it)
+    }.onStart { emit(LoadState.Loading) }
         .catch { e ->
             if (e is CancellationException) throw e
             currentCoroutineContext().ensureActive()
-            Log.e("ContentFilterSupport", "Failed to load local filter data", e)
-            emit(LoadState.Failed(e.message ?: e.toString()))
+            AppLog.e("ContentFilterSupport", "Failed to load local filter data", e)
+            emit(LoadState.Failed { e.message ?: e.toString() })
         }

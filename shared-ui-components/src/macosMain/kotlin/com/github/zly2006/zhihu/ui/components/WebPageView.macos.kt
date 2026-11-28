@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import platform.AppKit.NSApplication
 import platform.AppKit.NSWindow
 import platform.CoreGraphics.CGRectGetMaxY
@@ -47,7 +48,7 @@ internal actual fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebVie
     }
     val parent = window?.contentView
     if (window == null || parent == null) {
-        Box(modifier, contentAlignment = Alignment.Center) { Text("当前场景没有可显示网页的主窗口") }
+        Box(modifier, contentAlignment = Alignment.Center) { Text(WidgetsStrings.noWebWindow) }
         return
     }
     val webView by remember(factory) { lazy(factory) }

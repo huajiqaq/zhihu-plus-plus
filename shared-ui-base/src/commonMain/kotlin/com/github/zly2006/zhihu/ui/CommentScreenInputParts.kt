@@ -44,7 +44,6 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.EmojiEmotions
@@ -81,19 +80,20 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppCheckbox
 import com.github.zly2006.zhihu.ui.components.AppDimens
-import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSelectionDropdownMenu
+import com.github.zly2006.zhihu.ui.components.AppSelectionOption
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.comment.CommentLinkInfo
 import com.github.zly2006.zhihu.viewmodel.comment.CommentMention
 import kotlin.math.min
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 输入行：表情/键盘切换、能渲染 @ 与链接标题的输入框、发送按钮。 */
 @Composable
@@ -176,16 +176,16 @@ internal fun CommentScreenInputRow(
                 .size(40.dp)
                 .testTag(COMMENT_EMOJI_BUTTON_TAG),
         ) {
-            Icon(
+            AppIcon(
                 imageVector = if (showEmojiPicker) {
                     Icons.Outlined.Keyboard
                 } else {
                     Icons.Outlined.EmojiEmotions
                 },
                 contentDescription = if (showEmojiPicker) {
-                    "切换到键盘"
+                    CommentsStrings.switchToKeyboard
                 } else {
-                    "选择表情"
+                    CommentsStrings.chooseEmoji
                 },
                 tint = if (showEmojiPicker) {
                     MaterialTheme.colorScheme.primary
@@ -215,7 +215,7 @@ internal fun CommentScreenInputRow(
                         ?.item
                         ?.author
                         ?.name
-                        ?.let { "回复 $it 的评论" } ?: "评论内容"
+                        ?.let { CommentsStrings.replyToCommentDescription(it) } ?: CommentsStrings.commentContent
                 }.focusRequester(commentInputFocusRequester)
                 .onFocusChanged {
                     onInputFocusChange(it.isFocused)
@@ -253,9 +253,9 @@ internal fun CommentScreenInputRow(
                     if (commentFieldState.text.isEmpty()) {
                         Text(
                             if (replyToComment != null) {
-                                "回复 ${replyToComment.item.author.name}..."
+                                CommentsStrings.replyPlaceholder(replyToComment.item.author.name)
                             } else {
-                                "写下你的评论..."
+                                CommentsStrings.commentPlaceholder
                             },
                             fontSize = 16.sp,
                         )
@@ -274,9 +274,9 @@ internal fun CommentScreenInputRow(
             if (isSending) {
                 AppSpinner(size = 16.dp, color = MaterialTheme.colorScheme.primary)
             } else {
-                Icon(
+                AppIcon(
                     Icons.AutoMirrored.Outlined.Send,
-                    contentDescription = "发送评论",
+                    contentDescription = CommentsStrings.sendComment,
                     tint = if (commentFieldState.text.isNotBlank()) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -334,24 +334,22 @@ internal fun CommentScreenOptionsRow(
                             enabled = enabled,
                             modifier = Modifier.size(32.dp).clearAndSetSemantics {},
                         )
-                        Text("同时发布到想法", style = LocalAppSkinTokens.current.footnote2, color = LocalAppSkinTokens.current.onSurfaceVariantSummary)
+                        Text(CommentsStrings.alsoPublishAsPin, style = LocalAppSkinTokens.current.footnote2, color = LocalAppSkinTokens.current.onSurfaceVariantSummary)
                     }
-                    val choices = listOf("只同步一次", "默认同步")
-
-                    fun choose(index: Int) {
-                        showRange = false
-                        onSyncToPinChange(true, index == 1)
-                    }
-                    AppSelectionDropdownMenu(showRange, { showRange = false }, choices, if (defaultSyncToPin) 1 else 0, ::choose, renderInRootScaffold = false) {
-                        choices.forEachIndexed { index, label ->
-                            AppDropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = { choose(index) },
-                                modifier = Modifier.testTag(if (index == 0) "comment_sync_default_off" else "comment_sync_default_on"),
-                                trailingIcon = { if (defaultSyncToPin == (index == 1)) Icon(Icons.Default.Check, "已选择") },
-                            )
-                        }
-                    }
+                    AppSelectionDropdownMenu(
+                        expanded = showRange,
+                        onDismissRequest = { showRange = false },
+                        options = listOf(
+                            AppSelectionOption(CommentsStrings.syncOnce, "comment_sync_default_off"),
+                            AppSelectionOption(CommentsStrings.syncByDefault, "comment_sync_default_on"),
+                        ),
+                        selectedIndex = if (defaultSyncToPin) 1 else 0,
+                        onSelect = { index ->
+                            showRange = false
+                            onSyncToPinChange(true, index == 1)
+                        },
+                        renderInRootScaffold = false,
+                    )
                 }
             }
             Box(Modifier.padding(start = AppDimens.Space12)) { senderMenu() }
@@ -391,22 +389,22 @@ internal fun CommentScreenOptionsRow(
                     .testTag(COMMENT_TOOLS_BUTTON_TAG)
                     .semantics {
                         stateDescription = when {
-                            commentToolsRequired -> "有录音或附件，工具保持展开"
-                            showCommentTools -> "已展开"
-                            else -> "已收起"
+                            commentToolsRequired -> CommentsStrings.toolsRequired
+                            showCommentTools -> CommentsStrings.expanded
+                            else -> CommentsStrings.collapsed
                         }
                     },
             ) {
-                Icon(
+                AppIcon(
                     imageVector = when {
                         commentToolsRequired -> Icons.Filled.MoreVert
                         showCommentTools -> Icons.Filled.Close
                         else -> Icons.Filled.Add
                     },
                     contentDescription = when {
-                        commentToolsRequired -> "评论工具已展开"
-                        showCommentTools -> "收起评论工具"
-                        else -> "更多评论工具"
+                        commentToolsRequired -> CommentsStrings.toolsExpanded
+                        showCommentTools -> CommentsStrings.collapseTools
+                        else -> CommentsStrings.moreTools
                     },
                     tint = when {
                         commentToolsRequired -> LocalAppSkinTokens.current.disabledOnSurface

@@ -24,8 +24,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use axum::extract::{Path as AxumPath, State};
-use axum::http::StatusCode;
+use axum::extract::{Path as AxumPath, Request, State};
+use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -272,6 +273,45 @@ pub fn app(state: AppState) -> Router {
             get(get_flag_status).post(post_aigc_flag),
         )
         .with_state(state)
+        .layer(middleware::from_fn(browser_cors))
+}
+
+/// 只开放受支持的 Web 来源；Pages 的整个 origin 共享权限，路径不是隔离边界。
+async fn browser_cors(request: Request, next: Next) -> Response {
+    let origin = request.headers().get(header::ORIGIN).cloned();
+    let allowed = origin.as_ref().is_some_and(|value| {
+        matches!(value.to_str(), Ok("https://zly2006.github.io" | "http://127.0.0.1:8080"))
+    });
+    let preflight = request.method() == Method::OPTIONS
+        && request.headers().contains_key(header::ACCESS_CONTROL_REQUEST_METHOD);
+    if preflight {
+        let method_allowed = request.headers().get(header::ACCESS_CONTROL_REQUEST_METHOD)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| matches!(value, "GET" | "POST"));
+        let headers_allowed = request.headers().get(header::ACCESS_CONTROL_REQUEST_HEADERS)
+            .map(|value| value.to_str().is_ok_and(|text| text.split(',').all(|name| {
+                name.trim().eq_ignore_ascii_case("content-type")
+            })))
+            .unwrap_or(true);
+        if !allowed || !method_allowed || !headers_allowed {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
+    let mut response = if preflight {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        next.run(request).await
+    };
+    response.headers_mut().append(header::VARY, HeaderValue::from_static("Origin"));
+    if allowed {
+        let headers = response.headers_mut();
+        headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin.unwrap());
+        if preflight {
+            headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST"));
+            headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Content-Type"));
+        }
+    }
+    response
 }
 
 pub async fn serve(state: AppState, addr: SocketAddr) -> Result<(), ServiceError> {

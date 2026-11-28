@@ -19,6 +19,7 @@ package com.github.zly2006.zhihu.navigation
 
 import androidx.compose.runtime.Composable
 import com.github.zly2006.zhihu.account.LoginScreen
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.ui.BlocklistSettingsScreen
 import com.github.zly2006.zhihu.ui.LegacyLocalHistoryScreen
 import com.github.zly2006.zhihu.ui.NotificationScreen
@@ -132,7 +133,7 @@ fun AppNavEntryBuilder.accountSettings(
     entry<Account.OpenSourceLicenses>(swipeDismiss = swipeBack) {
         OpenSourceLicensesScreen()
     }
-    entry<Account.DeveloperSettings>(swipeDismiss = swipeBack) {
+    entry<Account.AccountTools>(swipeDismiss = swipeBack) {
         AccountToolsScreen()
     }
 }
@@ -145,7 +146,7 @@ fun AppNavEntryBuilder.mainNotificationEntries(swipeBack: NavSwipeDirection) {
         NotificationTimelineScreen(entry.entryName, entry.title)
     }
     entry<Notification.Invitations>(swipeDismiss = swipeBack) {
-        NotificationTimelineScreen("invite", "邀请回答")
+        NotificationTimelineScreen("invite", NotificationsStrings.invitationTitle)
     }
     entry<Notification.Message>(swipeDismiss = swipeBack) { args ->
         PrivateMessageScreen(args)

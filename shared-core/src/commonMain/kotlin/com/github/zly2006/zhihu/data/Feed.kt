@@ -20,6 +20,7 @@
 package com.github.zly2006.zhihu.data
 
 import com.github.zly2006.zhihu.data.Feed.Badge
+import com.github.zly2006.zhihu.i18n.CoreStrings
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -38,7 +39,24 @@ data class QualityFilterSettings(
     val videoFollowersCount: Int = 50,
     val questionAnswerCount: Int = 5,
     val questionFollowersCount: Int = 50,
-)
+) {
+    fun answerReason(votes: Int?, following: Boolean?): String? =
+        if (votes != null && votes >= 0 && votes < answerVoteupCount && following != true) CoreStrings.filterAnswerRule(answerVoteupCount) else null
+
+    fun articleReason(votes: Int?, followers: Int?, following: Boolean?): String? =
+        if (following != true && ((votes != null && votes >= 0 && votes < articleVoteupCount) || (followers != null && followers >= 0 && followers < articleFollowersCount))) {
+            CoreStrings.filterArticleRule(articleFollowersCount, articleVoteupCount)
+        } else {
+            null
+        }
+
+    fun videoReason(votes: Int?, followers: Int?, following: Boolean?): String? =
+        if (following != true && votes != null && votes >= 0 && votes < videoVoteCount && followers != null && followers >= 0 && followers < videoFollowersCount) {
+            CoreStrings.filterVideoRule(videoFollowersCount, videoVoteCount)
+        } else {
+            null
+        }
+}
 
 @Serializable
 sealed interface Feed {
@@ -47,12 +65,21 @@ sealed interface Feed {
         fun filterReason(): String? = null
 
         fun description(): String = when (this) {
-            is AnswerTarget -> "回答"
-            is VideoTarget -> "视频"
-            is ArticleTarget -> "文章"
-            is PinTarget -> "想法"
-            is QuestionTarget -> "问题"
+            is AnswerTarget -> CoreStrings.typeAnswer
+            is VideoTarget -> CoreStrings.typeVideo
+            is ArticleTarget -> CoreStrings.typeArticle
+            is PinTarget -> CoreStrings.typePin
+            is QuestionTarget -> CoreStrings.typeQuestion
         }
+
+        val displayDetails: String
+            get() = when (this) {
+                is AnswerTarget -> CoreStrings.feedAnswerDetails(voteupCount, commentCount)
+                is VideoTarget -> CoreStrings.feedVideoDetails(voteCount, commentCount)
+                is ArticleTarget -> CoreStrings.feedArticleDetails(voteupCount, commentCount)
+                is PinTarget -> CoreStrings.feedPinDetails(likeCount, commentCount)
+                is QuestionTarget -> CoreStrings.feedQuestionDetails(followerCount, answerCount)
+            }
 
         val detailsText: String
         val title: String
@@ -118,11 +145,7 @@ sealed interface Feed {
     ) : Target {
         override fun filterReason(): String? = filterReason(QualityFilterSettings())
 
-        fun filterReason(settings: QualityFilterSettings): String? = if (voteupCount >= 0 && voteupCount < settings.answerVoteupCount && author?.isFollowing == false) {
-            "规则：回答；赞数 < ${settings.answerVoteupCount}，未关注作者"
-        } else {
-            null
-        }
+        fun filterReason(settings: QualityFilterSettings): String? = settings.answerReason(voteupCount, author?.isFollowing)
 
         override val detailsText = "回答 · $voteupCount 赞同 · $commentCount 评论"
         override val title: String
@@ -143,11 +166,7 @@ sealed interface Feed {
     ) : Target {
         override fun filterReason(): String? = filterReason(QualityFilterSettings())
 
-        fun filterReason(settings: QualityFilterSettings): String? = if (author.followersCount < settings.videoFollowersCount && voteCount >= 0 && voteCount < settings.videoVoteCount && !author.isFollowing) {
-            "规则：视频；作者粉丝数 < ${settings.videoFollowersCount} 且赞数 < ${settings.videoVoteCount}"
-        } else {
-            null
-        }
+        fun filterReason(settings: QualityFilterSettings): String? = settings.videoReason(voteCount, author.followersCount, author.isFollowing)
 
         override val detailsText = "视频 · $voteCount 赞 · $commentCount 评论"
 
@@ -181,11 +200,7 @@ sealed interface Feed {
     ) : Target {
         override fun filterReason(): String? = filterReason(QualityFilterSettings())
 
-        fun filterReason(settings: QualityFilterSettings): String? = if ((author.followersCount < settings.articleFollowersCount || (voteupCount >= 0 && voteupCount < settings.articleVoteupCount)) && !author.isFollowing) {
-            "规则：文章；作者粉丝数 < ${settings.articleFollowersCount} 或文章赞数 < ${settings.articleVoteupCount}，未关注作者"
-        } else {
-            null
-        }
+        fun filterReason(settings: QualityFilterSettings): String? = settings.articleReason(voteupCount, author.followersCount, author.isFollowing)
 
         override val detailsText = "文章 · $voteupCount 赞 · $commentCount 评论"
 
@@ -216,7 +231,7 @@ sealed interface Feed {
 
         override val detailsText = "想法 · $likeCount 赞 · $commentCount 评论"
         override val title: String
-            get() = "想法"
+            get() = CoreStrings.typePin
         override val excerpt = excerptTitle.ifEmpty { null }
 
         override val updatedTime: Long
@@ -257,7 +272,7 @@ sealed interface Feed {
         override fun filterReason(): String? = filterReason(QualityFilterSettings())
 
         fun filterReason(settings: QualityFilterSettings): String? = if (answerCount < settings.questionAnswerCount && followerCount < settings.questionFollowersCount) {
-            "规则：问题；回答数 < ${settings.questionAnswerCount}，关注数 < ${settings.questionFollowersCount}"
+            CoreStrings.filterQuestionRule(settings.questionAnswerCount, settings.questionFollowersCount)
         } else {
             null
         }

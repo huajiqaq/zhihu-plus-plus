@@ -28,8 +28,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 object AndroidReadingPlayerBridge {
-    private val mutableState = MutableStateFlow(ReadingPlayerState())
-    val state: StateFlow<ReadingPlayerState> = mutableState
+    val state: StateFlow<ReadingPlayerState>
+        field = MutableStateFlow(ReadingPlayerState())
 
     @Volatile
     private var pendingStartRequest: ReadingStartRequest? = null
@@ -53,7 +53,7 @@ object AndroidReadingPlayerBridge {
     }
 
     fun publish(state: ReadingPlayerState) {
-        mutableState.value = state
+        this.state.value = state
     }
 }
 
@@ -62,21 +62,8 @@ private class AndroidReadingPlayerController(
     override val state: State<ReadingPlayerState>,
 ) : ReadingPlayerController {
     override fun start(request: ReadingStartRequest) {
-        val normalizedPreferences = request.preferences.normalized()
-        val normalizedQueue = request.queue
-            .distinctBy(ReadingQueueItem::key)
-            .take(normalizedPreferences.queueLimit)
-        if (normalizedQueue.isEmpty()) return
-
-        AndroidReadingPlayerBridge.start(
-            context,
-            request.copy(
-                queue = normalizedQueue,
-                preferences = normalizedPreferences,
-                startIndex = request.startIndex.coerceIn(normalizedQueue.indices),
-                playbackSpeed = normalizeReadingPlaybackSpeed(request.playbackSpeed),
-            ),
-        )
+        if (request.queue.isEmpty()) return
+        AndroidReadingPlayerBridge.start(context, request)
     }
 
     override fun togglePlayPause() = send(ContentReadingService.ACTION_TOGGLE)
@@ -97,7 +84,7 @@ private class AndroidReadingPlayerController(
         context.startService(
             ContentReadingService
                 .commandIntent(context, ContentReadingService.ACTION_SET_PLAYBACK_SPEED)
-                .putExtra(ContentReadingService.EXTRA_PLAYBACK_SPEED, normalizeReadingPlaybackSpeed(speed)),
+                .putExtra(ContentReadingService.EXTRA_PLAYBACK_SPEED, speed),
         )
     }
 
@@ -109,7 +96,7 @@ private class AndroidReadingPlayerController(
 }
 
 @Composable
-internal actual fun rememberSupportedReadingPlayerController(): ReadingPlayerController {
+actual fun rememberReadingPlayerController(): ReadingPlayerController? {
     val context = LocalContext.current
     val state = AndroidReadingPlayerBridge.state.collectAsState()
     return remember(context, state) {
@@ -118,3 +105,6 @@ internal actual fun rememberSupportedReadingPlayerController(): ReadingPlayerCon
 }
 
 actual val isReadingPlayerSupported: Boolean = true
+
+@Composable
+actual fun ReadingPlayerHost(content: @Composable () -> Unit) = content()

@@ -51,12 +51,11 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.editor.PIN_TOPIC_SEPARATOR
+import com.github.zly2006.zhihu.editor.PinContentRequest
 import com.github.zly2006.zhihu.editor.PinContentTopicItem
 import com.github.zly2006.zhihu.editor.PinTopicSuggestion
 import com.github.zly2006.zhihu.editor.PinTopicSuggestionRequest
 import com.github.zly2006.zhihu.editor.PinTopicSuggestionResponse
-import com.github.zly2006.zhihu.editor.PublishPinRequest
-import com.github.zly2006.zhihu.editor.SavePinDraftRequest
 import com.github.zly2006.zhihu.editor.UnknownImageFormatException
 import com.github.zly2006.zhihu.editor.ZhihuImageUploadSource
 import com.github.zly2006.zhihu.editor.buildPinContentPayload
@@ -66,6 +65,7 @@ import com.github.zly2006.zhihu.editor.parsePublishContentId
 import com.github.zly2006.zhihu.editor.rememberImagePickerLauncher
 import com.github.zly2006.zhihu.editor.toPinMarkdown
 import com.github.zly2006.zhihu.editor.uploadZhihuImage
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.WritePin
@@ -82,12 +82,12 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.serialization.encodeToString
-import kotlin.time.Duration.Companion.milliseconds
 
 const val WRITE_PIN_BACK_BUTTON_TAG = "write_pin_back_button"
 
@@ -124,6 +124,8 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
     val coroutineScope = key(draftKey, accountClient) { rememberCoroutineScope() }
     val saved = remember(settings, draftKey) { settings.getStringOrNull(draftKey) }
     val restored = remember(saved) { saved?.let(::readLocalPinDraft) }
+    /** 不可恢复的本机草稿保持只读，不影响新内容的云端保存与发布。 */
+    val hasUnreadableLocalDraft = saved != null && restored == null
     val initialDraft = remember(restored, destination) {
         restored ?: LocalPinDraft(
             content = PinContentTopicItem(destination.publishTopicId, destination.topicName.removeSurrounding("#"))
@@ -155,7 +157,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
     var floatingActionBounds by remember { mutableStateOf(Rect.Zero) }
     var imageListBounds by remember { mutableStateOf(Rect.Zero) }
     var errorDialogMessage by remember(draftKey, accountClient) {
-        mutableStateOf(if (saved != null && restored == null) "此本机草稿无法读取，原草稿不会被覆盖。" else null)
+        mutableStateOf(if (hasUnreadableLocalDraft) ContentStrings.localDraftUnreadable else null)
     }
     var showPreviewSheet by remember(accountClient) { mutableStateOf(false) }
     val previewSheetState = rememberBottomSheetState(
@@ -178,7 +180,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
     )
 
     fun persistDraft(draft: LocalPinDraft = currentDraft()) {
-        if (draftPublished || saved != null && restored == null) return
+        if (draftPublished || hasUnreadableLocalDraft) return
         if (!localDraftSaved && draft == initialDraft) return
         settings.putString(draftKey, ZhihuJson.json.encodeToString(draft))
         localDraftSaved = true
@@ -230,7 +232,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             if (account.client === accountClient && topicTarget == target && topicQuery.text.trim().toString() == searchTerm) {
-                topicSuggestionError = error.message ?: error::class.simpleName ?: "未知错误"
+                topicSuggestionError = error.message ?: error::class.simpleName ?: ContentStrings.unknownError
             }
         }
     }
@@ -256,7 +258,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 if (account.client !== accountClient) return@onFailure
-                errorDialogMessage = buildWriteOperationErrorMessage("生成预览失败", e)
+                errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.previewFailed, e)
                 showPreviewSheet = false
             }
             if (account.client === accountClient) isPreviewLoading = false
@@ -268,7 +270,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
         val draft = currentDraft()
         persistDraft(draft)
         if (draft.content.isBlank() && draft.images.isEmpty()) {
-            userMessages.showShortMessage("想法内容为空")
+            userMessages.showShortMessage(ContentStrings.pinEmpty)
             return
         }
         isSubmitting = true
@@ -277,29 +279,31 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
             runCatching {
                 val payload = buildPinContentPayload(draft.title.trim(), compilePinMarkdown(draft.content), draft.images)
                 val xsrf = environment.authenticatedCookies()["_xsrf"]
-                    ?: error("缺少 _xsrf Cookie，无法${if (publish) "发布" else "保存"}想法；请先确保已登录。")
+                check(account.usesBrowserSession && accountClient.load().login || xsrf != null) {
+                    if (publish) ContentStrings.pinPublishXsrfMissing else ContentStrings.pinSaveXsrfMissing
+                }
                 if (account.client !== accountClient) return@launch
                 if (publish) {
                     val response = environment
                         .postSigned("https://www.zhihu.com/api/v4/content/publish") {
                             contentType(ContentType.Application.Json)
                             header(HttpHeaders.Referrer, "https://www.zhihu.com/")
-                            header("x-xsrftoken", xsrf)
-                            setBody(PublishPinRequest(data = payload))
+                            xsrf?.let { header("x-xsrftoken", it) }
+                            setBody(PinContentRequest(data = payload))
                         }.raiseForStatus()
                         .json<DataHolder.ContentPublishResponse>()
                     if (response.message != "success") {
-                        error("发布失败: ${response.message ?: "unknown"}\n$response")
+                        error(ContentStrings.publishErrorResponse(response.message ?: "unknown", response))
                     }
-                    parsePublishContentId(response.data?.result ?: error("发布成功但返回缺少 data.result"))
-                        ?: error("发布成功但无法解析 publish.id")
+                    parsePublishContentId(response.data?.result ?: error(ContentStrings.publishResultMissing))
+                        ?: error(ContentStrings.publishIdMissing)
                 } else {
                     environment
                         .postSigned("https://api.zhihu.com/content/drafts") {
                             contentType(ContentType.Application.Json)
                             header(HttpHeaders.Referrer, "https://www.zhihu.com/")
-                            header("x-xsrftoken", xsrf)
-                            setBody(SavePinDraftRequest(data = payload))
+                            xsrf?.let { header("x-xsrftoken", it) }
+                            setBody(PinContentRequest(data = payload))
                         }.raiseForStatus()
                     null
                 }
@@ -307,19 +311,19 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
                 if (account.client !== accountClient) return@onSuccess
                 if (publish) {
                     draftPublished = true
-                    if (saved == null || restored != null) settings.remove(draftKey)
+                    if (!hasUnreadableLocalDraft) settings.remove(draftKey)
                     localDraftSaved = false
-                    userMessages.showShortMessage("发布成功")
+                    userMessages.showShortMessage(ContentStrings.published)
                     navigator.onNavigateBack()
                     navigator.onNavigate(Pin(pinId ?: return@onSuccess))
                 } else {
-                    userMessages.showShortMessage("已保存草稿")
+                    userMessages.showShortMessage(ContentStrings.draftSavedConfirmation)
                 }
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 if (account.client !== accountClient) return@onFailure
                 errorDialogMessage = buildWriteOperationErrorMessage(
-                    title = if (publish) "发布失败" else "保存草稿失败",
+                    title = if (publish) ContentStrings.publishFailed else ContentStrings.draftSaveFailed,
                     throwable = e,
                 )
             }
@@ -332,7 +336,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
             rememberImagePickerLauncher { picked ->
                 if (account.client !== accountClient || isSubmitting || isUploadingImage) return@rememberImagePickerLauncher
                 if (images.size >= PIN_IMAGE_LIMIT) {
-                    userMessages.showShortMessage("图片最多添加 $PIN_IMAGE_LIMIT 张")
+                    userMessages.showShortMessage(ContentStrings.imageLimit(PIN_IMAGE_LIMIT))
                     return@rememberImagePickerLauncher
                 }
                 isUploadingImage = true
@@ -350,14 +354,14 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
                         if (account.client !== accountClient) return@onSuccess
                         images = images + uploaded
                         persistDraft()
-                        userMessages.showShortMessage("图片已添加")
+                        userMessages.showShortMessage(ContentStrings.imageAdded)
                     }.onFailure { e ->
                         if (e is CancellationException) throw e
                         if (account.client !== accountClient) return@onFailure
                         if (e is UnknownImageFormatException) {
-                            userMessages.showShortMessage(e.message ?: "无法识别图片格式，已取消上传")
+                            userMessages.showShortMessage(e.message ?: ContentStrings.unsupportedImageFormat)
                         } else {
-                            errorDialogMessage = buildWriteOperationErrorMessage("插入图片失败", e)
+                            errorDialogMessage = buildWriteOperationErrorMessage(ContentStrings.insertImageFailed, e)
                         }
                     }
                     if (account.client === accountClient) isUploadingImage = false
@@ -434,7 +438,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
                                     topicTarget = null
                                     persistDraft()
                                 } else {
-                                    userMessages.showShortMessage("此话题无法插入")
+                                    userMessages.showShortMessage(ContentStrings.topicCannotInsert)
                                 }
                             }
                         },
@@ -459,7 +463,7 @@ fun WritePinScreen(destination: WritePin = WritePin()) {
         onDismissError = { errorDialogMessage = null },
         onCopyError = { message ->
             copyToClipboard("write-pin-error", message)
-            userMessages.showShortMessage("已复制错误信息")
+            userMessages.showShortMessage(ContentStrings.errorCopied)
         },
     )
 }

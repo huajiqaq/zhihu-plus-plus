@@ -26,9 +26,9 @@ import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
-import com.github.zly2006.zhihu.util.jsonObject
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
+import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.plugins.UserAgent
 import io.ktor.client.plugins.cache.HttpCache
@@ -103,7 +103,7 @@ suspend fun fetchVerifiedZhihuAccount(client: HttpClient): JsonObject? {
     if (response.status != HttpStatusCode.OK) {
         return null
     }
-    return response.jsonObject()
+    return response.body<JsonObject>()
 }
 
 suspend fun fetchVerifiedZhihuSession(
@@ -147,12 +147,13 @@ val FeedDisplayItem.authorDestination: Person?
     }
 
 val FeedDisplayItem.navDestination: NavDestination?
-    get() = navDestinationJson?.let(::decodeFeedNavDestinationOrNull) ?: feed?.navDestination
+    get() = destination ?: feed?.navDestination
 
 internal val Feed.navDestination: NavDestination?
     get() = target?.toNavDestination { plainSearchText(it) }
 
-fun NavDestination.toFeedDisplayItemNavDestinationJson(): String = feedNavigationJson.encodeToString<NavDestination>(this)
+/** 保存导航到历史或可恢复 UI 状态时才编码；运行时卡片直接持有导航值。 */
+fun NavDestination.encodeStoredNavDestination(): String = feedNavigationJson.encodeToString<NavDestination>(this)
 
 /** 旧版持久化路由可能已改名或变更字段，解码失败时按不可打开处理。 */
 fun decodeFeedNavDestinationOrNull(json: String): NavDestination? =

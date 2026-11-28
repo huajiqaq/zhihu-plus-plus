@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.reading.ReadingPlaybackStatus
 import com.github.zly2006.zhihu.reading.ReadingPlayerController
@@ -53,6 +54,7 @@ import com.github.zly2006.zhihu.reading.ReadingQueueItem
 import com.github.zly2006.zhihu.reading.ReadingQueueSourceRegistry
 import com.github.zly2006.zhihu.reading.ReadingStartRequest
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppPageTitleBar
@@ -61,7 +63,6 @@ import com.github.zly2006.zhihu.ui.components.AppSpinner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.outlined.ThumbUp as OutlinedThumbUp
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun PinScreenTopBar(
@@ -74,7 +75,7 @@ internal fun PinScreenTopBar(
     readingEnabled: Boolean,
     readingStatus: ReadingPlaybackStatus,
     isActivelyPlaying: Boolean,
-    readingPlayer: ReadingPlayerController,
+    readingPlayer: ReadingPlayerController?,
     coroutineScope: CoroutineScope,
     readingPreferences: ReadingPreferences,
     readingPlaybackSpeed: Float,
@@ -83,8 +84,8 @@ internal fun PinScreenTopBar(
     AppPageTitleBar(
         title = pinContent?.let { detail ->
             detail.content.firstNotNullOfOrNull { (it as? DataHolder.Pin.ContentText)?.title?.takeIf(String::isNotBlank) }
-                ?: "${detail.author.name}的想法"
-        } ?: "想法",
+                ?: ContentStrings.personPin(detail.author.name)
+        } ?: ContentStrings.pin,
         scrollState = scrollState,
         onBack = onBack,
         backTag = PIN_SCREEN_BACK_BUTTON_TAG,
@@ -92,6 +93,7 @@ internal fun PinScreenTopBar(
             PinScreenReadingButton(
                 onClick = {
                     val item = readingItem ?: return@PinScreenReadingButton
+                    if (readingPlayer == null) return@PinScreenReadingButton
                     if (isCurrentReadingItem) {
                         readingPlayer.togglePlayPause()
                     } else {
@@ -120,7 +122,7 @@ internal fun PinScreenTopBar(
                 onClick = onShareClick,
                 modifier = Modifier.testTag(PIN_SCREEN_SHARE_BUTTON_TAG),
             ) {
-                Icon(Icons.Default.Share, contentDescription = "分享")
+                AppIcon(Icons.Default.Share, contentDescription = ContentStrings.share)
             }
         },
     )
@@ -145,13 +147,13 @@ private fun PinScreenReadingButton(
                     ReadingPlaybackStatus.Initializing,
                     ReadingPlaybackStatus.Loading,
                 ) -> AppSpinner(modifier = Modifier, size = 22.dp)
-            isCurrentReadingItem && isActivelyPlaying -> Icon(
+            isCurrentReadingItem && isActivelyPlaying -> AppIcon(
                 Icons.Default.Pause,
-                contentDescription = "暂停朗读",
+                contentDescription = ContentStrings.pauseReading,
             )
-            else -> Icon(
+            else -> AppIcon(
                 Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = if (isCurrentReadingItem) "继续朗读" else "开始连续朗读",
+                contentDescription = if (isCurrentReadingItem) ContentStrings.resumeReading else ContentStrings.startContinuousReading,
             )
         }
     }
@@ -185,8 +187,8 @@ internal fun PinActionBar(
                 .width(IntrinsicSize.Max)
                 .testTag(PIN_SCREEN_LIKE_BUTTON_TAG)
                 .semantics {
-                    stateDescription = if (isLiked) "已点赞" else "未点赞"
-                    onClick(label = if (isLiked) "取消点赞" else "点赞", action = null)
+                    stateDescription = if (isLiked) ContentStrings.liked else ContentStrings.notLiked
+                    onClick(label = if (isLiked) ContentStrings.unlike else ContentStrings.like, action = null)
                 },
             containerColor = if (isLiked) {
                 MaterialTheme.colorScheme.primary
@@ -199,14 +201,14 @@ internal fun PinActionBar(
                 MaterialTheme.colorScheme.onSurface
             },
         ) {
-            Icon(
+            AppIcon(
                 if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.OutlinedThumbUp,
-                contentDescription = if (isLiked) "取消点赞" else "点赞",
+                contentDescription = if (isLiked) ContentStrings.unlike else ContentStrings.like,
                 modifier = Modifier.size(AppDimens.Space20),
             )
             Spacer(Modifier.width(AppDimens.Space6))
             Text(
-                if (likeChanging) "提交中…" else "点赞 · $likeCount",
+                if (likeChanging) ContentStrings.submittingEllipsis else ContentStrings.likeActionCount(likeCount),
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -218,13 +220,13 @@ internal fun PinActionBar(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Icon(
+            AppIcon(
                 Icons.AutoMirrored.Filled.Comment,
-                contentDescription = "评论",
+                contentDescription = ContentStrings.comments,
                 modifier = Modifier.size(AppDimens.Space20),
             )
             Spacer(Modifier.width(AppDimens.Space6))
-            Text("评论 · $commentCount", style = MaterialTheme.typography.labelLarge)
+            Text(ContentStrings.commentsActionCount(commentCount), style = MaterialTheme.typography.labelLarge)
         }
     }
 }

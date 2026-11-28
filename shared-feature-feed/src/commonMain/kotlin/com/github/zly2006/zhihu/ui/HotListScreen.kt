@@ -38,24 +38,27 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.data.HotListFeed
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.platform.UserMessageDuration
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.reading.RegisterReadingQueueSource
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppPageHeader
 import com.github.zly2006.zhihu.ui.components.AppSpinner
+import com.github.zly2006.zhihu.ui.components.ContentSkeleton
 import com.github.zly2006.zhihu.ui.components.DraggableRefreshButton
 import com.github.zly2006.zhihu.ui.components.FeedCard
 import com.github.zly2006.zhihu.ui.components.FeedPullToRefresh
 import com.github.zly2006.zhihu.ui.components.PaginatedList
+import com.github.zly2006.zhihu.ui.components.SkeletonLayout
 import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.viewmodel.feed.HotListViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val HOT_LIST_LIST_TAG = "hot_list_list"
 const val HOT_LIST_REFRESH_BUTTON_TAG = "hot_list_refresh_button"
@@ -103,7 +106,7 @@ fun HotListScreen(
         cachedScrollToTopTrigger = scrollToTopTrigger
     }
 
-    LaunchedEffect(viewModel.errorMessage) {
+    LaunchedEffect(viewModel.errorText) {
         viewModel.errorMessage?.let {
             userMessages.showMessage(it, UserMessageDuration.Long)
         }
@@ -133,14 +136,15 @@ fun HotListScreen(
                 ),
                 isEnd = { viewModel.isEnd },
                 isLoading = { viewModel.isLoading },
+                initialLoadingContent = { ContentSkeleton(SkeletonLayout.Feed) },
                 loadError = { viewModel.errorMessage },
                 onRetry = { viewModel.retry(environment) },
                 key = { it.stableKey },
                 topContent = {
                     item("hot_list_header") {
                         AppPageHeader(
-                            title = "热榜",
-                            subtitle = "实时热点，按热度排序",
+                            title = FeedStrings.trendingList,
+                            subtitle = FeedStrings.trendingDescription,
                         )
                     }
                 },
@@ -163,7 +167,7 @@ fun HotListScreen(
                     if (viewModel.isLoading) {
                         AppSpinner(size = if (settingSkinIsMiuix()) null else AppDimens.IconSizeLarge)
                     } else {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        AppIcon(Icons.Default.Refresh, contentDescription = FeedStrings.refresh)
                     }
                 }
             }

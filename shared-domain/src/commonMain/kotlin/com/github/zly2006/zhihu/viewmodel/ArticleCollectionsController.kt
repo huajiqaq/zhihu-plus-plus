@@ -18,13 +18,14 @@
 package com.github.zly2006.zhihu.viewmodel
 
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import com.github.zly2006.zhihu.data.Collection
-import com.github.zly2006.zhihu.data.CollectionResponse
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.data.ZhihuCollectionResponse
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.UserMessageSink
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import io.ktor.client.HttpClient
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -45,9 +46,9 @@ internal class ArticleCollectionsController(
     private val httpClient: HttpClient?,
     private val userMessages: UserMessageSink,
     private val scope: () -> CoroutineScope,
-    private val collectionsValue: () -> SnapshotStateList<Collection>,
+    private val collectionsValue: () -> SnapshotStateList<ZhihuCollection>,
 ) {
-    private val collections: SnapshotStateList<Collection>
+    private val collections: SnapshotStateList<ZhihuCollection>
         get() = collectionsValue()
 
     /** 上一次展示的顺序：刷新后已有的收藏夹保持原位，新出现的排在最前。 */
@@ -72,15 +73,15 @@ internal class ArticleCollectionsController(
 
                 if (response.status.isSuccess()) {
                     loadCollections(environment)
-                    userMessages.showShortMessage(if (remove) "取消收藏成功" else "收藏成功")
+                    userMessages.showShortMessage(if (remove) DomainStrings.collectionItemRemoved else DomainStrings.collectionItemSaved)
                 } else {
-                    userMessages.showShortMessage("收藏操作失败")
+                    userMessages.showShortMessage(DomainStrings.collectionChangeFailed)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Favorite toggle failed", e)
-                userMessages.showShortMessage("收藏操作失败: ${e.message}")
+                AppLog.e("ArticleViewModel", "Favorite toggle failed", e)
+                userMessages.showShortMessage(DomainStrings.collectionChangeError(e.message.orEmpty()))
             }
         }
     }
@@ -96,7 +97,7 @@ internal class ArticleCollectionsController(
                     }
                     val collectionsUrl = "https://api.zhihu.com/collections/contents/$contentType/${article.id}?limit=50"
                     val jojo = environment.fetchJson(collectionsUrl, "") ?: return@withContext
-                    val collectionsData = ZhihuJson.decodeJson<CollectionResponse>(jojo)
+                    val collectionsData = ZhihuJson.decodeJson<ZhihuCollectionResponse>(jojo)
                     collections.clear()
                     collections.addAll(
                         collectionsData.data
@@ -116,7 +117,7 @@ internal class ArticleCollectionsController(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("ArticleViewModel", "Failed to load collections", e)
+                    AppLog.e("ArticleViewModel", "Failed to load collections", e)
                 }
             }
         }

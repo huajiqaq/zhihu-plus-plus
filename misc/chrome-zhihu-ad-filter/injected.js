@@ -27,6 +27,7 @@
     writable: false,
   });
 
+  const { filtered, untitled } = document.currentScript.dataset;
   const API_HOST = 'www.zhihu.com';
   const API_PATH = '/api/v3/feed/topstory/recommend';
   const TOAST_CONTAINER_ID = 'zhihu-ad-filter-toast-container';
@@ -125,7 +126,7 @@
 
   function extractDebugTitle(item) {
     if (!item || typeof item !== 'object') {
-      return 'unknown-title';
+      return untitled;
     }
 
     const target = item.target && typeof item.target === 'object' ? item.target : null;
@@ -147,7 +148,7 @@
       }
     }
 
-    return 'unknown-title';
+    return untitled;
   }
 
   function ensureToastContainer() {
@@ -207,7 +208,7 @@
     checkIcon.style.flex = '0 0 auto';
 
     const message = document.createElement('span');
-    message.textContent = `已过滤：${title}`;
+    message.textContent = filtered.replace('{title}', () => title);
     message.style.wordBreak = 'break-word';
 
     toast.appendChild(checkIcon);

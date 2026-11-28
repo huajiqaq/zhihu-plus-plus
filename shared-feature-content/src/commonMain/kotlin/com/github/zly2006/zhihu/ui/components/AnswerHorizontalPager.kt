@@ -67,11 +67,11 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import kotlinx.coroutines.launch
 
 /**
  * 左右 overscroll 切换回答容器。
@@ -226,8 +226,8 @@ fun AnswerHorizontalOverscroll(
         if (abs(overscrollOffset.value) > 0.5f) {
             val previous = overscrollOffset.value > 0f
             val readyToSwitch = isDragging && abs(overscrollOffset.value) >= triggerThresholdPx
-            val directionCaption = if (previous) "上一个回答" else "下一个回答"
-            val gestureCaption = if (readyToSwitch) "松开切换" else "继续滑动查看"
+            val directionCaption = if (previous) ContentStrings.previousAnswer else ContentStrings.nextAnswer
+            val gestureCaption = if (readyToSwitch) ContentStrings.releaseToSwitchAnswer else ContentStrings.swipeFurther
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -240,7 +240,7 @@ fun AnswerHorizontalOverscroll(
                 horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
+                AppIcon(
                     if (previous) Icons.AutoMirrored.Filled.ArrowBack else Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = tokens.onSecondaryVariant,

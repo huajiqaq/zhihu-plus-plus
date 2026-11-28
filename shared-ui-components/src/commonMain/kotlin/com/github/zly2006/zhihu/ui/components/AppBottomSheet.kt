@@ -42,12 +42,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.platform.exportTestTagsForUiAutomation
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY = "disableBottomSheetRoundedCorners"
 
@@ -148,7 +148,7 @@ private fun MiuixSheetDragHandle(onClose: (() -> Unit)? = null) {
                 onClick = onClose,
                 modifier = Modifier.align(Alignment.CenterEnd),
             ) {
-                Icon(Icons.Filled.Close, contentDescription = "关闭")
+                AppIcon(Icons.Filled.Close, contentDescription = WidgetsStrings.close)
             }
         }
     }

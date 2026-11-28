@@ -18,37 +18,25 @@
 package com.github.zly2006.zhihu.account
 
 import android.content.Context
-import androidx.annotation.VisibleForTesting
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import com.github.zly2006.zhihu.data.currentAndroidApplicationContext
 import com.github.zly2006.zhihu.data.initializeAndroidApplicationContext
 import kotlinx.io.files.Path
 
-private var currentAccountStore: ZhihuAccountStore? = null
+/** Application 持有唯一账号根对象，Activity、后台任务和图片加载借用同一实例。 */
+interface AndroidZhihuAccountOwner {
+    val zhihuAccountStore: ZhihuAccountStore
+}
 
-@Synchronized
-fun androidZhihuAccountStore(context: Context): ZhihuAccountStore {
-    initializeAndroidApplicationContext(context)
-    currentAccountStore?.let { return it }
+fun createAndroidAccountStore(context: Context): ZhihuAccountStore {
+    val application = context.applicationContext
+    initializeAndroidApplicationContext(application)
     return ZhihuAccountStore(
-        repository = ZhihuAccountRepository(Path(currentAndroidApplicationContext().filesDir.path, "account.json")),
-    ).also { currentAccountStore = it }
+        repository = ZhihuAccountRepository(Path(application.filesDir.path, "account.json")),
+    )
 }
 
-internal fun currentAndroidZhihuAccountStore(): ZhihuAccountStore = checkNotNull(currentAccountStore)
-
-@Synchronized
-@VisibleForTesting
-fun replaceAndroidZhihuAccountStoreForTesting(store: ZhihuAccountStore?) {
-    currentAccountStore?.close()
-    currentAccountStore = store
-}
-
-@Composable
-actual fun rememberZhihuAccountStore(): ZhihuAccountStore {
-    LocalZhihuAccountStore.current?.let { return it }
-    val context = LocalContext.current.applicationContext
-    return remember(context) { androidZhihuAccountStore(context) }
+fun androidZhihuAccountStore(context: Context): ZhihuAccountStore {
+    val application = context.applicationContext
+    initializeAndroidApplicationContext(application)
+    return (application as? AndroidZhihuAccountOwner)?.zhihuAccountStore
+        ?: error("Android Application 必须持有账号 store")
 }

@@ -23,14 +23,18 @@
     const hintEl = document.getElementById('hint');
     const loginButton = document.getElementById('login');
 
+    const message = key => chrome.i18n.getMessage(key);
+    document.documentElement.lang = message('htmlLang');
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = message(el.dataset.i18n); });
+
     function show(status, hint) {
-        statusEl.textContent = status;
-        hintEl.textContent = hint || '';
+        statusEl.textContent = message(status);
+        hintEl.textContent = hint ? message(hint) : '';
         loginButton.hidden = true;
     }
 
     function showLogin() {
-        show('请先在浏览器登录知乎', '必须登录与手机相同的知乎账号，登录后点击扩展图标即可直接打开最新内容。');
+        show('loginRequired', 'loginHint');
         loginButton.hidden = false;
     }
 
@@ -109,7 +113,7 @@
         try {
             const collection = await findCollection();
             if (!collection) {
-                show('没有找到收藏夹', '请确认浏览器登录的是与手机相同的知乎账号，并先在 Zhihu++ 中点击「在电脑打开」。');
+                show('noCollection', 'noCollectionHint');
                 return;
             }
             const payload = await request(`/api/v4/collections/${collection.id}/items?offset=0&limit=20`);
@@ -118,12 +122,12 @@
                 .filter((item) => item && item.content)
                 .sort((left, right) => contentTime(right) - contentTime(left))[0];
             if (!newest) {
-                show('收藏夹是空的', '先在 Zhihu++ 中点击「在电脑打开」。');
+                show('emptyCollection', 'emptyCollectionHint');
                 return;
             }
             const href = contentHref(newest.content);
             if (!href) {
-                show('无法打开这条内容');
+                show('cannotOpen');
                 return;
             }
             chrome.tabs.create({ url: href }, () => window.close());
@@ -131,9 +135,9 @@
             if (error.status === 401 || error.status === 403) {
                 showLogin();
             } else if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-                show('长时间没有反应', '请检查浏览器是否登录了与手机相同的知乎账号，然后重试。');
+                show('timedOut', 'retryHint');
             } else {
-                show('读取失败', '请检查浏览器是否登录了与手机相同的知乎账号，然后重试。');
+                show('readFailed', 'retryHint');
             }
         }
     }

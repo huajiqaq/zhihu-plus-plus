@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.platform.androidUserMessageSink
 
 @Composable
@@ -80,13 +81,13 @@ private class AndroidVoiceCommentPlayer(
             player.setOnCompletionListener { stop() }
             player.setOnErrorListener { _, _, _ ->
                 stop()
-                userMessages.showShortMessage("语音播放失败")
+                userMessages.showShortMessage(CommentsStrings.voicePlaybackFailed)
                 true
             }
             player.prepareAsync()
         } catch (_: Exception) {
             stop()
-            userMessages.showShortMessage("语音播放失败")
+            userMessages.showShortMessage(CommentsStrings.voicePlaybackFailed)
         }
     }
 

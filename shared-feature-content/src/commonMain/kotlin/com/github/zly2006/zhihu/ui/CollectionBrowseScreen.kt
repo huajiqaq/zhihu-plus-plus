@@ -54,8 +54,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.github.zly2006.zhihu.data.Collection
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
@@ -64,6 +65,7 @@ import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppIconToggleButton
 import com.github.zly2006.zhihu.ui.components.AppLoadStateContent
@@ -77,9 +79,8 @@ import com.github.zly2006.zhihu.viewmodel.CollectionContentViewModel
 import com.github.zly2006.zhihu.viewmodel.CollectionsViewModel
 import com.github.zly2006.zhihu.viewmodel.LoadState
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
-import kotlinx.coroutines.launch
 import kotlin.random.Random
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import kotlinx.coroutines.launch
 
 @Composable
 fun CollectionBrowseScreen(
@@ -105,7 +106,7 @@ fun CollectionBrowseScreen(
     var selectedCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
     var folderMenuExpanded by remember { mutableStateOf(false) }
     var randomMode by rememberSaveable { mutableStateOf(false) }
-    var collectionPendingDeletion by remember { mutableStateOf<Collection?>(null) }
+    var collectionPendingDeletion by remember { mutableStateOf<ZhihuCollection?>(null) }
 
     LaunchedEffect(collectionsViewModel, isActive) {
         if (isActive &&
@@ -194,7 +195,7 @@ fun CollectionBrowseScreen(
             .padding(contentPadding),
         topBar = {
             AppCompactTopBar(
-                title = "收藏夹",
+                title = ContentStrings.collections,
                 titleTag = COLLECTION_BROWSE_TITLE_TAG,
                 onBack = navigator.onNavigateBack.takeIf { showBackButton },
                 backTag = COLLECTION_BROWSE_BACK_BUTTON_TAG,
@@ -205,7 +206,7 @@ fun CollectionBrowseScreen(
                             enabled = collections.isNotEmpty(),
                             modifier = Modifier.testTag(COLLECTION_BROWSE_FOLDER_SWITCH_BUTTON_TAG),
                         ) {
-                            Icon(Icons.Filled.Folder, contentDescription = "切换收藏夹")
+                            AppIcon(Icons.Filled.Folder, contentDescription = ContentStrings.switchCollection)
                         }
                         AppDropdownMenu(
                             expanded = folderMenuExpanded,
@@ -218,7 +219,7 @@ fun CollectionBrowseScreen(
                                     trailingIcon = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             if (collection.id == selectedCollectionId) {
-                                                Icon(Icons.Filled.Check, contentDescription = null)
+                                                AppIcon(Icons.Filled.Check, contentDescription = null)
                                             }
                                             if (!collection.isDefault) {
                                                 AppIconButton(
@@ -232,9 +233,9 @@ fun CollectionBrowseScreen(
                                                         "collection_browse_delete_button_${collection.id}",
                                                     ),
                                                 ) {
-                                                    Icon(
+                                                    AppIcon(
                                                         Icons.Filled.Delete,
-                                                        contentDescription = "删除${collection.title}",
+                                                        contentDescription = ContentStrings.deleteCollectionNamed(collection.title),
                                                     )
                                                 }
                                             }
@@ -259,7 +260,7 @@ fun CollectionBrowseScreen(
                         onCheckedChange = { enabled ->
                             randomMode = enabled
                             if (enabled) randomSeed = Random.nextInt()
-                            userMessages.showShortMessage(if (enabled) "已切换为随机模式" else "已切换为顺序模式")
+                            userMessages.showShortMessage(if (enabled) ContentStrings.shuffleEnabled else ContentStrings.sequentialEnabled)
                         },
                         modifier = Modifier.testTag(COLLECTION_BROWSE_MODE_BUTTON_TAG),
                         colors = IconButtonDefaults.iconToggleButtonColors(
@@ -267,16 +268,16 @@ fun CollectionBrowseScreen(
                             checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         ),
                     ) {
-                        Icon(
+                        AppIcon(
                             imageVector = if (randomMode) {
                                 Icons.Filled.Shuffle
                             } else {
                                 Icons.AutoMirrored.Filled.FormatListBulleted
                             },
                             contentDescription = if (randomMode) {
-                                "当前为随机模式，点击切换为顺序模式"
+                                ContentStrings.shuffleSwitchDescription
                             } else {
-                                "当前为顺序模式，点击切换为随机模式"
+                                ContentStrings.sequentialSwitchDescription
                             },
                         )
                     }
@@ -295,8 +296,8 @@ fun CollectionBrowseScreen(
             }
             collections.isEmpty() && (useLocalCollections || collectionsViewModel.isEnd) -> {
                 AppEmptyState(
-                    title = "还没有收藏夹",
-                    description = "在内容页点收藏，就能在这里找到它",
+                    title = ContentStrings.noCollections,
+                    description = ContentStrings.noCollectionsHelp,
                     icon = Icons.Filled.Folder,
                     modifier = Modifier
                         .fillMaxSize()
@@ -335,7 +336,7 @@ fun CollectionBrowseScreen(
                     if (contentViewModel.allData.isEmpty() && contentViewModel.isEnd) {
                         AppEmptyState(
                             title = selectedCollection?.title ?: contentViewModel.title,
-                            description = "这个收藏夹是空的。收藏喜欢的回答、文章或想法后会出现在这里",
+                            description = ContentStrings.emptyCollectionHelp,
                             icon = Icons.Filled.Folder,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -374,7 +375,7 @@ fun CollectionBrowseScreen(
                             if (contentViewModel.isLoading) {
                                 AppSpinner(size = 30.dp)
                             } else {
-                                Icon(Icons.Filled.Refresh, contentDescription = "重新随机加载")
+                                AppIcon(Icons.Filled.Refresh, contentDescription = ContentStrings.reshuffle)
                             }
                         }
                     }
@@ -392,10 +393,10 @@ fun CollectionBrowseScreen(
                     collectionPendingDeletion = null
                 }
             },
-            title = { Text("删除收藏夹") },
+            title = { Text(ContentStrings.deleteCollection) },
             text = {
                 Column {
-                    Text("删除后无法恢复，确认删除收藏夹“${collection.title}”吗？")
+                    Text(ContentStrings.deleteCollectionConfirm(collection.title))
                     collectionsViewModel.deleteCollectionError?.let { error ->
                         Text(
                             text = error,
@@ -407,7 +408,7 @@ fun CollectionBrowseScreen(
             },
             confirmButton = {
                 AppTextButton(
-                    text = if (isDeleting) "删除中…" else "删除",
+                    text = if (isDeleting) ContentStrings.deleting else ContentStrings.delete,
                     onClick = {
                         coroutineScope.launch {
                             if (collectionsViewModel.deleteCollection(environment, collection)) {
@@ -418,7 +419,7 @@ fun CollectionBrowseScreen(
                                 }
                                 collectionsViewModel.refresh(environment)
                                 collectionPendingDeletion = null
-                                userMessages.showShortMessage("收藏夹已删除")
+                                userMessages.showShortMessage(ContentStrings.collectionDeleted)
                             }
                         }
                     },
@@ -428,7 +429,7 @@ fun CollectionBrowseScreen(
             },
             dismissButton = {
                 AppTextButton(
-                    text = "取消",
+                    text = ContentStrings.cancel,
                     onClick = { collectionPendingDeletion = null },
                     enabled = !isDeleting,
                 )
@@ -437,7 +438,7 @@ fun CollectionBrowseScreen(
     }
 }
 
-internal fun pickDefaultCollectionId(collections: List<Collection>): String? =
+internal fun pickDefaultCollectionId(collections: List<ZhihuCollection>): String? =
     collections.firstOrNull { it.isDefault }?.id ?: collections.firstOrNull()?.id
 
 internal fun orderCollectionItems(

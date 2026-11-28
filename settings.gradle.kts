@@ -98,6 +98,16 @@ upstreamInputs?.let { inputs ->
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        exclusiveContent {
+            forRepository {
+                ivy("https://github.com/WebAssembly/binaryen/releases/download") {
+                    name = "Binaryen distributions"
+                    patternLayout { artifact("version_[revision]/binaryen-version_[revision]-[classifier].[ext]") }
+                    metadataSources { artifact() }
+                }
+            }
+            filter { includeModule("com.github.webassembly", "binaryen") }
+        }
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")
@@ -136,6 +146,7 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 rootProject.name = "Zhihu"
 include(":app")
 include(":desktopApp")
+include(":webApp")
 if (System.getProperty("os.name").lowercase().contains("mac")) {
     include(":macosApp")
     include(":macosUiDebug")

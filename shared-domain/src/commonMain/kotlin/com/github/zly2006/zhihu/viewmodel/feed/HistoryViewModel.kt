@@ -21,7 +21,7 @@ import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.HistoryType
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
 import com.github.zly2006.zhihu.data.navDestination
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
@@ -37,7 +37,7 @@ class HistoryViewModel : BaseFeedViewModel() {
 
     override fun refresh(environment: PaginationEnvironment) {
         isLoading = true
-        errorMessage = null
+        errorText = null
         try {
             val entries = storage.history.map { destination ->
                 val type = HistoryType.from(destination)
@@ -46,14 +46,14 @@ class HistoryViewModel : BaseFeedViewModel() {
                     is Question -> destination.title
                     is Person -> destination.name
                     is Topic -> destination.name
-                    is Video -> "视频 ${destination.id}"
-                    is Pin -> "想法 ${destination.id}"
-                    else -> type
+                    is Video -> DomainStrings.videoId(destination.id)
+                    is Pin -> DomainStrings.pinId(destination.id)
+                    else -> HistoryType.displayName(type)
                 }
                 FeedDisplayItem(
-                    title = title.takeUnless { it.isBlank() || it == "loading..." } ?: type,
+                    title = title.takeUnless { it.isBlank() || it == "loading..." } ?: HistoryType.displayName(type),
                     summary = (destination as? Article)?.excerpt.orEmpty(),
-                    details = type,
+                    details = HistoryType.displayName(type),
                     authorName = when (destination) {
                         is Article -> destination.authorName
                         is Pin -> destination.authorName
@@ -61,14 +61,13 @@ class HistoryViewModel : BaseFeedViewModel() {
                     },
                     feed = null,
                     avatarSrc = (destination as? Article)?.avatarSrc,
-                    navDestinationJson = destination.toFeedDisplayItemNavDestinationJson(),
+                    destination = destination,
                     historyType = type,
                 )
             }
-            displayItems.clear()
-            displayItems.addAll(entries)
+            replaceDisplayItems(entries)
         } catch (error: Exception) {
-            errorMessage = error.message ?: "本地历史读取失败"
+            errorText = { error.message ?: DomainStrings.historyReadFailed }
         } finally {
             isLoading = false
         }
@@ -78,7 +77,7 @@ class HistoryViewModel : BaseFeedViewModel() {
         val destinations = displayItems.filter { it.stableKey in keys }.mapNotNullTo(linkedSetOf()) { it.navDestination }
         if (destinations.isEmpty()) return
         storage.remove(destinations)
-        displayItems.removeAll { it.stableKey in keys }
+        removeDisplayItems { it.stableKey in keys }
     }
 
     override suspend fun fetchFeeds(environment: PaginationEnvironment) = refresh(environment)

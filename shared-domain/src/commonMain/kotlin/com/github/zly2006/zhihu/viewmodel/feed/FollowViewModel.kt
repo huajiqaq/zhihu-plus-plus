@@ -29,6 +29,9 @@ import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.sourceLabel
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.platform.platformSettingsStore
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
@@ -72,7 +75,7 @@ class FollowPinViewModel : BaseFeedViewModel() {
         get() = if (lastPaging == null) super.include else ""
 
     /** 官方关注注册表的同型标识共用已有模型，原始响应仍由分页层保留。 */
-    override fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<Feed> {
+    override suspend fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<Feed> {
         val normalized = JsonArray(
             rawData.map { item ->
                 val objectValue = item as? JsonObject ?: return@map item
@@ -88,19 +91,21 @@ class FollowPinViewModel : BaseFeedViewModel() {
             },
         )
         val data = super.decodePage(environment, normalized)
-        check(rawData.isEmpty() || data.isNotEmpty()) { "关注想法暂不支持此响应，请重试" }
+        if (rawData.isNotEmpty() && data.isEmpty()) throw DisplayFailure { DomainStrings.unsupportedFollowPins }
         return data
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray) {
-        super.processResponse(environment, data, rawData)
-        rawData.forEach { raw ->
-            val target = (raw as? JsonObject)?.get("target") as? JsonObject ?: return@forEach
-            if ((target["type"] as? JsonPrimitive)?.content !in setOf("pin", "moments_pin")) return@forEach
-            val pin = runCatching { ZhihuJson.decodeJson<DataHolder.Pin>(target) }.getOrNull() ?: return@forEach
-            displayItems.firstOrNull { (it.feed?.target as? Feed.PinTarget)?.id?.toString() == pin.id }?.raw = pin
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): () -> Unit {
+        val pins = rawData.mapNotNull { raw ->
+            val target = (raw as? JsonObject)?.get("target") as? JsonObject ?: return@mapNotNull null
+            if ((target["type"] as? JsonPrimitive)?.content !in setOf("pin", "moments_pin")) return@mapNotNull null
+            runCatching { ZhihuJson.decodeJson<DataHolder.Pin>(target) }.getOrNull()
+        }.associateBy { it.id }
+        val items = createDisplayItems(FeedDisplaySettings(platformSettingsStore()), data).map { item ->
+            val pin = (item.feed?.target as? Feed.PinTarget)?.id?.toString()?.let(pins::get)
+            if (pin == null) item else item.copy(raw = pin)
         }
-        completedPageCount++
+        return { commitDisplayPage(items, data, rawData) }
     }
 }
 
@@ -122,7 +127,8 @@ class RecentMomentsViewModel : ViewModel() {
 
     var users = mutableStateListOf<FollowingUserItem>()
     var isLoading by mutableStateOf(false)
-    var errorMessage by mutableStateOf<String?>(null)
+    private var loadFailure by mutableStateOf<Exception?>(null)
+    val errorMessage: String? get() = loadFailure?.let { DomainStrings.followActivityFailed(it.message.orEmpty()) }
 
     /** brief 是服务端的不透明动态令牌，不能从 actor id 推导。 */
     fun markRead(
@@ -148,7 +154,7 @@ class RecentMomentsViewModel : ViewModel() {
                     ?.jsonPrimitive
                     ?.booleanOrNull == true
                 check(response.status.value in 200..299 && acknowledged) {
-                    "标记关注动态已读失败（${response.status.value}）"
+                    DomainStrings.markFollowReadFailed(response.status.value)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -165,12 +171,12 @@ class RecentMomentsViewModel : ViewModel() {
     fun load(environment: ZhihuApiEnvironment) {
         if (isLoading) return
         isLoading = true
-        errorMessage = null
+        loadFailure = null
         viewModelScope.launch {
             try {
                 val json = environment.fetchJson("https://api.zhihu.com/moments/recent?type=raw", "")
-                    ?: error("关注动态响应不可用")
-                val dataArray = json["data"]?.jsonArray ?: error("关注动态响应缺少列表")
+                    ?: throw DisplayFailure { DomainStrings.followingUnavailable }
+                val dataArray = json["data"]?.jsonArray ?: throw DisplayFailure { DomainStrings.followingMissingList }
                 val loadedUsers = dataArray
                     .mapNotNull { item ->
                         try {
@@ -182,12 +188,12 @@ class RecentMomentsViewModel : ViewModel() {
                     }.distinctBy { it.actor.id }
                 users.clear()
                 users.addAll(loadedUsers)
-                errorMessage = null
+                loadFailure = null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 environment.handleFetchFailure("RecentMomentsVM", e)
-                errorMessage = "加载关注动态失败：${e.message}"
+                loadFailure = e
             } finally {
                 isLoading = false
             }

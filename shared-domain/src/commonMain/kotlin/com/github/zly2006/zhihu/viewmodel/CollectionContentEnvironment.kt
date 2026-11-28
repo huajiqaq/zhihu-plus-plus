@@ -35,6 +35,7 @@ data class CollectionHtmlExportResult(
     val skippedCount: Int,
     val failedCount: Int,
     val zipFilePath: String?,
+    val delivery: ArticleExportResult? = null,
 )
 
 interface CollectionExportEnvironment {

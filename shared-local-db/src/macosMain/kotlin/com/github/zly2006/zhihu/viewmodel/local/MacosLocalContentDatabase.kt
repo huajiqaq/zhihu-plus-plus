@@ -32,10 +32,10 @@ private val macosLocalContentDatabase by lazy {
         error = null,
     )
     buildLocalContentDatabase(
-        Room.databaseBuilder<LocalContentDatabase>(
+        Room.databaseBuilder<RoomLocalContentDatabase>(
             name = "$dataDirectory/local-content.db",
         ),
     )
 }
 
-internal actual fun nativeLocalContentDatabase(): LocalContentDatabase? = macosLocalContentDatabase
+actual fun getLocalContentDatabase(): LocalContentDatabase = macosLocalContentDatabase

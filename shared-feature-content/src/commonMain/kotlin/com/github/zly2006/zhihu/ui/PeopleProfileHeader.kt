@@ -68,12 +68,14 @@ import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.OfficialBadge
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.officialBadgeDetails
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.platform.rememberImagePreviewOpener
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -84,7 +86,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_zh_plus_author_badge
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 private fun StatItem(
@@ -161,7 +162,7 @@ private fun OfficialBadgeDetails(
 
 private val OfficialBadge.peopleDetailTitle: String
     get() = when {
-        title == "认证" || title == "已认证的个人" -> "认证信息"
+        title == "认证" || title == "已认证的个人" -> ContentStrings.verificationInfo
         else -> title
     }
 
@@ -210,7 +211,7 @@ internal fun UserInfoHeader(
             ) {
                 AsyncImage(
                     model = viewModel.avatar,
-                    contentDescription = "用户头像",
+                    contentDescription = ContentStrings.userAvatar,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .testTag(PEOPLE_SCREEN_AVATAR_TAG)
@@ -251,13 +252,13 @@ internal fun UserInfoHeader(
                         }
                     if (viewModel.isFollowing) {
                         AppOutlinedButton(onClick = onFollowToggle, modifier = followModifier) {
-                            Text("已关注")
+                            Text(ContentStrings.following)
                         }
                     } else {
                         AppButton(onClick = onFollowToggle, modifier = followModifier) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
+                            AppIcon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(AppDimens.IconSizeSmall))
                             Spacer(Modifier.width(AppDimens.Space4))
-                            Text("关注")
+                            Text(ContentStrings.follow)
                         }
                     }
                 }
@@ -266,7 +267,7 @@ internal fun UserInfoHeader(
                 Box(Modifier.size(AppDimens.TouchTarget), contentAlignment = Alignment.Center) {
                     if (showSearch) {
                         AppIconButton(onClick = onSearch, modifier = Modifier.testTag(PEOPLE_SCREEN_SEARCH_BUTTON_TAG)) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索 TA 的创作", tint = skin.onSurfaceVariantActions)
+                            AppIcon(Icons.Default.Search, contentDescription = ContentStrings.searchAuthorContent, tint = skin.onSurfaceVariantActions)
                         }
                     }
                 }
@@ -280,7 +281,7 @@ internal fun UserInfoHeader(
                     .clip(MaterialTheme.shapes.medium)
                     .clickable { showFullProfile = true }
                     .testTag(PEOPLE_SCREEN_PROFILE_DETAILS_TAG)
-                    .semantics { contentDescription = "查看完整资料" },
+                    .semantics { contentDescription = ContentStrings.viewFullProfile },
                 horizontalArrangement = Arrangement.spacedBy(AppDimens.Space8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -299,7 +300,7 @@ internal fun UserInfoHeader(
                     }
                     OfficialBadgeDetails(badges = viewModel.officialBadgeDetails)
                 }
-                Icon(
+                AppIcon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     tint = skin.onSurfaceVariantActions,
@@ -327,7 +328,7 @@ internal fun UserInfoHeader(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "· ${githubSocial.starCount} stars",
+                    text = ContentStrings.githubStars(githubSocial.starCount),
                     style = skin.footnote1,
                     color = skin.onSurfaceVariantSummary,
                     maxLines = 1,
@@ -338,10 +339,10 @@ internal fun UserInfoHeader(
             val statSpacingPx = with(density) { AppDimens.Space6.roundToPx() }
             val minimumStatWidthPx = with(density) {
                 listOf(
-                    "回答" to viewModel.answerCount,
-                    "文章" to viewModel.articleCount,
-                    "粉丝" to viewModel.followerCount,
-                    "关注" to viewModel.followingCount,
+                    ContentStrings.answers to viewModel.answerCount,
+                    ContentStrings.articles to viewModel.articleCount,
+                    ContentStrings.followers to viewModel.followerCount,
+                    ContentStrings.followingPeople to viewModel.followingCount,
                 ).maxOf { (label, value) ->
                     maxOf(
                         textMeasurer.measure(formatCompactCount(value), style = skin.title2.copy(fontWeight = FontWeight.SemiBold), softWrap = false).size.width,
@@ -364,16 +365,16 @@ internal fun UserInfoHeader(
                 verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
                 maxItemsInEachRow = columns,
             ) {
-                StatItem("回答", viewModel.answerCount, modifier = Modifier.width(statWidth), onClick = {
+                StatItem(ContentStrings.answers, viewModel.answerCount, modifier = Modifier.width(statWidth), onClick = {
                     coroutineScope.launch { pagerState.animateScrollToPage(0) }
                 }, tag = PEOPLE_SCREEN_ANSWER_COUNT_TAG)
-                StatItem("文章", viewModel.articleCount, modifier = Modifier.width(statWidth), onClick = {
+                StatItem(ContentStrings.articles, viewModel.articleCount, modifier = Modifier.width(statWidth), onClick = {
                     coroutineScope.launch { pagerState.animateScrollToPage(1) }
                 }, tag = PEOPLE_SCREEN_ARTICLE_COUNT_TAG)
-                StatItem("粉丝", viewModel.followerCount, modifier = Modifier.width(statWidth), onClick = {
+                StatItem(ContentStrings.followers, viewModel.followerCount, modifier = Modifier.width(statWidth), onClick = {
                     coroutineScope.launch { pagerState.animateScrollToPage(7) }
                 }, tag = PEOPLE_SCREEN_FOLLOWER_COUNT_TAG)
-                StatItem("关注", viewModel.followingCount, modifier = Modifier.width(statWidth), onClick = {
+                StatItem(ContentStrings.followingPeople, viewModel.followingCount, modifier = Modifier.width(statWidth), onClick = {
                     coroutineScope.launch { pagerState.animateScrollToPage(8) }
                 }, tag = PEOPLE_SCREEN_FOLLOWING_COUNT_TAG)
             }
@@ -394,7 +395,7 @@ internal fun UserInfoHeader(
                 )
             },
             confirmButton = {
-                AppTextButton("关闭", { showFullProfile = false })
+                AppTextButton(ContentStrings.close, { showFullProfile = false })
             },
             onDismissRequest = { showFullProfile = false },
         )

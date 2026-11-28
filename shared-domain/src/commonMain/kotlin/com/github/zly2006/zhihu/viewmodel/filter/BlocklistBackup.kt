@@ -17,9 +17,10 @@
 
 package com.github.zly2006.zhihu.viewmodel.filter
 
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlin.time.Clock
 
 @Serializable
 data class BlocklistBackup(
@@ -65,6 +66,12 @@ private val blocklistBackupJson = Json {
     prettyPrint = true
 }
 
+private fun List<BlockedKeyword>.exactBackups() =
+    filter { it.getKeywordTypeEnum() == KeywordType.EXACT_MATCH }.map { KeywordBackup(it.keyword, it.caseSensitive, it.isRegex, it.scope) }
+
+private fun List<BlockedKeyword>.nlpBackups() =
+    filter { it.getKeywordTypeEnum() == KeywordType.NLP_SEMANTIC }.map { NlpKeywordBackup(it.keyword, it.scope) }
+
 suspend fun encodeBlocklistBackup(
     keywordDao: BlockedKeywordDao,
     userDao: BlockedUserDao,
@@ -77,12 +84,8 @@ suspend fun encodeBlocklistBackup(
     val topics = topicDao.getAllTopics()
 
     val backup = BlocklistBackup(
-        keywords = allKeywords
-            .filter { it.getKeywordTypeEnum() == KeywordType.EXACT_MATCH }
-            .map { KeywordBackup(it.keyword, it.caseSensitive, it.isRegex, it.scope) },
-        nlpKeywords = allKeywords
-            .filter { it.getKeywordTypeEnum() == KeywordType.NLP_SEMANTIC }
-            .map { NlpKeywordBackup(it.keyword, it.scope) },
+        keywords = allKeywords.exactBackups(),
+        nlpKeywords = allKeywords.nlpBackups(),
         users = users.map { UserBackup(it.userId, it.userName, it.urlToken ?: "", it.avatarUrl ?: "") },
         questionAuthors = questionAuthors.map { UserBackup(it.userId, it.userName, it.urlToken ?: "", it.avatarUrl ?: "") },
         topics = topics.map { TopicBackup(it.topicId, it.topicName) },
@@ -102,7 +105,11 @@ suspend fun importBlocklistBackupFromJsonText(
     // 在写入任何分组前验证范围，未知范围不能被悄悄扩大为 ALL。
     (backup.keywords.map { it.scope } + backup.nlpKeywords.map { it.scope }).forEach { KeywordScope.valueOf(it) }
 
-    backup.keywords.filter { it.keyword.isNotBlank() }.forEach { kw ->
+    val stored = if (backup.keywords.isEmpty() && backup.nlpKeywords.isEmpty()) emptyList() else keywordDao.getAllKeywords()
+    val exact = stored.exactBackups().toMutableSet()
+    val nlp = stored.nlpBackups().toMutableSet()
+    backup.keywords.forEach { kw ->
+        if (kw.keyword.isBlank() || !exact.add(kw)) return@forEach
         keywordDao.insertKeyword(
             BlockedKeyword(
                 keyword = kw.keyword,
@@ -113,7 +120,8 @@ suspend fun importBlocklistBackupFromJsonText(
             ),
         )
     }
-    backup.nlpKeywords.filter { it.keyword.isNotBlank() }.forEach { kw ->
+    backup.nlpKeywords.forEach { kw ->
+        if (kw.keyword.isBlank() || !nlp.add(kw)) return@forEach
         keywordDao.insertKeyword(
             BlockedKeyword(keyword = kw.keyword, keywordType = KeywordType.NLP_SEMANTIC.name, scope = kw.scope),
         )
@@ -142,5 +150,5 @@ suspend fun importBlocklistBackupFromJsonText(
         topicDao.insertTopic(BlockedTopic(topicId = topic.topicId, topicName = topic.topicName))
     }
 
-    return "关键词 ${backup.keywords.size} · NLP ${backup.nlpKeywords.size} · 用户 ${backup.users.size} · 提问者 ${backup.questionAuthors.size} · 主题 ${backup.topics.size}"
+    return DomainStrings.blocklistSummary(backup.keywords.size, backup.nlpKeywords.size, backup.users.size, backup.questionAuthors.size, backup.topics.size)
 }

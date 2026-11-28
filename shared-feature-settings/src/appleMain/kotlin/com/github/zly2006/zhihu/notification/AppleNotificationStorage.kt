@@ -19,6 +19,7 @@
 
 package com.github.zly2006.zhihu.notification
 
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
@@ -63,10 +64,10 @@ internal class AppleNotificationStorage {
     fun load(): DeviceNotificationState {
         val file = stateDirectory().URLByAppendingPathComponent("state.json")!!
         val attributes = attributes(file) ?: return DeviceNotificationState()
-        check(attributes[NSFileType] == NSFileTypeRegular) { "本机通知存储不是普通文件" }
+        check(attributes[NSFileType] == NSFileTypeRegular) { NotificationsStrings.storageNotRegular }
         check(files.setAttributes(mapOf(NSFilePosixPermissions to 384), file.path!!, null))
         val text = NSString.stringWithContentsOfURL(file, NSUTF8StringEncoding, null)
-            ?: error("无法读取本机通知存储")
+            ?: error(NotificationsStrings.storageReadFailed)
         return Json.decodeFromString(DeviceNotificationState.serializer(), text)
     }
 
@@ -78,35 +79,35 @@ internal class AppleNotificationStorage {
         val bytes = Json.encodeToString(DeviceNotificationState.serializer(), state).encodeToByteArray()
         bytes.usePinned { pinned ->
             val data = NSData.dataWithBytes(pinned.addressOf(0), bytes.size.toULong())
-            check(data.writeToURL(temporary, NSDataWritingAtomic, null)) { "无法写入本机通知存储" }
+            check(data.writeToURL(temporary, NSDataWritingAtomic, null)) { NotificationsStrings.storageWriteFailed }
         }
         check(files.setAttributes(mapOf(NSFilePosixPermissions to 384), temporary.path!!, null))
         check(temporary.setResourceValue(NSNumber(bool = true), NSURLIsExcludedFromBackupKey, null))
         val descriptor = open(temporary.path!!, O_WRONLY or O_NOFOLLOW)
-        check(descriptor >= 0) { "无法打开本机通知暂存文件" }
+        check(descriptor >= 0) { NotificationsStrings.storageTempFailed }
         try {
-            check(fsync(descriptor) == 0) { "无法持久化本机通知存储" }
+            check(fsync(descriptor) == 0) { NotificationsStrings.storageSyncFailed }
         } finally {
             close(descriptor)
         }
-        check(rename(temporary.path!!, file.path!!) == 0) { "无法原子保存本机通知存储" }
+        check(rename(temporary.path!!, file.path!!) == 0) { NotificationsStrings.storageAtomicFailed }
     }
 
     private fun stateDirectory(): NSURL {
         val bundleId = checkNotNull(NSBundle.mainBundle.bundleIdentifier)
         check(bundleId.isNotBlank() && bundleId.all { it.isLetterOrDigit() || it == '.' || it == '-' })
         val support = files.URLForDirectory(NSApplicationSupportDirectory, NSUserDomainMask, null, true, null)
-            ?: error("无法定位本机通知目录")
+            ?: error(NotificationsStrings.storageDirectoryMissing)
         val directory = support.URLByAppendingPathComponent("$bundleId.system-notifications", true)!!
         val existing = attributes(directory)
         if (existing == null) {
             check(files.createDirectoryAtURL(directory, false, mapOf(NSFilePosixPermissions to 448), null))
         } else {
-            check(existing[NSFileType] == NSFileTypeDirectory) { "本机通知目录无效" }
+            check(existing[NSFileType] == NSFileTypeDirectory) { NotificationsStrings.storageDirectoryInvalid }
         }
         check(files.setAttributes(mapOf(NSFilePosixPermissions to 448), directory.path!!, null))
         check(directory.setResourceValue(NSNumber(bool = true), NSURLIsExcludedFromBackupKey, null)) {
-            "无法将本机通知存储排除备份"
+            NotificationsStrings.storageBackupExclusionFailed
         }
         return directory
     }
@@ -120,7 +121,7 @@ internal class AppleNotificationStorage {
             check(
                 error.value?.domain == NSCocoaErrorDomain &&
                     error.value?.code in setOf(NSFileReadNoSuchFileError, NSFileNoSuchFileError),
-            ) { "无法检查本机通知存储" }
+            ) { NotificationsStrings.storageCheckFailed }
         }
         attributes
     }

@@ -24,18 +24,20 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.account.webViewFailureObserver
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.inlineArticleExportImagesForOfflineHtml
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.math.roundToInt
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class AndroidPreparedExportWebView(
     val webView: WebView,
@@ -57,12 +59,19 @@ class AndroidArticleExportRenderer(
         var pendingWebView: WebView? = null
         var isFinished = false
         try {
+            val offlineHtml = withContext(Dispatchers.Default) {
+                withTimeoutOrNull(timeoutMs) {
+                    inlineArticleExportImagesForOfflineHtml(
+                        html = htmlContent,
+                        httpClient = accountStore.client.httpClient(),
+                        replaceFailedImagesWithPlaceholder = true,
+                    )
+                } ?: throw IllegalStateException(DomainStrings.renderTimedOut)
+            }
             return withContext(Dispatchers.Main) {
                 suspendCancellableCoroutine { continuation ->
                     val webView = createExportWebView()
                     pendingWebView = webView
-                    val account = accountStore.client
-                    val observeHttpFailure = account.webViewFailureObserver()
                     val viewportWidthPx = context.resources.displayMetrics.widthPixels
                         .coerceAtLeast(1)
                     var timeoutRunnable = Runnable {}
@@ -110,7 +119,7 @@ class AndroidArticleExportRenderer(
                                 1,
                             )
                             if (contentHeightPx <= 1 && attempt >= 24) {
-                                fail(IllegalStateException("内容为空"))
+                                fail(IllegalStateException(DomainStrings.renderEmpty))
                                 return@postDelayed
                             }
 
@@ -133,7 +142,7 @@ class AndroidArticleExportRenderer(
                         }, if (attempt == 0) 450L else 180L)
                     }
 
-                    timeoutRunnable = Runnable { fail(IllegalStateException("超时")) }
+                    timeoutRunnable = Runnable { fail(IllegalStateException(DomainStrings.renderTimedOut)) }
                     continuation.invokeOnCancellation {
                         mainHandler.post {
                             isFinished = true
@@ -141,10 +150,7 @@ class AndroidArticleExportRenderer(
                         }
                     }
                     webView.webViewClient = object : android.webkit.WebViewClient() {
-                        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
-                            super.onReceivedHttpError(view, request, errorResponse)
-                            observeHttpFailure(request, errorResponse)
-                        }
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
@@ -161,12 +167,13 @@ class AndroidArticleExportRenderer(
                             error: android.webkit.WebResourceError?,
                         ) {
                             super.onReceivedError(view, request, error)
-                            if (request?.isForMainFrame != false) fail(IllegalStateException("加载错误"))
+                            if (request?.isForMainFrame != false) fail(IllegalStateException(DomainStrings.renderLoadError))
                         }
                     }
                     measureAndLayoutExportWebView(webView, viewportWidthPx, 1)
                     mainHandler.postDelayed(timeoutRunnable, timeoutMs)
-                    webView.loadDataWithBaseURL("https://www.zhihu.com", htmlContent, "text/html", "UTF-8", null)
+                    // 正文资源已绝对化并内联；导出页不得取得真实知乎 origin 的权限。
+                    webView.loadDataWithBaseURL("about:blank", offlineHtml, "text/html", "UTF-8", null)
                 }
             }
         } catch (error: Throwable) {
@@ -187,8 +194,14 @@ class AndroidArticleExportRenderer(
     }
 
     fun createExportWebView(): WebView = WebView(context).apply {
+        // 本地脚注仍需 JavaScript，正文已单独清洗；不授予网络、文件或内容提供器访问。
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = false
+        settings.blockNetworkLoads = true
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        settings.javaScriptCanOpenWindowsAutomatically = false
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = false
         settings.builtInZoomControls = false
@@ -213,7 +226,7 @@ class AndroidArticleExportRenderer(
                 onInjected()
             }
         }.onFailure { error ->
-            Log.e("ArticleViewModel", "Failed to inject export footnotes", error)
+            AppLog.e("ArticleViewModel", "Failed to inject export footnotes", error)
             onInjected()
         }
     }

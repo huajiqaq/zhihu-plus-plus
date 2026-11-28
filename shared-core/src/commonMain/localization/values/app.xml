@@ -1,0 +1,34 @@
+<resources>
+    <string name="home">Home</string>
+    <string name="following">Following</string>
+    <string name="trending">Trending</string>
+    <string name="daily">Daily</string>
+    <string name="history">History</string>
+    <string name="collections">Saved</string>
+    <string name="account">Account</string>
+    <string name="content_section">Content</string>
+    <string name="library_section">Library</string>
+    <string name="account_settings">Account and settings</string>
+    <string name="search">Search</string>
+    <string name="notifications">Notifications</string>
+    <string name="video_load_failed">Could not load the video URL</string>
+    <string name="video_unknown_type">Cannot open this video: unknown content type</string>
+    <string name="link_no_app">No app is available to open this link</string>
+    <string name="unsupported_link">Unsupported link</string>
+    <string name="nlp_unavailable">Smart keyword filtering is not supported on %1$s</string>
+    <string name="session_expired">Session expired</string>
+    <string name="session_sign_in_again">Sign in again to continue using all features.</string>
+    <string name="sign_in_again">Sign in again</string>
+    <string name="cancel">Cancel</string>
+    <string name="reading_width_sample">Saved content worth reading again</string>
+    <string name="browser_session_unchecked">Zhihu sign-in status not checked</string>
+    <string name="browser_bridge_missing">Local Zhihu request bridge not found</string>
+    <string name="browser_guest">Not signed in to Zhihu in this browser</string>
+    <string name="browser_signed_in">Signed in as %1$s</string>
+    <string name="browser_session_expired">Your Zhihu session has expired</string>
+    <string name="browser_access_denied">This tab has not been authorized</string>
+    <string name="browser_session_unavailable">Cannot check sign-in status right now</string>
+    <string name="install_bridge">Install request bridge</string>
+    <string name="checking_session">Checking…</string>
+    <string name="check_session">Check sign-in status</string>
+</resources>

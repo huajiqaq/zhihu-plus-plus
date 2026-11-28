@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +51,7 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.MOBILE_NOTIFICATION_MESSAGE_URL
 import com.github.zly2006.zhihu.data.MobileNotificationMessageOverview
 import com.github.zly2006.zhihu.data.RecommendationMode
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Search
 import com.github.zly2006.zhihu.navigation.requestLoginNavigation
@@ -57,7 +59,7 @@ import com.github.zly2006.zhihu.notification.OnlineHomeNotification
 import com.github.zly2006.zhihu.notification.OnlineHomeNotificationRepository
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.UserMessageDuration
-import com.github.zly2006.zhihu.platform.rememberAppPrivateDirectory
+import com.github.zly2006.zhihu.platform.appPrivateTextFile
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.reading.RegisterReadingQueueSource
@@ -75,27 +77,27 @@ import com.github.zly2006.zhihu.ui.subscreens.DEFAULT_FAB_OPACITY
 import com.github.zly2006.zhihu.ui.subscreens.PREF_FAB_OPACITY
 import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateState
 import com.github.zly2006.zhihu.ui.subscreens.rememberSystemUpdateState
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
-import com.github.zly2006.zhihu.viewmodel.QUALITY_FILTER_MODE_PREFERENCE_KEY
-import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
-import com.github.zly2006.zhihu.viewmodel.feed.BaseFeedViewModel
+import com.github.zly2006.zhihu.viewmodel.feed.HomeFeedStateViewModel
 import com.github.zly2006.zhihu.viewmodel.feed.HomeFeedViewModel
+import com.github.zly2006.zhihu.viewmodel.filter.KeywordScope
+import com.github.zly2006.zhihu.viewmodel.filter.KeywordType
+import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
+import com.github.zly2006.zhihu.viewmodel.filter.readHomeFeedFilterPolicy
 import com.github.zly2006.zhihu.viewmodel.local.LocalHomeFeedViewModel
 import com.github.zly2006.zhihu.viewmodel.rememberPaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.za.AndroidHomeFeedViewModel
-import com.github.zly2006.zhihu.viewmodel.za.MixedHomeFeedViewModel
 import io.ktor.client.request.get
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.json.Json
 
 const val HOME_TOP_ACTIONS_TAG = "home_top_actions"
@@ -163,9 +165,16 @@ fun HomeScreen(
     val skin = LocalAppSkinTokens.current
     val pageBackground = if (settingSkinIsMiuix()) skin.surface else MaterialTheme.colorScheme.background
     val homeState: HomeScreenState = viewModel { HomeScreenState() }
-    val webViewModel: HomeFeedViewModel = viewModel { HomeFeedViewModel() }
-    val remoteHistory = webViewModel.remoteHistory
-    val appPrivateDirectory = rememberAppPrivateDirectory()
+    val account = rememberAccountSettingsAccountState().value
+    val browserSession = accountStore.usesBrowserSession
+
+    /** 关注豁免属于当前账号；所有平台的内存卡片和启动缓存均按身份分区。 */
+    val feedOwner = remember(account.login, account.id) {
+        when {
+            !account.login -> "guest"
+            else -> ZhihuFetchSignature.md5Hex(account.id.encodeToByteArray())
+        }
+    }
     val notificationSettings = rememberNotificationSettingsStore()
     val userMessages = rememberUserMessageSink()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -194,24 +203,24 @@ fun HomeScreen(
         label = "createMenuBlurRadius",
     )
 
-    val account = rememberAccountSettingsAccountState().value
-    val currentRecommendationMode = if (!account.login) {
+    val missingNativeCookie = account.login && !browserSession && !account.hasRequiredCookie
+    val currentRecommendationMode = if (!account.login || browserSession) {
         RecommendationMode.WEB
     } else {
         RecommendationMode.entries.find {
             it.key == settings.getString("recommendationMode", RecommendationMode.MIXED.key)
         } ?: RecommendationMode.MIXED
     }
-    val startupCacheFile = remember(appPrivateDirectory, currentRecommendationMode) {
-        Path(appPrivateDirectory, homeFeedStartupCacheFileName(currentRecommendationMode))
+    val startupCacheFile = remember(currentRecommendationMode, feedOwner) {
+        appPrivateTextFile(homeFeedStartupCacheFileName(currentRecommendationMode, feedOwner))
     }
 
-    if (account.login && !account.hasRequiredCookie) {
+    if (missingNativeCookie) {
         AppDialog(
             onDismissRequest = {},
-            title = "Cookie 不完整",
-            summary = "当前登录信息缺少必要的 Cookie d_c0，请重新登录。",
-            confirmText = "重新登录",
+            title = FeedStrings.cookieIncomplete,
+            summary = FeedStrings.cookieSignInAgain,
+            confirmText = FeedStrings.signInAgain,
             onConfirm = ::requestLoginNavigation,
         )
     }
@@ -220,12 +229,11 @@ fun HomeScreen(
     val versionName = rememberAppVersionInfo().substringBefore(' ').takeIf { it.firstOrNull()?.isDigit() == true }
     val onlineNotificationRepository = remember(settings) { OnlineHomeNotificationRepository(settings) }
     val isDebuggable = rememberHomeIsDebuggable()
-    val viewModel: BaseFeedViewModel = when (currentRecommendationMode) {
-        RecommendationMode.WEB -> webViewModel
-        RecommendationMode.ANDROID -> viewModel { AndroidHomeFeedViewModel(remoteHistory) }
-        RecommendationMode.LOCAL -> viewModel { LocalHomeFeedViewModel(accountStore) }
-        RecommendationMode.MIXED -> viewModel { MixedHomeFeedViewModel(remoteHistory) }
+    val viewModel: HomeFeedStateViewModel = when (currentRecommendationMode) {
+        RecommendationMode.LOCAL -> viewModel(key = "home-local:$feedOwner") { LocalHomeFeedViewModel(accountStore) }
+        else -> viewModel(key = "home-${currentRecommendationMode.key}:$feedOwner") { HomeFeedViewModel(currentRecommendationMode) }
     }
+    val remoteHistory = viewModel.remoteHistory
     var refreshingFromFab by remember(viewModel) { mutableStateOf(false) }
     LaunchedEffect(viewModel, viewModel.isLoading) {
         if (!viewModel.isLoading) refreshingFromFab = false
@@ -269,7 +277,7 @@ fun HomeScreen(
     val unreadOwner = accountStore.client
     var unreadCount by remember(unreadOwner, account.login) { mutableIntStateOf(0) }
     LaunchedEffect(lifecycleOwner, unreadOwner, account.login, isActive, showUnreadBadge) {
-        if (!account.login || !isActive || !showUnreadBadge) return@LaunchedEffect
+        if (!account.login || browserSession || !isActive || !showUnreadBadge) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 val total = paginationEnvironment
@@ -286,36 +294,60 @@ fun HomeScreen(
         }
     }
 
-    val latestLoadedDisplayItems = viewModel.latestLoadedDisplayItems.value
-    LaunchedEffect(latestLoadedDisplayItems) {
-        if (latestLoadedDisplayItems.isNotEmpty()) {
-            encodeHomeFeedStartupSnapshot(latestLoadedDisplayItems)?.let { serialized ->
-                withContext(Dispatchers.Default) {
-                    runCatching {
-                        SystemFileSystem.sink(startupCacheFile).buffered().use { it.writeString(serialized) }
-                    }
-                }
-            }
-        }
-    }
-
     val completedPageCount = viewModel.completedPageCount
-    LaunchedEffect(completedPageCount) {
-        if (completedPageCount > 0 &&
-            currentRecommendationMode == RecommendationMode.WEB &&
-            settings.getString(QUALITY_FILTER_MODE_PREFERENCE_KEY, QualityFilterMode.RULES.name) == QualityFilterMode.HIDE.name &&
-            viewModel.displayItems.isEmpty() &&
-            !viewModel.isEnd
+    var continuedPage by remember(viewModel) { mutableStateOf<Pair<Int, Int>?>(null) }
+    LaunchedEffect(viewModel, completedPageCount, viewModel.isLoading, viewModel.displayItems.isEmpty(), viewModel.hasNextPage, viewModel.errorText, isActive) {
+        val page = viewModel.pageGeneration to completedPageCount
+        if (isActive &&
+            shouldContinueEmptyHomeFeed(
+                currentRecommendationMode,
+                completedPageCount,
+                viewModel.displayItems.isEmpty(),
+                viewModel.hasNextPage,
+                viewModel.isLoading,
+                viewModel.errorText != null,
+            ) &&
+            continuedPage != page
         ) {
+            continuedPage = page
             viewModel.loadMore(paginationEnvironment)
         }
     }
 
-    LaunchedEffect(lifecycleOwner, currentRecommendationMode, account.login, account.id, autoRefreshOnStartup, isActive) {
+    val filterDatabase = remember { getContentFilterDatabase() }
+    DisposableEffect(settings, viewModel) {
+        val subscription = settings.observeKeyChanges { key ->
+            if (key in HOME_FEED_FILTER_SETTING_KEYS) {
+                viewModel.invalidateFilterPolicy()
+            }
+        }
+        onDispose(subscription::close)
+    }
+    LaunchedEffect(lifecycleOwner, filterDatabase, viewModel, isActive) {
+        if (!isActive) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            /** 分栏设置可能不暂停主页；只订阅规则表，不订阅曝光或屏蔽日志。 */
+            val changes = KeywordType.entries.flatMap { type ->
+                KeywordScope.entries.map { scope ->
+                    filterDatabase.blockedKeywordDao().observeKeywordsByType(type.name, scope.name).map { Unit }
+                }
+            } + listOf(
+                filterDatabase.blockedUserDao().observeAllUsers().map { Unit },
+                filterDatabase.blockedQuestionAuthorDao().observeAllUsers().map { Unit },
+                filterDatabase.blockedTopicDao().observeAllTopics().map { Unit },
+            )
+            changes.forEach { changesForTable ->
+                launch { changesForTable.collect { viewModel.invalidateFilterPolicy() } }
+            }
+        }
+    }
+
+    LaunchedEffect(lifecycleOwner, viewModel, startupCacheFile, account.login, account.id, autoRefreshOnStartup, isActive) {
         if (!isActive) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (account.login &&
-                account.hasRequiredCookie &&
+                !browserSession &&
+                !missingNativeCookie &&
                 settings.getBoolean("enableContentFilter", true) &&
                 !settings.getBoolean("reverseBlock", false)
             ) {
@@ -323,32 +355,76 @@ fun HomeScreen(
             }
             if (homeState.takeGuestLoginPrompt(account.login, settings.getBoolean("loginForRecommendation", true))) {
                 requestLoginNavigation()
-            } else if (viewModel.displayItems.isEmpty()) {
-                val cachedItems = if (autoRefreshOnStartup) {
-                    emptyList()
-                } else {
-                    withContext(Dispatchers.Default) {
-                        runCatching {
-                            if (SystemFileSystem.exists(startupCacheFile)) {
-                                SystemFileSystem.source(startupCacheFile).buffered().use { source ->
-                                    decodeHomeFeedStartupSnapshot(source.readString())
-                                }
-                            } else {
-                                emptyList()
-                            }
-                        }.getOrDefault(emptyList())
+            } else if (!viewModel.startupAttempted && viewModel.displayItems.isEmpty() && !viewModel.isLoading && viewModel.completedPageCount == 0) {
+                viewModel.startupAttempted = true
+                try {
+                    run {
+                        if (autoRefreshOnStartup) {
+                            viewModel.refresh(paginationEnvironment)
+                            return@run
+                        }
+                        val generation = viewModel.pageGeneration
+                        val client = paginationEnvironment.httpClient()
+                        val serialized = withContext(Dispatchers.Default) {
+                            runCatching { startupCacheFile.read() }
+                        }.getOrElse {
+                            if (browserSession) userMessages.showShortMessage(FeedStrings.cacheReadFailed)
+                            null
+                        }
+                        if (generation != viewModel.pageGeneration || paginationEnvironment.httpClient() !== client || viewModel.isLoading) return@run
+                        if (serialized.isNullOrBlank()) {
+                            viewModel.refresh(paginationEnvironment)
+                            return@run
+                        }
+                        val policy = readHomeFeedFilterPolicy(settings, filterDatabase)
+                        val cachedItems = decodeHomeFeedStartupSnapshot(serialized, policy.fingerprint)
+                        if (generation != viewModel.pageGeneration || paginationEnvironment.httpClient() !== client || viewModel.isLoading) return@run
+                        if (cachedItems.isEmpty()) {
+                            viewModel.refresh(paginationEnvironment)
+                            return@run
+                        }
+                        remoteHistory.awaitRecentPage()
+                        val unreadCachedItems = remoteHistory.filterRemoteReads(cachedItems)
+                        val currentPolicy = readHomeFeedFilterPolicy(settings, filterDatabase)
+                        if (generation != viewModel.pageGeneration || paginationEnvironment.httpClient() !== client || viewModel.isLoading) return@run
+                        if (unreadCachedItems.isEmpty() || currentPolicy.fingerprint != policy.fingerprint) {
+                            viewModel.refresh(paginationEnvironment)
+                        } else {
+                            viewModel.restoreStartupItems(unreadCachedItems, policy.fingerprint)
+                        }
                     }
+                } catch (e: CancellationException) {
+                    viewModel.startupAttempted = false
+                    throw e
+                } catch (e: Exception) {
+                    AppLog.e("HomeScreen", "Failed to validate home feed snapshot", e)
+                    if (!viewModel.isLoading && viewModel.displayItems.isEmpty()) viewModel.refresh(paginationEnvironment)
                 }
-                if (cachedItems.isNotEmpty()) {
-                    remoteHistory.awaitRecentPage()
-                    val unreadCachedItems = remoteHistory.filterRemoteReads(cachedItems)
-                    if (unreadCachedItems.isEmpty()) {
-                        viewModel.refresh(paginationEnvironment)
-                    } else {
-                        viewModel.addDisplayItems(unreadCachedItems)
-                    }
-                } else {
-                    viewModel.refresh(paginationEnvironment)
+            }
+
+        }
+    }
+
+    LaunchedEffect(viewModel, viewModel.filterPolicyRevision, isActive) {
+        if (!isActive) return@LaunchedEffect
+        try {
+            viewModel.recheckFilterPolicy(paginationEnvironment)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLog.e("HomeScreen", "Failed to recheck home feed rules", error)
+        }
+    }
+    LaunchedEffect(viewModel, startupCacheFile, isActive) {
+        if (!isActive) return@LaunchedEffect
+        snapshotFlow { viewModel.snapshotRevision }.collect { revision ->
+            if (revision == 0) return@collect
+            val (items, fingerprint) = viewModel.startupSnapshot() ?: return@collect
+            encodeHomeFeedStartupSnapshot(items, fingerprint)?.let { serialized ->
+                withContext(Dispatchers.Default) {
+                    runCatching { startupCacheFile.write(serialized) }
+                }.onFailure {
+                    if (browserSession) userMessages.showShortMessage(FeedStrings.cacheSaveFailed)
                 }
             }
         }
@@ -358,25 +434,16 @@ fun HomeScreen(
     LaunchedEffect(remoteHistory, viewModel, historyRevision, isActive) {
         if (!isActive) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.isNotEmpty() }.first { it }
-        snapshotFlow { viewModel.displayItems.toList() }.collectLatest { items ->
-            /** 仅清理未见尾部，保持已浏览卡片位置稳定。 */
-            val visibleKeys = listState.layoutInfo.visibleItemsInfo
-                .map { it.key }
-                .toSet()
-            val lastVisible = items.indexOfLast { it.stableKey in visibleKeys }
-            val candidates = items.drop(lastVisible + 1)
-            val keptKeys = remoteHistory.filterRemoteReads(candidates).map { it.stableKey }.toSet()
-            val removedKeys = candidates.filterNot { it.stableKey in keptKeys }.map { it.stableKey }.toSet()
-
-            /** 数据库查询挂起期间可能已滚动，删除前重取可见边界。 */
-            val currentVisibleKeys = listState.layoutInfo.visibleItemsInfo
-                .map { it.key }
-                .toSet()
-            val protectedEnd = viewModel.displayItems.indexOfLast { it.stableKey in currentVisibleKeys }
-            for (index in viewModel.displayItems.lastIndex downTo protectedEnd + 1) {
-                if (viewModel.displayItems[index].stableKey in removedKeys) viewModel.displayItems.removeAt(index)
+        snapshotFlow { viewModel.displayItems.toList() }.collectLatest {
+            try {
+                viewModel.removeRemoteReads(paginationEnvironment) {
+                    listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.e("HomeScreen", "Failed to reconcile remote feed history", error)
             }
-            viewModel.latestLoadedDisplayItems.value = remoteHistory.filterRemoteReads(viewModel.latestLoadedDisplayItems.value)
         }
     }
 
@@ -390,7 +457,7 @@ fun HomeScreen(
         onlineNotificationRepository = onlineNotificationRepository,
     )
 
-    LaunchedEffect(viewModel.errorMessage, account.login) {
+    LaunchedEffect(viewModel.errorText, account.login) {
         if (account.login) {
             viewModel.errorMessage?.let {
                 userMessages.showMessage(it, UserMessageDuration.Long)
@@ -409,7 +476,7 @@ fun HomeScreen(
             !showCreateMenu &&
             feedAuthorBlockRequest == null &&
             !showBlockByKeywordsDialog &&
-            (!account.login || account.hasRequiredCookie),
+            !missingNativeCookie,
     )
 
     val transactions = buildHomeTransactions(
@@ -513,7 +580,7 @@ fun HomeScreen(
             onDebugClick = {
                 val data = Json.encodeToString(viewModel.debugData)
                 paginationEnvironment.setPlainTextClipboard("data", data)
-                userMessages.showShortMessage("已复制调试数据")
+                userMessages.showShortMessage(FeedStrings.debugDataCopied)
             },
             onRefreshClick = {
                 refreshingFromFab = true
@@ -531,10 +598,9 @@ fun HomeScreen(
 
     FeedAuthorBlockConfirmDialog(
         request = feedAuthorBlockRequest,
-        displayItems = viewModel.displayItems,
+        viewModel = viewModel,
         onDismiss = { feedAuthorBlockRequest = null },
         onConfirm = {
-            viewModel.refresh(paginationEnvironment)
             feedAuthorBlockRequest = null
         },
     )
@@ -549,7 +615,7 @@ fun HomeScreen(
                 feedToBlockByKeywords = null
             },
             onConfirm = {
-                viewModel.refresh(paginationEnvironment)
+                viewModel.invalidateFilterPolicy()
                 showBlockByKeywordsDialog = false
                 feedToBlockByKeywords = null
             },

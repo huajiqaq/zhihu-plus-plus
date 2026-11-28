@@ -18,6 +18,7 @@
 package com.github.zly2006.zhihu
 
 import android.annotation.SuppressLint
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
@@ -40,10 +41,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.AndroidClipboard
 import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.NativeClipboard
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -58,7 +58,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isRoot
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -88,7 +88,8 @@ import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.test.setZhihuMainContent
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
+import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AnswerDoubleTapAction
 import com.github.zly2006.zhihu.ui.ArticleScreen
@@ -102,6 +103,10 @@ import com.github.zly2006.zhihu.ui.components.WebviewComp
 import com.github.zly2006.zhihu.ui.subscreens.PREF_SHOW_PAGE_TURN_FAB
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import com.github.zly2006.zhihu.viewmodel.sharedArticleAnswerSwitchState
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.math.abs
+import kotlin.math.ceil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -109,10 +114,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlin.math.abs
-import kotlin.math.ceil
 
 // ArticleScreen 自带 AppScaffold 并自己读取系统栏留白，应用里也是不套外层直接放的；
 // 用例外层的 Scaffold 只提供全屏容器，再把它的内边距传进去会重复留白。
@@ -373,7 +374,7 @@ class ArticleScreenInstrumentedTest {
 
         val rangeBeforeSecondPage = scrollContainer.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
         assertTrue(
-            "翻页夹具必须具有正文行程：${rangeBeforeSecondPage.value()}/${rangeBeforeSecondPage.maxValue()}，风格=${ThemeManager.currentStyle}",
+            "翻页夹具必须具有正文行程：${rangeBeforeSecondPage.value()}/${rangeBeforeSecondPage.maxValue()}，风格=${articleThemeStyle}",
             rangeBeforeSecondPage.maxValue() > initialValue,
         )
         assertTrue(dispatcher.dispatch(PageTurnCommand.PageDown))
@@ -386,7 +387,7 @@ class ArticleScreenInstrumentedTest {
             }
         } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
             val range = scrollContainer.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
-            throw AssertionError("第二次翻页未滚动：${range.value()}/${range.maxValue()}，风格=${ThemeManager.currentStyle}，标题=${title.fetchSemanticsNode().boundsInRoot}，按钮底=$toolbarActionBottom", error)
+            throw AssertionError("第二次翻页未滚动：${range.value()}/${range.maxValue()}，风格=${articleThemeStyle}，标题=${title.fetchSemanticsNode().boundsInRoot}，按钮底=$toolbarActionBottom", error)
         }
     }
 
@@ -597,7 +598,7 @@ class ArticleScreenInstrumentedTest {
      */
     @Test
     fun draggingSelectionHandleUsesSameCompleteTextLayer() {
-        val clipboard = RecordingClipboard()
+        val clipboard = RecordingClipboard(checkNotNull(composeRule.activity.getSystemService(ClipboardManager::class.java)))
         val scheme = lightColorScheme()
         val selectionColor = scheme.primary.copy(alpha = 0.3f).compositeOver(scheme.surface)
         val paragraphs = listOf(
@@ -682,6 +683,8 @@ class ArticleScreenInstrumentedTest {
         assertEquals(paragraphs.joinToString("\n"), copySelection(clipboard))
     }
 
+    private var articleThemeStyle: ThemeStyle? = null
+
     private fun setArticleScreen(pageTurnDispatcher: PageTurnDispatcher? = null) {
         val viewModel = ArticleViewModel(
             article = ARTICLE,
@@ -703,6 +706,7 @@ class ArticleScreenInstrumentedTest {
             viewModel.ipInfo = "上海"
         }
         composeRule.setScreenContent {
+            articleThemeStyle = LocalAppTheme.current.style
             Scaffold(
                 modifier = androidx.compose.ui.Modifier
                     .fillMaxSize(),
@@ -736,7 +740,10 @@ class ArticleScreenInstrumentedTest {
     }
 }
 
-private class RecordingClipboard : Clipboard {
+/** 原生引用用于平台能力查询；复制读写只保存在内存，不改系统剪贴板。 */
+private class RecordingClipboard(
+    override val clipboardManager: ClipboardManager,
+) : AndroidClipboard {
     private var clipEntry: ClipEntry? = null
 
     var text: String? = null
@@ -753,9 +760,6 @@ private class RecordingClipboard : Clipboard {
             ?.text
             ?.toString()
     }
-
-    override val nativeClipboard: NativeClipboard
-        get() = error("RecordingClipboard 不提供原生剪贴板")
 
     fun clear() {
         clipEntry = null

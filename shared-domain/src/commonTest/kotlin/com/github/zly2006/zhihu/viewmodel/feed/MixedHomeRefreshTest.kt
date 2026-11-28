@@ -17,13 +17,18 @@
 
 package com.github.zly2006.zhihu.viewmodel.feed
 
+import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.data.CommonFeed
 import com.github.zly2006.zhihu.data.Feed
+import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.Person
+import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.navigation.Article
+import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
-import com.github.zly2006.zhihu.viewmodel.za.MixedHomeFeedViewModel
+import com.github.zly2006.zhihu.viewmodel.PaginationViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -32,21 +37,95 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.reflect.typeOf
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MixedHomeRefreshTest {
+    @Test
+    fun failedPagePreparationRetriesTheSameTerminalPageWithoutReplacingOldItems() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val client = HttpClient(MockEngine) { engine { addHandler { error("unused") } } }
+        try {
+            for (metadataFailure in listOf(false, true)) {
+                val requests = mutableListOf<String>()
+                var fail = true
+                val model = object : PaginationViewModel<String>(typeOf<String>()) {
+                    override val initialUrl = "https://example.test/first"
+                    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<String>, rawData: JsonArray): () -> Unit {
+                        val commit = super.prepareResponse(environment, data, rawData)
+                        if (fail && !metadataFailure) error("filter failed")
+                        return commit
+                    }
+                    override fun preparePageMetadata(json: JsonObject): () -> Unit {
+                        if (fail && metadataFailure) error("metadata failed")
+                        return {}
+                    }
+                }
+                val environment = object : PaginationEnvironment {
+                    override fun httpClient() = client
+                    override fun authenticatedCookies() = emptyMap<String, String>()
+                    override suspend fun handleFetchFailure(tag: String?, error: Exception) = Unit
+                    override suspend fun fetchJson(url: String, include: String): JsonObject {
+                        requests += url
+                        return ZhihuJson.json.parseToJsonElement("""{"data":[],"paging":{"is_end":true,"next":""}}""") as JsonObject
+                    }
+                }
+                model.allData += "old"
+                model.refresh(environment)
+                advanceUntilIdle()
+                assertEquals(listOf("old"), model.allData.toList())
+                assertTrue(!model.isEnd && model.errorMessage != null)
+                fail = false
+                model.retry(environment)
+                advanceUntilIdle()
+                assertEquals(listOf("https://example.test/first", "https://example.test/first"), requests)
+                assertTrue(model.isEnd && model.errorMessage == null)
+                assertTrue(model.allData.isEmpty())
+            }
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun mixedContentIdentityDeduplicatesSourcesButPreservesHistoryInstances() {
+        val feed = CommonFeed(target = Feed.AnswerTarget(id = 42, url = "", question = Feed.QuestionTarget(id = 7, _title = "question", url = "", type = "question")))
+        val web = FeedDisplayItem(title = "web", summary = null, details = "", feed = feed)
+        val mobile = FeedDisplayItem(title = "mobile", summary = null, details = "", feed = null, destination = Article(type = ArticleType.Answer, id = 42))
+        val model = object : HomeFeedStateViewModel() {
+            override val initialUrl = "unused"
+            fun appendPage(items: List<FeedDisplayItem>) = commitDisplayPage(items)
+            fun removeHistoryInstance(key: String) = removeDisplayItems { it.historyKey == key }
+        }
+        model.restoreStartupItems(listOf(web, mobile), "fixture-rules")
+        assertEquals(web.contentIdentity, mobile.contentIdentity)
+        assertEquals(1, model.displayItems.size)
+        model.appendPage(listOf(mobile.copy(historyKey = "visit:1"), mobile.copy(historyKey = "visit:2")))
+        assertEquals(3, model.displayItems.size)
+        val revision = model.snapshotRevision
+        model.removeHistoryInstance("visit:1")
+        assertTrue(model.snapshotRevision > revision, "owner移除必须触发启动快照更新")
+        val snapshot = checkNotNull(model.startupSnapshot())
+        assertEquals(model.displayItems.toList(), snapshot.first)
+        assertTrue(snapshot.first.none { it.historyKey == "visit:1" })
+    }
+
     /** 下拉和按钮刷新均须重置两个来源的游标，成功后替换旧列表而非继续追加，并保留两来源新数据。 */
     @Test
     fun refreshReplacesBothSourcesAndResetsTheirPageCursors() = runTest {
@@ -106,26 +185,34 @@ class MixedHomeRefreshTest {
                         return ZhihuJson.json.parseToJsonElement("""{"data":[${ZhihuJson.json.encodeToString<Feed>(feed)}],"paging":{"next":"https://www.zhihu.com/api/v3/feed/topstory/recommend?page=2","is_end":false}}""") as JsonObject
                     }
                 }
+                val model = HomeFeedViewModel(RecommendationMode.MIXED)
+                val modelJob = checkNotNull(model.viewModelScope.coroutineContext[Job])
+                // 规则快照由 Room 的 Dispatchers.Default 查询；测试调度器空闲不代表分页完成。
+                suspend fun refreshAndAwait(pull: Boolean) {
+                    if (pull) {
+                        model.pullToRefresh(environment)
+                    } else {
+                        model.refresh(environment)
+                        modelJob.children.toList().forEach { it.join() }
+                    }
+                }
                 try {
-                    val model = MixedHomeFeedViewModel()
-                    model.refresh(environment)
-                    advanceUntilIdle()
+                    refreshAndAwait(pull = false)
                     assertEquals(setOf("web-0", "mobile-0"), model.displayItems.map { it.title }.toSet())
                     requests.clear()
                     round = 1
-                    if (pull) model.pullToRefresh(environment) else model.refresh(environment)
-                    advanceUntilIdle()
+                    refreshAndAwait(pull)
                     assertEquals(setOf("web-1", "mobile-1"), model.displayItems.map { it.title }.toSet(), "pull=$pull 必须替换旧内容")
                     assertTrue(requests.none { "page=2" in it }, "pull=$pull 刷新不能请求两个来源的旧下一页: $requests")
                     assertEquals(false, model.isPullToRefresh)
                     assertEquals(false, model.isLoading)
                     failRequests = true
-                    if (pull) model.pullToRefresh(environment) else model.refresh(environment)
-                    advanceUntilIdle()
+                    refreshAndAwait(pull)
                     assertEquals(setOf("web-1", "mobile-1"), model.displayItems.map { it.title }.toSet(), "两来源失败不能丢失已有内容")
                     assertEquals(false, model.isLoading)
                     assertEquals(false, model.isPullToRefresh)
                 } finally {
+                    modelJob.cancelAndJoin()
                     mobile.close()
                 }
             }

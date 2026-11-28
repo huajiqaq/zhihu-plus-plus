@@ -1,0 +1,15 @@
+# Copyright (C) 2024-2026, zly2006 <i@zly2006.me>
+# SPDX-License-Identifier: AGPL-3.0-only
+cmake_minimum_required(VERSION 3.24)
+project(ZhihuReadingHost LANGUAGES C)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "The Speech Dispatcher host requires Linux")
+endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SPEECHD REQUIRED IMPORTED_TARGET speech-dispatcher)
+pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET gio-2.0 json-glib-1.0)
+add_executable(zhihu-reading-host ReadingHost.c)
+target_compile_features(zhihu-reading-host PRIVATE c_std_11)
+target_compile_options(zhihu-reading-host PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(zhihu-reading-host PRIVATE PkgConfig::SPEECHD PkgConfig::GLIB m)
+set_target_properties(zhihu-reading-host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/out")

@@ -19,10 +19,10 @@ package com.github.zly2006.zhihu.editor
 
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.ZhihuJson
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /** publish 的 data.result 是 JSON 字符串，须再解码才能取得内容 id。 */
 fun parsePublishContentId(resultText: String): Long? =

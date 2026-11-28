@@ -17,6 +17,7 @@
 
 import buildlogic.configureAppleTargets
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.targets.js.dsl.KotlinWasmJsTargetDsl
 import org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask
 
 plugins {
@@ -57,17 +58,32 @@ kotlin {
     jvm {
     }
 
+    targets.named<KotlinWasmJsTargetDsl>("wasmJs") {
+        browser {
+            testTask { useKarma { useChromeHeadless() } }
+        }
+    }
     configureAppleTargets("SharedLocalDb")
     applyDefaultHierarchyTemplate()
 
     sourceSets {
+        val nonWebMain =
+            create("nonWebMain") {
+                dependsOn(commonMain.get())
+                dependencies { api(libs.room.runtime) }
+            }
+        androidMain.get().dependsOn(nonWebMain)
+        jvmMain.get().dependsOn(nonWebMain)
+        findByName("nativeMain")?.dependsOn(nonWebMain)
         commonMain.dependencies {
-            api(libs.room.runtime)
             api(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+        wasmJsTest.dependencies {
+            implementation(libs.kotlinx.coroutines.test)
         }
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)

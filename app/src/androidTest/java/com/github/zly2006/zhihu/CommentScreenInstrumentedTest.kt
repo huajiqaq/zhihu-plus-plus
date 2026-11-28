@@ -44,7 +44,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -63,10 +63,11 @@ import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Navigator
-import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
+import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
+import com.github.zly2006.zhihu.test.instrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.mockCommentDetail
 import com.github.zly2006.zhihu.test.mockRootComments
 import com.github.zly2006.zhihu.test.resetAppPreferences
@@ -173,7 +174,7 @@ class CommentScreenInstrumentedTest {
     fun tearDown() = runBlocking {
         val database = getContentFilterDatabase(composeRule.activity)
         database.blockedUserDao().clearAllUsers()
-        if (!InstrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
+        if (!composeRule.activity.instrumentedTestEnvironment.isMockMode()) composeRule.resetAppPreferences()
     }
 
     @Test
@@ -461,9 +462,11 @@ class CommentScreenInstrumentedTest {
 
     @Test
     fun answerTabsLoadOnDemandAndSortChangeReturnsToTop() {
+        val target = ROOT_ARTICLE.copy(id = 9042)
         val scoreComments = seedRootComments(count = 24)
         val timeComments = scoreComments.reversed()
-        val url = "https://www.zhihu.com/api/v4/comment_v5/answers/9001/root_comment"
+        val threadUrl = "https://www.zhihu.com/api/v4/comment_v5/answers/${target.id}"
+        val url = "$threadUrl/root_comment"
         ZhihuMockApi.mockJsonPrefix(
             method = HttpMethod.Get,
             urlPrefix = url,
@@ -479,12 +482,12 @@ class CommentScreenInstrumentedTest {
         val segmentSentence = seedRootComment(index = 30).copy(resourceType = "segment", resourceId = "seg-9001")
         ZhihuMockApi.mockJsonPrefix(
             method = HttpMethod.Get,
-            urlPrefix = "https://www.zhihu.com/api/v4/comment_v5/answers/9001/segment_comment",
+            urlPrefix = "$threadUrl/segment_comment",
             body = """{"data":null,"segment_infos":null,"paging":{"is_end":true,"is_start":true,"totals":0,"next":"","previous":""}}""",
         )
         ZhihuMockApi.mockJsonPrefix(
             method = HttpMethod.Get,
-            urlPrefix = "https://www.zhihu.com/api/v4/comment_v5/answers/9001/segment/root_comment?segment_id=seg-9001",
+            urlPrefix = "$threadUrl/segment/root_comment?segment_id=seg-9001",
             body =
                 """
                 {
@@ -493,9 +496,32 @@ class CommentScreenInstrumentedTest {
                 }
                 """.trimIndent(),
         )
+        val forwardsUrl = "https://api.zhihu.com/unify-consumption/forward/list?content_type=answer&content_token=${target.id}"
+        val forwardCountUrl = forwardsUrl.replace("/forward/list", "/forward/count")
+        ZhihuMockApi.mockJson(
+            method = HttpMethod.Get,
+            url = forwardCountUrl,
+            body = """{"data":{"is_show_tab":true,"count":23}}""",
+        )
+        ZhihuMockApi.mockJson(
+            method = HttpMethod.Get,
+            url = forwardsUrl,
+            body = """{"data":[{"id":"61","router":"https://www.zhihu.com/pin/62","title":"转发标题","summary":"<b>测试转发</b>","author":{"name":"测试作者"},"content_end_info":{"publish_time":12}}],"paging":{"is_end":true}}""",
+        )
+        val pinComments = "https://www.zhihu.com/api/v4/comment_v5/pins/61/root_comment"
+        ZhihuMockApi.mockJsonPrefix(
+            method = HttpMethod.Get,
+            urlPrefix = pinComments,
+            body = """{"data":[],"paging":{"is_end":true,"next":""}}""",
+        )
+        ZhihuMockApi.mockJson(
+            method = HttpMethod.Get,
+            url = "https://api.zhihu.com/unify-consumption/forward/count?content_type=pin&content_token=61",
+            body = """{"data":{"is_show_tab":false,"count":0}}""",
+        )
         val gate = CompletableDeferred<Unit>()
-        val model = composeRule.seedViewModel<RootCommentViewModel>(key = ROOT_ARTICLE_COMMENT_VIEW_MODEL_KEY) {
-            RootCommentViewModel(ROOT_ARTICLE)
+        val model = composeRule.seedViewModel<RootCommentViewModel>(key = "article:${target.type}:${target.id}") {
+            RootCommentViewModel(target)
         }
         ZhihuMockApi.mockJson(
             method = HttpMethod.Get,
@@ -510,7 +536,7 @@ class CommentScreenInstrumentedTest {
             beforeRespond = { gate.await() },
         )
         val listState = LazyListState()
-        setCommentScreen(listState = listState, knownSentenceCount = 3)
+        val navigator = setCommentScreen(content = target, listState = listState, knownSentenceCount = 3)
         composeRule.onNodeWithTag("comment_tab_normal").assertIsDisplayed().assertIsSelected()
         composeRule.onNodeWithTag("comment_tab_sentence").assertIsDisplayed()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment_comment"))
@@ -526,9 +552,29 @@ class CommentScreenInstrumentedTest {
         composeRule.onNodeWithTag(COMMENT_SORT_SCORE_TAG).assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_SORT_TIME_TAG).assertDoesNotExist()
         composeRule.onNodeWithTag(COMMENT_INPUT_TAG).assertDoesNotExist()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("comment_tab_forward").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, forwardCountUrl))
+        assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Get, forwardsUrl))
+        composeRule
+            .onNodeWithTag("comment_tab_forward")
+            .performClick()
+            .assertIsSelected()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("comment_forward_61").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("comment_forward_detail_61").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(listOf(Pin(62)), navigator.destinations) }
+        composeRule.onNodeWithTag("comment_forward_61").assertIsDisplayed().performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { ZhihuMockApi.requestCount(HttpMethod.Get, pinComments) == 1 }
+        composeRule.onNodeWithTag(COMMENT_CLOSE_BUTTON_TAG).performClick()
+        composeRule.onNodeWithTag("comment_tab_sentence").performClick()
+        composeRule.onNodeWithTag("comment_row_root-30").assertIsDisplayed()
+        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, forwardsUrl))
         composeRule.onNodeWithTag("comment_tab_normal").performClick()
         composeRule.onNodeWithTag("comment_row_root-20").assertIsDisplayed()
-        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
+        assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, url))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment_comment"))
         assertEquals(1, ZhihuMockApi.requestCount(HttpMethod.Get, "/segment/root_comment"))
         composeRule.onNodeWithTag("comment_tab_normal").assertIsSelected()
@@ -591,7 +637,7 @@ class CommentScreenInstrumentedTest {
             assertEquals(visibleKeys, listState.layoutInfo.visibleItemsInfo.map { it.key })
             assertEquals(timeComments.map { it.id }, model.allData.map { it.id })
         }
-        assertEquals(2, ZhihuMockApi.requestCount(HttpMethod.Get, "/api/v4/comment_v5/answers/9001/root_comment"))
+        assertEquals(2, ZhihuMockApi.requestCount(HttpMethod.Get, url))
     }
 
     private fun setCommentScreen(
@@ -614,7 +660,7 @@ class CommentScreenInstrumentedTest {
                     text = "被评论的句子",
                     meta = com.github.zly2006.zhihu.data
                         .SegmentInfoMeta(segIds = listOf("seg-9001"), commentCount = knownSentenceCount),
-                    contentId = "9001",
+                    contentId = (content as? Article)?.id?.toString(),
                     contentType = "answer",
                     paragraphId = "paragraph-9001",
                     startOffset = 0,
@@ -725,6 +771,5 @@ class CommentScreenInstrumentedTest {
             id = 9001L,
             title = "离线评论宿主回答",
         )
-        val ROOT_ARTICLE_COMMENT_VIEW_MODEL_KEY = "article:${ROOT_ARTICLE.type}:${ROOT_ARTICLE.id}"
     }
 }

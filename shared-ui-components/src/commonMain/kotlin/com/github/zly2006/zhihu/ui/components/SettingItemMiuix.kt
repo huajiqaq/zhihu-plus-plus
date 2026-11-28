@@ -21,13 +21,13 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.miuixThemeAvailable
 
 @Composable
 fun settingSkinIsMiuix(): Boolean =
-    miuixThemeAvailable && ThemeManager.getThemeStyle() == ThemeStyle.MIUIX
+    miuixThemeAvailable && LocalAppTheme.current.style == ThemeStyle.MIUIX
 
 @Composable
 internal expect fun MiuixSettingSwitch(

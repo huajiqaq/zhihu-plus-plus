@@ -17,6 +17,8 @@
 
 package com.github.zly2006.zhihu.data
 
+import com.github.zly2006.zhihu.i18n.CoreStrings
+import kotlin.jvm.JvmInline
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -32,39 +34,39 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlin.jvm.JvmInline
 
 object DataHolder {
     const val ZH_PLUS_AUTHOR_USER_ID = "ea09b6c82124e0162caa10d658058c10"
     const val ZH_PLUS_AUTHOR_BADGE_ICON = "zhplus://zh_plus_author_badge_icon"
 
-    val zhPlusAuthorBadgeV2 = BadgeV2(
-        title = "知乎++ 作者",
-        mergedBadges = listOf(
-            BadgeV2.Badge(
-                type = "zhihu_plus_author",
-                detailType = "zhihu_plus_author",
-                title = "知乎++",
-                description = "作者",
-                icon = ZH_PLUS_AUTHOR_BADGE_ICON,
-                nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
-                badgeStatus = "passed",
+    val zhPlusAuthorBadgeV2: BadgeV2
+        get() = BadgeV2(
+            title = CoreStrings.appAuthorBadge,
+            mergedBadges = listOf(
+                BadgeV2.Badge(
+                    type = "zhihu_plus_author",
+                    detailType = "zhihu_plus_author",
+                    title = CoreStrings.appName,
+                    description = CoreStrings.appAuthor,
+                    icon = ZH_PLUS_AUTHOR_BADGE_ICON,
+                    nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
+                    badgeStatus = "passed",
+                ),
             ),
-        ),
-        detailBadges = listOf(
-            BadgeV2.Badge(
-                type = "zhihu_plus_author",
-                detailType = "zhihu_plus_author",
-                title = "知乎++",
-                description = "作者",
-                icon = ZH_PLUS_AUTHOR_BADGE_ICON,
-                nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
-                badgeStatus = "passed",
+            detailBadges = listOf(
+                BadgeV2.Badge(
+                    type = "zhihu_plus_author",
+                    detailType = "zhihu_plus_author",
+                    title = CoreStrings.appName,
+                    description = CoreStrings.appAuthor,
+                    icon = ZH_PLUS_AUTHOR_BADGE_ICON,
+                    nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
+                    badgeStatus = "passed",
+                ),
             ),
-        ),
-        icon = ZH_PLUS_AUTHOR_BADGE_ICON,
-        nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
-    )
+            icon = ZH_PLUS_AUTHOR_BADGE_ICON,
+            nightIcon = ZH_PLUS_AUTHOR_BADGE_ICON,
+        )
 
     fun injectZhPlusAuthorBadge(userId: String, badgeV2: BadgeV2?): BadgeV2? = if (userId == ZH_PLUS_AUTHOR_USER_ID) {
         zhPlusAuthorBadgeV2

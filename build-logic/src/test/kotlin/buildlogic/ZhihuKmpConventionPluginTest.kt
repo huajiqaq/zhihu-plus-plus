@@ -17,11 +17,11 @@
 
 package buildlogic
 
+import kotlin.test.assertTrue
 import org.gradle.testkit.runner.GradleRunner
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import kotlin.test.assertTrue
 
 class ZhihuKmpConventionPluginTest {
     @get:Rule
@@ -44,18 +44,35 @@ class ZhihuKmpConventionPluginTest {
     }
 
     @Test
-    fun matchingVariantTasksSelectTheirOwnSourceSet() {
+    fun matchingVariantTasksSelectOnlyTheirOwnSourcesAndTheme() {
         for ((variant, task) in listOf("full" to "assembleFullDebug", "lite" to "assembleLiteDebug")) {
             val result = runner(variant, task).build()
-            val expected = if (variant == "full") "androidFull" else "androidLite"
-            assertTrue(result.output.contains("SELECTED_ANDROID_VARIANT=$expected"), result.output)
+            val expected = if (variant == "full") "androidFull,miuixThemeMain" else "androidLite,liteThemeMain"
+            assertTrue("SELECTED_ANDROID_VARIANT=$expected" in result.output.lineSequence(), result.output)
         }
+    }
+
+    @Test
+    fun iosDefaultsToFullAndSelectsItsOwnSourcesAndThemeIndependently() {
+        for (variant in listOf(null, "full", "lite")) {
+            val result = runner("full", "assembleFullDebug", explicitIosVariant = variant).build()
+            val expected = if (variant == "lite") "iosLiteMain,liteThemeMain" else "iosFullMain,miuixThemeMain"
+            assertTrue("SELECTED_IOS_VARIANT=$expected" in result.output.lineSequence(), result.output)
+            assertTrue("SELECTED_ANDROID_VARIANT=androidFull,miuixThemeMain" in result.output.lineSequence(), result.output)
+        }
+    }
+
+    @Test
+    fun rejectsInvalidIosVariant() {
+        val result = runner(null, "compileAndroidMain", explicitIosVariant = "invalid").buildAndFail()
+        assertTrue(result.output.contains("zhihuIosVariant must be full or lite"), result.output)
     }
 
     @Test
     fun jvmTestsUseAnIsolatedHomeAndOneDatabaseWorker() {
         val modules = listOf("shared-domain", "shared-ui-base", "shared-feature-settings", "shared")
         val result = runner(null, "verifyTestIsolation", subprojects = modules).build()
+        assertTrue("SELECTED_ANDROID_VARIANT=androidLite,liteThemeMain" in result.output.lineSequence(), result.output)
         assertTrue(result.output.contains("TEST_HOME_ISOLATED=true"), result.output)
         assertTrue(result.output.contains("TEST_PREFS_ISOLATED=true"), result.output)
         assertTrue(result.output.contains("TEST_SINGLE_WORKER:variant-selection-test=true"), result.output)
@@ -69,6 +86,7 @@ class ZhihuKmpConventionPluginTest {
         vararg tasks: String,
         projectName: String = "variant-selection-test",
         subprojects: List<String> = emptyList(),
+        explicitIosVariant: String? = null,
     ): GradleRunner {
         val directory = temporaryFolder.newFolder()
         directory.resolve("settings.gradle").writeText(
@@ -78,7 +96,7 @@ class ZhihuKmpConventionPluginTest {
             dependencyResolutionManagement {
                 versionCatalogs {
                     libs {
-                        version('jvm', '21')
+                        version('jvm', '25')
                         version('compileSdk', '37')
                         version('compileSdkMinor', '2')
                     }
@@ -101,17 +119,22 @@ class ZhihuKmpConventionPluginTest {
         }
         directory.resolve("build.gradle").writeText(
             """
+            import static buildlogic.ZhihuKmpConventionPluginKt.configureAndroidVariant
+            import static buildlogic.ZhihuKmpConventionPluginKt.configureIosVariant
+
             plugins {
                 id 'org.jetbrains.kotlin.multiplatform'
                 id 'zhihu.kmp-conventions'
             }
             kotlin {
                 jvm()
+                applyDefaultHierarchyTemplate()
                 sourceSets {
-                    def common = getByName('commonMain')
-                    ['androidMain', 'androidFull', 'androidLite'].each { name ->
-                        create(name).dependsOn(common)
-                    }
+                    def miuix = create('miuixThemeMain')
+                    miuix.dependsOn(getByName('commonMain'))
+                    // Test the source-set wiring without requiring Android or Apple SDKs.
+                    configureAndroidVariant(getByName('jvmMain'), miuix)
+                    configureIosVariant(getByName('wasmJsMain'), miuix)
                 }
             }
             ['assembleFullDebug', 'assembleLiteDebug', 'compileAndroidMain'].each { name ->
@@ -132,16 +155,25 @@ class ZhihuKmpConventionPluginTest {
             }
             tasks.register('verifyVariantSelection') {
                 doLast {
-                    def selected = kotlin.sourceSets.getByName('androidMain').dependsOn
-                        .findAll { it.name == 'androidFull' || it.name == 'androidLite' }
-                        .collect { it.name }.sort().join(',')
+                    def sources = kotlin.sourceSets.getByName('jvmMain')
+                    def roots = sources.kotlin.srcDirs.collect { it.parentFile.name } + sources.dependsOn*.name
+                    def selected = roots.findAll { it in ['androidFull', 'androidLite', 'miuixThemeMain', 'liteThemeMain'] }
+                        .sort().join(',')
                     println('SELECTED_ANDROID_VARIANT=' + selected)
+                    def iosSources = kotlin.sourceSets.getByName('wasmJsMain')
+                    def iosRoots = iosSources.kotlin.srcDirs.collect { it.parentFile.name } + iosSources.dependsOn*.name
+                    def iosSelected = iosRoots.findAll { it in ['iosFullMain', 'iosLiteMain', 'miuixThemeMain', 'liteThemeMain'] }
+                        .sort().join(',')
+                    println('SELECTED_IOS_VARIANT=' + iosSelected)
                 }
             }
             """.trimIndent(),
         )
         val arguments = tasks.toList() + listOf("verifyVariantSelection", "--offline", "--no-configuration-cache", "--stacktrace") +
-            listOfNotNull(explicitVariant?.let { "-PzhihuAndroidVariant=$it" })
+            listOfNotNull(
+                explicitVariant?.let { "-PzhihuAndroidVariant=$it" },
+                explicitIosVariant?.let { "-PzhihuIosVariant=$it" },
+            )
         return GradleRunner
             .create()
             .withProjectDir(directory)

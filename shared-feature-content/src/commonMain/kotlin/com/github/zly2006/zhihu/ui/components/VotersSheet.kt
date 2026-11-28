@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Person
 
 @Composable
@@ -104,12 +105,12 @@ fun VotersSheet(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
-                                text = "加载失败：$errorMessage",
+                                text = ContentStrings.loadError(errorMessage),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
                             )
                             AppTextButton(onClick = onRetry) {
-                                Text("重试")
+                                Text(ContentStrings.retry)
                             }
                         }
                     }
@@ -127,7 +128,7 @@ fun VotersSheet(
                 } else if (voters.isEmpty()) {
                     item("empty") {
                         Text(
-                            text = "暂无可查看的赞同者",
+                            text = ContentStrings.noVoters,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 24.dp),
@@ -144,7 +145,7 @@ fun VotersSheet(
                                 AppSpinner(size = 18.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
-                            Text(if (isLoading) "加载中" else "加载更多")
+                            Text(if (isLoading) ContentStrings.loading else ContentStrings.loadMore)
                         }
                     }
                 }
@@ -177,7 +178,7 @@ private fun VoterRow(
         icon = {
             AsyncImage(
                 model = voter.avatarUrl,
-                contentDescription = "${voter.name}的头像",
+                contentDescription = ContentStrings.voterAvatar(voter.name),
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape),

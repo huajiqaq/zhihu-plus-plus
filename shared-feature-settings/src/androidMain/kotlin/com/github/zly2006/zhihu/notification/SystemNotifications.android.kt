@@ -24,17 +24,20 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.zly2006.zhihu.account.androidZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.AppLocale
 
 @Composable
 actual fun rememberSystemNotificationControl(): SystemNotificationControl {
     val context = LocalContext.current
     val runtime = remember(context) { androidSystemNotifications(context) }
     val accountClient = androidZhihuAccountStore(context).client
+    LaunchedEffect(runtime, AppLocale.current) { runtime.refresh() }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         runtime.refresh()
     }

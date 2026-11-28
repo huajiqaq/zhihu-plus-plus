@@ -22,10 +22,20 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.tasks.testing.Test
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+
+/** iOS 默认完整构建，独立于 Android 的变体选择。 */
+val Project.zhihuIosVariant: String
+    get() {
+        val variant = providers.gradleProperty("zhihuIosVariant").orElse("full").get().lowercase()
+        require(variant == "full" || variant == "lite") { "zhihuIosVariant must be full or lite" }
+        return variant
+    }
 
 /** Apple 编译与资源任务只在 Mac 注册；framework 名称沿用各模块的公开契约。 */
 fun KotlinMultiplatformExtension.configureAppleTargets(frameworkBaseName: String? = null) {
@@ -41,6 +51,41 @@ fun KotlinMultiplatformExtension.configureAppleTargets(frameworkBaseName: String
     macosArm64()
 }
 
+/** Android 每次只编译一种变体，无 flavor 的任务和 IDE 同步默认使用 Lite。 */
+fun KotlinSourceSet.configureAndroidVariant(miuixThemeMain: KotlinSourceSet? = null) {
+    val explicitVariant = project.providers.gradleProperty("zhihuAndroidVariant").orNull?.lowercase()
+    require(explicitVariant == null || explicitVariant == "full" || explicitVariant == "lite") {
+        "zhihuAndroidVariant must be full or lite"
+    }
+    val variantTaskPattern = Regex("^(?:assemble|bundle|install|test|connected|compile|verify)(Full|Lite)")
+    val requestedVariants = project.gradle.startParameter.taskNames
+        .mapNotNull { taskName ->
+            variantTaskPattern.find(taskName.substringAfterLast(':'))?.groupValues?.get(1)?.lowercase()
+        }.toSet()
+    require(requestedVariants.size <= 1) {
+        "Full and Lite Android tasks require separate Gradle invocations"
+    }
+    val requestedVariant = requestedVariants.singleOrNull()
+    require(explicitVariant == null || requestedVariant == null || explicitVariant == requestedVariant) {
+        "zhihuAndroidVariant=$explicitVariant conflicts with requested $requestedVariant Android tasks"
+    }
+    val full = (explicitVariant ?: requestedVariant) == "full"
+    kotlin.srcDir(if (full) "src/androidFull/kotlin" else "src/androidLite/kotlin")
+    if (miuixThemeMain != null) {
+        if (full) dependsOn(miuixThemeMain) else kotlin.srcDir("src/liteThemeMain/kotlin")
+    }
+}
+
+/** iOS 每次只编译一种变体；Lite 与 Android Lite 共用不含 Miuix 的主题实现。 */
+fun KotlinSourceSet.configureIosVariant(miuixThemeMain: KotlinSourceSet? = null) {
+    val full = project.zhihuIosVariant == "full"
+    kotlin.srcDir(if (full) "src/iosFullMain/kotlin" else "src/iosLiteMain/kotlin")
+    if (miuixThemeMain != null) {
+        if (full) dependsOn(miuixThemeMain) else kotlin.srcDir("src/liteThemeMain/kotlin")
+    }
+}
+
+@OptIn(ExperimentalWasmDsl::class)
 @Suppress("UnstableApiUsage")
 class ZhihuKmpConventionPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -52,6 +97,7 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
         project.plugins.withId("org.jetbrains.kotlin.multiplatform") {
             project.extensions.configure(KotlinMultiplatformExtension::class.java) { kmp ->
                 kmp.jvmToolchain(jvmVersion.toInt())
+                kmp.wasmJs { browser() }
                 kmp.compilerOptions.freeCompilerArgs.add("-Xexpect-actual-classes")
                 kmp.targets.withType(KotlinJvmTarget::class.java) { target ->
                     target.compilerOptions.jvmTarget.set(JvmTarget.fromTarget(jvmVersion))
@@ -62,6 +108,9 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
                         .dir("test-home/${task.name}")
                         .get()
                         .asFile
+                    // 既有界面回归固定中文；语言切换用例显式选择目标语言。
+                    task.systemProperty("user.language", "zh")
+                    task.systemProperty("user.country", "CN")
                     task.systemProperty("user.home", home.absolutePath)
                     task.systemProperty("java.util.prefs.userRoot", home.resolve("prefs").absolutePath)
                     task.systemProperty("java.util.prefs.systemRoot", home.resolve("system-prefs").absolutePath)
@@ -89,45 +138,9 @@ class ZhihuKmpConventionPlugin : Plugin<Project> {
                         }
                         target.minSdk = 27
                         target.compilerOptions.jvmTarget.set(JvmTarget.fromTarget(jvmVersion))
+                        target.withHostTest {}
                     }
                 }
-            }
-        }
-
-        project.afterEvaluate {
-            val kmp = project.extensions.findByType(KotlinMultiplatformExtension::class.java) ?: return@afterEvaluate
-            val androidMain = kmp.sourceSets.findByName("androidMain") ?: return@afterEvaluate
-            val androidFull = kmp.sourceSets.findByName("androidFull") ?: return@afterEvaluate
-            val androidLite = kmp.sourceSets.findByName("androidLite") ?: return@afterEvaluate
-            // 显式属性用于无 flavor 任务/配置缓存；任务名仍独立校验，不能被属性覆盖。
-            val explicitVariant = project.providers
-                .gradleProperty("zhihuAndroidVariant")
-                .orNull
-                ?.lowercase()
-            require(explicitVariant == null || explicitVariant == "full" || explicitVariant == "lite") {
-                "zhihuAndroidVariant must be full or lite"
-            }
-            val variantTaskPattern = Regex("^(?:assemble|bundle|install|test|connected|compile|verify)(Full|Lite)")
-            val requestedVariants = project.gradle.startParameter.taskNames
-                .mapNotNull { taskName ->
-                    variantTaskPattern
-                        .find(taskName.substringAfterLast(':'))
-                        ?.groupValues
-                        ?.get(1)
-                        ?.lowercase()
-                }.toSet()
-            require(requestedVariants.size <= 1) {
-                "Full and Lite Android tasks require separate Gradle invocations"
-            }
-            val requestedVariant = requestedVariants.singleOrNull()
-            require(explicitVariant == null || requestedVariant == null || explicitVariant == requestedVariant) {
-                "zhihuAndroidVariant=$explicitVariant conflicts with requested $requestedVariant Android tasks"
-            }
-            when (explicitVariant ?: requestedVariant) {
-                "full" -> androidMain.dependsOn(androidFull)
-                // 未指定变体时（直接执行 `:模块:compileAndroidMain`、IDE 同步或普通 assemble）
-                // 默认挂 lite：androidFull/androidLite 里的 expect/actual 缺了任何一个都会编译失败。
-                else -> androidMain.dependsOn(androidLite)
             }
         }
     }

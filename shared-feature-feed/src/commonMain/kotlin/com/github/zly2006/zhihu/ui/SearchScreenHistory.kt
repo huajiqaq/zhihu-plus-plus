@@ -37,11 +37,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenu
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSectionTitle
 import com.github.zly2006.zhihu.ui.components.SettingItem
@@ -49,7 +51,6 @@ import com.github.zly2006.zhihu.ui.components.pageTurnViewportWithGuide
 import com.github.zly2006.zhihu.ui.components.rememberPageTurnTarget
 import com.github.zly2006.zhihu.viewmodel.feed.SearchSuggestItem
 import kotlinx.serialization.Serializable
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Serializable
 internal data class HotSearchItem(
@@ -111,9 +112,9 @@ internal fun SearchScreenLandingContent(
                 }
                 Text(
                     text = if (isMemberSearch) {
-                        "输入关键词搜索 $memberSearchName 的创作"
+                        FeedStrings.enterMemberQuery(memberSearchName)
                     } else {
-                        "暂无搜索历史"
+                        FeedStrings.noSearchHistory
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -121,7 +122,7 @@ internal fun SearchScreenLandingContent(
             }
         } else {
             Text(
-                text = "请输入搜索内容",
+                text = FeedStrings.enterQuery,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
@@ -141,21 +142,21 @@ internal fun SearchScreenHistoryHeader(
     onConfirmClearHistory: () -> Unit,
     onDisableHistory: () -> Unit,
 ) {
-    AppSectionTitle(text = "搜索历史") {
+    AppSectionTitle(text = FeedStrings.searchHistory) {
         AppIconButton(
             onClick = { onHistoryMoreMenuExpandedChange(true) },
             modifier = Modifier
                 .size(AppDimens.TouchTarget)
                 .testTag("search_history_more_button"),
         ) {
-            Icon(Icons.Default.MoreVert, contentDescription = "更多", modifier = Modifier.size(18.dp))
+            AppIcon(Icons.Default.MoreVert, contentDescription = FeedStrings.moreActions, modifier = Modifier.size(18.dp))
             AppDropdownMenu(
                 expanded = historyMoreMenuExpanded,
                 onDismissRequest = { onHistoryMoreMenuExpandedChange(false) },
             ) {
                 if (showClearAction) {
                     AppDropdownMenuItem(
-                        text = { Text("清空搜索历史") },
+                        text = { Text(FeedStrings.clearSearchHistory) },
                         onClick = {
                             onHistoryMoreMenuExpandedChange(false)
                             onShowClearHistoryConfirmChange(true)
@@ -163,7 +164,7 @@ internal fun SearchScreenHistoryHeader(
                     )
                 }
                 AppDropdownMenuItem(
-                    text = { Text("关闭搜索历史") },
+                    text = { Text(FeedStrings.disableSearchHistory) },
                     onClick = {
                         onHistoryMoreMenuExpandedChange(false)
                         onDisableHistory()
@@ -174,14 +175,14 @@ internal fun SearchScreenHistoryHeader(
     }
     if (showClearHistoryConfirm) {
         AppDialog(
-            title = "清空 $historyCount 条搜索历史？",
-            summary = "清空后无法恢复。",
-            confirmText = "清空",
+            title = FeedStrings.clearHistoryCount(historyCount),
+            summary = FeedStrings.historyCannotRestore,
+            confirmText = FeedStrings.clearHistory,
             onConfirm = {
                 onShowClearHistoryConfirmChange(false)
                 onConfirmClearHistory()
             },
-            dismissText = "取消",
+            dismissText = FeedStrings.cancel,
             onDismissRequest = { onShowClearHistoryConfirmChange(false) },
             destructive = true,
         )
@@ -223,7 +224,7 @@ private fun SearchScreenHistoryAndHotSearch(
             searchHistoryItems.forEach { query ->
                 SettingItem(
                     title = { Text(query, style = LocalAppSkinTokens.current.main) },
-                    icon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    icon = { AppIcon(Icons.Default.Search, contentDescription = null) },
                     onClick = { onSelect(query) },
                     endAction = {},
                 )
@@ -234,7 +235,7 @@ private fun SearchScreenHistoryAndHotSearch(
         }
 
         if (shouldShowHotSearch) {
-            AppSectionTitle(text = "热搜") {
+            AppSectionTitle(text = FeedStrings.trendingSearches) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppIconButton(
                         onClick = onRefreshHotSearch,
@@ -242,7 +243,7 @@ private fun SearchScreenHistoryAndHotSearch(
                             .size(AppDimens.TouchTarget)
                             .testTag("search_hot_refresh_button"),
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新热搜", modifier = Modifier.size(18.dp))
+                        AppIcon(Icons.Default.Refresh, contentDescription = FeedStrings.refreshTrending, modifier = Modifier.size(18.dp))
                     }
                     AppIconButton(
                         onClick = { onHotSearchMoreMenuExpandedChange(true) },
@@ -250,13 +251,13 @@ private fun SearchScreenHistoryAndHotSearch(
                             .size(AppDimens.TouchTarget)
                             .testTag("search_hot_more_button"),
                     ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "更多", modifier = Modifier.size(18.dp))
+                        AppIcon(Icons.Default.MoreVert, contentDescription = FeedStrings.moreActions, modifier = Modifier.size(18.dp))
                         AppDropdownMenu(
                             expanded = hotSearchMoreMenuExpanded,
                             onDismissRequest = { onHotSearchMoreMenuExpandedChange(false) },
                         ) {
                             AppDropdownMenuItem(
-                                text = { Text("关闭热搜显示") },
+                                text = { Text(FeedStrings.hideTrending) },
                                 onClick = {
                                     onHotSearchMoreMenuExpandedChange(false)
                                     onDisableHotSearch()

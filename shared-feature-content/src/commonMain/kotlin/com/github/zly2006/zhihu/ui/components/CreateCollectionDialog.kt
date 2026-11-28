@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.github.zly2006.zhihu.i18n.ContentStrings
 
 @Composable
 fun CreateCollectionDialog(
@@ -54,20 +55,20 @@ fun CreateCollectionDialog(
                 if (!isSubmitting) onDismiss()
             },
             modifier = Modifier.testTag(CREATE_COLLECTION_DIALOG_TAG),
-            title = { Text("新建收藏夹") },
+            title = { Text(ContentStrings.newCollection) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(AppDimens.Space16)) {
                     AppTextField(
                         state = title,
-                        labelText = "收藏夹名称",
-                        placeholder = "请输入收藏夹名称",
+                        labelText = ContentStrings.collectionName,
+                        placeholder = ContentStrings.collectionNameHint,
                         modifier = Modifier.fillMaxWidth().testTag(CREATE_COLLECTION_TITLE_INPUT_TAG),
                         enabled = !isSubmitting,
                     )
                     AppTextField(
                         state = description,
-                        labelText = "描述（可选）",
-                        placeholder = "请输入收藏夹描述",
+                        labelText = ContentStrings.optionalDescription,
+                        placeholder = ContentStrings.collectionDescriptionHint,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isSubmitting,
                         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 3),
@@ -88,7 +89,7 @@ fun CreateCollectionDialog(
                             enabled = !isSubmitting,
                         )
                         Text(
-                            text = "公开收藏夹",
+                            text = ContentStrings.publicCollection,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.weight(1f),
                         )
@@ -100,7 +101,7 @@ fun CreateCollectionDialog(
             },
             confirmButton = {
                 AppButton(
-                    text = if (isSubmitting) "创建中…" else "创建",
+                    text = if (isSubmitting) ContentStrings.creating else ContentStrings.create,
                     onClick = {
                         if (title.text.isNotBlank()) onConfirm(title.text.toString().trim(), description.text.toString().trim(), isPublic)
                     },
@@ -109,7 +110,7 @@ fun CreateCollectionDialog(
                 )
             },
             dismissButton = {
-                AppTextButton(text = "取消", onClick = onDismiss, enabled = !isSubmitting)
+                AppTextButton(text = ContentStrings.cancel, onClick = onDismiss, enabled = !isSubmitting)
             },
         )
     }

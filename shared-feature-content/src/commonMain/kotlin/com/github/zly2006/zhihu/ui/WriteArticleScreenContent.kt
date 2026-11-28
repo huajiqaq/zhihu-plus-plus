@@ -43,10 +43,12 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import com.github.zly2006.zhihu.editor.isImagePickerSupported
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
 import com.github.zly2006.zhihu.ui.components.AppSpinner
@@ -57,7 +59,6 @@ import com.github.zly2006.zhihu.ui.components.WriteContentMarkdownEditor
 import com.github.zly2006.zhihu.ui.components.WriteContentRichEditor
 import com.github.zly2006.zhihu.ui.components.isRichEditorSupported
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun WriteArticleScreenTopBar(
@@ -72,20 +73,20 @@ internal fun WriteArticleScreenTopBar(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val requiredWidth = with(LocalDensity.current) {
             (
-                textMeasurer.measure("写文章", style = titleStyle, softWrap = false).size.width +
-                    textMeasurer.measure("发布中", style = actionStyle, softWrap = false).size.width
+                textMeasurer.measure(ContentStrings.writeArticle, style = titleStyle, softWrap = false).size.width +
+                    textMeasurer.measure(ContentStrings.publishing, style = actionStyle, softWrap = false).size.width
             ).toDp()
         } + AppDimens.TouchTarget + AppDimens.PageHorizontalPadding * 2 + AppDimens.Space24 * 2
         val separateAction = maxWidth < requiredWidth
         Column {
             AppCompactTopBar(
-                title = "写文章",
+                title = ContentStrings.writeArticle,
                 onBack = onBack,
                 backTag = WRITE_ARTICLE_BACK_BUTTON_TAG,
                 actions = {
                     if (!separateAction) {
                         AppButton(
-                            text = if (isSubmitting) "发布中" else "发布",
+                            text = if (isSubmitting) ContentStrings.publishing else ContentStrings.publish,
                             enabled = publishEnabled,
                             onClick = onPublish,
                             modifier = Modifier.testTag(WRITE_ARTICLE_PUBLISH_TAG),
@@ -96,7 +97,7 @@ internal fun WriteArticleScreenTopBar(
             if (separateAction) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space4), horizontalArrangement = Arrangement.End) {
                     AppButton(
-                        text = if (isSubmitting) "发布中" else "发布",
+                        text = if (isSubmitting) ContentStrings.publishing else ContentStrings.publish,
                         enabled = publishEnabled,
                         onClick = onPublish,
                         modifier = Modifier.testTag(WRITE_ARTICLE_PUBLISH_TAG),
@@ -127,14 +128,14 @@ internal fun ColumnScope.WriteArticleScreenEditor(
 ) {
     AppTextField(
         state = title,
-        placeholder = "文章标题",
-        labelText = "标题",
+        placeholder = ContentStrings.articleTitle,
+        labelText = ContentStrings.title,
         enabled = !isSubmitting,
         modifier = Modifier.fillMaxWidth().testTag(WRITE_ARTICLE_TITLE_TAG),
     )
     if (isRichEditorSupported) {
         AppSegmentedControl(
-            options = listOf("图文", "Markdown"),
+            options = listOf(ContentStrings.richText, "Markdown"),
             selectedIndex = if (richMode) 0 else 1,
             onSelect = onModeSelect,
             enabled = !isSubmitting && !isSaving && !isUploadingImage && editorAvailable,
@@ -150,14 +151,14 @@ internal fun ColumnScope.WriteArticleScreenEditor(
     if (richMode) {
         WriteContentRichEditor(
             state = richEditor,
-            placeholder = "开始写作……",
+            placeholder = ContentStrings.startWriting,
             enabled = !isSubmitting && !isEditorConverting,
             modifier = Modifier.testTag(WRITE_ARTICLE_CONTENT_TAG),
         )
     } else {
         WriteContentMarkdownEditor(
             state = content,
-            placeholder = "开始写作……",
+            placeholder = ContentStrings.startWriting,
             contentTag = WRITE_ARTICLE_CONTENT_TAG,
             enabled = !isSubmitting && !isEditorConverting,
         )
@@ -175,7 +176,7 @@ internal fun ColumnScope.WriteArticleScreenEditor(
             enabled = hasContent && !isSubmitting && editorAvailable,
             modifier = Modifier.size(AppDimens.TouchTarget).testTag(WRITE_ARTICLE_PREVIEW_TAG),
         ) {
-            Icon(Icons.Filled.Visibility, contentDescription = "预览")
+            AppIcon(Icons.Filled.Visibility, contentDescription = ContentStrings.preview)
         }
         if (isImagePickerSupported) {
             AppIconButton(
@@ -184,23 +185,23 @@ internal fun ColumnScope.WriteArticleScreenEditor(
                 modifier = Modifier
                     .size(AppDimens.TouchTarget)
                     .testTag(WRITE_ARTICLE_IMAGE_TAG)
-                    .semantics { contentDescription = "插入图片" },
+                    .semantics { contentDescription = ContentStrings.insertImage },
             ) {
                 if (isUploadingImage) {
                     AppSpinner(modifier = Modifier, size = AppDimens.IconSizeCompact)
                 } else {
-                    Icon(Icons.Filled.Image, contentDescription = "插入图片")
+                    AppIcon(Icons.Filled.Image, contentDescription = ContentStrings.insertImage)
                 }
             }
         }
         AppTextButton(
-            text = "草稿",
+            text = ContentStrings.draft,
             onClick = onSave,
             enabled = !isSubmitting && !isSaving && !isUploadingImage && editorAvailable,
             modifier = Modifier
                 .widthIn(min = AppDimens.TouchTarget)
                 .testTag(WRITE_ARTICLE_SAVE_TAG)
-                .semantics { contentDescription = "保存草稿" },
+                .semantics { contentDescription = ContentStrings.saveDraft },
         )
     }
 }

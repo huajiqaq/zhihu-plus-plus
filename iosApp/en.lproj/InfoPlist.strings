@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "Zhihu++";
+"CFBundleName" = "Zhihu++";
+"NSMicrophoneUsageDescription" = "Record voice comments you choose to send.";
+"NSPhotoLibraryAddUsageDescription" = "Save selected images and exported articles to Photos.";

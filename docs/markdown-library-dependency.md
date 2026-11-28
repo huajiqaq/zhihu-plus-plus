@@ -1,6 +1,6 @@
 # Markdown 依赖
 
-公共坐标与直接请求版本以 [版本目录](../gradle/libs.versions.toml) 为准，上游来源、固定提交及补丁以 [lock](../gradle/upstream-sources.lock.json) 为准。
+各库的 Maven 坐标与直接请求版本见[版本目录](../gradle/libs.versions.toml)。提椠的源码来源、固定提交及补丁见[源码锁文件](../gradle/upstream-sources.lock.json)。
 
 - HRM Markdown：官方 Maven 的 `io.github.huarangmeng:markdown-parser`、`markdown-renderer`，包名 `com.hrm.markdown.*`；编译和打包均不替换为本地源码项目。
 - HRM LaTeX：`io.github.huarangmeng:latex-parser`、`latex-renderer`，包名 `com.hrm.latex.*`。公式使用 `LatexConfig` 默认的随库 KaTeX 字体，不另下载或覆盖同一字体；提椠数学字体独立配置。

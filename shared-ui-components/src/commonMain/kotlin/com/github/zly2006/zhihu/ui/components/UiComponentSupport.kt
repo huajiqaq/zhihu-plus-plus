@@ -19,11 +19,19 @@ package com.github.zly2006.zhihu.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,26 +42,33 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.viewmodel.feed.BaseFeedViewModel
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.nlp.KeywordWithWeight
 import com.github.zly2006.zhihu.platform.rememberImageSaver
 import com.github.zly2006.zhihu.platform.rememberImageSharer
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedKeyword
-import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
-import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordScope
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordType
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
@@ -73,13 +88,12 @@ expect val feedKeywordExtractionAvailable: Boolean
 @Composable
 fun FeedAuthorBlockConfirmDialog(
     request: FeedAuthorBlockRequest?,
-    displayItems: List<FeedDisplayItem>,
+    viewModel: BaseFeedViewModel,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
-    val database = remember { getContentFilterDatabase() }
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
     var questionAuthorStats by remember(request) { mutableStateOf<QuestionAuthorActivityStats?>(null) }
     var isQuestionAuthorStatsLoading by remember(request) {
@@ -107,7 +121,7 @@ fun FeedAuthorBlockConfirmDialog(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            Log.e("FeedBlocking", "Failed to load question author activity stats", error)
+            AppLog.e("FeedBlocking", "Failed to load question author activity stats", error)
             null
         } finally {
             isQuestionAuthorStatsLoading = false
@@ -116,7 +130,7 @@ fun FeedAuthorBlockConfirmDialog(
 
     FeedAuthorBlockConfirmDialogContent(
         request = request,
-        displayItems = displayItems,
+        displayItems = viewModel.displayItems,
         questionAuthorStats = questionAuthorStats,
         isQuestionAuthorStatsLoading = isQuestionAuthorStatsLoading,
         onDismiss = onDismiss,
@@ -124,30 +138,23 @@ fun FeedAuthorBlockConfirmDialog(
             coroutineScope.launch {
                 try {
                     when (request?.type) {
-                        FeedAuthorBlockType.CONTENT_AUTHOR -> database.blockedUserDao().insertUser(
-                            BlockedUser(
-                                userId = author.id,
-                                userName = author.name,
-                                urlToken = author.urlToken,
-                                avatarUrl = author.avatarUrl,
-                            ),
-                        )
-                        FeedAuthorBlockType.QUESTION_AUTHOR -> database.blockedQuestionAuthorDao().insertUser(
-                            BlockedQuestionAuthor(
-                                userId = author.id,
-                                userName = author.name,
-                                urlToken = author.urlToken,
-                                avatarUrl = author.avatarUrl,
-                            ),
-                        )
+                        FeedAuthorBlockType.CONTENT_AUTHOR -> viewModel.blockUser(author.id, author.name, author.urlToken, author.avatarUrl)
+                        FeedAuthorBlockType.QUESTION_AUTHOR -> viewModel.blockQuestionAuthor(author.id, author.name, author.urlToken, author.avatarUrl)
                         null -> return@launch
                     }
                     onConfirm()
-                    val targetName = if (request.type == FeedAuthorBlockType.QUESTION_AUTHOR) "提问者" else "用户"
-                    userMessages.showShortMessage("已屏蔽$targetName：${author.name}")
+                    userMessages.showShortMessage(
+                        if (request.type == FeedAuthorBlockType.QUESTION_AUTHOR) {
+                            WidgetsStrings.blockedQuestionAuthor(author.name)
+                        } else {
+                            WidgetsStrings.blockedUser(author.name)
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.e("FeedBlocking", "Failed to block feed author", e)
-                    userMessages.showShortMessage("屏蔽失败: ${e.message}")
+                    AppLog.e("FeedBlocking", "Failed to block feed author", e)
+                    userMessages.showShortMessage(WidgetsStrings.blockFailed(e.message ?: WidgetsStrings.unknownError))
                 }
             }
         },
@@ -180,8 +187,8 @@ fun BlockByKeywordsDialog(
                 keywordInfoList = keywordsWithWeight
                 extractedKeywords = keywordsWithWeight.take(8).map { it.keyword }
             } catch (e: Exception) {
-                Log.e("FeedBlocking", "Failed to extract block keywords", e)
-                userMessages.showShortMessage("提取关键词失败: ${e.message}")
+                AppLog.e("FeedBlocking", "Failed to extract block keywords", e)
+                userMessages.showShortMessage(WidgetsStrings.keywordExtractionFailed(e.message ?: WidgetsStrings.unknownError))
             } finally {
                 isLoading = false
             }
@@ -210,11 +217,11 @@ fun BlockByKeywordsDialog(
                             scope = keywordScope.name,
                         ),
                     )
-                    userMessages.showShortMessage("已添加NLP屏蔽短语: $phrase")
+                    userMessages.showShortMessage(WidgetsStrings.blockingPhraseAdded(phrase))
                     onConfirm()
                 } catch (e: Exception) {
-                    Log.e("FeedBlocking", "Failed to add NLP block phrase", e)
-                    userMessages.showShortMessage("添加失败: ${e.message}")
+                    AppLog.e("FeedBlocking", "Failed to add NLP block phrase", e)
+                    userMessages.showShortMessage(WidgetsStrings.addPhraseFailed(e.message ?: WidgetsStrings.unknownError))
                 } finally {
                     isAdding = false
                 }
@@ -230,6 +237,7 @@ fun OpenImagePreviewContent(
     initialIndex: Int,
     onDismiss: () -> Unit,
     onOpenInBrowser: (String) -> Unit,
+    showControls: Boolean = false,
     imageContent: @Composable (
         url: String,
         onClick: () -> Unit,
@@ -288,10 +296,37 @@ fun OpenImagePreviewContent(
         Modifier
     }
 
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(showControls) {
+        if (showControls) focusRequester.requestFocus()
+    }
+    fun moveTo(page: Int) {
+        coroutineScope.launch { pagerState.animateScrollToPage(page.coerceIn(imageUrls.indices)) }
+    }
+    val keyboardControls = if (showControls) {
+        Modifier.focusRequester(focusRequester).onKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown || showMenu) {
+                false
+            } else {
+                when (event.key) {
+                    Key.Escape -> onDismiss()
+                    Key.DirectionLeft, Key.PageUp -> moveTo(pagerState.currentPage - 1)
+                    Key.DirectionRight, Key.PageDown -> moveTo(pagerState.currentPage + 1)
+                    Key.MoveHome -> moveTo(0)
+                    Key.MoveEnd -> moveTo(imageUrls.lastIndex)
+                    else -> return@onKeyEvent false
+                }
+                true
+            }
+        }.focusable()
+    } else {
+        Modifier
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .then(keyboardControls),
     ) {
         // 禁用图片查看器自带的震动反馈，保持长按菜单手感稳定。
         CompositionLocalProvider(LocalHapticFeedback provides NoopHapticFeedback) {
@@ -322,6 +357,43 @@ fun OpenImagePreviewContent(
             }
         }
 
+        if (showControls) {
+            AppIconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopStart).background(Color.Black.copy(alpha = 0.6f)),
+            ) {
+                AppIcon(Icons.Default.Close, WidgetsStrings.close, tint = Color.White)
+            }
+            AppIconButton(
+                onClick = {
+                    windowPressPoint = null
+                    windowImageBounds = null
+                    showMenu = true
+                },
+                modifier = Modifier.align(Alignment.TopEnd).background(Color.Black.copy(alpha = 0.6f)),
+            ) {
+                AppIcon(Icons.Default.MoreVert, WidgetsStrings.moreOptions, tint = Color.White)
+            }
+            if (imageUrls.size > 1) {
+                Row(
+                    modifier = Modifier.align(Alignment.BottomCenter).background(Color.Black.copy(alpha = 0.6f)),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AppIconButton(onClick = { moveTo(pagerState.currentPage - 1) }, enabled = pagerState.currentPage > 0) {
+                        AppIcon(Icons.AutoMirrored.Filled.ArrowBack, WidgetsStrings.previousImage, tint = Color.White)
+                    }
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${imageUrls.size}",
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = AppDimens.Space8),
+                    )
+                    AppIconButton(onClick = { moveTo(pagerState.currentPage + 1) }, enabled = pagerState.currentPage < imageUrls.lastIndex) {
+                        AppIcon(Icons.AutoMirrored.Filled.ArrowForward, WidgetsStrings.nextImage, tint = Color.White)
+                    }
+                }
+            }
+        }
+
         AppImageContextMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
@@ -329,21 +401,21 @@ fun OpenImagePreviewContent(
             windowPressPoint = windowPressPoint,
         ) {
             AppDropdownMenuItem(
-                text = { Text("保存图片") },
+                text = { Text(WidgetsStrings.saveImage) },
                 onClick = {
                     showMenu = false
                     onSaveImage(imageUrls[pagerState.currentPage])
                 },
             )
             AppDropdownMenuItem(
-                text = { Text("分享图片") },
+                text = { Text(WidgetsStrings.shareImage) },
                 onClick = {
                     showMenu = false
                     onShareImage(imageUrls[pagerState.currentPage])
                 },
             )
             AppDropdownMenuItem(
-                text = { Text("在浏览器中打开") },
+                text = { Text(WidgetsStrings.openInBrowser) },
                 onClick = {
                     showMenu = false
                     onOpenInBrowser(imageUrls[pagerState.currentPage])

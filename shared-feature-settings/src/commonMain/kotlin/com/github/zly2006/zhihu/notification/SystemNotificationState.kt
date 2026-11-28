@@ -19,7 +19,7 @@ package com.github.zly2006.zhihu.notification
 
 import kotlinx.serialization.Serializable
 
-/** 本机授权与一次性回执；存储实现必须排除备份，不能从应用内偏好恢复订阅。 */
+/** 本机授权与一次性回执；排除应用备份，不能从应用内偏好恢复订阅；Web另行披露无法控制浏览器/系统备份。 */
 @Serializable
 internal data class DeviceNotificationState(
     val accountId: String? = null,

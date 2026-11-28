@@ -17,13 +17,13 @@
 
 package com.github.zly2006.zhihu.ui.components
 
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 class RichEditorStateTest {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

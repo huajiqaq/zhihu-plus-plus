@@ -50,9 +50,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +60,9 @@ fun ExportDialogComponent(
     showDialog: Boolean,
     isHtmlExportSupported: Boolean,
     isImageExportSupported: Boolean,
+    isPdfExportSupported: Boolean,
     onDismiss: () -> Unit,
+    onExportPdf: suspend (includeAppAttribution: Boolean, onComplete: (Boolean) -> Unit) -> Unit,
     onExportHtml: suspend (includeAppAttribution: Boolean, onComplete: (Boolean) -> Unit) -> Unit,
     onExportImage: suspend (includeAppAttribution: Boolean, onComplete: (Boolean) -> Unit) -> Unit,
     onExportMarkdown: () -> Unit,
@@ -78,9 +80,9 @@ fun ExportDialogComponent(
 
         AppAlertDialog(
             onDismissRequest = { if (!isExporting) onDismiss() },
-            title = { Text("导出文章") },
+            title = { Text(ContentStrings.exportArticle) },
             confirmButton = {
-                AppTextButton(text = "取消", onClick = onDismiss, enabled = !isExporting)
+                AppTextButton(text = ContentStrings.cancel, onClick = onDismiss, enabled = !isExporting)
             },
             text = {
                 Column(
@@ -91,10 +93,21 @@ fun ExportDialogComponent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
-                        onClick = {},
+                        onClick = {
+                            if (!isExporting) {
+                                isExporting = true
+                                coroutineScope.launch {
+                                    try {
+                                        onExportPdf(includeAppAttribution) { success -> if (success) onDismiss() }
+                                    } finally {
+                                        isExporting = false
+                                    }
+                                }
+                            }
+                        },
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        enabled = false,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        enabled = isPdfExportSupported && !isExporting,
                     ) {
                         Row(
                             modifier = Modifier
@@ -102,7 +115,7 @@ fun ExportDialogComponent(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.PictureAsPdf,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
@@ -111,12 +124,12 @@ fun ExportDialogComponent(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "导出为 PDF",
+                                    text = ContentStrings.exportPdf,
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    text = "暂不支持",
+                                    text = ContentStrings.exportPdfHelp,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -132,11 +145,14 @@ fun ExportDialogComponent(
                             if (!isExporting) {
                                 isExporting = true
                                 coroutineScope.launch {
-                                    onExportHtml(includeAppAttribution) { success ->
-                                        isExporting = false
-                                        if (success) {
-                                            onDismiss()
+                                    try {
+                                        onExportHtml(includeAppAttribution) { success ->
+                                            if (success) {
+                                                onDismiss()
+                                            }
                                         }
+                                    } finally {
+                                        isExporting = false
                                     }
                                 }
                             }
@@ -151,7 +167,7 @@ fun ExportDialogComponent(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.GetApp,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
@@ -160,12 +176,12 @@ fun ExportDialogComponent(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "导出为 HTML",
+                                    text = ContentStrings.exportHtml,
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
                                 Text(
-                                    text = "图片随文件保存，可离线查看",
+                                    text = ContentStrings.exportOfflineImagesHelp,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
@@ -181,11 +197,14 @@ fun ExportDialogComponent(
                             if (!isExporting) {
                                 isExporting = true
                                 coroutineScope.launch {
-                                    onExportImage(includeAppAttribution) { success ->
-                                        isExporting = false
-                                        if (success) {
-                                            onDismiss()
+                                    try {
+                                        onExportImage(includeAppAttribution) { success ->
+                                            if (success) {
+                                                onDismiss()
+                                            }
                                         }
+                                    } finally {
+                                        isExporting = false
                                     }
                                 }
                             }
@@ -200,7 +219,7 @@ fun ExportDialogComponent(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.Image,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
@@ -208,7 +227,7 @@ fun ExportDialogComponent(
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = "导出为图片",
+                                text = ContentStrings.exportImage,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
@@ -233,7 +252,7 @@ fun ExportDialogComponent(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.ContentCopy,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
@@ -241,7 +260,7 @@ fun ExportDialogComponent(
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = "复制 Markdown",
+                                text = ContentStrings.copyMarkdown,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
@@ -251,7 +270,7 @@ fun ExportDialogComponent(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "带评论导出",
+                        text = ContentStrings.exportWithComments,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -262,7 +281,7 @@ fun ExportDialogComponent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "包含评论数量: ${commentCount.value.roundToInt()} 条",
+                            text = ContentStrings.exportCommentCount(commentCount.value.roundToInt()),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -283,11 +302,14 @@ fun ExportDialogComponent(
                             if (!isExporting) {
                                 isExporting = true
                                 coroutineScope.launch {
-                                    onExportImageWithComments(commentCount.value.roundToInt(), includeAppAttribution) { success ->
-                                        isExporting = false
-                                        if (success) {
-                                            onDismiss()
+                                    try {
+                                        onExportImageWithComments(commentCount.value.roundToInt(), includeAppAttribution) { success ->
+                                            if (success) {
+                                                onDismiss()
+                                            }
                                         }
+                                    } finally {
+                                        isExporting = false
                                     }
                                 }
                             }
@@ -302,7 +324,7 @@ fun ExportDialogComponent(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Filled.GetApp,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
@@ -310,7 +332,7 @@ fun ExportDialogComponent(
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = "导出图片（含评论）",
+                                text = ContentStrings.exportImageWithComments,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                             )
@@ -322,7 +344,7 @@ fun ExportDialogComponent(
                     Row(
                         modifier = Modifier.fillMaxWidth().toggleable(
                             value = includeAppAttribution,
-                            enabled = (isHtmlExportSupported || isImageExportSupported) && !isExporting,
+                            enabled = (isHtmlExportSupported || isImageExportSupported || isPdfExportSupported) && !isExporting,
                             role = Role.Checkbox,
                             onValueChange = { includeAppAttribution = it },
                         ),
@@ -332,11 +354,11 @@ fun ExportDialogComponent(
                             checked = includeAppAttribution,
                             onCheckedChange = null,
                             modifier = Modifier.clearAndSetSemantics { },
-                            enabled = (isHtmlExportSupported || isImageExportSupported) && !isExporting,
+                            enabled = (isHtmlExportSupported || isImageExportSupported || isPdfExportSupported) && !isExporting,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "在导出底部加入知乎++开源项目说明",
+                            text = ContentStrings.exportProjectFooter,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -350,7 +372,7 @@ fun ExportDialogComponent(
                             AppSpinner(size = 16.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "导出中...",
+                                text = ContentStrings.exporting,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

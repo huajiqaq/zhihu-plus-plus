@@ -29,6 +29,7 @@ import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.sourceLabel
 import com.github.zly2006.zhihu.data.target
 import com.github.zly2006.zhihu.data.toDisplayItem
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.util.extractImageUrl
@@ -36,12 +37,12 @@ import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.PaginationViewModel
 import com.github.zly2006.zhihu.viewmodel.QualityFilterMode
+import kotlin.reflect.typeOf
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.reflect.typeOf
 
 @Serializable
 data class ActivityActor(
@@ -97,9 +98,9 @@ data class PeopleActivity(
             val comments = counts?.commentCount?.takeIf { it >= 0 }
             val details = listOfNotNull(
                 target?.description(),
-                likes?.let { "$it 赞" },
-                favorites?.let { "$it 收藏" },
-                comments?.let { "$it 评论" },
+                likes?.let { DomainStrings.activityLikes(it) },
+                favorites?.let { DomainStrings.activitySaves(it) },
+                comments?.let { DomainStrings.activityComments(it) },
             ).joinToString(" · ")
             val id = when (feed) {
                 is CommonFeed -> feed.id
@@ -183,7 +184,7 @@ class PeopleActivitiesViewModel(
     override val initialUrl: String get() = "https://www.zhihu.com/api/v3/moments/${person.userTokenOrId}/activities"
     override val include: String get() = if (lastPaging == null) super.include else ""
 
-    override fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<PeopleActivity> {
+    override suspend fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<PeopleActivity> {
         val settings = FeedDisplaySettings(platformSettingsStore())
         val seen = if (isRefreshPending) mutableSetOf() else allData.mapTo(mutableSetOf()) { it.item.stableKey }
         return rawData

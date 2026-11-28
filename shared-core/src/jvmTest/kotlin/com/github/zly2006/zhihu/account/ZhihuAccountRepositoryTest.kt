@@ -17,7 +17,6 @@
 
 package com.github.zly2006.zhihu.account
 
-import kotlinx.io.files.Path
 import java.io.IOException
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -27,11 +26,13 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlinx.io.files.Path
+import kotlinx.serialization.json.Json
+import java.nio.file.Path as JavaPath
 
 class ZhihuAccountRepositoryTest {
-    private lateinit var directory: java.nio.file.Path
-    private lateinit var file: java.nio.file.Path
+    private lateinit var directory: JavaPath
+    private lateinit var file: JavaPath
 
     @BeforeTest
     fun createAccountDirectory() {
@@ -45,18 +46,35 @@ class ZhihuAccountRepositoryTest {
     }
 
     @Test
-    fun loadFallsBackToDefaultSessionForInvalidJsonWithoutHidingReadFailure() {
+    fun loadRejectsInvalidAndLegacyFilesWithoutChangingBytes() {
         val repository = ZhihuAccountRepository(Path(file.toString()))
-        Files.writeString(file, "not json")
-        val invalidBytes = Files.readAllBytes(file)
-
-        val session = repository.loadAccounts().session
-
-        assertFalse(session.login)
-        assertTrue(session.cookies.isEmpty())
-        assertContentEquals(invalidBytes, Files.readAllBytes(file))
-        Files.writeString(file, """{"accounts":[null]}""")
         assertEquals(ZhihuAccounts(), repository.loadAccounts())
+        val invalidFiles = listOf(
+            "",
+            "not json",
+            "{}",
+            """{"login":true,"username":"legacy","cookies":{"z_c0":"synthetic-private"}}""",
+            """{"accounts":[null]}""",
+            """{"accounts":"synthetic-private"}""",
+            """{"accounts":[],"version":2}""",
+            """{"accounts":[],"activeAccountId":"missing"}""",
+            """{"accounts":[{"id":"duplicate","session":{}},{"id":"duplicate","session":{}}]}""",
+        )
+        for (text in invalidFiles) {
+            Files.writeString(file, text)
+            val originalBytes = Files.readAllBytes(file)
+            val failure = assertFailsWith<IllegalStateException> { repository.loadAccounts() }
+            assertEquals(null, failure.cause, "解析异常不能泄漏账号文件片段")
+            assertContentEquals(originalBytes, Files.readAllBytes(file))
+            assertFalse(Files.exists(directory.resolve("account.json.tmp")))
+        }
+        Files.delete(file)
+        val self = Json.parseToJsonElement("""{"id":"self-only","name":"Self Only"}""")
+        val session = ZhihuAccountSession(login = true, username = "alice", self = self)
+        val accounts = ZhihuAccounts("alice", listOf(ZhihuSavedAccount("alice", session)), mapOf("d_c0" to "synthetic-guest"))
+        repository.saveAccounts(accounts)
+        assertEquals(accounts, repository.loadAccounts(), "保留当前 self 字段，但不能从它补写 profile")
+        assertEquals(null, repository.loadAccounts().session.profile)
         Files.delete(file)
         Files.createDirectory(file)
         Files.writeString(file.resolve("blocker"), "keep")

@@ -19,13 +19,25 @@
 
 package com.github.zly2006.zhihu.macos
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.window.Window
+import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
+import com.github.zly2006.zhihu.account.ZhihuAccountStore
+import com.github.zly2006.zhihu.account.createNativeAccountStore
+import com.github.zly2006.zhihu.i18n.HostStrings
 import com.github.zly2006.zhihu.notification.installAppleSystemNotificationDelegate
 import com.github.zly2006.zhihu.platform.MacosBackNavigationHost
+import com.github.zly2006.zhihu.platform.NativeFileDeliveryHost
+import com.github.zly2006.zhihu.platform.applySavedAppLanguage
 import com.github.zly2006.zhihu.platform.isMacosQuitOnWindowCloseEnabled
+import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.MacosZhihuMain
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
+import com.github.zly2006.zhihu.ui.components.MacosUserMessageHost
+import kotlin.experimental.ExperimentalNativeApi
+import kotlin.native.setUnhandledExceptionHook
 import kotlinx.cinterop.autoreleasepool
 import platform.AppKit.NSApplication
 import platform.AppKit.NSApplicationActivationPolicy
@@ -34,9 +46,8 @@ import platform.AppKit.NSImage
 import platform.AppKit.NSWindow
 import platform.AppKit.NSWindowDelegateProtocol
 import platform.Foundation.NSBundle
+import platform.Foundation.NSNotification
 import platform.darwin.NSObject
-import kotlin.experimental.ExperimentalNativeApi
-import kotlin.native.setUnhandledExceptionHook
 
 @OptIn(ExperimentalNativeApi::class)
 fun main() {
@@ -48,9 +59,11 @@ fun main() {
     }
 
     autoreleasepool {
+        applySavedAppLanguage(platformSettingsStore())
         val application = NSApplication.sharedApplication()
         application.setActivationPolicy(NSApplicationActivationPolicy.NSApplicationActivationPolicyRegular)
-        val applicationDelegate = MacosApplicationDelegate(application)
+        val accountStore = createNativeAccountStore()
+        val applicationDelegate = MacosApplicationDelegate(application, accountStore)
         application.delegate = applicationDelegate
         installAppleSystemNotificationDelegate()
         NSBundle.mainBundle
@@ -58,25 +71,33 @@ fun main() {
             ?.let { iconPath -> NSImage(contentsOfFile = iconPath) }
             ?.let(application::setApplicationIconImage)
         Window(
-            title = "Zhihu++",
+            title = HostStrings.appName,
         ) {
+            val title = HostStrings.appName
+            SideEffect { if (window.title != title) window.title = title }
             applicationDelegate.window = window
             window.delegate = applicationDelegate
             MacosBackNavigationHost(window) {
                 AppStartupSplash {
                     ZhihuTheme {
-                        MacosZhihuMain(
-                            onNotificationOpen = {
-                                if (window.miniaturized) window.deminiaturize(null)
-                                window.makeKeyAndOrderFront(null)
-                                application.activateIgnoringOtherApps(true)
-                            },
-                        ) { chrome, content ->
-                            MacosNativeWindowChrome(
-                                window = window,
-                                chrome = chrome,
-                                content = content,
-                            )
+                        CompositionLocalProvider(LocalZhihuAccountStore provides accountStore) {
+                            MacosUserMessageHost {
+                                NativeFileDeliveryHost(window) {
+                                    MacosZhihuMain(
+                                        onNotificationOpen = {
+                                            if (window.miniaturized) window.deminiaturize(null)
+                                            window.makeKeyAndOrderFront(null)
+                                            application.activateIgnoringOtherApps(true)
+                                        },
+                                    ) { chrome, content ->
+                                        MacosNativeWindowChrome(
+                                            window = window,
+                                            chrome = chrome,
+                                            content = content,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -89,10 +110,15 @@ fun main() {
 
 private class MacosApplicationDelegate(
     private val application: NSApplication,
+    private val accountStore: ZhihuAccountStore,
 ) : NSObject(),
     NSApplicationDelegateProtocol,
     NSWindowDelegateProtocol {
     var window: NSWindow? = null
+
+    override fun applicationWillTerminate(notification: NSNotification) {
+        accountStore.close()
+    }
 
     override fun applicationShouldHandleReopen(
         sender: NSApplication,

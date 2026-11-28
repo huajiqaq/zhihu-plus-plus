@@ -1,65 +1,385 @@
 name: Build Check
+
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: '仅构建/打包，不执行回归；ios 默认包含 Full/Lite；desktop 是 linux 的兼容入口'
+        type: choice
+        required: true
+        default: all
+        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, macos, aigc-server]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-check-${{ github.ref }}-${{ inputs.target || 'all' }}
+  cancel-in-progress: true
 
 jobs:
-  build_pr:
-    name: Build PR
+  aigc-server:
+    name: Check Rust AIGC service without tests or deployment
+    if: inputs.target == 'all' || inputs.target == 'aigc-server'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      # 将当前日期写入环境变量。
-      - name: Set current date as env variable
-        run: echo "date_today=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
-      # 将仓库名写入环境变量。
-      - name: Set repository name as env variable
-        run: echo "repository_name=$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')" >> $GITHUB_ENV
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v6
-        with:
-          distribution: 'zulu' # 可选发行版见 setup-java 的 Supported distributions。
-          java-version: '21'
-          problem-matcher: true
-      - name: Change wrapper permissions
-        run: chmod +x ./gradlew
-      - name: Prepare build inputs
-        uses: ./.github/actions/setup-build-inputs
-      - name: Install Android NDK
-        run: |
-          sdkmanager --install "ndk;29.0.14206865"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
-
-      - name: Setup rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           override: true
+      - name: Check service source and locked dependencies
+        run: cargo check --locked --manifest-path aigc-vote-server/Cargo.toml
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
-
-      - name: Add Android Rust targets
-        run: rustup target add aarch64-linux-android x86_64-linux-android
-      - name: Build Full App
-        # 构建 APK。
-        run: bash ./gradlew :app:assembleFullDebug -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2
-      - name: Build Lite App
-        run: bash ./gradlew :app:assembleLiteDebug -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2
-      - name: Move files
+  build:
+    if: contains(fromJSON('["all","lite","full","linux","desktop","web"]'), inputs.target)
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.target == 'all' && '["lite","full","linux","web"]' || format('["{0}"]', inputs.target)) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        with:
+          upstream-tools: ${{ matrix.target != 'web' }}
+      - name: Install Linux reading and AppImage build dependencies
+        if: matrix.target == 'linux' || matrix.target == 'desktop'
         run: |
-          mkdir -p app/build/upload
-          mkdir -p app/build/upload-lite
-          mv app/build/outputs/apk/full/debug/app-full-debug.apk app/build/upload/zhihu++-full-debug.apk
-          cp app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/upload/zhihu++-lite-debug.apk
-          mv app/build/outputs/apk/lite/debug/app-lite-debug.apk app/build/upload-lite/zhihu++-lite-debug.apk
-      - name: Upload APK
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libspeechd-dev libglib2.0-dev libjson-glib-dev \
+            speech-dispatcher speech-dispatcher-espeak-ng patchelf pax-utils
+      - name: Install Android NDK
+        if: matrix.target == 'full'
+        run: |
+          sdkmanager --install "ndk;29.0.14206865"
+          printf 'ANDROID_NDK_HOME=%s/ndk/29.0.14206865\n' "$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: matrix.target == 'full'
+        with:
+          override: true
+      - name: Prepare Android Rust toolchain
+        if: matrix.target == 'full'
+        run: |
+          cargo install cargo-ndk --locked
+          rustup target add aarch64-linux-android x86_64-linux-android
+      - name: Build selected target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            lite) bash ./gradlew :app:assembleLiteDebug -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2 ;;
+            full) bash ./gradlew :app:assembleFullDebug -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2 ;;
+            linux|desktop) bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2 ;;
+            web) bash ./gradlew :webApp:wasmJsBrowserDistribution -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g --max-workers=2 ;;
+            *) exit 1 ;;
+          esac
+      - name: Package Linux x64 AppImage with private reading libraries
+        if: matrix.target == 'linux' || matrix.target == 'desktop'
+        run: |
+          python -I .github/scripts/verify-package-resources.py --platform linux \
+            --desktop 'desktopApp/build/compose/binaries/main/app/Zhihu++'
+          python -I .github/scripts/package-linux-appimage.py \
+            --app-image 'desktopApp/build/compose/binaries/main/app/Zhihu++' \
+            --icon desktopApp/src/main/composeResources/drawable/desktop_icon.png \
+            --output 'desktopApp/build/upload/zhihu++-linux-x64.AppImage'
+      - name: Check Web production resources and licenses
+        if: matrix.target == 'web'
+        run: python -I .github/scripts/verify-package-resources.py --web webApp/build/dist/wasmJs/productionExecutable
+      - name: Upload Android APK
+        if: matrix.target == 'lite' || matrix.target == 'full'
         uses: actions/upload-artifact@v7
         with:
-          name: PR Debug artifacts
-          path: app/build/upload/
-      - name: Upload APK
+          name: build-${{ matrix.target }}
+          path: app/build/outputs/apk/${{ matrix.target }}/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload Linux AppImage
+        if: matrix.target == 'linux' || matrix.target == 'desktop'
         uses: actions/upload-artifact@v7
         with:
-          name: PR Debug artifacts (Lite)
-          path: app/build/upload-lite/
+          name: build-linux-x64
+          path: desktopApp/build/upload/*.AppImage
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload Web distribution
+        if: matrix.target == 'web'
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-web
+          path: webApp/build/dist/wasmJs/productionExecutable/
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-native:
+    name: Build JVM desktop on ${{ matrix.target }}
+    if: inputs.target == 'all' || inputs.target == 'windows' || inputs.target == 'desktop-macos'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.target == 'windows' && '[{"target":"windows","runner":"windows-2025"}]' || inputs.target == 'desktop-macos' && '[{"target":"desktop-macos","runner":"macos-26"}]' || '[{"target":"windows","runner":"windows-2025"},{"target":"desktop-macos","runner":"macos-26"}]') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        with:
+          native-cache-scope: desktop-native-build-only
+      - name: Compile desktop and platform helpers
+        shell: bash
+        run: bash ./gradlew :desktopApp:jar -PzhihuUpstreamPatches=true --max-workers=2
+      - name: Build Windows release app-image
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          bash ./gradlew :desktopApp:createReleaseDistributable -PzhihuUpstreamPatches=true --max-workers=2
+          python -I .github/scripts/verify-package-resources.py --platform windows \
+            --desktop 'desktopApp/build/compose/binaries/main-release/app/Zhihu++'
+      - name: Package Windows x64 MSI and unsigned MSIX
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $image = (Resolve-Path -LiteralPath 'desktopApp/build/compose/binaries/main-release/app/Zhihu++').Path
+          $msi = Join-Path $env:RUNNER_TEMP 'zhihu-msi-build'
+          $msix = Join-Path $env:RUNNER_TEMP 'zhihu-msix-build'
+          & ./.github/scripts/package-windows-msi.ps1 -AppImage $image -OutputDirectory $msi
+          $code = [regex]::Match([IO.File]::ReadAllText('gradle.properties'), '(?m)^app\.versionCode=(\d+)\r?$')
+          if (!$code.Success -or [int]$code.Groups[1].Value -gt 65535) { throw 'Invalid MSIX build version.' }
+          # Build-only identity: no certificate is created, imported, accessed or trusted.
+          & ./desktopApp/windows/package-msix.ps1 -AppImage $image -OutputDirectory $msix `
+            -IdentityName 'ZhihuPlusPlus.BuildCheck' -Publisher 'CN=ZhihuPlusPlus Build Check' `
+            -Version "1.0.$($code.Groups[1].Value).0"
+          New-Item -ItemType Directory -Path desktopApp/build/upload -Force | Out-Null
+          Copy-Item -Path (Join-Path $msi '*.msi') -Destination desktopApp/build/upload/
+          Copy-Item -LiteralPath (Join-Path $msix 'Zhihu++.unsigned.msix') -Destination desktopApp/build/upload/
+      - name: Build macOS JVM app-image and archive with ad-hoc signature
+        if: matrix.target == 'desktop-macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2
+          app='desktopApp/build/compose/binaries/main/app/Zhihu++.app'
+          test -x "$app/Contents/app/resources/reading/zhihu-reading-host"
+          test -f "$app/Contents/app/resources/native-notifications/libZhihuPortableNotifications.dylib"
+          python -I .github/scripts/verify-package-resources.py --platform macos --desktop "$app"
+          /usr/bin/codesign --force --sign - --timestamp=none "$app"
+          /usr/bin/codesign --verify --deep --strict "$app"
+          mkdir -p desktopApp/build/upload
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" 'desktopApp/build/upload/zhihu++-desktop-macos-arm64.app.zip'
+      - name: Show jpackage build output after failure
+        if: failure()
+        shell: bash
+        run: |
+          python -I - <<'PY'
+          from pathlib import Path
+          root = Path('desktopApp/build/compose/logs')
+          for pattern in ('jpackage-*-err.txt', 'jpackage-*-out.txt'):
+              for path in sorted(root.rglob(pattern)):
+                  if not path.is_file() or path.is_symlink():
+                      continue
+                  print(f'--- {path.as_posix()} ---', flush=True)
+                  with path.open('rb') as stream:
+                      data = stream.read(131073)
+                  for line in data[:131072].decode('utf-8', errors='replace').splitlines():
+                      print('  ' + line)
+                  if len(data) > 131072:
+                      print('  [Console excerpt limited to 128 KiB; complete build output is in the diagnostics artifact.]')
+          PY
+      - name: Upload desktop packaging diagnostics after failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.target }}-diagnostics-${{ github.run_attempt }}
+          # Only compiler/packager output and generated arguments; never application logs or the whole tmp tree.
+          path: |
+            desktopApp/build/compose/logs/**
+            desktopApp/build/compose/tmp/*.args.txt
+            desktopApp/build/compose/tmp/**/root-config.pro
+            desktopApp/build/compose/tmp/**/jars-config.pro
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.target }}
+          path: desktopApp/build/upload/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  macos:
+    name: Build native macOS arm64 app
+    if: inputs.target == 'all' || inputs.target == 'macos'
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        id: inputs
+        with:
+          native-cache-scope: macos-build-only
+      - name: Build native macOS app bundle
+        run: |
+          bash ./gradlew :macosApp:packageDebugMacosApp -PzhihuUpstreamPatches=true --max-workers=1 \
+            -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8'
+      - name: Archive native macOS app preserving bundle metadata
+        run: |
+          set -euo pipefail
+          app='macosApp/build/bin/macosArm64/debugApp/Zhihu++.app'
+          test -d "$app"
+          python -I .github/scripts/verify-package-resources.py --native-macos "$app" \
+            --ort-lock shared-domain/onnxruntime-apple.lock.json --evidence "$RUNNER_TEMP/macos-package-metadata"
+          mkdir -p macosApp/build/upload
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" 'macosApp/build/upload/zhihu++-macos-arm64-debug.app.zip'
+      - name: Save Kotlin Native cache
+        if: success() && steps.inputs.outputs.native-cache-writable == 'true' && steps.inputs.outputs.native-cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.inputs.outputs.native-cache-key }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-macos-arm64
+          path: macosApp/build/upload/*.app.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload native macOS deployment metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-macos-arm64-metadata
+          path: ${{ runner.temp }}/macos-package-metadata/
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios-device:
+    name: Build unsigned iOS ${{ matrix.variant }} arm64 Release IPA
+    if: contains(fromJSON('["all","ios","ios-device","ios-device-full","ios-device-lite"]'), inputs.target)
+    # Match the existing Release linker budget: Intel host, arm64 target, 8 GiB heap, one worker.
+    runs-on: macos-26-intel
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.target == 'ios-device-full' && '["full"]' || inputs.target == 'ios-device-lite' && '["lite"]' || '["full","lite"]') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: ./.github/actions/setup-build-inputs
+        id: inputs
+        with:
+          native-cache-scope: release
+      - name: Build and package unsigned device app without XCTest
+        id: package
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          # The release stage only builds and checks the archive/resources; it never starts a device or test target.
+          python3 -I .github/scripts/verify-ios-acceptance.py --stage release --variant '${{ matrix.variant }}' \
+            --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-device-${{ matrix.variant }}-build"
+      - name: Save Kotlin Native cache
+        if: success() && steps.inputs.outputs.native-cache-writable == 'true' && steps.inputs.outputs.native-cache-hit != 'true' && steps.package.outputs.native-build-succeeded == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.inputs.outputs.native-cache-key }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-ios-device-${{ matrix.variant }}-arm64-unsigned
+          path: |
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/*.ipa
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload device build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-ios-device-${{ matrix.variant }}-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/*.log
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/*.json
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/*.map
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/*.txt
+            ${{ runner.temp }}/ios-device-${{ matrix.variant }}-build/gradle-profile/
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios:
+    name: Build unsigned iOS ${{ matrix.variant }} arm64 Debug simulator app
+    if: contains(fromJSON('["all","ios","ios-simulator","ios-simulator-full","ios-simulator-lite"]'), inputs.target)
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.target == 'ios-simulator-full' && '["full"]' || inputs.target == 'ios-simulator-lite' && '["lite"]' || '["full","lite"]') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Prepare Apple build inputs
+        id: inputs
+        uses: ./.github/actions/setup-build-inputs
+        with:
+          native-cache-scope: ios-build-only
+      - name: Build and package unsigned simulator app without XCTest or Simulator
+        id: package
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          python3 -I .github/scripts/verify-ios-acceptance.py --stage simulator-package --variant '${{ matrix.variant }}' \
+            --root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/ios-simulator-${{ matrix.variant }}-build"
+      - name: Save Kotlin Native cache
+        if: success() && steps.inputs.outputs.native-cache-writable == 'true' && steps.inputs.outputs.native-cache-hit != 'true' && steps.package.outputs.native-build-succeeded == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.konan
+          key: ${{ steps.inputs.outputs.native-cache-key }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-ios-simulator-${{ matrix.variant }}-arm64
+          path: |
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/*.app.zip
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Upload simulator package diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-ios-simulator-${{ matrix.variant }}-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/*.log
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/*.json
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/*.map
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/*.txt
+            ${{ runner.temp }}/ios-simulator-${{ matrix.variant }}-build/gradle-profile/
+          if-no-files-found: warn
+          retention-days: 7

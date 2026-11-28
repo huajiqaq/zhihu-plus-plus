@@ -24,9 +24,11 @@ import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
+import com.github.zly2006.zhihu.data.ZhihuPaging
 import com.github.zly2006.zhihu.data.decodeQuestionContentDetail
 import com.github.zly2006.zhihu.data.navDestination
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
 import com.github.zly2006.zhihu.navigation.Question
@@ -43,12 +45,28 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 
 open class QuestionFeedViewModel(
     private val questionId: Long,
 ) : BaseFeedViewModel() {
+    override val previewBeforeFiltering: Boolean get() = true
+
     var sortOrder by mutableStateOf("default")
         private set
+    private val fetchedPageUrls = mutableSetOf<String>()
+
+    override fun resetForRefresh() {
+        super.resetForRefresh()
+        fetchedPageUrls.clear()
+    }
+
+    override fun preparePageMetadata(json: JsonObject): () -> Unit = {
+        if (!hasNextPage || lastPaging?.next?.replace("http://", "https://") in fetchedPageUrls) {
+            lastPaging = lastPaging?.copy(isEnd = true, next = "") ?: ZhihuPaging(isEnd = true, next = "")
+        }
+    }
 
     /** 保留问题详情以维持返回时的题头高度，避免列表恢复偏移落到后续回答。 */
     var questionDetail by mutableStateOf<DataHolder.Question?>(null)
@@ -82,7 +100,7 @@ open class QuestionFeedViewModel(
             val include =
                 "read_count,visit_count,answer_count,voteup_count,comment_count,follower_count,detail,excerpt,author,relationship.is_following,topics"
             val jsonObject = environment.fetchJson("https://www.zhihu.com/api/v4/questions/$questionId", include)
-                ?: error("问题详情为空")
+                ?: error(ContentStrings.questionDetailEmpty)
             val loadedQuestion = decodeQuestionContentDetail(jsonObject)
             currentCoroutineContext().ensureActive()
             if (generation != detailLoadGeneration || environment.httpClient() !== client) {
@@ -99,7 +117,7 @@ open class QuestionFeedViewModel(
             throw error
         } catch (error: Exception) {
             if (generation == detailLoadGeneration && environment.httpClient() === client) {
-                questionDetailError = error.message?.takeIf(String::isNotBlank) ?: "问题详情加载失败"
+                questionDetailError = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.questionDetailLoadFailed
             }
         } finally {
             if (generation == detailLoadGeneration) {
@@ -119,10 +137,11 @@ open class QuestionFeedViewModel(
     }
 
     override fun createDisplayItem(settings: FeedDisplaySettings, feed: Feed): FeedDisplayItem {
+        val item = super.createDisplayItem(settings, feed)
         val target = feed.target
         if (target is Feed.AnswerTarget) {
-            return FeedDisplayItem(
-                authorName = target.author?.name ?: "未知作者",
+            return item.copy(
+                authorName = target.author?.name ?: ContentStrings.unknownAuthor,
                 avatarSrc = target.author?.avatarUrl,
                 summary = target.excerpt,
                 /** 旧 API 或广告数据可能缺少回答时间。 */
@@ -131,11 +150,10 @@ open class QuestionFeedViewModel(
                 } else {
                     target.detailsText
                 },
-                feed = feed,
                 title = "",
             )
         }
-        return super.createDisplayItem(settings, feed)
+        return item
     }
 
     fun createAnswerNavigatorFor(
@@ -155,14 +173,15 @@ open class QuestionFeedViewModel(
                 .take(index)
                 .asReversed()
                 .mapNotNull { it.navDestination as? Article },
-            initialNextUrl = lastPaging?.next.orEmpty(),
+            /** 候选尚未提交 next；导航从当前页续取并去重，不能把它误判为末页。 */
+            initialNextUrl = if (previewDisplayItems?.isNotEmpty() == true) resolvePageUrl() else lastPaging?.next.orEmpty(),
             order = sortOrder,
             environment = environment,
         )
     }
 
     suspend fun followQuestion(environment: ZhihuApiEnvironment, follow: Boolean) {
-        check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { "请先登录后再关注问题" }
+        check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { ContentStrings.followQuestionLoginRequired }
         val url = "https://www.zhihu.com/api/v4/questions/$questionId/followers"
         if (follow) {
             environment.post(url).raiseForStatus()
@@ -171,7 +190,7 @@ open class QuestionFeedViewModel(
         }
     }
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: kotlinx.serialization.json.JsonArray) {
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<Feed>, rawData: JsonArray): () -> Unit {
         val blockedUserIds = environment.blockedUserIds()
         val filtered = if (blockedUserIds.isEmpty()) {
             data
@@ -181,6 +200,11 @@ open class QuestionFeedViewModel(
                 target is Feed.AnswerTarget && target.author?.id in blockedUserIds
             }
         }
-        super.processResponse(environment, filtered, rawData)
+        val url = resolvePageUrl().replace("http://", "https://")
+        val commit = super.prepareResponse(environment, filtered, rawData)
+        return {
+            commit()
+            fetchedPageUrls += url
+        }
     }
 }

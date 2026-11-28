@@ -77,7 +77,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** Miuix 0.9.4 子项固定为 Tab 且无逐项 tag/enabled，需容器定位与回调禁用门控。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -278,7 +277,7 @@ fun AppEmptyState(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
+                AppIcon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = if (settingSkinIsMiuix()) {
@@ -421,7 +420,7 @@ fun AppSearchBar(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
+        AppIcon(
             imageVector = Icons.Default.Search,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,

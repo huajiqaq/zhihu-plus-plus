@@ -18,12 +18,13 @@
 package com.github.zly2006.zhihu.editor
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.EditorStrings
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
-import com.github.zly2006.zhihu.util.json
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -32,18 +33,27 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** 平台负责上传事务；浏览器仅接收业务 voiceId，不持有上传密钥。 */
+expect suspend fun uploadVoiceComment(
+    environment: ZhihuApiEnvironment,
+    bytes: ByteArray,
+    durationMs: Long,
+    mimeType: String = "audio/mp4",
+): UploadedVoiceComment
+
 /** Lens video_id 即 voice_info.voice_id；评论上传不等待播放列表或转写。 */
-suspend fun uploadVoiceComment(
+internal suspend fun uploadVoiceCommentDirect(
     environment: ZhihuApiEnvironment,
     bytes: ByteArray,
     durationMs: Long,
     mimeType: String = "audio/mp4",
 ): UploadedVoiceComment = environment.withAuthenticatedClient { client, cookies ->
-    require(bytes.isNotEmpty()) { "录音文件为空" }
-    require(durationMs > 0) { "录音时长无效" }
+    require(bytes.isNotEmpty()) { EditorStrings.recordingFileEmpty }
+    require(durationMs > 0) { EditorStrings.recordingDurationInvalid }
     val body = buildJsonObject {
         put("file_md5", ZhihuFetchSignature.md5Hex(bytes))
         put("file_size", bytes.size.toLong())
@@ -58,21 +68,21 @@ suspend fun uploadVoiceComment(
             setBody(body)
             signZhihuFetchRequest(cookies, body)
         }.raiseForStatus()
-        .json()
+        .body<JsonElement>()
     val session = ZhihuJson.decodeJson(VoiceUploadSession.serializer(), response)
     val uploadFile = session.uploadFile ?: session.uploadfile
-        ?: throw IllegalStateException("知乎未返回语音上传文件信息")
+        ?: throw IllegalStateException(EditorStrings.voiceUploadFileMissing)
     val videoId = uploadFile.videoId
     if (videoId.isBlank()) {
-        throw IllegalStateException("知乎未返回语音 video_id")
+        throw IllegalStateException(EditorStrings.voiceVideoIdMissing)
     }
 
     if (uploadFile.state != 1) {
         if (uploadFile.objectKey.isBlank()) {
-            throw IllegalStateException("知乎未返回语音 object_key")
+            throw IllegalStateException(EditorStrings.voiceObjectKeyMissing)
         }
         val token = session.uploadToken ?: session.uploadtoken
-            ?: throw IllegalStateException("知乎未返回语音上传凭证")
+            ?: throw IllegalStateException(EditorStrings.voiceUploadCredentialsMissing)
         try {
             reportUploadingStatus(
                 client = client,

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="choose_image">选择图片</string>
+    <string name="image_picker_not_supported">%1$s 暂不支持图片选择</string>
+    <string name="image_read_failed">无法读取所选图片的内容，请重试或换一张图片</string>
+    <string name="image_upload_http_failed">图片上传失败（HTTP %1$d）</string>
+    <string name="voice_upload_http_failed">语音上传失败（HTTP %1$d）</string>
+    <string name="image_upload_token_missing">知乎返回的图片需要重新上传，但响应里缺少 uploadToken。imageId=%1$s, state=%2$s</string>
+    <string name="image_url_missing">知乎图片处理成功但没有返回图片地址。imageId=%1$s</string>
+    <string name="image_hash_missing">知乎图片处理成功但没有返回 original_hash。imageId=%1$s</string>
+    <string name="oss_upload_id_invalid">无法解析 OSS UploadId: %1$s</string>
+    <string name="oss_etag_missing">OSS 分片上传未返回 ETag</string>
+    <string name="image_processing_failed">知乎图片处理失败：%1$s，imageId=%2$s</string>
+    <string name="image_processing_timeout">等待知乎图片处理超时，imageId=%1$s</string>
+    <string name="unsupported_image_format">无法识别图片格式，已取消上传</string>
+    <string name="recording_file_empty">录音文件为空</string>
+    <string name="recording_duration_invalid">录音时长无效</string>
+    <string name="recording_mp4_required">录音须先转换为 audio/mp4；不会把其他编码伪装成 MP4</string>
+    <string name="voice_upload_file_missing">知乎未返回语音上传文件信息</string>
+    <string name="voice_video_id_missing">知乎未返回语音 video_id</string>
+    <string name="voice_object_key_missing">知乎未返回语音 object_key</string>
+    <string name="voice_upload_credentials_missing">知乎未返回语音上传凭证</string>
+</resources>

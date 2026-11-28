@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.DpSize
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -62,7 +63,7 @@ internal fun PhoneLoginPanePhoneField(
     AppTextField(
         state = state.phoneNumber,
         inputTransformation = state.phoneNumberTransformation,
-        labelText = "手机号",
+        labelText = AccountStrings.phoneNumber,
         enabled = !state.isBusy,
         shape = fieldShape,
         miuixCornerRadius = AppDimens.LoginFieldCornerRadius,
@@ -104,19 +105,19 @@ internal fun PhoneLoginPaneCountryPicker(
     val countryQuery = remember(state) { TextFieldState() }
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择国家或地区") },
+        title = { Text(AccountStrings.countryPickerTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(AppDimens.Space8)) {
                 when {
                     state.isLoadingCountries || (state.countries == null && state.countryLoadError == null) -> {
                         AppSpinner(size = AppDimens.InlineSpinnerSize)
-                        Text("正在获取地区列表…")
+                        Text(AccountStrings.countriesLoading)
                     }
 
                     state.countryLoadError != null -> {
                         Text(state.countryLoadError.orEmpty(), color = MaterialTheme.colorScheme.error)
                         AppTextButton(
-                            text = "重试",
+                            text = AccountStrings.retry,
                             onClick = onRetry,
                             modifier = Modifier.testTag("phone_login_country_retry"),
                         )
@@ -125,17 +126,17 @@ internal fun PhoneLoginPaneCountryPicker(
                     else -> {
                         AppTextField(
                             state = countryQuery,
-                            labelText = "搜索地区、缩写或区号",
+                            labelText = AccountStrings.countrySearch,
                             modifier = Modifier.fillMaxWidth().testTag("phone_login_country_search"),
                         )
                         val query = countryQuery.text.toString().trim()
                         val filtered = state.countries.orEmpty().filter {
-                            it.name.contains(query, ignoreCase = true) ||
+                            it.displayName.contains(query, ignoreCase = true) ||
                                 it.abbr.contains(query, ignoreCase = true) ||
                                 it.code.contains(query, ignoreCase = true)
                         }
                         if (filtered.isEmpty()) {
-                            Text("没有匹配的地区")
+                            Text(AccountStrings.countriesEmpty)
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = AppDimens.Space240)) {
                                 items(filtered) { country ->
@@ -146,7 +147,7 @@ internal fun PhoneLoginPaneCountryPicker(
                                         modifier = Modifier.fillMaxWidth().testTag("phone_login_country_${country.abbr}"),
                                     ) {
                                         Text(
-                                            text = "${country.name} ${country.code}${if (country == state.country) " ✓" else ""}",
+                                            text = "${country.displayName} ${country.code}${if (country == state.country) " ✓" else ""}",
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
@@ -157,7 +158,7 @@ internal fun PhoneLoginPaneCountryPicker(
                 }
             }
         },
-        confirmButton = { AppTextButton(text = "关闭", onClick = onDismiss) },
+        confirmButton = { AppTextButton(text = AccountStrings.close, onClick = onDismiss) },
     )
 }
 
@@ -176,7 +177,7 @@ internal fun CaptchaStep(
         if (captchaBitmap != null) {
             Image(
                 bitmap = captchaBitmap,
-                contentDescription = "图形验证码",
+                contentDescription = AccountStrings.captcha,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,9 +187,9 @@ internal fun CaptchaStep(
         } else {
             CaptchaUnavailable(
                 reason = if (imageBase64 == null) {
-                    "服务器没有返回图形验证码"
+                    AccountStrings.captchaMissing
                 } else {
-                    "图形验证码图片无法解析"
+                    AccountStrings.captchaInvalidImage
                 },
                 retryEnabled = state.canRefreshCaptcha,
                 onRetry = onRefresh,
@@ -196,7 +197,7 @@ internal fun CaptchaStep(
         }
         AppTextField(
             state = state.captchaInput,
-            labelText = "图形验证码",
+            labelText = AccountStrings.captcha,
             enabled = !state.isBusy,
             shape = fieldShape,
             miuixCornerRadius = AppDimens.LoginFieldCornerRadius,
@@ -218,10 +219,10 @@ internal fun CaptchaStep(
                     .weight(1f)
                     .testTag("phone_login_refresh_captcha"),
             ) {
-                Text("换一张")
+                Text(AccountStrings.captchaChange)
             }
             AppButton(
-                text = "验证并发送",
+                text = AccountStrings.captchaVerifySend,
                 onClick = onVerify,
                 modifier = Modifier
                     .weight(1f)
@@ -256,7 +257,7 @@ private fun CaptchaUnavailable(
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         AppTextButton(
-            text = "重新获取",
+            text = AccountStrings.fetchAgain,
             onClick = onRetry,
             enabled = retryEnabled,
         )

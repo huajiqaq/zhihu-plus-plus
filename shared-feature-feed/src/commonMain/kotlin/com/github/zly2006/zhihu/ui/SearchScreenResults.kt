@@ -39,10 +39,12 @@ import androidx.compose.ui.platform.testTag
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.officialBadge
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.AuthorBadge
@@ -63,7 +65,6 @@ import com.github.zly2006.zhihu.viewmodel.feed.SearchTab
 import com.github.zly2006.zhihu.viewmodel.feed.SearchViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun SearchScreenGeneralResults(
@@ -97,7 +98,7 @@ internal fun SearchScreenGeneralResults(
                     SearchFilterEntry(viewModel.filters, onFilterClick)
                     if (isMemberSearch) {
                         Text(
-                            text = "以下结果来自 $memberSearchName 的创作",
+                            text = FeedStrings.resultsByMember(memberSearchName),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space8),
@@ -120,7 +121,7 @@ internal fun SearchScreenGeneralResults(
                     readingQueueSourceId = readingQueueSourceId,
                     menuItems = { dismissMenu ->
                         AppDropdownMenuItem(
-                            text = { Text("屏蔽用户") },
+                            text = { Text(FeedStrings.blockUser) },
                             onClick = { onBlockUser(result, dismissMenu) },
                         )
                     },
@@ -171,7 +172,7 @@ internal fun SearchScreenEntityResults(
                                     Text(it, style = LocalAppSkinTokens.current.body2, color = LocalAppSkinTokens.current.onSurfaceVariantSummary)
                                 }
                                 Text(
-                                    "${formatTopicCount(result.visitCount.toString())} 浏览 · ${formatTopicCount(result.discussCount.toString())} 讨论",
+                                    FeedStrings.topicStats(formatTopicCount(result.visitCount.toString()), formatTopicCount(result.discussCount.toString())),
                                     style = LocalAppSkinTokens.current.footnote2,
                                     color = LocalAppSkinTokens.current.onSurfaceVariantSummary,
                                 )
@@ -180,14 +181,14 @@ internal fun SearchScreenEntityResults(
                         icon = {
                             AsyncImage(
                                 model = topic.avatarUrl,
-                                contentDescription = "${topic.name}的话题头像",
+                                contentDescription = FeedStrings.topicAvatar(topic.name),
                                 modifier = Modifier.size(AppDimens.TouchTarget).clip(CircleShape),
                             )
                         },
                         onClick = { onNavigateTopic(result) },
                         endAction = {
                             AppTextButton(
-                                text = if (result.isFollowing) "已关注" else "关注",
+                                text = if (result.isFollowing) FeedStrings.following else FeedStrings.follow,
                                 onClick = {
                                     coroutineScope.launch {
                                         viewModel
@@ -220,14 +221,14 @@ internal fun SearchScreenEmptyResults(
     val emptyContent: @Composable () -> Unit = {
         AppEmptyState(
             title = when (searchTab) {
-                SearchTab.General -> "没有找到相关内容"
-                SearchTab.People -> "没有找到相关用户"
-                SearchTab.Topic -> "没有找到相关话题"
+                SearchTab.General -> FeedStrings.noContentResults
+                SearchTab.People -> FeedStrings.noPeopleResults
+                SearchTab.Topic -> FeedStrings.noTopicResults
             },
-            description = "试试其他关键词或调整筛选条件。",
+            description = FeedStrings.searchAgainHint,
             modifier = Modifier.fillMaxSize().testTag("search_results_empty"),
             action = {
-                AppTextButton("修改关键词", onModifyKeyword)
+                AppTextButton(FeedStrings.editQuery, onModifyKeyword)
             },
         )
     }
@@ -271,7 +272,7 @@ private fun PersonSearchResultRow(
                     Text(it, style = skin.body2, color = skin.onSurfaceVariantSummary)
                 }
                 Text(
-                    "${person.followerCount} 粉丝 · ${person.answerCount} 回答",
+                    FeedStrings.personStats(person.followerCount.toString(), person.answerCount.toString()),
                     style = skin.footnote2,
                     color = skin.onSurfaceVariantSummary,
                 )
@@ -280,7 +281,7 @@ private fun PersonSearchResultRow(
         icon = {
             AsyncImage(
                 model = person.avatarUrl,
-                contentDescription = "${name.text}的头像",
+                contentDescription = FeedStrings.authorAvatar(name.text),
                 modifier = Modifier.size(AppDimens.TouchTarget).clip(CircleShape),
             )
         },
@@ -305,7 +306,7 @@ internal fun SearchScreenRefreshFab(
             if (isLoading) {
                 AppSpinner(size = if (settingSkinIsMiuix()) null else AppDimens.IconSizeLarge)
             } else {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                AppIcon(Icons.Default.Refresh, contentDescription = FeedStrings.refresh)
             }
         }
     }

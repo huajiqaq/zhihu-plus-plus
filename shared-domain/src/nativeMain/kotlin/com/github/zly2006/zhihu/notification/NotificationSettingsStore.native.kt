@@ -19,7 +19,6 @@ package com.github.zly2006.zhihu.notification
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.nativeSettingsStore
 
 @Composable
@@ -28,37 +27,4 @@ actual fun rememberNotificationSettingsStore(): NotificationSettingsStore = reme
 }
 
 internal fun nativeNotificationSettingsStore(): NotificationSettingsStore =
-    NativeNotificationSettingsStore(nativeSettingsStore("notification_settings.properties"))
-
-private class NativeNotificationSettingsStore(
-    private val settings: SettingsStore,
-) : NotificationSettingsStore {
-    override fun getSystemNotificationEnabled(type: NotificationType): Boolean =
-        settings.getBoolean("$KEY_SYSTEM_NOTIFICATION${type.name}", false)
-
-    override fun setSystemNotificationEnabled(type: NotificationType, enabled: Boolean) =
-        settings.putBoolean("$KEY_SYSTEM_NOTIFICATION${type.name}", enabled)
-
-    override fun getDisplayInAppEnabled(type: NotificationType): Boolean =
-        settings.getBoolean("$KEY_DISPLAY_IN_APP${type.name}", type.defaultValue)
-
-    override fun setDisplayInAppEnabled(type: NotificationType, enabled: Boolean) =
-        settings.putBoolean("$KEY_DISPLAY_IN_APP${type.name}", enabled)
-
-    override fun getAutoMarkAsReadEnabled(): Boolean =
-        settings.getBoolean(KEY_AUTO_MARK_AS_READ, false)
-
-    override fun setAutoMarkAsReadEnabled(enabled: Boolean) =
-        settings.putBoolean(KEY_AUTO_MARK_AS_READ, enabled)
-
-    override fun getUnreadBadgeEnabled(): Boolean =
-        settings.getBoolean(KEY_UNREAD_BADGE, true)
-
-    override fun setUnreadBadgeEnabled(enabled: Boolean) =
-        settings.putBoolean(KEY_UNREAD_BADGE, enabled)
-}
-
-private const val KEY_SYSTEM_NOTIFICATION = "system_notification_"
-private const val KEY_DISPLAY_IN_APP = "display_in_app_"
-private const val KEY_AUTO_MARK_AS_READ = "auto_mark_notifications_read"
-private const val KEY_UNREAD_BADGE = "show_unread_badge"
+    StoredNotificationSettings(nativeSettingsStore("notification_settings.properties"))

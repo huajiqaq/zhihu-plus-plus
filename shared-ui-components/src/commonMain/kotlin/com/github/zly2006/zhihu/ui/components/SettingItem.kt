@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.DropdownMenuGroup
-import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.DropdownMenuPopupPositionProvider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +55,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchColors
@@ -97,7 +97,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.github.zly2006.zhihu.util.ProvideContentColorTextStyle
 import kotlinx.coroutines.delay
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 注册深链定位并绘制短暂高亮；无骨架宿主时自行滚动到目标。 */
 fun Modifier.highlightSetting(
@@ -410,7 +409,7 @@ fun SettingItemSelect(
                             },
                             shapes = MenuDefaults.itemShape(index = index, count = options.size),
                             selectedLeadingIcon = {
-                                Icon(
+                                AppIcon(
                                     Icons.Default.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(MenuDefaults.LeadingIconSize),
@@ -522,7 +521,7 @@ fun SwitchWithIcon(
         modifier = modifier,
         thumbContent = {
             if (checked) {
-                Icon(
+                AppIcon(
                     imageVector = Icons.Filled.Check,
                     contentDescription = null,
                     modifier = Modifier.size(SwitchDefaults.IconSize),
@@ -533,7 +532,7 @@ fun SwitchWithIcon(
                     },
                 )
             } else {
-                Icon(
+                AppIcon(
                     imageVector = Icons.Filled.Clear,
                     contentDescription = null,
                     modifier = Modifier.size(SwitchDefaults.IconSize),
@@ -621,7 +620,7 @@ fun SettingItem(
         endAction != null -> endAction
         onClick != null -> {
             {
-                Icon(
+                AppIcon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(AppDimens.SettingChevronSize),

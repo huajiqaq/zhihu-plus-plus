@@ -30,12 +30,12 @@ import com.github.zly2006.zhihu.data.OfficialBadge
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.officialBadge
 import com.github.zly2006.zhihu.data.officialBadgeDetails
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
-import com.github.zly2006.zhihu.util.Log
-import com.github.zly2006.zhihu.util.jsonObject
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.viewmodel.ContentBlocklistEnvironment
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
@@ -46,6 +46,8 @@ import com.github.zly2006.zhihu.viewmodel.addReadHistory
 import com.github.zly2006.zhihu.viewmodel.deleteSigned
 import com.github.zly2006.zhihu.viewmodel.feed.PeopleActivitiesViewModel
 import com.github.zly2006.zhihu.viewmodel.postSigned
+import io.ktor.client.call.body
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -53,10 +55,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.reflect.typeOf
 
 class PeopleAnswersViewModel(
     val person: Person,
@@ -188,7 +190,7 @@ class PeopleColumnContributionsViewModel(
     override val include: String
         get() = "data[*].column.articles_count"
 
-    override fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<DataHolder.Column> =
+    override suspend fun decodePage(environment: PaginationEnvironment, rawData: JsonArray): List<DataHolder.Column> =
         super.decodePage(environment, JsonArray(rawData.map { it.jsonObject.getValue("column") }))
 }
 
@@ -336,7 +338,7 @@ class PersonViewModel(
         } else {
             environment.deleteSigned(followersUrl)
         }
-        val jojo = response.raiseForStatus().jsonObject()
+        val jojo = response.raiseForStatus().body<JsonObject>()
         followerCount = jojo["follower_count"]?.jsonPrimitive?.int ?: (followerCount + if (newFollowingState) 1 else -1)
         isFollowing = newFollowingState
     }
@@ -398,7 +400,7 @@ class PersonViewModel(
 
             val profileUrl = "https://api.zhihu.com/people/${person.urlToken.takeIf(String::isNotBlank) ?: person.id}"
             val jojo = environment.fetchJson(profileUrl, PEOPLE_PROFILE_INCLUDE_PATH)
-                ?: error("用户资料为空")
+                ?: error(ContentStrings.profileEmpty)
 
             val loadedPerson = ZhihuJson.decodeJson<DataHolder.People>(jojo)
             val urlToken = loadedPerson.urlToken
@@ -450,7 +452,7 @@ class PersonViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Log.e("PersonViewModel", "Failed to load optional social media profile detail", error)
+                AppLog.e("PersonViewModel", "Failed to load optional social media profile detail", error)
                 null
             }
             currentCoroutineContext().ensureActive()
@@ -462,7 +464,7 @@ class PersonViewModel(
             throw error
         } catch (error: Exception) {
             if (generation == profileLoadGeneration && environment.httpClient() === client) {
-                profileErrorMessage = error.message?.takeIf(String::isNotBlank) ?: "用户资料加载失败"
+                profileErrorMessage = error.message?.takeIf(String::isNotBlank) ?: ContentStrings.profileLoadFailed
             }
         } finally {
             if (generation == profileLoadGeneration) {

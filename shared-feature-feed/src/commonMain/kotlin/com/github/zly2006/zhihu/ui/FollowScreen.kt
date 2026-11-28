@@ -84,6 +84,7 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.platform.UserMessageDuration
@@ -173,7 +174,7 @@ fun FollowScreen(
     val viewModel = viewModel { FollowScreenData() }
     val client = rememberZhihuAccountStore().client
     val (pinOwner, pinListState) = viewModel.pinState(client)
-    val titles = listOf("推荐", "动态", "想法")
+    val titles = listOf(FeedStrings.followRecommended, FeedStrings.followActivity, FeedStrings.followPins)
     val pagerState = rememberPagerState(
         initialPage = viewModel.selectedTabIndex,
         pageCount = { titles.size },
@@ -245,7 +246,7 @@ private fun FollowTabRow(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val titles = listOf("推荐", "动态", "想法")
+    val titles = listOf(FeedStrings.followRecommended, FeedStrings.followActivity, FeedStrings.followPins)
     val tabs: @Composable () -> Unit = {
         titles.forEachIndexed { index, title ->
             Tab(
@@ -329,14 +330,14 @@ fun FollowingUsersRow(
     }
     Column(Modifier.fillMaxWidth()) {
         SettingItem(
-            title = { Text("最近动态", style = skin.footnote1, color = skin.onSurface) },
+            title = { Text(FeedStrings.recentActivity, style = skin.footnote1, color = skin.onSurface) },
             description = {
                 Text(
                     when {
-                        model.users.isNotEmpty() -> "${model.users.size} 位关注用户，点击头像查看动态"
-                        model.isLoading -> "正在加载关注动态…"
-                        model.errorMessage != null -> "动态暂时不可用，推荐内容仍可浏览"
-                        else -> "暂无最近动态"
+                        model.users.isNotEmpty() -> FeedStrings.followedPeopleActivity(model.users.size)
+                        model.isLoading -> FeedStrings.loadingActivity
+                        model.errorMessage != null -> FeedStrings.activityUnavailable
+                        else -> FeedStrings.noRecentActivity
                     },
                     style = skin.footnote2,
                     color = skin.onSurfaceVariantSummary,
@@ -347,7 +348,7 @@ fun FollowingUsersRow(
                     AppSpinner(size = AppDimens.InlineSpinnerSize)
                 } else {
                     AppTextButton(
-                        text = if (model.errorMessage != null) "重试" else "刷新",
+                        text = if (model.errorMessage != null) FeedStrings.retry else FeedStrings.refresh,
                         onClick = { model.load(environment) },
                         modifier = Modifier.testTag("following_users_retry"),
                     )
@@ -378,7 +379,7 @@ fun FollowingUsersRow(
                                 .width(itemWidth)
                                 .testTag("following_users_item_${user.actor.id}")
                                 .semantics {
-                                    stateDescription = if (user.unreadCount > 0) "${user.unreadCount} 条未读动态" else "动态已读"
+                                    stateDescription = if (user.unreadCount > 0) FeedStrings.unreadActivity(user.unreadCount) else FeedStrings.activityRead
                                 }.clickable(role = androidx.compose.ui.semantics.Role.Button) {
                                     sheetActorId = user.actor.id
                                 }.padding(vertical = AppDimens.Space4),
@@ -434,10 +435,10 @@ private fun FollowingUserActivitySheet(
         LaunchedEffect(shown.id) { onViewActor(shown.id) }
         SettingItem(
             title = { Text(shown.name) },
-            description = { Text("最近动态") },
+            description = { Text(FeedStrings.recentActivity) },
             endAction = {
                 AppTextButton(
-                    text = "查看主页",
+                    text = FeedStrings.viewProfile,
                     onClick = { navigator.onNavigate(Person(shown.id, shown.urlToken, shown.name, jumpTo = "动态")) },
                     modifier = Modifier.testTag("following_user_open_profile"),
                 )
@@ -539,7 +540,7 @@ private fun FollowFeedScreen(
         }
     }
 
-    LaunchedEffect(viewModel.errorMessage) {
+    LaunchedEffect(viewModel.errorText) {
         viewModel.errorMessage?.let {
             userMessages.showMessage(it, UserMessageDuration.Long)
         }
@@ -582,7 +583,7 @@ private fun FollowFeedScreen(
                     showSourceLabel = !recommendation,
                     menuItems = { dismissMenu ->
                         AppDropdownMenuItem(
-                            text = { Text("屏蔽用户") },
+                            text = { Text(FeedStrings.blockUser) },
                             onClick = {
                                 dismissMenu()
                                 viewModel.handleBlockUser(environment, userMessages, item) { authorInfo ->
@@ -600,7 +601,7 @@ private fun FollowFeedScreen(
                         }
                         if (canBlockQuestionAuthor) {
                             AppDropdownMenuItem(
-                                text = { Text("屏蔽提问者") },
+                                text = { Text(FeedStrings.blockQuestionAuthor) },
                                 onClick = {
                                     dismissMenu()
                                     viewModel.handleBlockQuestionAuthor(environment, userMessages, item) { authorInfo ->
@@ -622,7 +623,7 @@ private fun FollowFeedScreen(
                         }
                         topics.forEach { topic ->
                             AppDropdownMenuItem(
-                                text = { Text("屏蔽「${topic.name}」") },
+                                text = { Text(FeedStrings.blockTopic(topic.name)) },
                                 onClick = {
                                     dismissMenu()
                                     viewModel.handleBlockTopic(userMessages, topic.id, topic.name)
@@ -636,7 +637,7 @@ private fun FollowFeedScreen(
 
         FeedAuthorBlockConfirmDialog(
             request = feedAuthorBlockRequest,
-            displayItems = viewModel.displayItems,
+            viewModel = viewModel,
             onDismiss = { feedAuthorBlockRequest = null },
             onConfirm = {
                 viewModel.refresh(environment)

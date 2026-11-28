@@ -27,6 +27,7 @@ import com.github.zly2006.zhihu.account.AccountVerificationDialogs
 import com.github.zly2006.zhihu.account.HumanVerificationPhase
 import com.github.zly2006.zhihu.account.SessionExpiryPrompt
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.ui.components.AppDialog
 
 /** 人机验证弹窗与登录过期提示；[showExpiryPrompt] 为 false 时（已在登录页）不再提示重新登录。 */
@@ -37,21 +38,22 @@ internal fun ZhihuMainAccountDialogs(
 ) {
     val accountStore = rememberZhihuAccountStore()
     val accountClient = accountStore.client
+    AccountVerificationDialogs(client = accountClient)
+    if (accountStore.usesBrowserSession) return
     val expiryPrompt by key(accountClient) { accountClient.expiryPrompt.collectAsState() }
     val verification by accountClient.verificationState.collectAsState()
     val http403Feedback by accountStore.http403Log.pendingFeedback.collectAsState()
-    AccountVerificationDialogs(client = accountClient)
     if (showExpiryPrompt &&
         expiryPrompt.phase == SessionExpiryPrompt.SHOWING &&
         verification.phase == HumanVerificationPhase.ACTIVE &&
         http403Feedback == null
     ) {
         AppDialog(
-            title = "登录已过期",
-            summary = listOfNotNull(expiryPrompt.serverMessage, "请重新登录以继续使用完整功能。").joinToString("\n"),
+            title = AppStrings.sessionExpired,
+            summary = listOfNotNull(expiryPrompt.serverMessage, AppStrings.sessionSignInAgain).joinToString("\n"),
             modifier = Modifier.testTag("session_expiry_dialog"),
-            confirmText = "重新登录",
-            dismissText = "取消",
+            confirmText = AppStrings.signInAgain,
+            dismissText = AppStrings.cancel,
             onDismissRequest = accountClient::dismissSessionExpiry,
             onConfirm = {
                 if (accountClient.clearExpiredSession()) onRelogin()

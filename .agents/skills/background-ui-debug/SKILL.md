@@ -1,6 +1,6 @@
 ---
 name: background-ui-debug
-description: 在不创建、激活或切换任何前台窗口的前提下，通过项目的 debug-only 离屏 Compose UI 控制接口检查语义树、点击、输入、滚动、等待和截图。适用于 macOS Kotlin/Native UI 回归、页面卡死、导航完成度和逐按钮验收；禁止用 AppleScript、System Events、open、桌面截图或坐标点击替代。
+description: 通过独立离屏调试器检查 macOS Kotlin/Native 页面的语义、交互和绘制，用于 UI 回归、卡死及导航验收。不启动前台窗口，不操作用户桌面。
 ---
 
 <!--
@@ -22,43 +22,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # 后台 UI 调试
 
-## 理念
+调试器直接驱动 Compose 语义树，在离屏 Skia 画布中布局和绘制，不代替真实窗口或输入法验收。
 
-调试器直接驱动 Compose 语义树，在离屏 Skia 画布中布局和绘制，用输入、状态与截图确认页面行为。
+## 边界
 
-必须遵守以下边界：
+- 只运行独立 debug 二进制；正式应用和 release 不得包含控制协议。不创建、显示或激活应用窗口，不改变 Dock、菜单栏或焦点；禁止 `open`、AppleScript、System Events、桌面截图及全局键鼠注入。
+- 操作用 `testTag`、文本或内容描述，截图只取离屏画布；找不到节点就报告失败，不退回屏幕坐标。
+- 组合 UI 前创建唯一临时数据根，账号、Cookie、设置、历史、数据库和下载只读写该目录，退出后删除。仅获准真实账号验收时可显式传 `--use-real-account` 复制账号到临时根；运行仍为 `dataMode=isolated`，不直接读写生产数据。
+- 布局和动画优先复用已有 debug-only fixture，不为进入页面要求真实登录。发布、关注、投票、删除等只验到提交前；获准的真实副作用另用独立测试账号和执行面，不解除本调试器隔离。
 
-- 严禁创建、显示、激活或切换应用窗口；严禁让 Dock 图标、菜单栏或焦点发生变化。
-- 严禁使用 `open`、`osascript`、AppleScript、System Events、桌面截图、全局键鼠注入和屏幕坐标。
-- 只能运行独立的 debug 调试二进制。正式应用和 release 二进制不得依赖、注册或包含控制协议。
-- 只能用 `testTag`、文本、内容描述等语义选择器操作；找不到目标就是失败，不能退回坐标猜测。
-- 截图必须来自离屏 Compose 画布，不得捕获用户桌面或其他应用。
-- 每次动作前先读取当前语义状态，动作后等待明确终态并再次读取；超时、异常、空白画面和状态未变化都算失败。
-- 调试二进制必须在组合 UI 前创建唯一的临时数据根；默认账号、Cookie、设置、历史、数据库和下载文件只能读写该目录，退出后删除。只有用户明确授权真实账号验收时，才允许通过显式的 `--use-real-account` 将本机账号文件复制到该临时根；仍不得直接读写生产文件，且协议必须报告 `dataMode=isolated`。禁止增加默认使用生产数据的路径。
-- 纯 UI 布局和动画验收应优先提供 debug-only fixture 页面，不应为了进入目标页面要求真实登录；真实账号只用于必须验证认证、会话或线上数据契约的场景。
-- 默认不执行远端副作用。涉及发布、关注、投票、删除等动作时只能验证到提交前状态；即使任务授权了真实副作用，也必须换用独立测试账号和单独执行面，不能解除本调试器的数据隔离。
+## 操作
 
-## 工作流
+1. 确认生产应用未运行，按[测试与 CI 职责](../../../docs/testing-maintenance.md)选定受影响入口。用 `scripts/start_background_ui_debug.sh` 构建并启动调试器，不启动 `macosApp`。
+2. 按 [JSONL 协议](references/protocol.md)通信；`ready` 和 `state` 均须确认 `windowHost=false`、`dataMode=isolated` 及系统临时目录内的 `dataHome`，缺失即停止。
+3. 动作前 `dump`，按当前语义定位，动作后 `wait` 目标终态并读取状态。只覆盖本次相关交互与返回路径；仅任务要求全面遍历时枚举所有按钮和分页节点。
+4. 卡死或失败时保留最后请求、响应、语义变化、耗时及必要的脱敏诊断，布局问题补离屏截图。未达目标、异常、超时或空白不能报通过；修复后复核同一路径，不扩无关矩阵。
+5. `quit` 后确认进程结束、临时目录删除。修改调试协议、隔离接线或正式发布时，检查 release 不含 `ZHPP_BACKGROUND_UI_DEBUG_V1`；普通页面修改不为此额外构建 release。
 
-1. 先确认生产应用没有运行，并检查当前任务不会启动 `macosApp`。
-2. 用 `scripts/start_background_ui_debug.sh` 构建并启动离屏调试器。脚本只 `exec` 调试 kexe，不调用任何窗口 API；启动后的首个 `ready` 事件必须同时满足 `windowHost=false` 和 `dataMode=isolated`。
-3. 发送一行一个 JSON 命令。先用 `state` 再次确认 `windowHost=false`、`dataMode=isolated` 和临时 `dataHome`，随后 `dump`，再按语义节点执行 `click`、`input`、`scroll`、`back`、`wait` 或 `screenshot`。
-4. 对每个页面枚举所有可点击节点；逐项操作后检查目标页面、返回路径、异常输出和耗时。破坏性动作只验证到提交前状态。
-5. 发现卡死时保留最后一个命令、动作前后语义树、离屏截图、耗时和 stderr；先定位确定根因，再修改生产代码。
-6. 修改后重跑相同命令序列，随后构建 release，并验证 release 二进制不含协议标记 `ZHPP_BACKGROUND_UI_DEBUG_V1`。
-
-协议字段、选择器和命令示例见 [references/protocol.md](references/protocol.md)。
-
-## 证据标准
-
-一次有效验收至少包含：
-
-- 调试二进制的构建类型和进程路径；
-- `ready` 与 `state` 中一致的 `dataMode=isolated`、临时 `dataHome`，以及进程退出后该目录已删除；
-- 每个动作的请求 id、语义选择器、成功或失败响应及耗时；
-- 关键页面动作前后的语义树差异；
-- 来自离屏画布的 PNG；
-- 页面级超时与进程终态；
-- release 隔离检查。
-
-进程存活、命令返回 `ok` 或生成非空 PNG 都不能单独证明页面可用。必须验证目标语义状态出现，且离屏图像包含真实绘制内容。
+结果注明调试产物、请求 id、选择器、响应和未验范围。交互以目标语义状态为准，布局查看实际绘制；进程存活、`ok` 或非空 PNG 都不是通过依据。

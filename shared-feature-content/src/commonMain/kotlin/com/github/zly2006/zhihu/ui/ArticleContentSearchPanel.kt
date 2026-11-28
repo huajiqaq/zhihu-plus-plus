@@ -44,12 +44,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.article.ArticleContentSearchState
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSearchField
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun ArticleContentSearchPanel(state: ArticleContentSearchState) {
@@ -76,7 +77,7 @@ internal fun ArticleContentSearchPanel(state: ArticleContentSearchState) {
                         .weight(1f)
                         .focusRequester(focusRequester)
                         .testTag("article_search_field"),
-                    placeholder = "搜索正文",
+                    placeholder = ContentStrings.searchContent,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     onKeyboardAction = {
                         keyboardController?.hide()
@@ -101,7 +102,7 @@ internal fun ArticleContentSearchPanel(state: ArticleContentSearchState) {
                     enabled = state.matchCount > 0,
                     modifier = Modifier.testTag("article_search_previous"),
                 ) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上一处", tint = skin.onSurfaceVariantActions)
+                    AppIcon(Icons.Default.KeyboardArrowUp, contentDescription = ContentStrings.previousMatch, tint = skin.onSurfaceVariantActions)
                 }
                 AppIconButton(
                     onClick = {
@@ -112,7 +113,7 @@ internal fun ArticleContentSearchPanel(state: ArticleContentSearchState) {
                     enabled = state.matchCount > 0,
                     modifier = Modifier.testTag("article_search_next"),
                 ) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下一处", tint = skin.onSurfaceVariantActions)
+                    AppIcon(Icons.Default.KeyboardArrowDown, contentDescription = ContentStrings.nextMatch, tint = skin.onSurfaceVariantActions)
                 }
                 AppIconButton(
                     onClick = {
@@ -122,13 +123,13 @@ internal fun ArticleContentSearchPanel(state: ArticleContentSearchState) {
                     },
                     modifier = Modifier.testTag("article_search_close"),
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "关闭搜索", tint = skin.onSurfaceVariantActions)
+                    AppIcon(Icons.Default.Close, contentDescription = ContentStrings.closeSearch, tint = skin.onSurfaceVariantActions)
                 }
             }
             val status = when {
-                state.locating -> "正在定位…"
-                state.failed -> "未能定位此处，请重试"
-                state.matchCount == 0 && state.query.text.isNotBlank() -> "未找到匹配内容"
+                state.locating -> ContentStrings.locatingMatch
+                state.failed -> ContentStrings.locateMatchFailed
+                state.matchCount == 0 && state.query.text.isNotBlank() -> ContentStrings.noSearchMatches
                 else -> null
             }
             Text(

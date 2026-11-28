@@ -98,16 +98,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
-import kotlinx.coroutines.delay
+import com.github.zly2006.zhihu.i18n.HostStrings
 import kotlin.math.abs
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PortraitOverlay(toolbarColor: Color, onBack: () -> Unit) {
     val c = if (toolbarColor.luminance() > 0.5f) Color.Black else Color.White
     TopAppBar(
-        title = { Text("视频播放", color = c) },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = c) } },
+        title = { Text(HostStrings.videoTitle, color = c) },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, HostStrings.menuBack, tint = c) } },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = toolbarColor, navigationIconContentColor = c, titleContentColor = c),
         modifier = Modifier.statusBarsPadding().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
     )
@@ -117,7 +118,7 @@ private fun PortraitOverlay(toolbarColor: Color, onBack: () -> Unit) {
 private fun LandscapeOverlay(onBack: () -> Unit) {
     Surface(onClick = onBack, modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp).size(40.dp), shape = CircleShape, color = Color.Black.copy(alpha = 0.5f)) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = Color.White, modifier = Modifier.size(24.dp))
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, HostStrings.menuBack, tint = Color.White, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -327,21 +328,21 @@ internal fun VideoPlayerView(
             Modifier
                 .fillMaxSize()
                 .semantics {
-                    contentDescription = "视频播放区域"
+                    contentDescription = HostStrings.videoSurface
                     stateDescription = if (screenLocked) {
-                        "已锁定"
+                        HostStrings.videoLocked
                     } else if (isPlayingState.value) {
-                        "正在播放"
+                        HostStrings.videoPlaying
                     } else {
-                        "已暂停"
+                        HostStrings.videoPaused
                     }
-                    onClick(label = "显示播放控件") {
+                    onClick(label = HostStrings.videoShowControls) {
                         if (screenLocked) lockHintVisible = true else controlsVisible = true
                         true
                     }
                     customActions = if (screenLocked) {
                         listOf(
-                            CustomAccessibilityAction("解锁") {
+                            CustomAccessibilityAction(HostStrings.videoUnlock) {
                                 screenLocked = false
                                 controlsVisible = true
                                 lockHintVisible = false
@@ -349,7 +350,7 @@ internal fun VideoPlayerView(
                             },
                         )
                     } else {
-                        listOf(CustomAccessibilityAction(if (isPlayingState.value) "暂停" else "播放") { togglePlayback() })
+                        listOf(CustomAccessibilityAction(if (isPlayingState.value) HostStrings.videoPause else HostStrings.videoPlay) { togglePlayback() })
                     }
                 }.onKeyEvent { event ->
                     if (event.key != Key.Enter && event.key != Key.Spacebar) {
@@ -468,7 +469,7 @@ internal fun VideoPlayerView(
                         val bmp = r.getFrameAtTime(pos * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                         r.release()
                         if (bmp == null) {
-                            Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, "截图失败", Toast.LENGTH_SHORT).show() }
+                            Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, HostStrings.videoScreenshotFailed, Toast.LENGTH_SHORT).show() }
                             return@Thread
                         }
                         val v = ContentValues().apply {
@@ -479,10 +480,10 @@ internal fun VideoPlayerView(
                         val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)
                         if (uri != null) {
                             ctx.contentResolver.openOutputStream(uri)?.use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, it) }
-                            Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, "截图已保存", Toast.LENGTH_SHORT).show() }
+                            Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, HostStrings.videoScreenshotSaved, Toast.LENGTH_SHORT).show() }
                         }
                     } catch (e: Exception) {
-                        Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                        Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, e.localizedMessage?.let { HostStrings.videoScreenshotError(it) } ?: HostStrings.videoScreenshotFailed, Toast.LENGTH_SHORT).show() }
                     }
                 }.start()
             },
@@ -499,7 +500,7 @@ internal fun VideoPlayerView(
                         setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     },
                 )
-                Toast.makeText(ctx, "开始下载", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, HostStrings.videoDownloadStarted, Toast.LENGTH_SHORT).show()
             },
             onShowSpeedMenu = { speedMenuExpanded = true },
             onDismissSpeedMenu = { speedMenuExpanded = false },
@@ -531,13 +532,20 @@ internal fun VideoPlayerView(
                 controlsVisible = true
                 lockHintVisible = false
             }, shape = CircleShape, color = Color.Black.copy(alpha = 0.45f), modifier = Modifier.size(40.dp)) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Lock, "解锁", tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp)) }
+                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Lock, HostStrings.videoUnlock, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp)) }
             }
         }
 
         if (dragSeekPreview != 0L && duration > 0) {
             Surface(Modifier.align(Alignment.Center).padding(bottom = 80.dp), shape = RoundedCornerShape(8.dp), color = Color.Black.copy(alpha = 0.6f)) {
-                Text("${if (dragSeekPreview > 0) "+" else ""}${dragSeekPreview / 1000}s  ${formatTime((currentPosition + dragSeekPreview).coerceIn(0, duration))}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                val delta = "${if (dragSeekPreview > 0) "+" else ""}${dragSeekPreview / 1000}"
+                Text(
+                    HostStrings.videoSeekPreview(delta, formatTime((currentPosition + dragSeekPreview).coerceIn(0, duration))),
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
         }
     }

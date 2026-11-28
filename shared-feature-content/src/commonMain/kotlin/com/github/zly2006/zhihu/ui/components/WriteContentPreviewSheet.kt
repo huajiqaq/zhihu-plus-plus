@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.markdown.RenderMarkdown
 import com.github.zly2006.zhihu.markdown.RenderMarkdownText
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
@@ -53,7 +54,6 @@ import com.github.zly2006.zhihu.ui.isLegacyWebViewSupported
 import com.github.zly2006.zhihu.ui.questionSelectionWorkaround
 import com.github.zly2006.zhihu.ui.rememberObservedSetting
 import com.github.zly2006.zhihu.ui.subscreens.TIQIAN_MARKDOWN_PREFERENCE_KEY
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,7 +91,7 @@ fun WriteContentPreviewSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "内容预览",
+                    text = ContentStrings.contentPreview,
                     style = skin.title4,
                     color = skin.onSurface,
                     modifier = Modifier.weight(1f).semantics { heading() },
@@ -100,7 +100,7 @@ fun WriteContentPreviewSheet(
                     text = if (useWebView) {
                         "WebView"
                     } else if (html != null) {
-                        "图文"
+                        ContentStrings.richText
                     } else {
                         "Markdown"
                     },
@@ -111,7 +111,7 @@ fun WriteContentPreviewSheet(
                     onClick = onDismissRequest,
                     modifier = Modifier.size(AppDimens.TouchTarget).testTag("write_content_preview_close"),
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "关闭预览")
+                    AppIcon(Icons.Filled.Close, contentDescription = ContentStrings.closePreview)
                 }
             }
             Spacer(Modifier.height(AppDimens.Space8))
@@ -151,7 +151,7 @@ fun WriteContentPreviewSheet(
                     }
                     else -> {
                         Text(
-                            text = "暂无可用预览内容",
+                            text = ContentStrings.noPreview,
                             style = skin.main,
                             color = skin.onSurfaceVariantSummary,
                             modifier = Modifier.align(Alignment.Center),

@@ -19,10 +19,10 @@ package com.github.zly2006.zhihu.viewmodel.filter
 
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
-import kotlinx.coroutines.test.runTest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 
 class FeedContentFilterPipelineTest {
     @Test

@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +56,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import com.github.zly2006.zhihu.data.ZHIHU_ME_URL
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
@@ -75,6 +78,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.takeFrom
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -84,8 +89,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.seconds
 
 const val ZHIHU_HOME_URL = "https://www.zhihu.com/"
 const val ZHIHU_SIGNIN_URL = "https://www.zhihu.com/signin?next=%2F"
@@ -134,13 +137,17 @@ data class ZhihuQrScanInfo(
 )
 
 internal class QrLoginRiskControlException(
-    message: String,
+    private val text: () -> String,
     val redirectUrl: String,
-) : IllegalStateException(message)
+) : IllegalStateException() {
+    override val message: String get() = text()
+}
 
 private class QrLoginRequestException(
-    message: String,
-) : IllegalStateException(message)
+    private val text: () -> String,
+) : IllegalStateException() {
+    override val message: String get() = text()
+}
 
 private suspend fun HttpResponse.checkQrLoginResponse(): JsonElement? {
     val requestUrl = call.request.url
@@ -151,7 +158,7 @@ private suspend fun HttpResponse.checkQrLoginResponse(): JsonElement? {
         ?: requestUrl.takeIf { it.isZhihuLoginRiskControl() }
     /** Ktor 默认跟随 302；unhuman 的最终 200 HTML 仍是风控，不是登录成功。 */
     if (challengeUrl != null) {
-        throw QrLoginRiskControlException("知乎需要验证当前网络环境，请先完成安全验证。", challengeUrl.toString())
+        throw QrLoginRiskControlException({ AccountStrings.qrNetworkVerification }, challengeUrl.toString())
     }
     val body = bodyAsText()
     val json = runCatching { ZhihuJson.json.parseToJsonElement(body) }.getOrNull()
@@ -165,13 +172,13 @@ private suspend fun HttpResponse.checkQrLoginResponse(): JsonElement? {
     }
     if (status == HttpStatusCode.Forbidden || errorRedirect != null) {
         throw QrLoginRiskControlException(
-            error?.message?.takeIf { it.isNotBlank() } ?: "知乎限制了当前登录请求，请先完成安全验证。",
+            { error?.message?.takeIf { it.isNotBlank() } ?: AccountStrings.qrRequestLimited },
             errorRedirect?.toString() ?: ZHIHU_RISK_CONTROL_URL,
         )
     }
     if (status.value >= 400 || error?.code != null) {
         throw QrLoginRequestException(
-            error?.message?.takeIf { it.isNotBlank() } ?: "知乎登录请求失败：${status.value}",
+            { error?.message?.takeIf { it.isNotBlank() } ?: AccountStrings.qrSignInHttp(status.value) },
         )
     }
     return json
@@ -221,11 +228,11 @@ suspend fun requestQrCode(
         signZhihuFetchRequest(cookies)
     }
     val json = response.checkQrLoginResponse()
-        ?: throw QrLoginRequestException("二维码获取失败：知乎返回了无效响应")
+        ?: throw QrLoginRequestException { AccountStrings.qrInvalidResponse }
     val result = ZhihuJson.decodeJson(ZhihuQrCodeResponse.serializer(), json)
     val token = result.token ?: result.qrcodeToken
     if (token.isNullOrBlank() || result.link.isNullOrBlank()) {
-        throw QrLoginRequestException("二维码获取失败：${response.status.value}")
+        throw QrLoginRequestException { AccountStrings.qrRequestHttp(response.status.value) }
     }
     return result.copy(token = token)
 }
@@ -250,9 +257,9 @@ suspend fun pollQrCodeLogin(
                         header(key, value)
                     }
                 }
-            } ?: throw IllegalStateException("二维码登录轮询超时")
+            } ?: throw LoginMessageException { AccountStrings.qrPollTimeout }
             val json = response.checkQrLoginResponse()
-                ?: throw QrLoginRequestException("二维码登录轮询返回了无效响应")
+                ?: throw QrLoginRequestException { AccountStrings.qrPollInvalid }
             val scanInfo = ZhihuJson.decodeJson(ZhihuQrScanInfo.serializer(), json)
             syncCookiesFromScanInfo(cookies, scanInfo)
 
@@ -404,6 +411,30 @@ fun normalizeDeadline(expiresAt: Long?): Long {
 
 private fun currentEpochMillis(): Long = Clock.System.now().toEpochMilliseconds()
 
+/** 一次页面进入只属于一个账号客户端；换账号后退出重进，不能把旧二维码改绑新会话。 */
+@Composable
+internal fun AccountQrLoginPane(onLoginSuccess: (String) -> Unit) {
+    val store = rememberZhihuAccountStore()
+    val owner = remember(store) { store.client }
+    val cookies = remember(owner) { (owner.load().cookies + store.accountsState.value.guestCookies).toMutableMap() }
+    val client = rememberLoginHttpClient(store, owner, cookies)
+    val onSuccess by rememberUpdatedState(onLoginSuccess)
+    SharedQrLoginPane(
+        client = client,
+        cookies = cookies,
+        ownerIsCurrent = store.client === owner && owner.isCurrent,
+        onRiskControl = { url, candidate -> owner.reportHumanVerification(url, candidate) },
+        onLoginSuccess = { candidate ->
+            if (store.login(owner, candidate.toMutableMap())) {
+                onSuccess(store.session.username)
+                true
+            } else {
+                false
+            }
+        },
+    )
+}
+
 @Composable
 fun SharedQrLoginPane(
     client: HttpClient,
@@ -411,34 +442,46 @@ fun SharedQrLoginPane(
     onLoginSuccess: suspend (Map<String, String>) -> Boolean,
     modifier: Modifier = Modifier,
     generateQrBitmap: (String) -> ImageBitmap = ::generateQrLoginBitmap,
-    qrReadyMessage: String = "使用知乎扫描",
+    qrReadyMessage: String? = null,
     onQrReady: () -> Unit = {},
     onRiskControl: (String, Map<String, String>) -> Unit,
+    ownerIsCurrent: Boolean = true,
 ) {
-    var refreshKey by rememberSaveable { mutableIntStateOf(0) }
-    var qrBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var statusText by remember { mutableStateOf("正在获取二维码") }
-    var riskControlUrl by remember { mutableStateOf<String?>(null) }
-    var riskControlMessage by remember { mutableStateOf<String?>(null) }
-    var isWorking by remember { mutableStateOf(true) }
-    var isVerifying by remember { mutableStateOf(false) }
-    LaunchedEffect(refreshKey) {
+    var refreshKey by rememberSaveable(client) { mutableIntStateOf(0) }
+    var qrBitmap by remember(client) { mutableStateOf<ImageBitmap?>(null) }
+    var statusText by remember(client) { mutableStateOf<() -> String>({ AccountStrings.qrLoading }) }
+    val currentReadyMessage = rememberUpdatedState(qrReadyMessage)
+    var riskControlUrl by remember(client) { mutableStateOf<String?>(null) }
+    var riskControlMessage by remember(client) { mutableStateOf<(() -> String)?>(null) }
+    var isWorking by remember(client) { mutableStateOf(true) }
+    var isVerifying by remember(client) { mutableStateOf(false) }
+    var completed by remember(client) { mutableStateOf(false) }
+    LaunchedEffect(client, ownerIsCurrent, refreshKey) {
+        if (completed) return@LaunchedEffect
+        if (!ownerIsCurrent) {
+            qrBitmap = null
+            riskControlUrl = null
+            riskControlMessage = null
+            statusText = { DomainStrings.accountChangedOrVerify }
+            isWorking = false
+            return@LaunchedEffect
+        }
         qrBitmap = null
-        statusText = "正在获取二维码"
+        statusText = { AccountStrings.qrLoading }
         riskControlUrl = null
         isWorking = true
 
         try {
             withTimeoutOrNull(QR_LOGIN_REQUEST_TIMEOUT) {
                 prefetchQrLoginContext(client, cookies)
-            } ?: throw IllegalStateException("二维码登录初始化超时，请重试")
+            } ?: throw LoginMessageException { AccountStrings.qrInitTimeout }
             val qrCode = withTimeoutOrNull(QR_LOGIN_REQUEST_TIMEOUT) {
                 requestQrCode(client, cookies)
-            } ?: throw IllegalStateException("二维码获取超时，请重试")
-            val qrLink = qrCode.link ?: throw IllegalStateException("知乎没有返回二维码链接")
-            val qrToken = qrCode.token ?: qrCode.qrcodeToken ?: throw IllegalStateException("知乎没有返回二维码 token")
+            } ?: throw LoginMessageException { AccountStrings.qrFetchTimeout }
+            val qrLink = qrCode.link ?: throw LoginMessageException { AccountStrings.qrLinkMissing }
+            val qrToken = qrCode.token ?: qrCode.qrcodeToken ?: throw LoginMessageException { AccountStrings.qrTokenMissing }
             qrBitmap = generateQrBitmap(qrLink)
-            statusText = qrReadyMessage
+            statusText = { currentReadyMessage.value ?: AccountStrings.qrScanHint }
             onQrReady()
 
             val success = pollQrCodeLogin(
@@ -447,42 +490,40 @@ fun SharedQrLoginPane(
                 token = qrToken,
                 deadline = normalizeDeadline(qrCode.expiresAt),
                 onScanned = {
-                    statusText = "请在知乎 App 上确认登录"
+                    statusText = { AccountStrings.qrConfirmInApp }
                 },
                 onRiskControl = { message, redirectUrl ->
-                    riskControlMessage = message ?: "知乎需要验证当前网络环境"
+                    riskControlMessage = { message ?: AccountStrings.qrNetworkCheck }
                     riskControlUrl = redirectUrl ?: ZHIHU_RISK_CONTROL_URL
-                    statusText = riskControlMessage ?: "知乎需要验证当前网络环境"
+                    statusText = { riskControlMessage?.invoke() ?: AccountStrings.qrNetworkCheck }
                 },
             )
 
             if (success) {
-                statusText = "正在验证登录"
+                statusText = { AccountStrings.qrVerifying }
                 isVerifying = true
-                statusText = if (onLoginSuccess(cookies)) {
-                    "登录成功"
-                } else {
-                    "登录结果验证失败，请重试"
-                }
+                val verified = onLoginSuccess(cookies)
+                completed = verified
+                statusText = { if (verified) AccountStrings.loginSuccess else AccountStrings.qrVerificationFailed }
                 isWorking = false
             } else if (!riskControlUrl.isNullOrBlank()) {
                 isWorking = false
             } else {
-                statusText = "二维码已过期，请重试"
+                statusText = { AccountStrings.qrExpired }
                 isWorking = false
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: QrLoginRiskControlException) {
-            riskControlMessage = e.message
+            riskControlMessage = { e.message }
             riskControlUrl = e.redirectUrl
-            statusText = e.message.orEmpty()
+            statusText = { e.message }
             isWorking = false
         } catch (e: SerializationException) {
-            statusText = "知乎登录响应格式异常，请重试"
+            statusText = { AccountStrings.qrInvalidLoginResponse }
             isWorking = false
         } catch (e: Exception) {
-            statusText = e.message ?: "二维码获取失败，请重试"
+            statusText = { e.message ?: AccountStrings.qrFetchFailed }
             isWorking = false
         } finally {
             isVerifying = false
@@ -490,12 +531,12 @@ fun SharedQrLoginPane(
     }
 
     val currentRiskControlUrl = riskControlUrl
-    LaunchedEffect(currentRiskControlUrl) {
-        if (!currentRiskControlUrl.isNullOrBlank()) onRiskControl(currentRiskControlUrl, cookies)
+    LaunchedEffect(client, ownerIsCurrent, currentRiskControlUrl) {
+        if (ownerIsCurrent && !currentRiskControlUrl.isNullOrBlank()) onRiskControl(currentRiskControlUrl, cookies)
     }
     if (!currentRiskControlUrl.isNullOrBlank()) {
         Text(
-            text = "请完成安全验证并重启应用后再扫码。",
+            text = AccountStrings.qrRestartAfterCheck,
             modifier = modifier.fillMaxWidth().testTag("qr_risk_control_content"),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
@@ -520,7 +561,7 @@ fun SharedQrLoginPane(
                 ) {
                     Image(
                         bitmap = qrBitmap!!,
-                        contentDescription = "知乎登录二维码",
+                        contentDescription = AccountStrings.qrImageDescription,
                         modifier = Modifier
                             .widthIn(max = AppDimens.QrCodeSize + AppDimens.Space16 + AppDimens.Space16)
                             .fillMaxWidth()
@@ -539,7 +580,7 @@ fun SharedQrLoginPane(
             }
 
             Text(
-                text = statusText,
+                text = statusText(),
                 style = if (settingSkinIsMiuix()) {
                     LocalAppSkinTokens.current.main
                 } else {
@@ -558,10 +599,10 @@ fun SharedQrLoginPane(
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
 
-            if (!riskControlMessage.isNullOrBlank()) {
+            if (!riskControlMessage?.invoke().isNullOrBlank()) {
                 Spacer(modifier = Modifier.size(AppDimens.Space12))
                 Text(
-                    text = riskControlMessage.orEmpty(),
+                    text = riskControlMessage?.invoke().orEmpty(),
                     style = if (settingSkinIsMiuix()) {
                         LocalAppSkinTokens.current.footnote2
                     } else {
@@ -587,16 +628,16 @@ fun SharedQrLoginPane(
                 AppOutlinedButton(
                     onClick = {
                         qrBitmap = null
-                        statusText = "正在刷新二维码"
+                        statusText = { AccountStrings.qrRefreshing }
                         isWorking = true
                         riskControlUrl = null
                         riskControlMessage = null
                         refreshKey += 1
                     },
                     modifier = Modifier.testTag("qr_login_retry"),
-                    enabled = !isVerifying,
+                    enabled = ownerIsCurrent && !isVerifying && !completed,
                 ) {
-                    Text("刷新二维码")
+                    Text(AccountStrings.qrRefresh)
                 }
             }
         }

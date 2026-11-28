@@ -22,16 +22,17 @@ import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.ZhihuMobileSessionProtocol
 import com.github.zly2006.zhihu.account.canRenewCredentials
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CopyableThrowable
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CopyableThrowable
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** 启动、显式续期和过期票据重试共用所属账号槽位的一把锁。 */
 internal class ZhihuCredentialRefresher(
@@ -66,7 +67,7 @@ internal class ZhihuCredentialRefresher(
             protocol.close()
             lastAttempt = TimeSource.Monotonic.markNow()
         }
-        check(token.accountId == current.profile?.id) { "刷新响应的账号与当前登录账号不一致" }
+        check(token.accountId == current.profile?.id) { DomainStrings.refreshAccountMismatch }
         accountStore.saveRenewedSession(accountId, this, refreshToken, token)
     }
 }
@@ -74,7 +75,7 @@ internal class ZhihuCredentialRefresher(
 /** 协程栈恢复不能通过复制异常重新引入 cause，保持脱敏失败的无 cause 契约。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 private class TemporaryCredentialRefreshException :
-    IllegalStateException("未能刷新登录状态，请稍后重试；若多次失败，请重新登录"),
+    DisplayFailure({ DomainStrings.refreshTemporarilyFailed }),
     CopyableThrowable<TemporaryCredentialRefreshException> {
     override fun createCopy(): TemporaryCredentialRefreshException? = null
 }

@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.account
 
+import com.github.zly2006.zhihu.util.HttpStatusException
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -27,13 +28,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.job
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import kotlinx.io.files.Path
 import java.io.IOException
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -43,14 +37,24 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.job
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.io.files.Path
+import java.nio.file.Path as JavaPath
 
 class ZhihuAccountClientTest {
-    private lateinit var directory: java.nio.file.Path
-    private lateinit var file: java.nio.file.Path
+    private lateinit var directory: JavaPath
+    private lateinit var file: JavaPath
 
     @BeforeTest
     fun createAccountDirectory() {
@@ -61,6 +65,80 @@ class ZhihuAccountClientTest {
     @AfterTest
     fun deleteAccountDirectory() {
         check(directory.toFile().deleteRecursively())
+    }
+
+    @Test
+    fun browserAccountRequiresVerifiedProfileAndRetiresTheSignedOutClient() = runTest {
+        var signedIn = true
+        val mock = MockEngine { request ->
+            assertEquals("/api/v4/me", request.url.encodedPath)
+            if (!signedIn) throw BrowserBridgeException(BrowserSessionStatus.Guest)
+            respond("""{"id":"browser-person","name":"浏览器用户"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {})
+        try {
+            val guest = store.client
+            assertFailsWith<BrowserBridgeException> { store.login(guest, mutableMapOf("z_c0" to "synthetic-rejected")) }
+            assertFailsWith<BrowserBridgeException> { store.save(ZhihuAccountSession(login = true, username = "unverified")) }
+            assertSame(guest, store.client)
+            assertFalse(store.session.login)
+            assertEquals(BrowserSessionStatus.Authenticated, store.refreshBrowserSession())
+            assertFalse(guest.isCurrent)
+            assertEquals("browser-person", store.session.profile?.id)
+            val owner = store.client
+            signedIn = false
+            assertEquals(BrowserSessionStatus.Expired, store.refreshBrowserSession())
+            assertFalse(owner.isCurrent)
+            assertFalse(store.session.login)
+            assertNull(store.session.profile)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun challengedBrowserRefreshKeepsTheVerifiedAccount() = runTest {
+        var challenged = false
+        val mock = MockEngine {
+            if (challenged) throw BrowserVerificationRequired()
+            respond("""{"id":"fixture-person","name":"Fixture"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {})
+        try {
+            assertEquals(BrowserSessionStatus.Authenticated, store.refreshBrowserSession())
+            val owner = store.client
+            val session = store.session
+            challenged = true
+            assertEquals(BrowserSessionStatus.Unavailable, store.refreshBrowserSession())
+            assertSame(owner, store.client)
+            assertEquals(session, store.session)
+            assertEquals(BrowserSessionStatus.Authenticated, store.browserSessionStatus.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun oldBrowserVerificationCannotDismissOrConfirmANewerChallenge() = runTest {
+        val mock = MockEngine { error("Unexpected request") }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {})
+        try {
+            val owner = store.client
+            val pending = assertNotNull(owner.browserVerification)
+            val firstResult = CompletableDeferred<Boolean>()
+            owner.reportBrowserVerification({ true }, firstResult::await)
+            val first = assertNotNull(pending.value)
+            assertTrue(first.open())
+            val late = async(start = CoroutineStart.UNDISPATCHED) { first.check() }
+            owner.reportBrowserVerification({ true }) { true }
+            val second = assertNotNull(pending.value)
+            first.dismiss()
+            firstResult.complete(true)
+            assertFalse(late.await())
+            assertSame(second, pending.value)
+        } finally {
+            store.close()
+        }
     }
 
     @Test
@@ -176,7 +254,7 @@ class ZhihuAccountClientTest {
                 }
                 assertEquals(HttpStatusCode.Unauthorized, owner.get("https://www.zhihu.com/overridden-write") { method = HttpMethod.Post }.status)
                 assertEquals(listOf("POST /write", "PUT /write", "PATCH /write", "DELETE /write", "POST /overridden-write"), requests)
-                assertFailsWith<com.github.zly2006.zhihu.util.HttpStatusException> { owner.get("https://www.zhihu.com/still-expired") }
+                assertFailsWith<HttpStatusException> { owner.get("https://www.zhihu.com/still-expired") }
                 assertEquals(listOf("GET /still-expired", "POST /api/account/prod/sign_in", "GET /still-expired"), requests.takeLast(3))
             } finally {
                 store.close()
@@ -264,7 +342,7 @@ class ZhihuAccountClientTest {
                 }
             }
             reading.await()
-            val writer = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val writer = async(start = CoroutineStart.UNDISPATCHED) {
                 assertFailsWith<ZhihuIdentityApiException> {
                     store.commentIdentities.sendAs(owner, target) { client, _ ->
                         assertEquals(viewer, owner.load().profile)
@@ -311,6 +389,7 @@ class ZhihuAccountClientTest {
     fun profileRefreshFinishingAfterLogoutCannotRestoreTheOldAccount() = runTest {
         val requestStarted = CompletableDeferred<Unit>()
         val mobileStarted = CompletableDeferred<Unit>()
+        val loginStarted = CompletableDeferred<Unit>()
         val finishResponse = CompletableDeferred<Unit>()
         val session = ZhihuAccountSession(
             login = true,
@@ -321,7 +400,11 @@ class ZhihuAccountClientTest {
             saveAccounts(ZhihuAccounts("alice", listOf(ZhihuSavedAccount("alice", session))))
         }
         MockEngine { request ->
-            if (request.url.encodedPath == "/mobile") mobileStarted.complete(Unit) else requestStarted.complete(Unit)
+            when {
+                request.url.encodedPath == "/mobile" -> mobileStarted.complete(Unit)
+                request.headers[HttpHeaders.Cookie].orEmpty().contains("z_c0=candidate-alice") -> loginStarted.complete(Unit)
+                else -> requestStarted.complete(Unit)
+            }
             finishResponse.await()
             respond(
                 content = """{"id":"alice","name":"Alice","url_token":"alice","user_type":"people"}""",
@@ -338,8 +421,10 @@ class ZhihuAccountClientTest {
                 val oldMobile = oldClient.mobileHomeFeedHttpClient()
                 val refresh = async { oldClient.refreshAndSaveProfile() }
                 val mobile = async { oldMobile.get("https://api.zhihu.com/mobile") }
+                val login = async { accountStore.login(oldClient, mutableMapOf("z_c0" to "candidate-alice")) }
                 requestStarted.await()
                 mobileStarted.await()
+                loginStarted.await()
                 accountStore.clear()
                 val guestClient = accountStore.client
                 assertEquals(false, accountStore.session.login)
@@ -356,6 +441,23 @@ class ZhihuAccountClientTest {
                 finishResponse.complete(Unit)
                 assertNull(refresh.await())
                 mobile.await()
+                assertFalse(login.await(), "验证在途时换账号，旧登录不能提交")
+                val requestsBeforeLateLogin = engine.requestHistory.size
+                assertFalse(accountStore.login(oldClient, mutableMapOf("z_c0" to "candidate-alice")), "旧扫码回调不能借用新 owner")
+                assertFalse(
+                    accountStore.login(
+                        oldClient,
+                        ZhihuMobileLoginToken(
+                            accessToken = "synthetic-access",
+                            refreshToken = null,
+                            tokenType = "bearer",
+                            expiresAt = null,
+                            cookies = mapOf("z_c0" to "candidate-alice"),
+                        ),
+                    ),
+                    "旧手机登录同样不能借用新 owner",
+                )
+                assertEquals(requestsBeforeLateLogin, engine.requestHistory.size, "已失效 owner 不应开始候选验证")
 
                 assertEquals("bob", accountStore.session.username)
                 assertEquals("bob-token", accountStore.session.cookies["z_c0"])
@@ -469,8 +571,8 @@ class ZhihuAccountClientTest {
             runCurrent()
             assertEquals(0, businessCount, "提前收到 d_c0 不能绕过正在初始化的 Deferred")
             finishFailedDevice.complete(Unit)
-            assertTrue(first.await().exceptionOrNull() is com.github.zly2006.zhihu.util.HttpStatusException)
-            assertTrue(second.await().exceptionOrNull() is com.github.zly2006.zhihu.util.HttpStatusException)
+            assertTrue(first.await().exceptionOrNull() is HttpStatusException)
+            assertTrue(second.await().exceptionOrNull() is HttpStatusException)
             assertEquals(0, businessCount)
             assertEquals(HttpStatusCode.OK, owner.request("https://www.zhihu.com/business", useCookies = false).status)
             assertEquals(2, signinCount)

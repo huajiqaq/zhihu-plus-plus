@@ -4,6 +4,42 @@
 # 待 https://github.com/Guardsquare/proguard-core/pull/180 随正式版本发布后移除。
 -dontwarn org.apache.pdfbox.io.IOUtils
 
+# XMPBox 的 TypeMapping/XMPSchemaFactory 反射读取属性注解并调用模型构造器。
+-keepclassmembers class org.apache.xmpbox.** {
+    @org.apache.xmpbox.type.PropertyType <fields>;
+}
+-keepclassmembers class org.apache.xmpbox.schema.* {
+    public <init>(org.apache.xmpbox.XMPMetadata,...);
+}
+-keepclassmembers class * extends org.apache.xmpbox.type.AbstractSimpleProperty {
+    public <init>(org.apache.xmpbox.XMPMetadata,java.lang.String,java.lang.String,java.lang.String,java.lang.Object);
+}
+-keepclassmembers class * extends org.apache.xmpbox.type.AbstractStructuredType {
+    public <init>(org.apache.xmpbox.XMPMetadata);
+}
+# PDFBox 数字树和加密 handler 只按参数类型反射构造，不保留整库。
+-keepclassmembers class * implements org.apache.pdfbox.pdmodel.common.COSObjectable {
+    public <init>(org.apache.pdfbox.cos.COSDictionary);
+    public <init>(org.apache.pdfbox.cos.COSArray);
+}
+-keepclassmembers class * extends org.apache.pdfbox.pdmodel.encryption.SecurityHandler {
+    public <init>();
+    public <init>(org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy);
+    public <init>(org.apache.pdfbox.pdmodel.encryption.PublicKeyProtectionPolicy);
+}
+# Batik CSS parser 在 XMLResourceDescriptor.properties 中按名配置；图像 provider 来自正式服务描述。
+-keep class org.apache.batik.css.parser.Parser { public <init>(); }
+-keep class org.apache.batik.ext.awt.image.codec.** implements org.apache.batik.ext.awt.image.spi.RegistryEntry { public <init>(); }
+-keep class org.apache.batik.ext.awt.image.codec.imageio.* implements org.apache.batik.ext.awt.image.spi.ImageWriter { public <init>(); }
+-keep class org.apache.batik.extension.svg.BatikDomExtension { public <init>(); }
+-keep class org.apache.batik.extension.svg.BatikBridgeExtension { public <init>(); }
+-keep class org.apache.xmlgraphics.util.uri.DataURIResolver { public <init>(); }
+-keep class org.apache.xmlgraphics.image.loader.impl.** implements org.apache.xmlgraphics.image.loader.spi.ImageConverter { public <init>(); }
+-keep class org.apache.xmlgraphics.image.loader.impl.** implements org.apache.xmlgraphics.image.loader.spi.ImageLoaderFactory { public <init>(); }
+-keep class org.apache.xmlgraphics.image.loader.impl.** implements org.apache.xmlgraphics.image.loader.spi.ImagePreloader { public <init>(); }
+-keep class org.apache.xmlgraphics.image.writer.** implements org.apache.xmlgraphics.image.writer.ImageWriter { public <init>(); }
+-keepdirectories resources/**,org/apache/pdfbox/resources/**,org/apache/fontbox/cmap/**,org/apache/batik/**/resources/**,pdf-fonts/**
+
 # LaTeX 1.6.3 的独立图片导出器引用旧 Skiko 双参数 ABI；应用未调用该导出包，release 收缩必须移除它。
 -dontwarn com.hrm.latex.renderer.export.LatexExporter_jvmKt
 
@@ -17,6 +53,26 @@
 -keep class com.sun.media.** { *; }
 -keep class com.sun.openjfx.** { *; }
 -keep class netscape.javascript.** { *; }
+
+# ORT JNI 按完整类名创建张量/形状/异常；官方 jar 内五平台 native 与第三方声明原样保留。
+-keep class ai.onnxruntime.** { *; }
+
+# JavaCPP 的 Loader 通过注解、嵌套类型名和 JNI 查找 FFmpeg 映射。
+-keep class org.bytedeco.javacpp.* { *; }
+-keep class org.bytedeco.javacpp.annotation.** { *; }
+-keep class org.bytedeco.javacpp.indexer.** { *; }
+-keep class org.bytedeco.javacpp.presets.** { *; }
+# 同一 jar 中的 Maven 构建工具不属于应用运行时，不能为了它们引入 Maven。
+-dontwarn org.bytedeco.javacpp.tools.**
+-keep class org.bytedeco.ffmpeg.** { *; }
+-keep class org.bytedeco.javacv.FFmpegFrameRecorder { *; }
+-keep class org.bytedeco.javacv.FFmpegFrameRecorder$* { *; }
+# 未引入 JavaCV 的相机/OpenCV 适配器依赖；这些未使用的适配器仍需由 shrinker 删除。
+-dontwarn org.bytedeco.javacv.**
+
+# 系统分享 JNI 导出符号及原生回调保持固定名称。
+-keep class com.github.zly2006.zhihu.desktop.DesktopFileShareBridge { *; }
+-keep class com.github.zly2006.zhihu.notification.PortableNotificationBridge { *; }
 
 # WebKit JNI 与 NativeLibLoader 按名查找桥接类，裁剪会阻止 WebView 和网页登录启动。
 -keep class com.sun.webkit.** { *; }
@@ -115,7 +171,7 @@
     public native java.lang.String newReceipt();
     public native boolean permissionGranted();
     public native java.lang.String takeReceipt();
-    public native void publish(java.lang.String);
+    public native void publish(java.lang.String, boolean);
     public native void withdraw(java.lang.String);
     public native void disconnect();
 }

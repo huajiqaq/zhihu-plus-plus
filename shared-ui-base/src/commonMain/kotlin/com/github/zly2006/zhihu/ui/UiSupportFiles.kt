@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.fleeksoft.ksoup.Ksoup
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.markdown.RenderMarkdown
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Article
@@ -50,6 +51,7 @@ import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.navigation.TopLevelDestination
+import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.platform.platformBottomBarItemLimit
 import com.github.zly2006.zhihu.platform.rememberFileImporter
@@ -61,10 +63,10 @@ import com.github.zly2006.zhihu.ui.subscreens.START_DESTINATION_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.TIQIAN_MARKDOWN_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.subscreens.bottomBarItemOrderFromPreference
 import com.github.zly2006.zhihu.ui.subscreens.defaultBottomBarSelectionKeys
-import com.github.zly2006.zhihu.ui.subscreens.migrateLegacyReadingPreferences
 import com.github.zly2006.zhihu.ui.subscreens.navDestinationFromName
 import com.github.zly2006.zhihu.ui.subscreens.normalizeBottomBarSelection
 import com.github.zly2006.zhihu.ui.subscreens.resolveValidStartDestinationKey
+import com.github.zly2006.zhihu.viewmodel.NotificationEnvironment
 import com.github.zly2006.zhihu.viewmodel.ZhihuApiEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.filter.importBlocklistBackupFromJsonText
@@ -77,8 +79,14 @@ import kotlinx.serialization.json.jsonPrimitive
 
 @Composable
 expect fun rememberNotificationEnvironment(
-    settingsStore: com.github.zly2006.zhihu.notification.NotificationSettingsStore,
-): com.github.zly2006.zhihu.viewmodel.NotificationEnvironment
+    settingsStore: NotificationSettingsStore,
+): NotificationEnvironment
+
+/** 技术诊断保留原文；持久错误的展示文案在读取时按当前语言计算。 */
+internal class ReaderDisplayFailure(
+    diagnosticMessage: String,
+    val displayMessage: () -> String,
+) : IllegalStateException(diagnosticMessage)
 
 data class PinLikeResult(
     val isLiked: Boolean,
@@ -115,7 +123,8 @@ suspend fun fetchPinLinkCardPreview(
         is Pin -> {
             (env.getOrFetchContentDetail(destination) as? DataHolder.Pin)?.let { detail ->
                 PinLinkCardPreview(
-                    title = "${detail.author.name} 的想法",
+                    title = detail.author.name,
+                    pinAuthorName = detail.author.name,
                     preview = compactPreview(detail.contentHtml),
                 )
             }
@@ -225,10 +234,10 @@ fun articleActionText(
 ): String =
     when (article.type) {
         ArticleType.Answer -> {
-            "https://www.zhihu.com/question/$questionId/answer/${article.id}\n【$title - $authorName 的回答】"
+            "https://www.zhihu.com/question/$questionId/answer/${article.id}\n${ReaderStrings.answerAttribution(title, authorName)}"
         }
         ArticleType.Article -> {
-            "https://zhuanlan.zhihu.com/p/${article.id}\n【$title - $authorName 的文章】"
+            "https://zhuanlan.zhihu.com/p/${article.id}\n${ReaderStrings.articleAttribution(title, authorName)}"
         }
     }
 
@@ -310,7 +319,6 @@ fun rememberZhihuMainPreferenceState(): ZhihuMainPreferenceState {
         listOf(Home.name, Follow.name, HotList.name, Daily.name, OnlineHistory.name, MyCollections.name, Account.name)
     }
     val state = remember(settings) {
-        migrateLegacyReadingPreferences(settings)
         ZhihuMainPreferenceState {
             val selectedKeys = normalizeBottomBarSelection(
                 settings.getStringSet(
@@ -417,7 +425,7 @@ fun rememberBlocklistRuleImporter(
 ): () -> Unit {
     val database = remember { getContentFilterDatabase() }
     return rememberFileImporter(
-        title = "导入屏蔽规则",
+        title = ReaderStrings.importBlocklist,
         mimeTypes = listOf("application/json", "text/plain", "*/*"),
         extensions = listOf("json", "txt"),
         userMessages = userMessages,

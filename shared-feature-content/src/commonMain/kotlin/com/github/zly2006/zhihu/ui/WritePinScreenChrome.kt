@@ -48,18 +48,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.github.zly2006.zhihu.editor.isImagePickerSupported
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppFloatingToolbar
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.WriteContentPreviewSheet
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,20 +75,20 @@ private fun WritePinTopBar(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val requiredWidth = with(LocalDensity.current) {
             (
-                textMeasurer.measure("发想法", style = titleStyle, softWrap = false).size.width +
-                    textMeasurer.measure("发布", style = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
+                textMeasurer.measure(ContentStrings.writePin, style = titleStyle, softWrap = false).size.width +
+                    textMeasurer.measure(ContentStrings.publish, style = if (settingSkinIsMiuix()) LocalAppSkinTokens.current.main else MaterialTheme.typography.labelLarge, softWrap = false).size.width
             ).toDp()
         } + AppDimens.TouchTarget + AppDimens.PageHorizontalPadding * 2 + AppDimens.Space24 * 2
         val separateAction = maxWidth < requiredWidth
         Column {
             AppCompactTopBar(
-                title = "发想法",
+                title = ContentStrings.writePin,
                 onBack = onBack,
                 backTag = WRITE_PIN_BACK_BUTTON_TAG,
                 actions = {
                     if (!separateAction) {
                         AppButton(onClick = onPublish, enabled = !isSubmitting && !isUploadingImage) {
-                            if (isSubmitting) AppSpinner(size = AppDimens.IconSizeCompact) else Text("发布")
+                            if (isSubmitting) AppSpinner(size = AppDimens.IconSizeCompact) else Text(ContentStrings.publish)
                         }
                     }
                 },
@@ -95,7 +96,7 @@ private fun WritePinTopBar(
             if (separateAction) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = AppDimens.PageHorizontalPadding, vertical = AppDimens.Space4), horizontalArrangement = Arrangement.End) {
                     AppButton(onClick = onPublish, enabled = !isSubmitting && !isUploadingImage) {
-                        if (isSubmitting) AppSpinner(size = AppDimens.IconSizeCompact) else Text("发布")
+                        if (isSubmitting) AppSpinner(size = AppDimens.IconSizeCompact) else Text(ContentStrings.publish)
                     }
                 }
             }
@@ -129,7 +130,7 @@ private fun WritePinBottomBar(
                 enabled = !isSubmitting && contentText.isNotBlank(),
                 modifier = Modifier.size(AppDimens.TouchTarget).testTag(WRITE_PIN_FAB_PREVIEW_TAG),
             ) {
-                Icon(Icons.Filled.Visibility, contentDescription = "预览")
+                AppIcon(Icons.Filled.Visibility, contentDescription = ContentStrings.preview)
             }
             if (isImagePickerSupported) {
                 AppIconButton(
@@ -138,23 +139,23 @@ private fun WritePinBottomBar(
                     modifier = Modifier
                         .size(AppDimens.TouchTarget)
                         .testTag(WRITE_PIN_FAB_IMAGE_TAG)
-                        .semantics { contentDescription = "插入图片" },
+                        .semantics { contentDescription = ContentStrings.insertImage },
                 ) {
                     if (isUploadingImage) {
                         AppSpinner(modifier = Modifier, size = AppDimens.IconSizeCompact)
                     } else {
-                        Icon(Icons.Filled.Image, contentDescription = "插入图片")
+                        AppIcon(Icons.Filled.Image, contentDescription = ContentStrings.insertImage)
                     }
                 }
             }
             AppTextButton(
-                text = "草稿",
+                text = ContentStrings.draft,
                 onClick = onSaveDraft,
                 enabled = !isSubmitting,
                 modifier = Modifier
                     .widthIn(min = AppDimens.TouchTarget)
                     .testTag(WRITE_PIN_FAB_SAVE_TAG)
-                    .semantics { contentDescription = "保存草稿" },
+                    .semantics { contentDescription = ContentStrings.saveDraft },
             )
         }
     }

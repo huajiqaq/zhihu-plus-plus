@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.data
 
+import com.github.zly2006.zhihu.i18n.CoreStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -148,7 +149,7 @@ data class MobileNotificationTimelineItem(
         get() = content
             ?.let {
                 if (it.isDeleted) {
-                    "该内容已被删除"
+                    CoreStrings.deletedContent
                 } else {
                     it.abstractText.takeIf(String::isNotBlank) ?: it.text
                 }
@@ -158,7 +159,7 @@ data class MobileNotificationTimelineItem(
     val quotedPreview: String
         get() = content
             ?.let {
-                if (it.isSubDeleted) "该内容已被删除" else it.subText
+                if (it.isSubDeleted) CoreStrings.deletedContent else it.subText
             }.orEmpty()
 }
 

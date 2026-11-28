@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ArrowOutward
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,7 +49,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.AIGC_MARKING_ENABLED_PREFERENCE_KEY
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.markdown.RenderMarkdownText
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.isJvm
@@ -57,8 +60,10 @@ import com.github.zly2006.zhihu.platform.isNative
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
+import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppLinearProgressIndeterminate
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
@@ -81,8 +86,6 @@ import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_discord_24dp
 import zhihu.uicomponents.generated.resources.ic_github_24dp
 import zhihu.uicomponents.generated.resources.ic_telegram_24dp
-import androidx.compose.material3.Icon as MaterialIcon
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val SYSTEM_AND_UPDATE_SETTINGS_BACK_BUTTON_TAG = "system_and_update_settings_back_button"
 
@@ -94,6 +97,7 @@ fun SystemAndUpdateSettingsScreen(
     setting: String? = null,
 ) {
     val settings = rememberSettingsStore()
+    val browserSession = rememberZhihuAccountStore().usesBrowserSession
     val updateState by rememberSystemUpdateState().collectAsState()
     val checkForUpdate = rememberSystemUpdateChecker()
     val skipUpdateVersion = rememberSystemUpdateVersionSkipper()
@@ -123,14 +127,15 @@ fun SystemAndUpdateSettingsScreen(
     DisposableEffect(githubToken) { onDispose(saveEditedToken) }
 
     val versionType = when {
-        isJvm -> "桌面版"
-        isNative -> "$platformName 版"
-        isLiteVariant -> "Lite 版"
-        else -> "Full 版"
+        browserSession -> SettingsStrings.webEdition
+        isJvm -> SettingsStrings.desktopEdition
+        isNative -> SettingsStrings.platformEdition(platformName)
+        isLiteVariant -> SettingsStrings.liteEdition
+        else -> SettingsStrings.fullEdition
     }
 
     AppSettingsPage(
-        title = "系统与更新",
+        title = SettingsStrings.systemUpdates,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = SYSTEM_AND_UPDATE_SETTINGS_BACK_BUTTON_TAG,
         highlightedKey = setting.orEmpty(),
@@ -153,59 +158,63 @@ fun SystemAndUpdateSettingsScreen(
                 try {
                     openWebUrl(url)
                 } catch (error: Exception) {
-                    setSystemUpdateError("打开国内网盘失败：${describeUpdateFailure(error)}", UpdateStep.Download)
+                    setSystemUpdateError(SettingsStrings.openMirrorFailed(describeUpdateFailure(error)), UpdateStep.Download)
                 }
             },
             onOpenUrl = { openWebUrl(it) },
         )
 
         var checkNightlyUpdates by rememberSetting(settings, "checkNightlyUpdates", false)
-        SettingItemGroup(title = "更新通道") {
+        SettingItemGroup(title = SettingsStrings.updateChannel) {
             SettingItemWithSwitch(
-                title = { Text("检查 Nightly 版本更新") },
-                description = { Text("检查每日构建版本 (可能不稳定)") },
-                checked = checkNightlyUpdates,
+                title = { Text(SettingsStrings.checkNightlyUpdates) },
+                description = { Text(if (browserSession) SettingsStrings.webUpdateChannel else SettingsStrings.checkNightlyUpdatesDescription) },
+                checked = !browserSession && checkNightlyUpdates,
+                enabled = !browserSession,
                 onCheckedChange = { checkNightlyUpdates = it },
                 settingKey = "checkNightlyUpdates",
             )
             SettingItem(
                 title = { Text("GitHub Token") },
-                description = { Text("留空时匿名检查更新；若遇 GitHub 限流，可填写 Token 后重试。") },
+                description = { Text(if (browserSession) SettingsStrings.browserNoGithubToken else SettingsStrings.githubTokenDescription) },
+                enabled = !browserSession,
                 settingKey = "githubToken",
                 bottomAction = {
-                    AppSecureTextField(
-                        state = githubToken,
-                        labelText = "GitHub Token",
-                        textObfuscationMode = if (showGithubToken) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
-                        trailingIcon = {
-                            AppIconButton(onClick = { showGithubToken = !showGithubToken }) {
-                                Icon(
-                                    imageVector = if (showGithubToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (showGithubToken) "隐藏 GitHub Token" else "显示 GitHub Token",
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space16),
-                    )
+                    if (!browserSession) {
+                        AppSecureTextField(
+                            state = githubToken,
+                            labelText = "GitHub Token",
+                            textObfuscationMode = if (showGithubToken) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
+                            trailingIcon = {
+                                AppIconButton(onClick = { showGithubToken = !showGithubToken }) {
+                                    AppIcon(
+                                        imageVector = if (showGithubToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (showGithubToken) SettingsStrings.hideGithubToken else SettingsStrings.showGithubToken,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space16),
+                        )
+                    }
                 },
             )
         }
 
         var allowTelemetry by rememberSetting(settings, "allowTelemetry", true)
         var aigcMarkingEnabled by rememberSetting(settings, AIGC_MARKING_ENABLED_PREFERENCE_KEY, false)
-        SettingItemGroup(title = "隐私") {
+        SettingItemGroup(title = SettingsStrings.privacy) {
             SettingItemWithSwitch(
-                title = { Text("允许发送遥测统计数据") },
-                description = { Text("仅用于统计使用人数，不包含个人隐私") },
+                title = { Text(SettingsStrings.allowTelemetry) },
+                description = { Text(SettingsStrings.telemetryDescription) },
                 checked = allowTelemetry,
                 onCheckedChange = { allowTelemetry = it },
                 settingKey = "allowTelemetry",
             )
             SettingItemWithSwitch(
                 modifier = Modifier.testTag(SYSTEM_SETTINGS_AIGC_MARKING_TAG),
-                title = { Text("启用 AIGC 标记") },
+                title = { Text(SettingsStrings.aigcMarking) },
                 description = {
-                    Text("如果启用，会把你正在浏览的内容发送到我们的服务器，这样你可以知道其他用户是否认为其疑似 AIGC。默认关闭，不会发送隐私信息。")
+                    Text(SettingsStrings.aigcMarkingDescription)
                 },
                 checked = aigcMarkingEnabled,
                 onCheckedChange = { aigcMarkingEnabled = it },
@@ -215,16 +224,16 @@ fun SystemAndUpdateSettingsScreen(
 
         var reminderIntervalMinutes by rememberSetting(settings, CONTINUOUS_USAGE_REMINDER_INTERVAL_MINUTES_KEY, 0)
         val reminderOptions = listOf(
-            0 to "关闭",
-            15 to "每 15 分钟",
-            30 to "每 30 分钟",
-            60 to "每 1 小时",
+            0 to SettingsStrings.off,
+            15 to SettingsStrings.reminderQuarterHour,
+            30 to SettingsStrings.reminderHalfHour,
+            60 to SettingsStrings.reminderHourly,
         )
         val normalizedReminderMinutes = ContinuousUsageReminderPolicy.normalizeIntervalMinutes(reminderIntervalMinutes)
-        SettingItemGroup(title = "防沉迷") {
+        SettingItemGroup(title = SettingsStrings.digitalWellbeing) {
             SettingItemSelect(
-                title = { Text("防沉迷提醒") },
-                description = { Text("退出后 5 分钟内重开仍视为连续使用。") },
+                title = { Text(SettingsStrings.usageReminder) },
+                description = { Text(SettingsStrings.usageReminderDescription) },
                 options = reminderOptions.map { it.second },
                 selectedIndex = reminderOptions.indexOfFirst { it.first == normalizedReminderMinutes },
                 onSelect = { index -> reminderIntervalMinutes = reminderOptions[index].first },
@@ -234,10 +243,10 @@ fun SystemAndUpdateSettingsScreen(
 
         if (platformName == "macOS") {
             var quitOnWindowClose by rememberSetting(settings, MACOS_QUIT_ON_WINDOW_CLOSE_PREFERENCE_KEY, false)
-            SettingItemGroup(title = "系统") {
+            SettingItemGroup(title = SettingsStrings.system) {
                 SettingItemWithSwitch(
-                    title = { Text("关闭窗口时退出应用") },
-                    description = { Text("关闭最后一个窗口时同时退出 macOS 应用；默认关闭") },
+                    title = { Text(SettingsStrings.quitOnWindowClose) },
+                    description = { Text(SettingsStrings.quitOnWindowCloseDescription) },
                     checked = quitOnWindowClose,
                     onCheckedChange = { quitOnWindowClose = it },
                     settingKey = MACOS_QUIT_ON_WINDOW_CLOSE_PREFERENCE_KEY,
@@ -246,16 +255,16 @@ fun SystemAndUpdateSettingsScreen(
         }
 
         SettingItemGroup(
-            title = "交流",
-            footer = { Text("代码和功能反馈请前往 GitHub。上边的频道用于用户交流和闲聊，开发者不一定会在线回答问题。") },
+            title = SettingsStrings.community,
+            footer = { Text(SettingsStrings.communityFooter) },
         ) {
-            CommunityLinkRow("Discord 频道", "请在 my-other-apps/zhihu-plus-plus 频道讨论", Res.drawable.ic_discord_24dp) {
+            CommunityLinkRow(SettingsStrings.discordChannel, SettingsStrings.discordChannelDescription, Res.drawable.ic_discord_24dp) {
                 openWebUrl("https://discord.gg/YCPFZV5XSA")
             }
-            CommunityLinkRow("Telegram 群组 (Hydrogen)", "另一个知乎客户端 Hydrogen 的群组，也可以在里面讨论知乎++哦", Res.drawable.ic_telegram_24dp) {
+            CommunityLinkRow(SettingsStrings.telegramGroup, SettingsStrings.telegramGroupDescription, Res.drawable.ic_telegram_24dp) {
                 openWebUrl("https://t.me/+_A1Yto6EpyIyODA1")
             }
-            CommunityLinkRow("GitHub issue", "欢迎提交 issue 讨论功能和反馈问题", Res.drawable.ic_github_24dp) {
+            CommunityLinkRow("GitHub issue", SettingsStrings.githubFeedbackDescription, Res.drawable.ic_github_24dp) {
                 openWebUrl("https://github.com/zly2006/zhihu-plus-plus/issues")
             }
         }
@@ -275,41 +284,65 @@ internal fun SystemUpdateStatusCard(
     onOpenCnDownload: (url: String) -> Unit,
     onOpenUrl: (url: String) -> Unit,
 ) {
+    var showReloadConfirmation by remember(state) { mutableStateOf(false) }
     val pending = state.pendingUpdate
-    val pendingName = pending?.let { if (it.isNightly) "Nightly 版 ${it.version}" else "正式版 ${it.version}" }
-    val downloadLabel = if (pending?.opensExternally == true) "前往下载页面" else "下载更新"
+    val pendingName = pending?.let { if (it.isNightly) SettingsStrings.nightlyVersion(it.version) else SettingsStrings.stableVersion(it.version) }
+    val downloadLabel = if (pending?.opensExternally == true) SettingsStrings.openDownloadPage else SettingsStrings.downloadUpdate
     val (title, status) = when (state) {
-        SystemUpdateState.NoUpdate -> "知乎++" to null
-        SystemUpdateState.Checking -> "正在检查更新" to null
-        SystemUpdateState.Latest -> "已是最新版本" to null
-        is SystemUpdateState.UpdateAvailable -> "发现新版本" to pendingName
-        is SystemUpdateState.Downloading -> "正在下载" to pendingName
-        is SystemUpdateState.Downloaded -> "已下载" to "$pendingName，可以安装"
+        SystemUpdateState.NoUpdate -> SettingsStrings.appName to null
+        SystemUpdateState.Checking -> SettingsStrings.checkingUpdates to null
+        SystemUpdateState.Latest -> SettingsStrings.alreadyLatest to null
+        SystemUpdateState.Unpublished -> SettingsStrings.webUnpublished to SettingsStrings.webUnpublishedDescription
+        is SystemUpdateState.WebUpdateAvailable -> SettingsStrings.updateAvailable to SettingsStrings.webUpdateReady(state.buildId.take(12))
+        is SystemUpdateState.UpdateAvailable -> SettingsStrings.updateAvailable to pendingName
+        is SystemUpdateState.Downloading -> SettingsStrings.downloading to pendingName
+        is SystemUpdateState.Downloaded -> SettingsStrings.downloaded to SettingsStrings.updateReady(pendingName)
         is SystemUpdateState.Error -> {
             val failedStep = when (state.step) {
-                UpdateStep.Check -> "检查更新失败"
-                UpdateStep.Download if pending?.opensExternally == true -> "打开下载页面失败"
-                UpdateStep.Download -> "下载失败"
-                UpdateStep.Install -> "安装失败"
+                UpdateStep.Check -> SettingsStrings.updateCheckFailed
+                UpdateStep.Download if pending?.opensExternally == true -> SettingsStrings.openDownloadFailed
+                UpdateStep.Download -> SettingsStrings.downloadFailed
+                UpdateStep.Install -> SettingsStrings.installFailed
             }
             failedStep to state.message
         }
     }
     val (actionLabel, action) = when (state) {
-        SystemUpdateState.NoUpdate, SystemUpdateState.Latest -> "检查更新" to onCheck
-        SystemUpdateState.Checking -> "检查中..." to null
+        SystemUpdateState.NoUpdate, SystemUpdateState.Latest -> SettingsStrings.checkUpdates to onCheck
+        SystemUpdateState.Checking -> SettingsStrings.checking to null
+        SystemUpdateState.Unpublished -> SettingsStrings.checkUpdates to null
+        is SystemUpdateState.WebUpdateAvailable -> SettingsStrings.webReloadUpdate to { showReloadConfirmation = true }
         is SystemUpdateState.UpdateAvailable -> downloadLabel to onDownload
-        is SystemUpdateState.Downloading -> "下载中..." to null
-        is SystemUpdateState.Downloaded if installSupported -> "安装更新" to onInstall
-        is SystemUpdateState.Downloaded -> "暂不支持安装 APK 更新" to null
+        is SystemUpdateState.Downloading -> SettingsStrings.downloadInProgress to null
+        is SystemUpdateState.Downloaded if installSupported -> SettingsStrings.installUpdate to onInstall
+        is SystemUpdateState.Downloaded -> SettingsStrings.apkInstallUnsupported to null
         is SystemUpdateState.Error -> {
             val retry = when {
                 state.update == null -> onCheck
                 state.step == UpdateStep.Install -> onInstall
                 else -> onDownload
             }
-            "重试" to retry
+            SettingsStrings.retry to retry
         }
+    }
+    if (showReloadConfirmation && state is SystemUpdateState.WebUpdateAvailable) {
+        AppAlertDialog(
+            onDismissRequest = { showReloadConfirmation = false },
+            title = { Text(SettingsStrings.webReloadConfirmation) },
+            text = { Text(SettingsStrings.webReloadWarning) },
+            confirmButton = {
+                AppButton(
+                    text = SettingsStrings.webReloadUpdate,
+                    onClick = {
+                        showReloadConfirmation = false
+                        onDownload()
+                    },
+                )
+            },
+            dismissButton = {
+                AppTextButton(onClick = { showReloadConfirmation = false }) { Text(SettingsStrings.cancel) }
+            },
+        )
     }
     val skippableVersion = (state as? SystemUpdateState.UpdateAvailable)?.version
     val cnDownloadUrl = pending?.cnDownloadUrl?.takeIf { it.isNotBlank() && (state is SystemUpdateState.UpdateAvailable || state is SystemUpdateState.Error) }
@@ -322,10 +355,10 @@ internal fun SystemUpdateStatusCard(
                     status?.let {
                         Text(it, color = if (state is SystemUpdateState.Error) MaterialTheme.colorScheme.error else Color.Unspecified)
                     }
-                    Text("当前版本 $currentVersion")
+                    Text(SettingsStrings.currentVersion(currentVersion))
                 }
             },
-            icon = { Icon(Icons.Default.SystemUpdate, null) },
+            icon = { AppIcon(Icons.Default.SystemUpdate, null) },
             bottomAction = {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space12)) {
                     if (state is SystemUpdateState.Checking || state is SystemUpdateState.Downloading) {
@@ -337,10 +370,10 @@ internal fun SystemUpdateStatusCard(
                     ) {
                         AppButton(text = actionLabel, onClick = { action?.invoke() }, enabled = action != null)
                         if (skippableVersion != null) {
-                            AppOutlinedButton(text = "跳过此版本", onClick = { onSkip(skippableVersion) })
+                            AppOutlinedButton(text = SettingsStrings.skipVersion, onClick = { onSkip(skippableVersion) })
                         }
                         if (cnDownloadUrl != null) {
-                            AppOutlinedButton(text = "使用国内网盘加速下载", onClick = { onOpenCnDownload(cnDownloadUrl) })
+                            AppOutlinedButton(text = SettingsStrings.chinaDownloadMirror, onClick = { onOpenCnDownload(cnDownloadUrl) })
                         }
                     }
                 }
@@ -350,10 +383,10 @@ internal fun SystemUpdateStatusCard(
         AnimatedVisibility(visible = notes != null) {
             var expanded by remember(pending?.version) { mutableStateOf(false) }
             SettingItem(
-                title = { Text("更新说明") },
+                title = { Text(SettingsStrings.releaseNotes) },
                 endAction = {
                     AppTextButton(
-                        text = if (expanded) "收起" else "展开",
+                        text = if (expanded) SettingsStrings.collapse else SettingsStrings.expand,
                         onClick = { expanded = !expanded },
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -363,8 +396,8 @@ internal fun SystemUpdateStatusCard(
                         Column(modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space8)) {
                             RenderMarkdownText(markdown = notes.orEmpty(), selectable = true, enableScroll = false)
                             AppTextButton(onClick = { onOpenUrl(RELEASES_PAGE_URL) }, modifier = Modifier.align(Alignment.End)) {
-                                Text("查看完整更新日志")
-                                Icon(Icons.Default.ArrowOutward, null, Modifier.size(AppDimens.Space20))
+                                Text(SettingsStrings.fullChangelog)
+                                AppIcon(Icons.Default.ArrowOutward, null, Modifier.size(AppDimens.Space20))
                             }
                         }
                     }
@@ -384,8 +417,8 @@ private fun CommunityLinkRow(
     SettingItem(
         title = { Text(title) },
         description = { Text(description) },
-        icon = { MaterialIcon(painterResource(icon), null) },
-        endAction = { Icon(Icons.Default.ArrowOutward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        icon = { Icon(painterResource(icon), null) },
+        endAction = { AppIcon(Icons.Default.ArrowOutward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         onClick = onClick,
     )
 }

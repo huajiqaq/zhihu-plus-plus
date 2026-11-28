@@ -48,10 +48,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import kotlinx.coroutines.launch
 
 @Composable
 fun SwipeToReplyContainer(
@@ -93,7 +93,7 @@ fun SwipeToReplyContainer(
                     .padding(horizontal = 16.dp),
                 contentAlignment = align,
             ) {
-                Icon(
+                AppIcon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = iconTint,

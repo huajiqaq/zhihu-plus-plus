@@ -24,25 +24,26 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
-import com.github.zly2006.zhihu.data.Collection
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
+import com.github.zly2006.zhihu.data.ZhihuCollection
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
 import com.github.zly2006.zhihu.data.displayExcerpt
 import com.github.zly2006.zhihu.data.navDestination
-import com.github.zly2006.zhihu.data.toFeedDisplayItemNavDestinationJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.util.DisplayFailure
+import kotlin.random.Random
+import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
-import kotlin.random.Random
-import kotlin.reflect.typeOf
 
-suspend fun ZhihuApiEnvironment.fetchCollection(collectionId: String): Collection {
-    val json = fetchJson("https://www.zhihu.com/api/v4/collections/$collectionId", "") ?: error("收藏夹信息为空")
-    return ZhihuJson.decodeJson<Collection>(json["collection"] ?: throw IllegalStateException("收藏夹信息为空"))
+suspend fun ZhihuApiEnvironment.fetchCollection(collectionId: String): ZhihuCollection {
+    val json = fetchJson("https://www.zhihu.com/api/v4/collections/$collectionId", "") ?: throw DisplayFailure { DomainStrings.collectionMissingInfo }
+    return ZhihuJson.decodeJson<ZhihuCollection>(json["collection"] ?: throw DisplayFailure { DomainStrings.collectionMissingInfo })
 }
 
 class CollectionContentViewModel(
@@ -59,9 +60,9 @@ class CollectionContentViewModel(
     val isRandomMode: Boolean
         get() = randomPageOffsets != null
     val displayItems = mutableStateListOf<FeedDisplayItem>()
-    var collection by mutableStateOf<Collection?>(null)
+    var collection by mutableStateOf<ZhihuCollection?>(null)
     val title by derivedStateOf {
-        collection?.title ?: "收藏夹"
+        collection?.title ?: DomainStrings.collectionTitle
     }
     var exportDialogState by mutableStateOf<CollectionHtmlExportDialogState?>(null)
         private set
@@ -75,12 +76,14 @@ class CollectionContentViewModel(
     val nextPageUrl: String
         get() = lastPaging?.next.orEmpty()
 
-    override fun processResponse(environment: PaginationEnvironment, data: List<CollectionItem>, rawData: JsonArray) {
-        if (isRefreshPending) displayItems.clear()
-        super.processResponse(environment, data, rawData)
-        displayItems.addAll(data.map { createDisplayItem(it) })
-        if (randomPageOffsets != null) {
-            randomPageCursor++
+    override suspend fun prepareResponse(environment: PaginationEnvironment, data: List<CollectionItem>, rawData: JsonArray): () -> Unit {
+        val items = data.map(::createDisplayItem)
+        val commit = super.prepareResponse(environment, data, rawData)
+        return {
+            if (isRefreshPending) displayItems.clear()
+            commit()
+            displayItems.addAll(items)
+            if (randomPageOffsets != null) randomPageCursor++
         }
     }
 
@@ -92,8 +95,8 @@ class CollectionContentViewModel(
     private fun createDisplayItem(item: CollectionItem): FeedDisplayItem = FeedDisplayItem(
         title = item.content.title,
         summary = item.content.displayExcerpt,
-        details = item.content.detailsText,
-        navDestinationJson = item.content.navDestination?.toFeedDisplayItemNavDestinationJson(),
+        details = item.content.displayDetails,
+        destination = item.content.navDestination,
         feed = null,
         authorName = item.content.author?.name,
         avatarSrc = when (item.content) {
@@ -181,7 +184,7 @@ class CollectionContentViewModel(
 
         viewModelScope.launch {
             exportDialogState = CollectionHtmlExportDialogState(
-                phaseText = "正在加载收藏夹条目",
+                phase = CollectionExportPhase.Loading,
                 totalCount = 0,
                 processedCount = 0,
                 successCount = 0,
@@ -191,46 +194,45 @@ class CollectionContentViewModel(
             )
 
             try {
-                val items = ensureAllCollectionItemsLoaded(environment)
-                if (items.isEmpty()) {
-                    exportDialogState = CollectionHtmlExportDialogState(
-                        phaseText = "没有可导出的内容",
-                        totalCount = 0,
-                        processedCount = 0,
-                        successCount = 0,
-                        skippedCount = 0,
-                        failedCount = 0,
-                        isCompleted = true,
-                        resultMessage = "收藏夹为空，或内容加载失败。",
+                val result = withExportAccount(environment) {
+                    val items = ensureAllCollectionItemsLoaded(environment)
+                    if (items.isEmpty()) {
+                        exportDialogState = CollectionHtmlExportDialogState(
+                            phase = CollectionExportPhase.Empty,
+                            totalCount = 0,
+                            processedCount = 0,
+                            successCount = 0,
+                            skippedCount = 0,
+                            failedCount = 0,
+                            isCompleted = true,
+                        )
+                        return@withExportAccount null
+                    }
+                    ensureExportAccountActive()
+                    environment.exportCollectionItemsToHtmlZip(
+                        collectionTitle = title,
+                        items = items,
+                        includeImages = includeImages,
+                        onProgress = { progress ->
+                            exportDialogState = CollectionHtmlExportDialogState(
+                                phase = CollectionExportPhase.Exporting,
+                                totalCount = progress.totalCount,
+                                processedCount = progress.processedCount,
+                                successCount = progress.successCount,
+                                skippedCount = progress.skippedCount,
+                                failedCount = progress.failedCount,
+                                currentTitle = progress.currentTitle,
+                            )
+                        },
                     )
+                } ?: return@launch
+                if (result.delivery == ArticleExportResult.Cancelled) {
+                    exportDialogState = null
                     return@launch
                 }
 
-                val exportTitle = title
-                val result = environment.exportCollectionItemsToHtmlZip(
-                    collectionTitle = exportTitle,
-                    items = items,
-                    includeImages = includeImages,
-                    onProgress = { progress ->
-                        exportDialogState = CollectionHtmlExportDialogState(
-                            phaseText = "正在导出 ${progress.processedCount} / ${progress.totalCount}",
-                            totalCount = progress.totalCount,
-                            processedCount = progress.processedCount,
-                            successCount = progress.successCount,
-                            skippedCount = progress.skippedCount,
-                            failedCount = progress.failedCount,
-                            currentTitle = progress.currentTitle,
-                        )
-                    },
-                )
-
-                val resultMessage = if (result.zipFilePath != null) {
-                    "已导出 ${result.successCount} 篇，跳过 ${result.skippedCount} 条，失败 ${result.failedCount} 条。"
-                } else {
-                    "没有可导出的回答或文章，已跳过 ${result.skippedCount} 条，失败 ${result.failedCount} 条。"
-                }
                 exportDialogState = CollectionHtmlExportDialogState(
-                    phaseText = "导出完成",
+                    phase = CollectionExportPhase.Complete,
                     totalCount = result.totalCount,
                     processedCount = result.totalCount,
                     successCount = result.successCount,
@@ -238,13 +240,13 @@ class CollectionContentViewModel(
                     failedCount = result.failedCount,
                     currentTitle = "",
                     isCompleted = true,
-                    resultMessage = resultMessage,
                     zipFilePath = result.zipFilePath,
+                    delivery = result.delivery,
                 )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 exportDialogState = CollectionHtmlExportDialogState(
-                    phaseText = "导出失败",
+                    phase = CollectionExportPhase.Failed,
                     totalCount = exportDialogState?.totalCount ?: 0,
                     processedCount = exportDialogState?.processedCount ?: 0,
                     successCount = exportDialogState?.successCount ?: 0,
@@ -252,7 +254,7 @@ class CollectionContentViewModel(
                     failedCount = exportDialogState?.failedCount ?: 0,
                     currentTitle = exportDialogState?.currentTitle.orEmpty(),
                     isCompleted = true,
-                    resultMessage = e.message ?: "未知错误",
+                    failure = e,
                 )
                 environment.handleCollectionExportFailure(e)
             }
@@ -276,9 +278,8 @@ class CollectionContentViewModel(
 
             val pagingAdvanced = hasPagingProgress(beforePaging, lastPaging)
             val itemCountAdvanced = allData.size > beforeCount
-            if (!pagingAdvanced && !itemCountAdvanced) {
-                break
-            }
+            check(isEnd || pagingAdvanced || itemCountAdvanced) { errorText?.invoke() ?: DomainStrings.exportFailed }
+            if (isEnd) break
         }
 
         return allData.toList()
@@ -330,9 +331,11 @@ fun shouldReuseCollectionRandomSession(
 
 private const val COLLECTION_PAGE_SIZE = 20
 
+enum class CollectionExportPhase { Loading, Exporting, Empty, Complete, Failed }
+
 @Stable
 data class CollectionHtmlExportDialogState(
-    val phaseText: String,
+    val phase: CollectionExportPhase,
     val totalCount: Int,
     val processedCount: Int,
     val successCount: Int,
@@ -341,9 +344,33 @@ data class CollectionHtmlExportDialogState(
     val currentTitle: String = "",
     val isIndeterminate: Boolean = false,
     val isCompleted: Boolean = false,
-    val resultMessage: String? = null,
+    private val failure: Exception? = null,
     val zipFilePath: String? = null,
+    val delivery: ArticleExportResult? = null,
 ) {
+    val phaseText: String
+        get() = when (phase) {
+            CollectionExportPhase.Loading -> DomainStrings.exportLoading
+            CollectionExportPhase.Exporting -> DomainStrings.exportProgress(processedCount, totalCount)
+            CollectionExportPhase.Empty -> DomainStrings.exportEmpty
+            CollectionExportPhase.Complete -> DomainStrings.exportComplete
+            CollectionExportPhase.Failed -> DomainStrings.exportFailed
+        }
+    val resultMessage: String?
+        get() = when (phase) {
+            CollectionExportPhase.Empty -> DomainStrings.exportEmptyHint
+            CollectionExportPhase.Failed -> failure?.message ?: DomainStrings.unknownError
+            CollectionExportPhase.Complete -> when (val delivered = delivery) {
+                is ArticleExportResult.Completed -> "${DomainStrings.exportTotals(successCount, skippedCount, failedCount)}\n${delivered.completionMessage}"
+                ArticleExportResult.Cancelled -> null
+                null -> if (zipFilePath != null) {
+                    DomainStrings.exportTotals(successCount, skippedCount, failedCount)
+                } else {
+                    DomainStrings.exportNoArticles(skippedCount, failedCount)
+                }
+            }
+            else -> null
+        }
     val progress: Float
         get() = if (totalCount <= 0) 0f else (processedCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f)
 }

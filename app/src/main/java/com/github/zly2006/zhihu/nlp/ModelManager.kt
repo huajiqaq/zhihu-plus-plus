@@ -20,6 +20,7 @@ package com.github.zly2006.zhihu.nlp
 import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.request.head
@@ -28,12 +29,21 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.contentLength
 import io.ktor.http.etag
 import io.ktor.utils.io.jvm.javaio.toInputStream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/** 自有模型错误保留诊断原文，展示时按当前语言解析；不翻译第三方异常。 */
+internal class NlpDisplayFailure(
+    diagnosticMessage: String,
+    val displayMessage: () -> String,
+) : IllegalStateException(diagnosticMessage)
+
+internal fun Throwable.nlpDisplayMessage(fallback: () -> String): String =
+    if (this is NlpDisplayFailure) displayMessage() else message ?: fallback()
 
 object ModelManager {
     private const val TAG = "ModelManager"
@@ -114,7 +124,9 @@ object ModelManager {
                         Log.w(TAG, "Using existing file ${file.localFileName} (network check failed)")
                         result[file.localFileName] = destFile
                     } else {
-                        throw IllegalStateException("Local file ${file.localFileName} is corrupted and cannot verify remote version")
+                        throw NlpDisplayFailure("Local file ${file.localFileName} is corrupted and cannot verify remote version") {
+                            AndroidNlpStrings.localModelCorrupted(file.localFileName)
+                        }
                     }
                 } else {
                     throw e
@@ -159,10 +171,12 @@ object ModelManager {
                     val expectedSize = fileSizes[file.url] ?: 0L
                     if (expectedSize > 0 && tempFile.length() != expectedSize) {
                         tempFile.delete()
-                        throw IllegalStateException(
-                            "Downloaded file size mismatch for ${file.localFileName}: " +
-                                "expected=$expectedSize, actual=${tempFile.length()}",
-                        )
+                        val actualSize = tempFile.length()
+                        throw NlpDisplayFailure(
+                            "Downloaded file size mismatch for ${file.localFileName}: expected=$expectedSize, actual=$actualSize",
+                        ) {
+                            AndroidNlpStrings.downloadSizeMismatch(file.localFileName, expectedSize, actualSize)
+                        }
                     }
 
                     val sha256 = calculateSha256(tempFile)

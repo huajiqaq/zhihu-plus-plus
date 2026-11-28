@@ -48,17 +48,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.github.zly2006.zhihu.data.Collection
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
+import com.github.zly2006.zhihu.data.ZhihuCollection
+import com.github.zly2006.zhihu.i18n.ContentStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CollectionDialogComponent(
     showDialog: Boolean,
     onDismiss: () -> Unit,
-    collections: List<Collection>,
+    collections: List<ZhihuCollection>,
     onLoadCollections: () -> Unit,
-    onToggleFavorite: (Collection) -> Unit,
+    onToggleFavorite: (ZhihuCollection) -> Unit,
     onCreateCollection: (title: String, description: String, isPublic: Boolean) -> Unit,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -79,7 +79,7 @@ fun CollectionDialogComponent(
                     .padding(16.dp),
             ) {
                 Text(
-                    text = "选择收藏夹",
+                    text = ContentStrings.selectCollection,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 16.dp),
@@ -105,15 +105,15 @@ fun CollectionDialogComponent(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
+                                AppIcon(
                                     imageVector = Icons.Filled.Add,
-                                    contentDescription = "新建收藏夹",
+                                    contentDescription = ContentStrings.newCollection,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.size(24.dp),
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Text(
-                                    text = "新建收藏夹",
+                                    text = ContentStrings.newCollection,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -148,7 +148,7 @@ fun CollectionDialogComponent(
 
 @Composable
 private fun CollectionItem(
-    collection: Collection,
+    collection: ZhihuCollection,
     onToggle: () -> Unit,
 ) {
     Surface(
@@ -181,16 +181,16 @@ private fun CollectionItem(
                     )
                 }
                 Text(
-                    text = "${collection.itemCount} 篇内容",
+                    text = ContentStrings.contentItemCount(collection.itemCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
 
-            Icon(
+            AppIcon(
                 imageVector = if (collection.isFavorited) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                contentDescription = if (collection.isFavorited) "已收藏" else "未收藏",
+                contentDescription = if (collection.isFavorited) ContentStrings.saved else ContentStrings.notSaved,
                 tint = if (collection.isFavorited) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp),
             )

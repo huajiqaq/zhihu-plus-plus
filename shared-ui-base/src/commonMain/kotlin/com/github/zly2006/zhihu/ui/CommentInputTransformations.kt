@@ -26,8 +26,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import kotlinx.coroutines.flow.first
 import kotlin.math.min
+import kotlinx.coroutines.flow.first
 
 internal data class EmojiInputRun(
     val transformedStart: Int,

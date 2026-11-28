@@ -24,6 +24,7 @@ import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
@@ -46,7 +47,7 @@ internal fun HomeFeedCardMenuItems(
 ) {
     if (feedKeywordExtractionAvailable) {
         AppDropdownMenuItem(
-            text = { Text("按关键词屏蔽") },
+            text = { Text(FeedStrings.blockByKeyword) },
             onClick = {
                 dismissMenu()
                 viewModel.handleBlockByKeywords(paginationEnvironment, userMessages, item) { (_, contentInfo) ->
@@ -56,7 +57,7 @@ internal fun HomeFeedCardMenuItems(
         )
     }
     AppDropdownMenuItem(
-        text = { Text("屏蔽用户") },
+        text = { Text(FeedStrings.blockUser) },
         onClick = {
             dismissMenu()
             viewModel.handleBlockUser(paginationEnvironment, userMessages, item) { authorInfo ->
@@ -75,7 +76,7 @@ internal fun HomeFeedCardMenuItems(
     }
     if (canBlockQuestionAuthor) {
         AppDropdownMenuItem(
-            text = { Text("屏蔽提问者") },
+            text = { Text(FeedStrings.blockQuestionAuthor) },
             onClick = {
                 dismissMenu()
                 viewModel.handleBlockQuestionAuthor(paginationEnvironment, userMessages, item) { authorInfo ->
@@ -98,7 +99,7 @@ internal fun HomeFeedCardMenuItems(
     }
     topics.forEach { topic ->
         AppDropdownMenuItem(
-            text = { Text("屏蔽「${topic.name}」") },
+            text = { Text(FeedStrings.blockTopic(topic.name)) },
             onClick = {
                 dismissMenu()
                 viewModel.handleBlockTopic(userMessages, topic.id, topic.name)

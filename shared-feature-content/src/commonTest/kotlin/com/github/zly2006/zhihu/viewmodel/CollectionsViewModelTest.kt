@@ -17,9 +17,9 @@
 
 package com.github.zly2006.zhihu.viewmodel
 
-import com.github.zly2006.zhihu.data.Collection
 import com.github.zly2006.zhihu.data.Feed
 import com.github.zly2006.zhihu.data.Person
+import com.github.zly2006.zhihu.data.ZhihuCollection
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
 import io.ktor.client.HttpClient
@@ -31,6 +31,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,11 +46,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class CollectionsViewModelTest {
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -74,7 +74,7 @@ class CollectionsViewModelTest {
                         }
                         respondJson("""{"data":${ZhihuJson.json.encodeToString(items)},"paging":${ZhihuJson.json.encodeToString(ZhihuPaging(isEnd = true, next = ""))}}""")
                     } else {
-                        respondJson("""{"collection":${ZhihuJson.json.encodeToString(Collection("collection-refresh", title = "测试收藏夹"))}}""")
+                        respondJson("""{"collection":${ZhihuJson.json.encodeToString(ZhihuCollection("collection-refresh", title = "测试收藏夹"))}}""")
                     }
                 }
             }
@@ -99,7 +99,7 @@ class CollectionsViewModelTest {
             gate = CompletableDeferred()
             model.refresh(environment)
             assertEquals(listOf("原来的标题", "原来的第二项"), model.displayItems.map { it.title }, "等待刷新不能先清空可见内容")
-            gate!!.complete(Unit)
+            gate.complete(Unit)
             advanceUntilIdle()
             assertEquals(listOf("原来的标题", "原来的第二项"), model.displayItems.map { it.title })
             assertFalse(model.isLoading)

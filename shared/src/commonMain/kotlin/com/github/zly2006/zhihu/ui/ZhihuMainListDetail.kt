@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import top.yukonga.miuix.kmp.nav.core.NavCornerClipMode
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
@@ -47,7 +48,7 @@ internal fun minimumListContentWidth(fontScale: Float): Dp {
         MIN_LIST_PANE_WIDTH * fontScale,
         with(LocalDensity.current) {
             textMeasurer
-                .measure("值得反复阅读的收藏内容", style = MaterialTheme.typography.titleMedium, softWrap = false)
+                .measure(AppStrings.readingWidthSample, style = MaterialTheme.typography.titleMedium, softWrap = false)
                 .size.width
                 .toDp()
         } + AppDimens.PageHorizontalPadding * 2,

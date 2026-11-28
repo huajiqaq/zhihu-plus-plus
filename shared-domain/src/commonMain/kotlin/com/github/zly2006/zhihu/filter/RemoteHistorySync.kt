@@ -26,13 +26,14 @@ import com.github.zly2006.zhihu.data.target
 import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.platformSettingsStore
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.filter.ContentOpenEvent
 import com.github.zly2006.zhihu.viewmodel.filter.ContentOpenEventDao
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -44,7 +45,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
-import kotlin.time.Clock
 
 internal const val REMOTE_HISTORY_FIRST_URL =
     "https://api.zhihu.com/unify-consumption/read_history?offset=0&limit=50"
@@ -76,7 +76,7 @@ class RemoteHistorySync(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("RemoteHistorySync", "Failed to sync remote reading history", e)
+                AppLog.e("RemoteHistorySync", "Failed to sync remote reading history", e)
             } finally {
                 recentPage.complete(Unit)
             }
@@ -158,7 +158,7 @@ class RemoteHistorySync(
             val crossedBoundary = boundary > 0 && ordered && items.any { it.data.extra.readTime < boundary }
             if (paging.isEnd || crossedBoundary) {
                 settingsStore.putLong(REMOTE_HISTORY_WATERMARK_KEY, newest)
-                Log.i("RemoteHistorySync", "Completed pages=${requested.size} records=$scanned imported=$imported unmappedOrDuplicate=$unsupported end=${paging.isEnd} incremental=${boundary > 0}")
+                AppLog.i("RemoteHistorySync", "Completed pages=${requested.size} records=$scanned imported=$imported unmappedOrDuplicate=$unsupported end=${paging.isEnd} incremental=${boundary > 0}")
                 return
             }
             val next = Url(paging.next)

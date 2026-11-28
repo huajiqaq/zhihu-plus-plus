@@ -19,22 +19,28 @@ package com.github.zly2006.zhihu.test
 
 import android.content.Context
 import android.os.Bundle
+import com.github.zly2006.zhihu.ZhihuInstrumentedTestApplication
 import com.github.zly2006.zhihu.account.ZhihuAccountProfileSnapshot
 import com.github.zly2006.zhihu.account.ZhihuAccountRepository
 import com.github.zly2006.zhihu.account.ZhihuAccountSession
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
-import com.github.zly2006.zhihu.account.replaceAndroidZhihuAccountStoreForTesting
 import com.github.zly2006.zhihu.data.Person
 import com.github.zly2006.zhihu.data.ZHIHU_ANDROID_USER_AGENT
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.APP_LANGUAGE_KEY
 import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
-import kotlinx.io.files.Path
-import kotlinx.serialization.json.encodeToJsonElement
 import java.io.File
 import java.util.UUID
+import kotlinx.io.files.Path
+import kotlinx.serialization.json.encodeToJsonElement
 
-object InstrumentedTestEnvironment {
-    const val DATA_MODE_ARG = "zhpp_data_mode"
+val Context.instrumentedTestEnvironment: InstrumentedTestEnvironment
+    get() = (applicationContext as ZhihuInstrumentedTestApplication).environment
+
+class InstrumentedTestEnvironment {
+    companion object {
+        const val DATA_MODE_ARG = "zhpp_data_mode"
+    }
 
     enum class DataMode {
         MOCK,
@@ -80,12 +86,12 @@ object InstrumentedTestEnvironment {
                 runCatching { directory?.deleteRecursively() }.exceptionOrNull()?.let { if (it !== error) error.addSuppressed(it) }
                 throw error
             }
-            // 直接替换完整对象，不能先清空根对象，让后台入口创建真实账号存储。
-            replaceAndroidZhihuAccountStoreForTesting(store)
+            val previousStore = currentAccountStore
             val previousDirectory = mockDirectory
             currentAccountStore = store
             installedDataMode = dataMode
             mockDirectory = directory
+            previousStore?.close()
             previousDirectory?.let { check(it.deleteRecursively()) { "删除设备测试账号目录失败" } }
         }
 
@@ -93,6 +99,7 @@ object InstrumentedTestEnvironment {
             .getSharedPreferences(PREFERENCE_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
+            .putString(APP_LANGUAGE_KEY, "zh")
             .putBoolean("allowTelemetry", false)
             .putLong("last_main_launch_timestamp", System.currentTimeMillis())
             .commit()
@@ -132,36 +139,18 @@ object InstrumentedTestEnvironment {
                 )
             }
 
-            DataMode.REAL -> {
-                val secretAccountData = loadRealAccountData(context)
-                accountStore.save(
-                    secretAccountData.copy(
-                        login = secretAccountData.login || secretAccountData.cookies.isNotEmpty(),
-                        userAgent = secretAccountData.userAgent.ifBlank { ZHIHU_ANDROID_USER_AGENT },
-                    ),
-                )
+            DataMode.REAL -> check(accountStore.session.login) {
+                "真实数据模式要求预先提供当前多账号结构且已登录的账号文件"
             }
         }
     }
 
     fun close() {
-        if (currentAccountStore != null) {
-            replaceAndroidZhihuAccountStoreForTesting(null)
-            currentAccountStore = null
-        }
+        currentAccountStore?.close()
+        currentAccountStore = null
         installedDataMode = null
         ZhihuMockApi.reset(enabled = false)
         mockDirectory?.let { check(it.deleteRecursively()) { "删除设备测试账号目录失败" } }
         mockDirectory = null
-    }
-
-    private fun loadRealAccountData(context: Context): ZhihuAccountSession = try {
-        val json = context.filesDir.resolve("account.json").readText()
-        ZhihuJson.json.decodeFromString<ZhihuAccountSession>(json)
-    } catch (e: Exception) {
-        throw IllegalStateException(
-            "真实数据模式要求在设备测试前手工将账号 JSON 恢复到目标应用的 files/account.json",
-            e,
-        )
     }
 }

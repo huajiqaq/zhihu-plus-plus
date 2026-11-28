@@ -1,0 +1,47 @@
+{
+  "extensionName": {
+    "message": "Zhihu++ 在电脑打开"
+  },
+  "extensionDescription": {
+    "message": "在浏览器工具栏中查看并打开 Zhihu++ 发送到电脑的最新内容。"
+  },
+  "htmlLang": {
+    "message": "zh-CN"
+  },
+  "opening": {
+    "message": "正在打开最新内容…"
+  },
+  "login": {
+    "message": "去登录知乎"
+  },
+  "loginRequired": {
+    "message": "请先在浏览器登录知乎"
+  },
+  "loginHint": {
+    "message": "必须登录与手机相同的知乎账号，登录后点击扩展图标即可直接打开最新内容。"
+  },
+  "noCollection": {
+    "message": "没有找到收藏夹"
+  },
+  "noCollectionHint": {
+    "message": "请确认浏览器登录的是与手机相同的知乎账号，并先在 Zhihu++ 中点击「在电脑打开」。"
+  },
+  "emptyCollection": {
+    "message": "收藏夹是空的"
+  },
+  "emptyCollectionHint": {
+    "message": "先在 Zhihu++ 中点击「在电脑打开」。"
+  },
+  "cannotOpen": {
+    "message": "无法打开这条内容"
+  },
+  "timedOut": {
+    "message": "长时间没有反应"
+  },
+  "readFailed": {
+    "message": "读取失败"
+  },
+  "retryHint": {
+    "message": "请检查浏览器是否登录了与手机相同的知乎账号，然后重试。"
+  }
+}

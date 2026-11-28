@@ -18,9 +18,9 @@
 package com.github.zly2006.zhihu.viewmodel.local
 
 import com.github.zly2006.zhihu.navigation.zhihuQuestionFeedsUrl
+import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
 
 class LocalContentInitializer(
     private val dao: LocalContentDao,

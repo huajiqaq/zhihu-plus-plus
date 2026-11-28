@@ -32,6 +32,7 @@ import androidx.activity.addCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.github.zly2006.zhihu.data.redactDiagnosticText
+import com.github.zly2006.zhihu.i18n.HostStrings
 import com.github.zly2006.zhihu.util.clipboardManager
 import com.github.zly2006.zhihu.util.enableEdgeToEdgeCompat
 import java.util.Collections
@@ -42,7 +43,7 @@ class FatalErrorActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdgeCompat()
-        val details = intent.getStringExtra(EXTRA_DETAILS) ?: UNKNOWN_ERROR
+        val details = intent.getStringExtra(EXTRA_DETAILS) ?: HostStrings.errorDetailsUnavailable
         onBackPressedDispatcher.addCallback(this) { finishAndRemoveTask() }
 
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -55,7 +56,7 @@ class FatalErrorActivity : ComponentActivity() {
         page.addView(
             TextView(this).apply {
                 setTextAppearance(android.R.style.TextAppearance_Material_Headline)
-                text = "错误详情"
+                text = HostStrings.errorDetails
             },
         )
         val scroll = ScrollView(this).apply {
@@ -65,13 +66,13 @@ class FatalErrorActivity : ComponentActivity() {
         val actions = LinearLayout(this).apply { gravity = Gravity.END }
         actions.addView(
             Button(this).apply {
-                text = "复制脱敏信息"
-                setOnClickListener { clipboardManager.setPrimaryClip(ClipData.newPlainText("error", details)) }
+                text = HostStrings.copyRedactedDetails
+                setOnClickListener { clipboardManager.setPrimaryClip(ClipData.newPlainText(HostStrings.errorDetails, details)) }
             },
         )
         actions.addView(
             Button(this).apply {
-                text = "关闭"
+                text = HostStrings.actionClose
                 setOnClickListener { finishAndRemoveTask() }
             },
         )
@@ -81,14 +82,12 @@ class FatalErrorActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_DETAILS = "fatal_error_details"
-        private const val UNKNOWN_ERROR = "无法获取错误详情"
-        private const val TRUNCATED = "\n…（错误详情已截断）"
 
         /** Intent 只携带一个 UTF-16 字符串，正文最多占约 32 KiB。 */
         private const val MAX_DETAILS_CHARS = 16 * 1024
 
         internal fun createIntent(context: Context, error: Throwable): Intent {
-            val details = runCatching { diagnosticDetails(error) }.getOrDefault(UNKNOWN_ERROR)
+            val details = runCatching { diagnosticDetails(error) }.getOrNull()
             return Intent(context, FatalErrorActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 .putExtra(EXTRA_DETAILS, details)
@@ -113,7 +112,8 @@ class FatalErrorActivity : ComponentActivity() {
             }
             val safe = redactDiagnosticText(text.trimEnd())
             return if (text.length > MAX_DETAILS_CHARS || safe.length > MAX_DETAILS_CHARS) {
-                safe.take(MAX_DETAILS_CHARS - TRUNCATED.length) + TRUNCATED
+                val suffix = "\n${HostStrings.errorDetailsTruncated}"
+                safe.take(MAX_DETAILS_CHARS - suffix.length) + suffix
             } else {
                 safe
             }

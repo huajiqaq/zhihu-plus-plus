@@ -21,14 +21,18 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.platform.isLiteVariant
+import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
 import com.github.zly2006.zhihu.util.raiseForStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.readAvailable
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +41,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 
 object UpdateManager {
     private const val AUTO_CHECK_INTERVAL_MILLIS = 3 * 60 * 60 * 1000L
@@ -71,10 +73,15 @@ object UpdateManager {
         ) : UpdateState()
 
         data class Error(
-            val message: String,
+            private val messageProvider: () -> String,
             val step: UpdateStep = UpdateStep.Check,
             val update: UpdateAvailable? = null,
-        ) : UpdateState()
+        ) : UpdateState() {
+            constructor(message: String, step: UpdateStep = UpdateStep.Check, update: UpdateAvailable? = null) :
+                this({ message }, step, update)
+
+            val message: String get() = messageProvider()
+        }
     }
 
     val updateState = MutableStateFlow<UpdateState>(UpdateState.NoUpdate)
@@ -148,7 +155,7 @@ object UpdateManager {
             throw e
         } catch (e: Exception) {
             Log.e("UpdateManager", "Error checking for updates", e)
-            updateState.compareAndSet(UpdateState.Checking, UpdateState.Error(describeUpdateFailure(e), UpdateStep.Check))
+            updateState.compareAndSet(UpdateState.Checking, UpdateState.Error({ describeUpdateFailure(e) }, UpdateStep.Check))
         }
     }
 
@@ -198,7 +205,7 @@ object UpdateManager {
                 openDownloadPage(update.downloadUrl)
                 updateState.value = update
             } catch (e: Exception) {
-                updateState.value = UpdateState.Error(describeUpdateFailure(e), UpdateStep.Download, update)
+                updateState.value = UpdateState.Error({ describeUpdateFailure(e) }, UpdateStep.Download, update)
             }
             return
         }
@@ -224,14 +231,14 @@ object UpdateManager {
                     }
                 }
                 currentCoroutineContext().ensureActive()
-                check(tempFile.renameTo(apkFile)) { "无法保存安装包" }
+                if (!tempFile.renameTo(apkFile)) throw ReaderDisplayFailure("无法保存安装包") { ReaderStrings.apkSaveFailed }
                 UpdateState.Downloaded(update)
             } catch (e: CancellationException) {
                 updateState.value = update
                 throw e
             } catch (e: Exception) {
                 Log.e("UpdateManager", "Failed to download update", e)
-                UpdateState.Error(describeUpdateFailure(e), UpdateStep.Download, update)
+                UpdateState.Error({ describeUpdateFailure(e) }, UpdateStep.Download, update)
             } finally {
                 try {
                     tempFile.delete()
@@ -250,7 +257,7 @@ object UpdateManager {
         } ?: return
         val apkFile = context.updateApkFile()
         if (!apkFile.isFile) {
-            updateState.value = UpdateState.Error("安装包已被清理，请重新下载", UpdateStep.Download, update)
+            updateState.value = UpdateState.Error({ ReaderStrings.apkMissing }, UpdateStep.Download, update)
             return
         }
         try {
@@ -264,7 +271,7 @@ object UpdateManager {
             updateState.value = UpdateState.Downloaded(update)
         } catch (e: Exception) {
             Log.e("UpdateManager", "Failed to start installer", e)
-            updateState.value = UpdateState.Error(describeUpdateFailure(e), UpdateStep.Install, update)
+            updateState.value = UpdateState.Error({ describeUpdateFailure(e) }, UpdateStep.Install, update)
         }
     }
 

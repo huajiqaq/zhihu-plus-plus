@@ -15,12 +15,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class, org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
 import buildlogic.configureAppleTargets
+import groovy.json.JsonOutput
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
@@ -42,6 +47,34 @@ ktlint {
     }
 }
 
+val miscResources = rootProject.layout.projectDirectory.dir("misc")
+val prepareWasmEmojiDrawables =
+    tasks.register<Sync>("prepareWasmEmojiDrawables") {
+        from(miscResources.dir("emojis")) {
+            include("*.png")
+            into("drawable")
+        }
+        into(layout.buildDirectory.dir("generated/wasmEmojiResources"))
+    }
+val generateWasmUiMetadata =
+    tasks.register<Sync>("generateWasmUiMetadata") {
+        val mapping = providers.fileContents(miscResources.file("emoji_mapping.json")).asText
+        val version = providers.gradleProperty("app.versionName")
+        inputs.property("emojiMapping", mapping)
+        inputs.property("appVersion", version)
+        filteringCharset = "UTF-8"
+        from(layout.projectDirectory.file("src/wasmJsMain/templates/WasmUiMetadata.kt.template")) {
+            eachFile {
+                name = name.removeSuffix(".template")
+                expand(
+                    "emojiMapping" to JsonOutput.toJson(mapping.get()).replace("$", "\\$"),
+                    "appVersion" to JsonOutput.toJson(version.get()).replace("$", "\\$"),
+                )
+            }
+        }
+        into(layout.buildDirectory.dir("generated/wasmUiMetadata"))
+    }
+
 kotlin {
     android {
         namespace = "com.github.zly2006.zhihu.uibase"
@@ -59,14 +92,14 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
+        val nativeAndWebMain = create("nativeAndWebMain") { dependsOn(commonMain.get()) }
+        wasmJsMain {
+            dependsOn(nativeAndWebMain)
+            generatedKotlin.srcDir(generateWasmUiMetadata)
+        }
+        if (targets.withType<KotlinNativeTarget>().isNotEmpty()) {
+            nativeMain { dependsOn(nativeAndWebMain) }
+        }
         commonMain.dependencies {
             api(project(":shared-ui-components"))
             api(project(":shared-editor"))
@@ -113,27 +146,6 @@ kotlin {
                 implementation(libs.jsoup)
             }
         }
-        // Gradle 不解析 JavaFX POM 的平台 classifier；显式指定才能取得类和 JNI。
-        val osName = System.getProperty("os.name").lowercase()
-        val osArch = System.getProperty("os.arch").lowercase()
-        val fxClassifier =
-            when {
-                osName.contains("mac") && (osArch == "aarch64" || osArch == "arm64") -> "mac-aarch64"
-                osName.contains("mac") -> "mac"
-                osName.contains("win") -> "win"
-                osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") -> "linux-aarch64"
-                else -> "linux"
-            }
-        val javafxModules =
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            )
-
         jvmMain {
             kotlin.srcDir("src/tiqianMarkdownMain/kotlin")
         }
@@ -147,19 +159,24 @@ kotlin {
             implementation(libs.zxing.core)
             implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutines.swing)
-            // JavaFX 运行时由桌面宿主提供，共享模块只需编译类。
-            javafxModules.forEach { compileOnly(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
+            // 录音只使用 FFmpeg；JavaCV 的默认传递依赖还包含 OpenCV 和各相机 SDK。
+            implementation("org.bytedeco:javacv:${libs.versions.javacv.get()}") { isTransitive = false }
+            implementation("org.bytedeco:ffmpeg:${libs.versions.ffmpeg.get()}") { isTransitive = false }
+            implementation("org.bytedeco:javacpp:${libs.versions.javacpp.get()}") { isTransitive = false }
         }
         findByName("macosMain")?.dependencies {
             implementation(libs.ktor.client.darwin)
         }
         jvmTest.dependencies {
-            javafxModules.forEach { implementation(project.dependencies.variantOf(it) { classifier(fxClassifier) }) }
             implementation(libs.jb.compose.ui.test)
             implementation(libs.androidx.navigationevent.compose)
             implementation(libs.jsoup)
         }
     }
+}
+
+compose.resources {
+    customDirectory(kotlin.run { sourceSets.wasmJsMain.name }, prepareWasmEmojiDrawables.flatMap { it.destinationDirectory })
 }
 
 // 打包应用不依赖源码目录，所需资源必须进入类路径。

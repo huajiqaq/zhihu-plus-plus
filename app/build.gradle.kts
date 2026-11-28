@@ -15,14 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
+import buildlogic.AppendAndroidFullLicenses
 import buildlogic.VerifyThemeDependencies
+import com.mikepenz.aboutlibraries.plugin.AboutLibrariesTask
+import kotlin.io.encoding.Base64
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 plugins {
     alias(libs.plugins.android.application)
@@ -52,6 +51,7 @@ android {
             minorApiLevel = libs.versions.compileSdkMinor.get().toInt()
         }
     }
+    sourceSets.getByName("main").assets.directories.add(rootProject.file("shared-domain/src/commonMain/resources").path)
     if (rootProject.extensions.extraProperties.has("zhihuUpstreamInputs")) {
         val upstreamInputs = rootProject.extensions.extraProperties["zhihuUpstreamInputs"] as String
         val mainAssets = sourceSets.getByName("main").assets
@@ -141,11 +141,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
     }
     kotlin {
-        jvmToolchain(21)
+        jvmToolchain(libs.versions.jvm.get().toInt())
     }
     buildFeatures {
         viewBinding = false
@@ -198,7 +198,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 tasks.withType<Test>().configureEach {
     javaLauncher.set(
         javaToolchains.launcherFor {
-            languageVersion.set(JavaLanguageVersion.of(21))
+            languageVersion.set(JavaLanguageVersion.of(libs.versions.jvm.get().toInt()))
         },
     )
 }
@@ -269,10 +269,42 @@ dependencies {
     androidTestImplementation(libs.ktor.client.mock)
 }
 
+val androidFullLicenseManifest = layout.buildDirectory.file("generated/android-full-licenses/native.json")
+val prepareAndroidFullLicenseManifest = tasks.register<Exec>("prepareAndroidFullLicenseManifest") {
+    // Cargo 构建已按锁文件取得依赖；许可扫描只读缓存，不编译或另行访问网络。
+    dependsOn(":sentence_embeddings:buildRustLib")
+    val script = layout.projectDirectory.file("tools/android_full_licenses.py")
+    val tokenizer = rootProject.layout.projectDirectory.dir("rs-hf-tokenizer")
+    val sentenceLicense = rootProject.layout.projectDirectory.file("sentence_embeddings/LICENSE")
+    val python = providers.environmentVariable("ZHIHU_PYTHON").orElse("python3")
+    inputs.files(script, tokenizer.file("Cargo.toml"), tokenizer.file("Cargo.lock"), tokenizer.file("LICENSE"), sentenceLicense)
+    outputs.file(androidFullLicenseManifest)
+    commandLine(
+        python.get(), "-I", script.asFile.absolutePath,
+        "--manifest", tokenizer.file("Cargo.toml").asFile.absolutePath,
+        "--sentence-license", sentenceLicense.asFile.absolutePath,
+        "--target", "aarch64-linux-android",
+        "--target", "x86_64-linux-android",
+        "--output", androidFullLicenseManifest.get().asFile.absolutePath,
+    )
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
         val flavor = variant.productFlavors.single { it.first == "version" }.second
         val capitalizedName = variant.name.replaceFirstChar(Char::uppercaseChar)
+        if (flavor == "full") {
+            tasks.named<AboutLibrariesTask>("prepareLibraryDefinitions$capitalizedName") {
+                dependsOn(prepareAndroidFullLicenseManifest)
+                inputs.file(androidFullLicenseManifest)
+                doLast(
+                    AppendAndroidFullLicenses(
+                        layout.buildDirectory.file("generated/aboutLibraries/${variant.name}/res/raw/aboutlibraries.json"),
+                        androidFullLicenseManifest,
+                    ),
+                )
+            }
+        }
         val runtimeResolution = variant.runtimeConfiguration.incoming.resolutionResult
         val verify =
             tasks.register<VerifyThemeDependencies>("verify${capitalizedName}ThemeDependencies") {

@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.DpSize
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppCheckbox
@@ -67,15 +68,13 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.launch
 
 @Composable
-fun rememberLoginHttpClient(cookies: MutableMap<String, String>): HttpClient {
-    val owner = rememberZhihuAccountStore()
-    val accountClient = owner.client
-    val httpClient = remember(owner, accountClient, cookies) {
+fun rememberLoginHttpClient(store: ZhihuAccountStore, owner: ZhihuAccountClient, cookies: MutableMap<String, String>): HttpClient {
+    val httpClient = remember(store, owner, cookies) {
         createAccountHttpClient(
             cookies,
-            owner.session.userAgent,
-            owner.engine,
-            onFailure = { accountClient.reportHttpFailure(it, cookies) },
+            owner.load().userAgent,
+            store.engine,
+            onFailure = { owner.reportHttpFailure(it, cookies) },
         )
     }
     DisposableEffect(httpClient) {
@@ -93,10 +92,11 @@ fun PhoneLoginPane(
     state: PhoneLoginState = rememberPhoneLoginState(),
 ) {
     val accountStore = rememberZhihuAccountStore()
+    val accountClient = accountStore.client
     val uriHandler = LocalUriHandler.current
 
     /** 地区接口用独立访客 Cookie，避免网页 Cookie 混入移动端初始化。 */
-    val countryHttpClient = rememberLoginHttpClient(remember { mutableMapOf<String, String>() })
+    val countryHttpClient = rememberLoginHttpClient(accountStore, accountClient, remember(accountClient) { mutableMapOf<String, String>() })
     val scope = rememberCoroutineScope()
     val fieldShape = RoundedCornerShape(AppDimens.LoginFieldCornerRadius)
     var countryPickerOpen by remember(state) { mutableStateOf(false) }
@@ -116,7 +116,7 @@ fun PhoneLoginPane(
         verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
     ) {
         AppOutlinedButton(
-            text = "国家或地区：${state.country.name} ${state.country.code} ▾",
+            text = AccountStrings.phoneCountry(state.country.displayName, state.country.code),
             onClick = { countryPickerOpen = true },
             enabled = !state.isBusy,
             modifier = Modifier.fillMaxWidth().testTag("phone_login_country"),
@@ -143,7 +143,7 @@ fun PhoneLoginPane(
             AppTextField(
                 state = state.digits,
                 inputTransformation = state.digitsTransformation,
-                labelText = "短信验证码",
+                labelText = AccountStrings.smsCode,
                 enabled = !state.isBusy,
                 shape = fieldShape,
                 miuixCornerRadius = AppDimens.LoginFieldCornerRadius,
@@ -166,9 +166,9 @@ fun PhoneLoginPane(
                 } else {
                     Text(
                         if (state.resendSeconds > 0) {
-                            "${state.resendSeconds}s"
+                            AccountStrings.smsCountdown(state.resendSeconds)
                         } else {
-                            "发送验证码"
+                            AccountStrings.smsSend
                         },
                     )
                 }
@@ -198,19 +198,19 @@ fun PhoneLoginPane(
                     modifier = Modifier.clearAndSetSemantics {},
                 )
                 Text(
-                    text = "我已阅读并同意",
+                    text = AccountStrings.phoneAgreement,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(end = AppDimens.Space4),
                 )
             }
-            AgreementLink(text = "《知乎协议》", onClick = { uriHandler.openUri(ZHIHU_TERMS_URL) })
-            AgreementLink(text = "《个人信息保护指引》", onClick = { uriHandler.openUri(ZHIHU_PRIVACY_URL) })
+            AgreementLink(text = AccountStrings.zhihuTerms, onClick = { uriHandler.openUri(ZHIHU_TERMS_URL) })
+            AgreementLink(text = AccountStrings.zhihuPrivacy, onClick = { uriHandler.openUri(ZHIHU_PRIVACY_URL) })
         }
 
         AppButton(
             onClick = {
                 scope.launch {
-                    if (state.canSignIn) state.signIn(accountStore)?.let(onLoginSuccess)
+                    if (state.canSignIn) state.signIn(accountStore, accountClient)?.let(onLoginSuccess)
                 }
             },
             enabled = state.canSignIn,
@@ -221,7 +221,7 @@ fun PhoneLoginPane(
             if (state.isLoggingIn) {
                 AppSpinner(modifier = Modifier, size = AppDimens.InlineSpinnerSize)
             } else {
-                Text("登录")
+                Text(AccountStrings.signIn)
             }
         }
 
@@ -237,7 +237,7 @@ fun PhoneLoginPane(
         }
 
         Text(
-            text = "使用知乎官方登录协议；验证码形式由知乎风控实时决定。",
+            text = AccountStrings.phoneProtocolNote,
             style = if (settingSkinIsMiuix()) {
                 LocalAppSkinTokens.current.footnote2
             } else {

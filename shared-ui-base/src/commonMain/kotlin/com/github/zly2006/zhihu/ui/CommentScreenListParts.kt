@@ -17,6 +17,7 @@
 
 package com.github.zly2006.zhihu.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +27,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.outlined.Comment
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -53,28 +53,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.data.CommentSortOrder
+import com.github.zly2006.zhihu.i18n.CommentsStrings
 import com.github.zly2006.zhihu.theme.AppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppChip
 import com.github.zly2006.zhihu.ui.components.AppDimens
-import com.github.zly2006.zhihu.ui.components.AppDropdownMenuItem
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSelectionDropdownMenu
+import com.github.zly2006.zhihu.ui.components.AppSelectionOption
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.RecordedVoiceComment
 import com.github.zly2006.zhihu.ui.components.VoiceCommentPlayer
 import com.github.zly2006.zhihu.viewmodel.CommentItem
 import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import com.github.zly2006.zhihu.viewmodel.comment.BaseCommentViewModel
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun CommentScreenHeader(
     commentTitle: String,
     skin: AppSkinTokens,
-    viewModel: BaseCommentViewModel,
-    activeCommentItem: CommentItem?,
+    loadedCount: Int,
+    sortOrder: CommentSortOrder?,
+    onRetryForwards: (() -> Unit)?,
     onDismiss: (() -> Unit)?,
     onSelectSort: (Int) -> Unit,
 ) {
@@ -93,16 +95,19 @@ internal fun CommentScreenHeader(
                 modifier = Modifier.testTag(COMMENT_HEADER_TAG),
             )
             Text(
-                text = "已加载${viewModel.allData.size}条",
+                text = CommentsStrings.loadedCount(loadedCount),
                 style = skin.footnote2,
                 color = skin.onSurfaceVariantSummary,
                 modifier = Modifier.testTag(COMMENT_LOADED_COUNT_TAG),
             )
         }
-        if (activeCommentItem == null && viewModel.supportsSorting) {
-            var sortMenuExpanded by remember(viewModel) { mutableStateOf(false) }
-            val options = listOf("最热", "最新")
-            val selectedIndex = if (viewModel.sortOrder == CommentSortOrder.SCORE) 0 else 1
+        if (onRetryForwards != null) {
+            AppTextButton(onClick = onRetryForwards) { Text(CommentsStrings.retryForwards) }
+        }
+        if (sortOrder != null) {
+            var sortMenuExpanded by remember(sortOrder) { mutableStateOf(false) }
+            val options = listOf(CommentsStrings.sortTop, CommentsStrings.sortNewest)
+            val selectedIndex = if (sortOrder == CommentSortOrder.SCORE) 0 else 1
             val selectSort: (Int) -> Unit = { index ->
                 sortMenuExpanded = false
                 onSelectSort(index)
@@ -115,31 +120,19 @@ internal fun CommentScreenHeader(
                         .testTag(COMMENT_SORT_BUTTON_TAG)
                         .semantics { stateDescription = options[selectedIndex] },
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "排序", tint = skin.onSurfaceVariantActions)
+                    AppIcon(Icons.AutoMirrored.Filled.Sort, contentDescription = CommentsStrings.sort, tint = skin.onSurfaceVariantActions)
                 }
                 AppSelectionDropdownMenu(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false },
-                    options = options,
+                    options = listOf(
+                        AppSelectionOption(options[0], COMMENT_SORT_SCORE_TAG),
+                        AppSelectionOption(options[1], COMMENT_SORT_TIME_TAG),
+                    ),
                     selectedIndex = selectedIndex,
                     onSelect = selectSort,
                     renderInRootScaffold = false,
-                ) {
-                    options.forEachIndexed { index, label ->
-                        AppDropdownMenuItem(
-                            text = { Text(label) },
-                            modifier = Modifier
-                                .testTag(if (index == 0) COMMENT_SORT_SCORE_TAG else COMMENT_SORT_TIME_TAG)
-                                .semantics { selected = index == selectedIndex },
-                            onClick = { selectSort(index) },
-                            trailingIcon = if (index == selectedIndex) {
-                                { Icon(Icons.Filled.Check, contentDescription = null) }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                }
+                )
             }
         }
         if (onDismiss != null) {
@@ -147,9 +140,9 @@ internal fun CommentScreenHeader(
                 onClick = onDismiss,
                 modifier = Modifier.size(AppDimens.TouchTarget).testTag(COMMENT_CLOSE_BUTTON_TAG),
             ) {
-                Icon(
+                AppIcon(
                     Icons.Filled.Close,
-                    contentDescription = "关闭$commentTitle",
+                    contentDescription = CommentsStrings.closePanel(commentTitle),
                     tint = skin.onSurfaceVariantActions,
                 )
             }
@@ -157,30 +150,60 @@ internal fun CommentScreenHeader(
     }
 }
 
-@Composable
-internal fun CommentScreenSentenceTabs(
-    sentenceMode: Boolean,
-    onSentenceModeChange: (Boolean) -> Unit,
+enum class CommentPanelTab(
+    val tag: String,
 ) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        AppChip(
-            selected = !sentenceMode,
-            modifier = Modifier.testTag("comment_tab_normal"),
-            label = { Text("评论", color = if (!sentenceMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-            onClick = { onSentenceModeChange(false) },
-        )
-        AppChip(
-            selected = sentenceMode,
-            modifier = Modifier.testTag("comment_tab_sentence"),
-            label = { Text("句子评论", color = if (sentenceMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-            onClick = { onSentenceModeChange(true) },
-        )
+    Normal("comment_tab_normal"),
+    Sentence("comment_tab_sentence"),
+    Forward("comment_tab_forward"),
+    ;
+
+    val label: String
+        get() = when (this) {
+            Normal -> CommentsStrings.normalComments
+            Sentence -> CommentsStrings.sentenceComments
+            Forward -> CommentsStrings.forwards
+        }
+}
+
+@Composable
+internal fun CommentScreenTabs(
+    selected: CommentPanelTab,
+    hasSentences: Boolean,
+    hasForwards: Boolean,
+    normalCount: Int?,
+    sentenceCount: Int?,
+    forwardCount: Int?,
+    onSelect: (CommentPanelTab) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        for (tab in CommentPanelTab.entries) {
+            if (tab == CommentPanelTab.Sentence && !hasSentences || tab == CommentPanelTab.Forward && !hasForwards) continue
+            AppChip(
+                selected = selected == tab,
+                modifier = Modifier.testTag(tab.tag),
+                label = {
+                    val count = when (tab) {
+                        CommentPanelTab.Normal -> normalCount
+                        CommentPanelTab.Sentence -> sentenceCount
+                        CommentPanelTab.Forward -> forwardCount
+                    }
+                    val label = if (count != null && count > 0) "${tab.label} $count" else tab.label
+                    Text(label, color = if (selected == tab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                onClick = { onSelect(tab) },
+            )
+        }
     }
 }
 
 @Composable
 internal fun CommentScreenRow(
     commentItem: CommentItem,
+    readOnly: Boolean,
     allowDelete: Boolean = true,
     showChildPreview: Boolean,
     voicePreviewPlayer: VoiceCommentPlayer,
@@ -199,6 +222,7 @@ internal fun CommentScreenRow(
     Column {
         CommentItem(
             comment = commentItem,
+            readOnly = readOnly,
             voicePlayer = voicePreviewPlayer,
             localVoice = commentItem.item.voiceInfo
                 ?.voiceId
@@ -221,7 +245,7 @@ internal fun CommentScreenRow(
                     commentItem.item.likeCount = likeCount
                 }
             },
-            onChildCommentClick = onChildCommentClick,
+            onChildCommentClick = onChildCommentClick.takeIf { !readOnly || showChildPreview },
             onDelete = if (allowDelete && commentItem.item.canDelete) {
                 { onDeleteComment(commentItem) }
             } else {
@@ -245,6 +269,7 @@ internal fun CommentScreenRow(
                         )
                         CommentItem(
                             comment = childCommentItem,
+                            readOnly = readOnly,
                             voicePlayer = voicePreviewPlayer,
                             localVoice = childComment.voiceInfo?.voiceId?.let(submittedVoices::get),
                             quotedSentence = childComment.resourceId?.takeIf { childComment.resourceType == "segment" }?.let(sentenceQuotes::get),
@@ -283,14 +308,14 @@ internal fun CommentScreenRow(
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
                 ) {
-                    Icon(
+                    AppIcon(
                         Icons.AutoMirrored.Outlined.Comment,
-                        contentDescription = "查看子评论",
+                        contentDescription = CommentsStrings.viewChildComments,
                         modifier = Modifier.size(16.dp),
                         tint = actionChipIconColor,
                     )
                     Text(
-                        "查看 ${commentItem.item.childCommentCount} 条子评论",
+                        CommentsStrings.viewChildCommentCount(commentItem.item.childCommentCount),
                         fontSize = 12.sp,
                         modifier = Modifier.padding(vertical = 1.dp, horizontal = 4.dp),
                     )
@@ -311,10 +336,10 @@ internal fun CommentScreenDeleteDialog(
     AppAlertDialog(
         modifier = Modifier.testTag(COMMENT_DELETE_DIALOG_TAG),
         onDismissRequest = onDismissRequest,
-        title = { Text("删除评论") },
+        title = { Text(CommentsStrings.deleteComment) },
         text = {
             Column {
-                Text("删除后无法恢复，确认删除这条评论吗？")
+                Text(CommentsStrings.deleteCommentConfirmation)
                 deleteCommentError?.let { message ->
                     Text(
                         text = message,
@@ -330,7 +355,7 @@ internal fun CommentScreenDeleteDialog(
                 enabled = !isDeletingComment,
                 onClick = onConfirm,
             ) {
-                Text("删除", color = MaterialTheme.colorScheme.error)
+                Text(CommentsStrings.delete, color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
@@ -339,7 +364,7 @@ internal fun CommentScreenDeleteDialog(
                 enabled = !isDeletingComment,
                 onClick = onCancel,
             ) {
-                Text("取消")
+                Text(CommentsStrings.cancel)
             }
         },
     )

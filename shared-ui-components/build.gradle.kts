@@ -15,11 +15,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
+import buildlogic.configureAndroidVariant
 import buildlogic.configureAppleTargets
+import buildlogic.configureIosVariant
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
@@ -35,14 +40,6 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
         val miuixThemeMain =
             create("miuixThemeMain") {
                 dependsOn(commonMain.get())
@@ -55,9 +52,11 @@ kotlin {
                     implementation(libs.miuix.glass)
                 }
             }
-        androidFull.dependsOn(miuixThemeMain)
+        androidMain { configureAndroidVariant(miuixThemeMain) }
+        wasmJsMain { dependsOn(miuixThemeMain) }
         jvmMain.get().dependsOn(miuixThemeMain)
-        findByName("appleMain")?.dependsOn(miuixThemeMain)
+        findByName("macosMain")?.dependsOn(miuixThemeMain)
+        findByName("iosMain")?.configureIosVariant(miuixThemeMain)
         commonMain.dependencies {
             api(project(":shared-ui-foundation"))
             api(project(":shared-reading"))
@@ -84,39 +83,7 @@ kotlin {
             implementation(libs.telephoto.zoomable.image.coil3)
             implementation(libs.jsoup)
         }
-        val osName = System.getProperty("os.name").lowercase()
-        val osArch = System.getProperty("os.arch").lowercase()
-        val fxClassifier =
-            when {
-                osName.contains("mac") && osArch in listOf("aarch64", "arm64") -> "mac-aarch64"
-                osName.contains("mac") -> "mac"
-                osName.contains("win") -> "win"
-                osName.contains("linux") && osArch in listOf("aarch64", "arm64") -> "linux-aarch64"
-                else -> "linux"
-            }
-        jvmMain.dependencies {
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            ).forEach {
-                compileOnly(project.dependencies.variantOf(it) { classifier(fxClassifier) })
-            }
-        }
         jvmTest.dependencies {
-            listOf(
-                libs.openjfx.base,
-                libs.openjfx.graphics,
-                libs.openjfx.controls,
-                libs.openjfx.web,
-                libs.openjfx.swing,
-                libs.openjfx.media,
-            ).forEach {
-                implementation(project.dependencies.variantOf(it) { classifier(fxClassifier) })
-            }
             implementation(libs.jb.compose.ui.test)
             implementation(libs.androidx.navigationevent.compose)
             implementation(libs.ktor.client.mock)

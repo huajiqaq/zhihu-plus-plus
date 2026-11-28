@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.github.zly2006.zhihu.data.FeedDisplayItem
 import com.github.zly2006.zhihu.data.questionAuthor
 import com.github.zly2006.zhihu.data.target
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import kotlin.math.roundToInt
 
 enum class FeedAuthorBlockType {
@@ -66,20 +67,24 @@ fun FeedAuthorBlockConfirmDialogContent(
     val isQuestionAuthor = request.type == FeedAuthorBlockType.QUESTION_AUTHOR
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isQuestionAuthor) "屏蔽提问者" else "屏蔽用户") },
+        title = { Text(if (isQuestionAuthor) WidgetsStrings.blockQuestionAuthor else WidgetsStrings.blockUser) },
         text = {
             Column {
-                Text("确定要屏蔽${if (isQuestionAuthor) "提问者" else "用户"} \"${request.userName}\" 吗？")
+                Text(
+                    if (isQuestionAuthor) WidgetsStrings.confirmNamedQuestionAuthor(request.userName) else WidgetsStrings.confirmNamedUser(request.userName),
+                )
                 if (isQuestionAuthor) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = when {
-                            isQuestionAuthorStatsLoading -> "正在加载问题与回答数据…"
+                            isQuestionAuthorStatsLoading -> WidgetsStrings.questionAuthorStatsLoading
                             questionAuthorStats != null ->
-                                "问题 ${questionAuthorStats.questionCount} · " +
-                                    "回答 ${questionAuthorStats.answerCount} · " +
-                                    "问题/回答比 ${questionAnswerRatioText(questionAuthorStats)}"
-                            else -> "问题与回答数据暂时不可用"
+                                WidgetsStrings.questionAuthorStats(
+                                    questionAuthorStats.questionCount,
+                                    questionAuthorStats.answerCount,
+                                    questionAnswerRatioText(questionAuthorStats),
+                                )
+                            else -> WidgetsStrings.questionAuthorStatsUnavailable
                         },
                         modifier = Modifier.testTag("feed_question_author_activity_stats"),
                         style = MaterialTheme.typography.bodyMedium,
@@ -89,9 +94,9 @@ fun FeedAuthorBlockConfirmDialogContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     if (isQuestionAuthor) {
-                        "屏蔽后，该用户提出的问题将不会在推荐流中显示；该用户回答别人问题的内容不受影响。"
+                        WidgetsStrings.blockQuestionAuthorEffect
                     } else {
-                        "屏蔽后，该用户的内容将不会在推荐流中显示。"
+                        WidgetsStrings.blockUserEffect
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -122,12 +127,12 @@ fun FeedAuthorBlockConfirmDialogContent(
                     )
                 },
             ) {
-                Text("确定屏蔽")
+                Text(WidgetsStrings.confirmBlock)
             }
         },
         dismissButton = {
             AppTextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(WidgetsStrings.cancel)
             }
         },
     )

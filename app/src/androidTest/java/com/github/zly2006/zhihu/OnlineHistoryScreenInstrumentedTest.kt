@@ -26,7 +26,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -35,7 +35,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
+import com.github.zly2006.zhihu.account.AndroidZhihuAccountOwner
 import com.github.zly2006.zhihu.data.HistoryType
 import com.github.zly2006.zhihu.data.LocalHistoryStorage
 import com.github.zly2006.zhihu.data.ZhihuJson
@@ -43,10 +43,10 @@ import com.github.zly2006.zhihu.data.currentAndroidApplicationContext
 import com.github.zly2006.zhihu.data.initializeAndroidApplicationContext
 import com.github.zly2006.zhihu.navigation.Question
 import com.github.zly2006.zhihu.platform.androidSettingsStore
-import com.github.zly2006.zhihu.test.InstrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.MainActivityComposeRule
 import com.github.zly2006.zhihu.test.RecordingNavigator
 import com.github.zly2006.zhihu.test.ZhihuMockApi
+import com.github.zly2006.zhihu.test.instrumentedTestEnvironment
 import com.github.zly2006.zhihu.test.resetAppPreferences
 import com.github.zly2006.zhihu.test.setScreenContent
 import com.github.zly2006.zhihu.ui.OnlineHistoryScreen
@@ -59,6 +59,8 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
@@ -69,8 +71,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
-import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class OnlineHistoryScreenInstrumentedTest {
@@ -94,7 +94,9 @@ class OnlineHistoryScreenInstrumentedTest {
         historyDirectory = File(composeRule.activity.cacheDir, "history-ui-${UUID.randomUUID()}")
         check(historyDirectory.mkdir())
         val preferenceName = "history-ui-${UUID.randomUUID()}"
-        historyContext = object : ContextWrapper(composeRule.activity) {
+        historyContext = object : ContextWrapper(composeRule.activity), AndroidZhihuAccountOwner {
+            override val zhihuAccountStore get() = composeRule.activity.instrumentedTestEnvironment.accountStore
+
             override fun getApplicationContext(): Context = this
 
             override fun getFilesDir(): File = historyDirectory
@@ -144,6 +146,7 @@ class OnlineHistoryScreenInstrumentedTest {
         composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).assertTextEquals("删除(21)")
         composeRule.onNodeWithTag(HISTORY_DELETE_SELECTED_TAG).performClick()
         composeRule.onNode(hasText("取消") and hasAnyAncestor(isDialog()), useUnmergedTree = true).performClick()
+        composeRule.waitForIdle()
         assertEquals(0, ZhihuMockApi.requestCount(HttpMethod.Post, "/read_history/batch_del"))
         for ((body, status) in listOf("{}" to HttpStatusCode.ServiceUnavailable, """{"error":{"code":40353,"message":"need_login"}}""" to HttpStatusCode.OK)) {
             val count = ZhihuMockApi.requestCount(HttpMethod.Post, "/read_history/batch_del")
@@ -161,7 +164,7 @@ class OnlineHistoryScreenInstrumentedTest {
         composeRule.onNodeWithText("删除", substring = false).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { onlineHistoryViewModel.displayItems.size == 19 }
         assertTrue(onlineHistoryViewModel.displayItems.all { it.historyType == HistoryType.ANSWER && it.stableKey != "online:answer:token-1" })
-        val deletion = (InstrumentedTestEnvironment.accountStore.engine as MockEngine).requestHistory.last { it.url.encodedPath == "/read_history/batch_del" }
+        val deletion = (composeRule.activity.instrumentedTestEnvironment.accountStore.engine as MockEngine).requestHistory.last { it.url.encodedPath == "/read_history/batch_del" }
         val pairs = (2..40 step 2).map { """{"content_token":"token-$it","content_type":"article"}""" } + """{"content_token":"token-1","content_type":"answer"}"""
         assertEquals(
             ZhihuJson.json.parseToJsonElement("""{"pairs":[${pairs.joinToString(",")}],"clear":false}"""),
@@ -171,7 +174,7 @@ class OnlineHistoryScreenInstrumentedTest {
         composeRule.onNodeWithTag(HISTORY_SELECT_TOGGLE_TAG).performClick()
         composeRule.onNodeWithTag(HISTORY_SELECT_ALL_TAG).performClick()
         composeRule.runOnIdle {
-            val store = InstrumentedTestEnvironment.accountStore
+            val store = composeRule.activity.instrumentedTestEnvironment.accountStore
             val session = store.session
             store.replaceSession(session.copy(cookies = session.cookies.toMutableMap().apply { put("z_c0", "synthetic-history-replacement") }))
         }
@@ -206,7 +209,6 @@ class OnlineHistoryScreenInstrumentedTest {
         val navigator = composeRule.setScreenContent {
             CompositionLocalProvider(
                 LocalContext provides historyContext,
-                LocalZhihuAccountStore provides InstrumentedTestEnvironment.accountStore,
             ) {
                 OnlineHistoryScreen()
             }
@@ -217,7 +219,7 @@ class OnlineHistoryScreenInstrumentedTest {
 
     private fun clearDisplayItems() {
         composeRule.activity.runOnUiThread {
-            onlineHistoryViewModel.displayItems.clear()
+            onlineHistoryViewModel.clearForGuest()
         }
         composeRule.waitForIdle()
     }

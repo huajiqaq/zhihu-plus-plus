@@ -38,6 +38,7 @@ import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.data.Http403Log
 import com.github.zly2006.zhihu.data.HttpFailureRecord
 import com.github.zly2006.zhihu.data.feedbackText
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.platform.rememberWebViewUrlOpener
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
@@ -88,50 +89,50 @@ internal fun NetworkRequestDiagnostics(
     AppAlertDialog(
         modifier = Modifier.testTag("network_diagnostics_dialog"),
         onDismissRequest = { if (!clearing) onDismissRequest() },
-        title = { Text("首次 403 反馈") },
+        title = { Text(SettingsStrings.firstForbiddenFeedback) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(AppDimens.Space12)) {
-                Text("仅保留首次 403，不累积后续请求。Token、Cookie、签名和地址参数在保存前已脱敏；验证通过后自动清空。")
-                Text("保存路径：${log.file}", style = MaterialTheme.typography.bodySmall)
+                Text(SettingsStrings.firstForbiddenPrivacy)
+                Text(SettingsStrings.savedPath(log.file), style = MaterialTheme.typography.bodySmall)
                 if (verification.phase == HumanVerificationPhase.RESTART_REQUIRED || verification.phase == HumanVerificationPhase.DISMISSED) {
-                    Text("验证流程已完成，请完全退出应用后重新打开。")
+                    Text(SettingsStrings.verificationRestartNeeded)
                 }
-                if (writeFailed) Text("首次 403 信息未能保存。", color = MaterialTheme.colorScheme.error)
-                if (clearFailed) Text("清空失败，请重试。", color = MaterialTheme.colorScheme.error)
+                if (writeFailed) Text(SettingsStrings.forbiddenSaveFailed, color = MaterialTheme.colorScheme.error)
+                if (clearFailed) Text(SettingsStrings.clearRecordsFailed, color = MaterialTheme.colorScheme.error)
                 if (readFailed) {
-                    Text("无法读取记录，请重试。", color = MaterialTheme.colorScheme.error)
-                    AppTextButton(text = "重新读取", onClick = { reload++ })
+                    Text(SettingsStrings.readRecordsFailed, color = MaterialTheme.colorScheme.error)
+                    AppTextButton(text = SettingsStrings.readAgain, onClick = { reload++ })
                 }
                 if (loading) {
                     AppSpinner(size = AppDimens.InlineSpinnerSize)
                 } else if (first == null && !readFailed) {
-                    Text("暂无 403 请求记录。")
+                    Text(SettingsStrings.noForbiddenRecords)
                 }
                 first?.let { record ->
                     Text(formatFullDateTime(record.timestampMillis / 1_000), style = MaterialTheme.typography.bodySmall)
                     Text(record.feedbackText(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                    if (record.source == "WebView") Text("WebView 仅提供部分请求头，未暴露的浏览器头不会补造。")
+                    if (record.source == "WebView") Text(SettingsStrings.webviewHeaderLimit)
                     AppTextButton(
-                        text = if (copied) "已复制脱敏信息" else "复制脱敏信息",
+                        text = if (copied) SettingsStrings.redactedInfoCopied else SettingsStrings.copyRedactedInfo,
                         modifier = Modifier.testTag("network_diagnostics_copy"),
                         onClick = {
-                            copyText("首次403反馈", record.feedbackText())
+                            copyText(SettingsStrings.forbiddenClipboardLabel, record.feedbackText())
                             copied = true
                         },
                     )
                     AppTextButton(
-                        text = "向作者反馈",
+                        text = SettingsStrings.reportToDeveloper,
                         modifier = Modifier.testTag("network_diagnostics_feedback"),
                         onClick = { openUrl("https://github.com/zly2006/zhihu-plus-plus/issues") },
                     )
-                    Text("请附上复现步骤，供作者检查接口是否需要更新；不会自动发送反馈。", style = MaterialTheme.typography.bodySmall)
+                    Text(SettingsStrings.feedbackInstructions, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
-        confirmButton = { AppTextButton(text = "关闭", enabled = !clearing, onClick = onDismissRequest) },
+        confirmButton = { AppTextButton(text = SettingsStrings.close, enabled = !clearing, onClick = onDismissRequest) },
         dismissButton = {
             AppTextButton(
-                text = if (clearing) "正在清空…" else "清空记录",
+                text = if (clearing) SettingsStrings.clearingRecords else SettingsStrings.clearRecords,
                 enabled = !loading && !clearing && (first != null || readFailed),
                 modifier = Modifier.testTag("network_diagnostics_clear"),
                 onClick = { confirmClear = true },
@@ -140,10 +141,10 @@ internal fun NetworkRequestDiagnostics(
     )
     if (confirmClear) {
         AppDialog(
-            title = "清空首次 403 记录？",
-            summary = "删除本机保存的脱敏反馈信息，不会退出账号或解除知乎的访问限制。",
-            confirmText = "清空记录",
-            dismissText = "取消",
+            title = SettingsStrings.clearForbiddenConfirmation,
+            summary = SettingsStrings.clearForbiddenWarning,
+            confirmText = SettingsStrings.clearRecords,
+            dismissText = SettingsStrings.cancel,
             destructive = true,
             onDismissRequest = { confirmClear = false },
             onConfirm = {

@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.zly2006.zhihu.editor.UploadedZhihuImage
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -80,7 +81,7 @@ internal fun WritePinEditorFrame(
             header(availableHeight)
             if (localDraftSaved) {
                 Text(
-                    text = "草稿保存在本机",
+                    text = ContentStrings.draftSavedLocally,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = AppDimens.Space4),
@@ -133,7 +134,7 @@ private fun WritePinTitleField(
             Modifier
                 .fillMaxWidth()
                 .testTag(WRITE_PIN_TITLE_TAG)
-                .semantics { contentDescription = "想法标题（可选）" },
+                .semantics { contentDescription = ContentStrings.optionalPinTitle },
         enabled = !isSubmitting,
         textStyle =
             MaterialTheme.typography.titleLarge.copy(
@@ -150,7 +151,7 @@ private fun WritePinTitleField(
             ) {
                 if (title.text.isEmpty()) {
                     Text(
-                        text = "标题",
+                        text = ContentStrings.title,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -184,7 +185,7 @@ internal fun ColumnScope.WritePinMarkdownEditor(
                 .fillMaxWidth()
                 .weight(1f)
                 .testTag(WRITE_PIN_CONTENT_TAG)
-                .semantics { contentDescription = "分享你此刻的想法……" },
+                .semantics { contentDescription = ContentStrings.pinPlaceholder },
             enabled = !isSubmitting,
             inputTransformation = topics,
             outputTransformation = remember(topics, color) { topics.output(SpanStyle(color = color)) },
@@ -198,7 +199,7 @@ internal fun ColumnScope.WritePinMarkdownEditor(
                 Box(Modifier.fillMaxWidth().padding(vertical = AppDimens.Space12)) {
                     if (state.text.isEmpty()) {
                         Text(
-                            text = "分享你此刻的想法……",
+                            text = ContentStrings.pinPlaceholder,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -208,7 +209,7 @@ internal fun ColumnScope.WritePinMarkdownEditor(
             },
         )
         if (topics.selectedMarkdown(state) != null) {
-            AppTextButton(text = "复制 Markdown", onClick = {
+            AppTextButton(text = ContentStrings.copyMarkdown, onClick = {
                 topics.selectedMarkdown(state)?.let { copy("pin-markdown", it) }
             })
         }
@@ -231,7 +232,7 @@ internal fun ColumnScope.WritePinMarkdownEditor(
     }
     if (typedTopicStart != null && !isSubmitting) {
         AppTextButton(
-            text = "为 # 添加话题",
+            text = ContentStrings.addTopicToHash,
             onClick = onAddTopic,
             modifier = Modifier.padding(bottom = AppDimens.Space12),
         )

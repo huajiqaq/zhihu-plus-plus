@@ -17,9 +17,8 @@
 
 package com.github.zly2006.zhihu.data
 
+import io.ktor.utils.io.ioDispatcher
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,9 +35,9 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.decodeFromJsonElement
 
-/** 仅保存首次403的脱敏反馈，不累积请求历史。 */
+/** 仅保存首次 403 的脱敏反馈；没有文件的浏览器账号不收集网络诊断。 */
 class Http403Log(
-    val file: Path,
+    val file: Path?,
 ) {
     private val failed = MutableStateFlow(false)
     private val feedback = MutableStateFlow<HttpFailureRecord?>(null)
@@ -47,14 +46,14 @@ class Http403Log(
     val writeFailed: StateFlow<Boolean> = failed.asStateFlow()
     val pendingFeedback: StateFlow<HttpFailureRecord?> = feedback.asStateFlow()
 
-    suspend fun read(): HttpFailureRecord? = withContext(Dispatchers.IO) {
+    suspend fun read(): HttpFailureRecord? = if (file == null) null else withContext(ioDispatcher()) {
         mutex.withLock { readLocked() }
     }
 
     suspend fun record(record: HttpFailureRecord) {
-        if (record.status != 403) return
+        if (file == null || record.status != 403) return
         try {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher()) {
                 mutex.withLock {
                     if (recordingStopped) return@withLock
                     val existing = try {
@@ -64,7 +63,7 @@ class Http403Log(
                     }
                     if (existing == null) {
                         val first = record.redacted()
-                        writeLocked(first)
+                        writeLocked(file, first)
                         feedback.value = first
                         changes.update { it + 1 }
                     }
@@ -83,17 +82,21 @@ class Http403Log(
         feedback.value = null
     }
 
-    suspend fun clear(stopRecording: Boolean = false) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            SystemFileSystem.delete(file, mustExist = false)
-            if (stopRecording) recordingStopped = true
-            feedback.value = null
-            failed.value = false
-            changes.update { it + 1 }
+    suspend fun clear(stopRecording: Boolean = false) {
+        if (file == null) return
+        withContext(ioDispatcher()) {
+            mutex.withLock {
+                SystemFileSystem.delete(file, mustExist = false)
+                if (stopRecording) recordingStopped = true
+                feedback.value = null
+                failed.value = false
+                changes.update { it + 1 }
+            }
         }
     }
 
     private fun readLocked(): HttpFailureRecord? {
+        val file = file ?: return null
         if (!SystemFileSystem.exists(file)) return null
         val json = ZhihuJson.json
         val element = SystemFileSystem.source(file).buffered().use { json.parseToJsonElement(it.readString()) }
@@ -102,13 +105,13 @@ class Http403Log(
         val redacted = record.redacted()
         // 数组格式只保留首条；旧记录重写为脱敏快照。
         if (element is JsonArray || redacted != record) {
-            writeLocked(redacted)
+            writeLocked(file, redacted)
             changes.update { it + 1 }
         }
         return redacted
     }
 
-    private fun writeLocked(record: HttpFailureRecord) {
+    private fun writeLocked(file: Path, record: HttpFailureRecord) {
         val directory = requireNotNull(file.parent)
         SystemFileSystem.createDirectories(directory)
         val temporary = Path(directory, file.name + ".tmp")

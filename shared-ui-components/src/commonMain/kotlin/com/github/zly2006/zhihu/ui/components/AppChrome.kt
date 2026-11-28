@@ -70,11 +70,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 /** 原生 WebView 宿主可关闭内容采样，避免在同一帧离屏重绘。 */
 @Composable
@@ -133,17 +133,17 @@ fun AppScaffold(
 /** 分组页底色；纯黑模式与 [appGroupedCardColor] 保持明度层级。 */
 @Composable
 fun appGroupedPageBackground(): Color {
-    val dark = ThemeManager.isDarkTheme()
+    val dark = LocalAppTheme.current.isDarkTheme
     return when {
         settingSkinIsMiuix() -> LocalAppSkinTokens.current.surface
-        dark && ThemeManager.getAmoledTheme() -> MaterialTheme.colorScheme.background
+        dark && LocalAppTheme.current.snapshot.amoledTheme -> MaterialTheme.colorScheme.background
         else -> MaterialTheme.colorScheme.surfaceContainer
     }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun appGroupedCardColor(): Color = if (!settingSkinIsMiuix() && ThemeManager.isDarkTheme() && ThemeManager.getAmoledTheme()) {
+fun appGroupedCardColor(): Color = if (!settingSkinIsMiuix() && LocalAppTheme.current.isDarkTheme && LocalAppTheme.current.snapshot.amoledTheme) {
     MaterialTheme.colorScheme.surfaceContainerHighest
 } else {
     ListItemDefaults.segmentedColors().containerColor
@@ -551,7 +551,7 @@ fun AppBackButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
-    contentDescription: String = "返回",
+    contentDescription: String = WidgetsStrings.goBack,
     colors: IconButtonColors? = null,
 ) {
     val image = icon ?: Icons.AutoMirrored.Filled.ArrowBack
@@ -570,7 +570,7 @@ fun AppBackButton(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             ) {
-                Icon(imageVector = image, contentDescription = contentDescription)
+                AppIcon(imageVector = image, contentDescription = contentDescription)
             }
         }
     }

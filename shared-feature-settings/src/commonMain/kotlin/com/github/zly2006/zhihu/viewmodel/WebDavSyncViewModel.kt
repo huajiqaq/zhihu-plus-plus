@@ -25,8 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.zly2006.zhihu.i18n.AccountStrings
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.NotificationType
+import com.github.zly2006.zhihu.platform.SettingValue
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.viewmodel.filter.ContentFilterDatabase
 import com.github.zly2006.zhihu.viewmodel.filter.encodeBlocklistBackup
@@ -48,13 +51,12 @@ import io.ktor.http.Url
 import io.ktor.http.content.TextContent
 import io.ktor.http.decodeURLPart
 import io.ktor.http.isSuccess
+import kotlin.io.encoding.Base64
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlin.io.encoding.Base64
-import kotlin.time.Clock
 
 private const val BACKUP_DIRECTORY = "zhihu-plus-plus/"
 private const val BLOCKLIST_FILE = "blocklist.json"
@@ -67,7 +69,6 @@ private const val WEBDAV_PASSWORD_KEY = "webdav_password"
 private fun isLocalOnlySettingKey(key: String) = key.startsWith("webdav") || key == "githubToken"
 
 private val webDavJson = Json {
-    ignoreUnknownKeys = true
     prettyPrint = true
     encodeDefaults = true
 }
@@ -110,17 +111,19 @@ fun parseWebDavAddress(raw: String): ParsedWebDavAddress {
     )
 }
 
-/** 缺少集合或通知字段的备份不会覆盖对应设置。 */
+/** 缺少的键不会覆盖本机设置，空集合则是应当恢复的有效值。 */
 @Serializable
 private data class SettingsBackup(
-    val version: Int = 1,
-    val exportTime: Long = Clock.System.now().toEpochMilliseconds(),
-    val values: Map<String, JsonPrimitive> = emptyMap(),
-    /** 以字符串集合保存的设置（底栏项目）。JSON 标量放不下集合，单独成组。 */
-    val stringSets: Map<String, List<String>> = emptyMap(),
-    /** 通知设置在单独的存储里，不在 [values] 中。 */
+    val version: Int,
+    val exportTime: Long,
+    val entries: Map<String, SettingValue>,
+    /** 通知设置在单独的存储里。 */
     val notifications: NotificationSettingsBackup? = null,
-)
+) {
+    init {
+        if (version != 1) throw WebDavMessageException { SettingsStrings.unsupportedSettingsBackupVersion(version) }
+    }
+}
 
 @Serializable
 private data class NotificationSettingsBackup(
@@ -131,21 +134,20 @@ private data class NotificationSettingsBackup(
 )
 
 /**
- * WebDAV 备份与恢复：屏蔽列表、普通设置、[stringSetKeys] 列出的集合设置和通知设置。
+ * WebDAV 备份与恢复：屏蔽列表、类型化设置快照和通知设置。
  * 连接信息与 GitHub Token 只属于本机，上传和恢复都跳过。
  */
 class WebDavSyncViewModel(
     private val settings: SettingsStore,
     private val database: ContentFilterDatabase,
     private val notificationSettings: NotificationSettingsStore,
-    /** 以字符串集合保存的设置键：只按集合读写，不能当字符串恢复。 */
-    private val stringSetKeys: Set<String>,
     // WebDAV 的连接与认证独立于知乎账户。
     private val client: HttpClient,
+    private val persistConnectionConfig: Boolean = true,
 ) : ViewModel() {
-    val url = TextFieldState(settings.getString(WEBDAV_URL_KEY, ""))
-    val username = TextFieldState(settings.getString(WEBDAV_USERNAME_KEY, ""))
-    val password = TextFieldState(settings.getString(WEBDAV_PASSWORD_KEY, ""))
+    val url = TextFieldState(if (persistConnectionConfig) settings.getString(WEBDAV_URL_KEY, "") else "")
+    val username = TextFieldState(if (persistConnectionConfig) settings.getString(WEBDAV_USERNAME_KEY, "") else "")
+    val password = TextFieldState(if (persistConnectionConfig) settings.getString(WEBDAV_PASSWORD_KEY, "") else "")
 
     internal fun normalizeAddress(raw: String = url.text.toString()) {
         val parsed = parseWebDavAddress(raw)
@@ -167,12 +169,12 @@ class WebDavSyncViewModel(
         }
     }
 
-    var runningLabel by mutableStateOf<String?>(null)
-        private set
+    private var runningText by mutableStateOf<(() -> String)?>(null)
+    val runningLabel: String? get() = runningText?.invoke()
     val isRunning: Boolean
         get() = runningLabel != null
-    var status by mutableStateOf<String?>(null)
-        private set
+    private var statusText by mutableStateOf<(() -> String)?>(null)
+    val status: String? get() = statusText?.invoke()
 
     var isStatusError by mutableStateOf(false)
         private set
@@ -185,28 +187,29 @@ class WebDavSyncViewModel(
 
     fun saveConfig() {
         normalizeAddress()
+        if (!persistConnectionConfig) return
         settings.putString(WEBDAV_URL_KEY, url.text.toString())
         settings.putString(WEBDAV_USERNAME_KEY, username.text.toString())
         settings.putString(WEBDAV_PASSWORD_KEY, password.text.toString())
     }
 
-    fun testConnection() = launchRequest("正在检查连接…") { directory ->
+    fun testConnection() = launchRequest({ AccountStrings.webdavConnecting }) { directory ->
         client
             .request(directory) {
                 withAuth()
                 method = HttpMethod("PROPFIND")
                 header("Depth", "0")
-            }.requireSuccess("连接")
-        "连接成功"
+            }.requireSuccess { AccountStrings.webdavConnect }
+        return@launchRequest { AccountStrings.webdavConnected }
     }
 
-    fun upload() = launchRequest("正在上传…") { directory ->
+    fun upload() = launchRequest({ AccountStrings.webdavUploading }) { directory ->
         val backupDirectory = directory + BACKUP_DIRECTORY
         val created = client.request(backupDirectory) {
             withAuth()
             method = HttpMethod("MKCOL")
         }
-        if (created.status != HttpStatusCode.MethodNotAllowed) created.requireSuccess("创建备份目录")
+        if (created.status != HttpStatusCode.MethodNotAllowed) created.requireSuccess { AccountStrings.webdavCreateDirectory }
         val blocklist = encodeBlocklistBackup(
             database.blockedKeywordDao(),
             database.blockedUserDao(),
@@ -217,23 +220,8 @@ class WebDavSyncViewModel(
             .put(backupDirectory + BLOCKLIST_FILE) {
                 withAuth()
                 setBody(TextContent(blocklist, ContentType.Application.Json))
-            }.requireSuccess("上传屏蔽列表")
-        // 全量枚举本机设置。集合设置走 stringSets：桌面端把集合存成拼接字符串，
-        // 混进 values 会在 Android 上被当字符串恢复，读回时类型不符。
-        val entries = settings.allEntries().filterKeys { !isLocalOnlySettingKey(it) }
-        val values = entries
-            .filterKeys { it !in stringSetKeys }
-            .filterValues { it is String || it is Boolean || it is Int || it is Long || it is Float }
-            .mapValues { (_, value) ->
-                when (value) {
-                    is Boolean -> JsonPrimitive(value)
-                    is Number -> JsonPrimitive(value)
-                    else -> JsonPrimitive(value.toString())
-                }
-            }
-        val stringSets = stringSetKeys
-            .filter { it in entries }
-            .associateWith { settings.getStringSet(it, emptySet()).toList() }
+            }.requireSuccess { AccountStrings.webdavUploadBlocklist }
+        val entries = settings.snapshot().filterKeys { !isLocalOnlySettingKey(it) }
         val notifications = NotificationSettingsBackup(
             autoMarkAsRead = notificationSettings.getAutoMarkAsReadEnabled(),
             unreadBadge = notificationSettings.getUnreadBadgeEnabled(),
@@ -242,67 +230,41 @@ class WebDavSyncViewModel(
         )
         val text = webDavJson.encodeToString(
             SettingsBackup.serializer(),
-            SettingsBackup(values = values, stringSets = stringSets, notifications = notifications),
+            SettingsBackup(version = 1, exportTime = Clock.System.now().toEpochMilliseconds(), entries = entries, notifications = notifications),
         )
         client
             .put(backupDirectory + SETTINGS_FILE) {
                 withAuth()
                 setBody(TextContent(text, ContentType.Application.Json))
-            }.requireSuccess("上传设置")
-        "已上传屏蔽列表、${values.size + stringSets.size} 项设置和通知设置"
+            }.requireSuccess { AccountStrings.webdavUploadSettings }
+        return@launchRequest { AccountStrings.webdavUploaded(entries.size) }
     }
 
-    fun restore() = launchRequest("正在恢复…") { directory ->
+    fun restore() = launchRequest({ AccountStrings.webdavRestoring }) { directory ->
         val backupDirectory = directory + BACKUP_DIRECTORY
         val blocklistResponse = client.get(backupDirectory + BLOCKLIST_FILE) { withAuth() }
         val settingsResponse = client.get(backupDirectory + SETTINGS_FILE) { withAuth() }
         if (blocklistResponse.status == HttpStatusCode.NotFound && settingsResponse.status == HttpStatusCode.NotFound) {
-            error("WebDAV 上还没有备份")
+            throw WebDavMessageException { AccountStrings.webdavNoBackup }
         }
-        val restored = mutableListOf<String>()
+        // 在任何恢复写入前验证设置文档；未知版本或缺少字段不能当作空备份成功。
+        val backup = if (settingsResponse.status == HttpStatusCode.NotFound) null else {
+            webDavJson.decodeFromString(SettingsBackup.serializer(), settingsResponse.requireSuccess { AccountStrings.webdavDownloadSettings }.bodyAsText())
+        }
+        val restored = mutableListOf<() -> String>()
         if (blocklistResponse.status != HttpStatusCode.NotFound) {
             val summary = importBlocklistBackupFromJsonText(
                 database.blockedKeywordDao(),
                 database.blockedUserDao(),
                 database.blockedQuestionAuthorDao(),
                 database.blockedTopicDao(),
-                blocklistResponse.requireSuccess("下载屏蔽列表").bodyAsText(),
+                blocklistResponse.requireSuccess { AccountStrings.webdavDownloadBlocklist }.bodyAsText(),
             )
-            restored += "屏蔽列表（$summary）"
+            restored += { AccountStrings.webdavBlocklistRestored(summary) }
         }
-        if (settingsResponse.status != HttpStatusCode.NotFound) {
-            val backup = webDavJson.decodeFromString(
-                SettingsBackup.serializer(),
-                settingsResponse.requireSuccess("下载设置").bodyAsText(),
-            )
-            // 集合设置只从 stringSets 恢复：旧的桌面备份把它存成 values 里的拼接字符串，按字符串写回会让 Android 读取时类型不符。
-            val applied = backup.values.filterKeys { !isLocalOnlySettingKey(it) && it !in stringSetKeys }.count { (key, value) ->
-                when {
-                    value.isString -> {
-                        settings.putString(key, value.content)
-                        true
-                    }
-                    value.content == "true" || value.content == "false" -> {
-                        settings.putBoolean(key, value.content.toBoolean())
-                        true
-                    }
-                    else -> {
-                        val number = value.content
-                        when {
-                            number.contains('.') || number.contains('e') || number.contains('E') ->
-                                number.toFloatOrNull()?.let { settings.putFloat(key, it) } != null
-                            else -> number.toLongOrNull()?.let { long ->
-                                if (long in Int.MIN_VALUE..Int.MAX_VALUE) settings.putInt(key, long.toInt()) else settings.putLong(key, long)
-                                true
-                            } ?: false
-                        }
-                    }
-                }
-            }
-            val restoredSets = backup.stringSets
-                .filterKeys { it in stringSetKeys }
-                .filterValues { it.isNotEmpty() }
-            restoredSets.forEach { (key, value) -> settings.putStringSet(key, value.toSet()) }
+        if (backup != null) {
+            val entries = backup.entries.filterKeys { !isLocalOnlySettingKey(it) }
+            settings.restore(entries)
             backup.notifications?.let { notifications ->
                 notificationSettings.setAutoMarkAsReadEnabled(notifications.autoMarkAsRead)
                 notificationSettings.setUnreadBadgeEnabled(notifications.unreadBadge)
@@ -311,13 +273,15 @@ class WebDavSyncViewModel(
                     notifications.displayInApp[type.name]?.let { notificationSettings.setDisplayInAppEnabled(type, it) }
                 }
             }
-            val notificationsPart = if (backup.notifications != null) "和通知设置" else ""
-            restored += "${applied + restoredSets.size} 项设置$notificationsPart（部分设置重启后生效）"
+            restored += {
+                val notificationsPart = if (backup.notifications != null) AccountStrings.webdavNotificationsPart else ""
+                AccountStrings.webdavSettingsRestored(entries.size, notificationsPart)
+            }
         }
-        "已恢复" + restored.joinToString("、")
+        return@launchRequest { AccountStrings.webdavRestoreResult(restored.joinToString(AccountStrings.listSeparator) { it() }) }
     }
 
-    private fun launchRequest(label: String, block: suspend (directory: String) -> String) {
+    private fun launchRequest(label: () -> String, block: suspend (directory: String) -> (() -> String)) {
         if (isRunning) return
         saveConfig()
         val directory = url.text
@@ -328,12 +292,12 @@ class WebDavSyncViewModel(
         val secure = directory.startsWith("https://", ignoreCase = true) ||
             (directory.startsWith("http://", ignoreCase = true) && host in setOf("127.0.0.1", "localhost", "::1", "[::1]"))
         if (!secure || host.isEmpty()) {
-            status = "请填写以 https:// 开头的 WebDAV 目录地址"
+            statusText = { AccountStrings.webdavHttpsRequired }
             isStatusError = true
             return
         }
-        runningLabel = label
-        status = null
+        runningText = label
+        statusText = null
         requestAuthHeader = if (username.text.isNotEmpty()) {
             "Basic " + Base64.Default.encode("${username.text}:${password.text}".encodeToByteArray())
         } else {
@@ -341,16 +305,16 @@ class WebDavSyncViewModel(
         }
         viewModelScope.launch {
             try {
-                status = block(directory)
+                statusText = block(directory)
                 isStatusError = false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                status = e.message ?: "WebDAV 请求失败"
+                statusText = { e.message ?: AccountStrings.webdavFailed }
                 isStatusError = true
             } finally {
                 requestAuthHeader = null
-                runningLabel = null
+                runningText = null
             }
         }
     }
@@ -360,12 +324,21 @@ class WebDavSyncViewModel(
     }
 }
 
-private fun HttpResponse.requireSuccess(action: String): HttpResponse {
+private fun HttpResponse.requireSuccess(action: () -> String): HttpResponse {
     if (status.isSuccess()) return this
-    val reason = when (status) {
-        HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden -> "用户名或应用密码错误"
-        HttpStatusCode.NotFound -> "目录不存在"
-        else -> status.description
+    throw WebDavMessageException {
+        val reason = when (status) {
+            HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden -> AccountStrings.webdavCredentialsInvalid
+            HttpStatusCode.NotFound -> AccountStrings.webdavDirectoryMissing
+            else -> status.description
+        }
+        AccountStrings.webdavActionFailed(action(), reason, status.value)
     }
-    throw IllegalStateException("${action}失败：$reason（HTTP ${status.value}）")
+}
+
+/** 同步结果与错误在展示时取文案，切换语言不会重启正在进行的传输。 */
+private class WebDavMessageException(
+    private val text: () -> String,
+) : IllegalStateException() {
+    override val message: String get() = text()
 }

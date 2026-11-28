@@ -20,6 +20,7 @@ package com.github.zly2006.zhihu.ui.components
 import androidx.compose.runtime.Composable
 
 data class RecordedVoiceComment(
+    /** 可试听的本地文件路径或由录音器持有的浏览器 Blob URL；删除后失效。 */
     val filePath: String,
     val durationMs: Long,
     val sizeBytes: Long,
@@ -31,19 +32,25 @@ interface VoiceCommentRecorder {
     val isSupported: Boolean
     val isRecording: Boolean
 
+    /** 设备启动、封装或转码尚未完成；期间不得启动下一次录音。 */
+    val isBusy: Boolean
+
+    /** 设备断开、编码或系统中断错误；下一次 start 时清除。 */
+    val errorMessage: String?
+
     /** 未录制时为 0。 */
     val elapsedMs: Long
 
-    /** 未授权或平台不支持时返回 false。 */
-    fun start(): Boolean
+    /** 未授权或平台不支持时返回 false；取消必须释放迟到的设备授权结果。 */
+    suspend fun start(): Boolean
 
-    /** 无有效录音时返回 null。 */
-    fun stop(): RecordedVoiceComment?
+    /** 等待容器封装完成后返回；无有效录音时返回 null。 */
+    suspend fun stop(): RecordedVoiceComment?
 
     /** 同时删除临时文件。 */
     fun cancel()
 
-    fun readBytes(recorded: RecordedVoiceComment): ByteArray?
+    suspend fun readBytes(recorded: RecordedVoiceComment): ByteArray?
 
     fun delete(recorded: RecordedVoiceComment)
 }

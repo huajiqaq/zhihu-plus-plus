@@ -18,9 +18,11 @@
 package com.github.zly2006.zhihu.viewmodel
 
 import com.github.zly2006.zhihu.data.ZhihuJson
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.ArticleType
-import com.github.zly2006.zhihu.util.Log
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.ZhidaSummarySsePayload
 import com.github.zly2006.zhihu.util.buildZhidaSummaryRequest
 import com.github.zly2006.zhihu.util.decodeZhidaAnswerData
@@ -40,6 +42,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readLine
+import kotlin.reflect.KMutableProperty0
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -49,7 +52,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.reflect.KMutableProperty0
 
 internal class ArticleAiSummaryController(
     private val article: Article,
@@ -57,7 +59,7 @@ internal class ArticleAiSummaryController(
     private val scope: () -> CoroutineScope,
     private val readTitle: () -> String,
     aiSummaryTextState: KMutableProperty0<String>,
-    aiSummaryErrorState: KMutableProperty0<String?>,
+    aiSummaryErrorState: KMutableProperty0<(() -> String)?>,
     aiSummaryLoadingState: KMutableProperty0<Boolean>,
 ) {
     private var aiSummaryText by aiSummaryTextState
@@ -67,7 +69,7 @@ internal class ArticleAiSummaryController(
 
     fun requestAiSummary(environment: ZhihuApiEnvironment) {
         if (httpClient == null) {
-            aiSummaryError = "未初始化网络客户端"
+            aiSummaryError = { DomainStrings.summaryNoClient }
             return
         }
         aiSummaryJob?.cancel()
@@ -102,7 +104,7 @@ internal class ArticleAiSummaryController(
                     val errorBody = response.bodyAsText()
                     val status = response.status.value
                     val message = parseSummaryErrorMessage(errorBody)
-                    throw IllegalStateException(message ?: "总结请求失败（HTTP $status）")
+                    throw DisplayFailure { message ?: DomainStrings.summaryHttpFailed(status) }
                 }
 
                 val channel = response.bodyAsChannel()
@@ -124,8 +126,8 @@ internal class ArticleAiSummaryController(
                             }
                         }
                         "error" -> {
-                            val message = decodeZhidaStreamErrorMessage(payload.data) ?: "总结失败"
-                            throw IllegalStateException(message)
+                            val message = decodeZhidaStreamErrorMessage(payload.data)
+                            throw DisplayFailure { message ?: DomainStrings.summaryFailed }
                         }
                         "end" -> streamEnded = true
                         else -> Unit
@@ -163,13 +165,13 @@ internal class ArticleAiSummaryController(
                 }
 
                 if (!seenAnswerEvent || aiSummaryText.isBlank()) {
-                    aiSummaryError = "未返回可显示的总结内容"
+                    aiSummaryError = { DomainStrings.summaryEmpty }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ArticleViewModel", "Failed to summarize article", e)
-                aiSummaryError = e.message ?: "总结失败"
+                AppLog.e("ArticleViewModel", "Failed to summarize article", e)
+                aiSummaryError = { e.message ?: DomainStrings.summaryFailed }
             } finally {
                 aiSummaryLoading = false
             }

@@ -67,8 +67,9 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TopAppBarDefaults
@@ -208,14 +209,14 @@ internal actual fun MiuixPageTitleBar(
             subtitle = subtitle.orEmpty(),
             modifier = modifier.then(titleTag?.let { Modifier.testTag(it) } ?: Modifier).then(titleMeasure),
             backdrop = LocalAppBackdrop.current,
-            style = GlassDefaults.style(ThemeManager.isDarkTheme()),
+            style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme),
             progressiveBlur = true,
             bandBrush = GlassTopAppBarDefaults.bandBrush(containerColor),
             buttonSize = AppDimens.TouchTarget,
             scrollBehavior = scrollState?.state,
             navigationIcon = {
                 onBack?.let {
-                    MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, WidgetsStrings.goBack)
                 }
             },
             actions = actions,
@@ -247,7 +248,7 @@ internal actual fun MiuixPageTitleBar(
                 Box(Modifier.onSizeChanged { navigationWidth = it.width }) {
                     onBack?.let {
                         if (useGlass) {
-                            MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                            MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, WidgetsStrings.goBack)
                         } else {
                             AppBackButton(it, modifier = backTag?.let { Modifier.testTag(it) } ?: Modifier)
                         }
@@ -317,13 +318,13 @@ internal actual fun MiuixCompactTopBar(
             expandable = false,
             modifier = modifier.then(titleTag?.let { Modifier.testTag(it) } ?: Modifier),
             backdrop = LocalAppBackdrop.current,
-            style = GlassDefaults.style(ThemeManager.isDarkTheme()),
+            style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme),
             progressiveBlur = true,
             bandBrush = GlassTopAppBarDefaults.bandBrush(containerColor ?: LocalAppSkinTokens.current.surface),
             buttonSize = AppDimens.TouchTarget,
             navigationIcon = {
                 onBack?.let {
-                    MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    MiuixBackButton(it, backTag?.let { tag -> Modifier.testTag(tag) } ?: Modifier, Icons.AutoMirrored.Filled.ArrowBack, WidgetsStrings.goBack)
                 }
             },
             actions = actions,
@@ -364,7 +365,7 @@ internal actual fun MiuixBackButton(
                 .requiredSizeIn(minWidth = AppDimens.TouchTarget, minHeight = AppDimens.TouchTarget)
                 .semantics(mergeDescendants = true) { role = Role.Button },
             backdrop = LocalAppBackdrop.current,
-            style = GlassDefaults.style(ThemeManager.isDarkTheme()),
+            style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme),
             size = AppDimens.TouchTarget,
         ) {
             AppIcon(

@@ -44,8 +44,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import coil3.compose.AsyncImage
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppSearchField
 import com.github.zly2006.zhihu.ui.components.AppTabRow
@@ -53,7 +55,6 @@ import com.github.zly2006.zhihu.ui.components.AppTopBar
 import com.github.zly2006.zhihu.ui.components.SettingItem
 import com.github.zly2006.zhihu.viewmodel.feed.SearchSuggestItem
 import com.github.zly2006.zhihu.viewmodel.feed.SearchTab
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun SearchScreenTopBar(
@@ -72,16 +73,16 @@ internal fun SearchScreenTopBar(
                     .heightIn(min = AppDimens.TouchTarget)
                     .focusRequester(searchInputFocusRequester)
                     .testTag("search_input")
-                    .semantics { contentDescription = "搜索内容" },
+                    .semantics { contentDescription = FeedStrings.searchContent },
                 placeholder = searchPlaceholder,
                 leadingIcon = {
                     Box(
                         modifier = Modifier.size(AppDimens.TouchTarget),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
+                        AppIcon(
                             Icons.Default.Search,
-                            contentDescription = "搜索",
+                            contentDescription = FeedStrings.search,
                             tint = LocalAppSkinTokens.current.onSurfaceVariantActions,
                             modifier = Modifier.size(AppDimens.Space20),
                         )
@@ -95,9 +96,9 @@ internal fun SearchScreenTopBar(
                                 .size(AppDimens.TouchTarget)
                                 .testTag("search_clear_button"),
                         ) {
-                            Icon(
+                            AppIcon(
                                 Icons.Default.Clear,
-                                contentDescription = "清除",
+                                contentDescription = FeedStrings.clearInput,
                                 tint = LocalAppSkinTokens.current.onSurfaceVariantActions,
                                 modifier = Modifier.size(AppDimens.Space20),
                             )
@@ -154,7 +155,7 @@ internal fun SearchScreenSuggestions(
                         }
                     }
                 },
-                icon = { Icon(Icons.Default.Search, contentDescription = null) },
+                icon = { AppIcon(Icons.Default.Search, contentDescription = null) },
                 endAction = {},
                 onClick = { onSelect(item.query) },
                 modifier = Modifier.testTag("search_suggest_${item.query}"),

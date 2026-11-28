@@ -16,6 +16,7 @@
  */
 
 import buildlogic.ValidateAndSignMacosApp
+import com.mikepenz.aboutlibraries.plugin.AboutLibrariesTask
 import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.api.tasks.Sync
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.DEBUG
@@ -24,6 +25,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.compose)
+    id("com.mikepenz.aboutlibraries.plugin")
     alias(libs.plugins.ktlint)
 }
 
@@ -41,6 +43,8 @@ kotlin {
         binaries {
             all {
                 freeCompilerArgs += "-Xoverride-konan-properties=ignoreXcodeVersionCheck=true"
+                linkerOpts("-rpath", "@executable_path/../Frameworks")
+                linkTaskProvider.configure { dependsOn(":shared-domain:prepareAppleOnnxRuntime") }
             }
             executable(listOf(DEBUG)) {
                 baseName = "ZhihuPlusPlusUiDebug"
@@ -55,6 +59,7 @@ kotlin {
             implementation(project(":shared-local-db"))
             implementation(project(":shared-domain"))
             implementation(project(":shared-ui-foundation"))
+            implementation(project(":shared-ui-components"))
             implementation(project(":shared-feature-settings"))
             implementation(libs.jb.compose.runtime)
             implementation(libs.jb.compose.ui)
@@ -69,13 +74,34 @@ val appVersionName = providers.gradleProperty("app.versionName").get()
 val appVersionCode = providers.gradleProperty("app.versionCode").get()
 val sharedMacosResources =
     project(":shared").layout.buildDirectory.dir("kotlin-multiplatform-resources/aggregated-resources/macosArm64")
+val appleOnnxRuntime = project(":shared-domain").layout.buildDirectory.dir("generated/onnxruntime-apple")
+aboutLibraries { collect { all.set(true) } }
+val rawMacosLicenses = layout.buildDirectory.file("generated/aboutLibraries/dependencies.json")
+val macosLicenses = layout.buildDirectory.file("generated/aboutLibraries/aboutlibraries.json")
+val exportMacosLicenses = tasks.register<AboutLibrariesTask>("exportMacosLicenses") {
+    variant.set(kotlin.targets.getByName("macosArm64").compilations.getByName("main").compileDependencyConfigurationName)
+    configureOutputFile(rawMacosLicenses)
+    configure()
+}
+val prepareMacosLicenseManifest = tasks.register<Exec>("prepareMacosLicenseManifest") {
+    dependsOn(exportMacosLicenses, ":shared-domain:prepareAppleOnnxRuntime")
+    val script = rootProject.layout.projectDirectory.file("shared/tools/merge_apple_licenses.py")
+    val notices = appleOnnxRuntime.map { it.dir("licenses") }
+    inputs.files(script, rawMacosLicenses)
+    inputs.dir(notices)
+    outputs.file(macosLicenses)
+    commandLine(providers.environmentVariable("ZHIHU_PYTHON").orElse("python3").get(), "-I", script.asFile.absolutePath,
+        "--input", rawMacosLicenses.get().asFile.absolutePath, "--output", macosLicenses.get().asFile.absolutePath,
+        "--ort-licenses", notices.get().asFile.absolutePath)
+}
 
 val syncDebugApp =
     tasks.register<Sync>("syncDebugMacosUiDebug") {
         dependsOn(
             "linkDebugExecutableMacosArm64",
-            ":app:prepareLibraryDefinitionsLiteDebug",
+            prepareMacosLicenseManifest,
             ":shared:macosArm64AggregateResources",
+            ":shared-domain:prepareAppleOnnxRuntime",
         )
         into(debugBundle)
         from("src/macosMain/resources/Info.plist") {
@@ -99,15 +125,25 @@ val syncDebugApp =
         from(rootProject.file("misc/emojis")) {
             into("Contents/Resources/misc/emojis")
         }
-        from(rootProject.file("desktopApp/src/main/resources/desktop-icon.png")) {
+        from(rootProject.file("desktopApp/src/main/composeResources/drawable/desktop_icon.png")) {
+            into("Contents/Resources")
+            rename { "desktop-icon.png" }
+        }
+        from(macosLicenses) {
             into("Contents/Resources")
         }
-        from(rootProject.file("app/build/generated/aboutLibraries/liteDebug/res/raw/aboutlibraries.json")) {
-            into("Contents/Resources")
+        from(rootProject.file("shared-domain/src/commonMain/resources")) {
+            include("article_export_template.html", "footnotes.js")
+            into("Contents/Resources/export")
         }
         from(sharedMacosResources) {
             into("Contents/Resources/compose-resources")
         }
+        from(appleOnnxRuntime.map { it.file("macosArm64/libonnxruntime.1.dylib") }) {
+            into("Contents/Frameworks")
+            filePermissions { unix("rwxr-xr-x") }
+        }
+        from(appleOnnxRuntime.map { it.dir("licenses") }) { into("Contents/Resources/licenses/onnxruntime") }
     }
 
 val validateAndSignDebugApp =
@@ -121,6 +157,11 @@ val validateAndSignDebugApp =
                 "Contents/MacOS/ZhihuPlusPlusUiDebug",
                 "Contents/Resources/aboutlibraries.json",
                 "Contents/Resources/misc/emoji_mapping.json",
+                "Contents/Resources/export/article_export_template.html",
+                "Contents/Resources/export/footnotes.js",
+                "Contents/Frameworks/libonnxruntime.1.dylib",
+                "Contents/Resources/licenses/onnxruntime/LICENSE",
+                "Contents/Resources/licenses/onnxruntime/ThirdPartyNotices.txt",
             ),
         )
     }

@@ -17,6 +17,8 @@
 
 package com.github.zly2006.zhihu.updater
 
+import com.github.zly2006.zhihu.i18n.ReaderStrings
+import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
 import com.github.zly2006.zhihu.util.raiseForStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -100,6 +102,6 @@ internal fun GithubRelease.extractAndroidDownloadInfo(isLiteVariant: Boolean): A
     val quarkUrl = Regex("""https://pan\.quark\.cn/s/[A-Za-z0-9_-]+(?:\?[A-Za-z0-9._~%!$&*+,;=:@/?-]+)?""")
         .find(body.orEmpty())
         ?.value
-        ?: error("发布中未找到 APK 或夸克网盘下载链接")
+        ?: throw ReaderDisplayFailure("发布中未找到 APK 或夸克网盘下载链接") { ReaderStrings.releaseDownloadMissing }
     return AndroidReleaseDownloadInfo(browserDownloadUrl = quarkUrl, opensExternally = true)
 }

@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import com.github.zly2006.zhihu.i18n.FeedStrings
 import com.github.zly2006.zhihu.navigation.Navigator
 import com.github.zly2006.zhihu.navigation.WriteAnswerChooser
 import com.github.zly2006.zhihu.navigation.WriteArticle
@@ -41,8 +42,8 @@ import com.github.zly2006.zhihu.navigation.WritePin
 import com.github.zly2006.zhihu.navigation.WriteQuestion
 import com.github.zly2006.zhihu.ui.components.AppBottomSheet
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.SettingItem
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 private fun HomeCreateAction(
@@ -55,7 +56,7 @@ private fun HomeCreateAction(
     SettingItem(
         title = { Text(title) },
         description = { Text(subtitle) },
-        icon = { Icon(icon, contentDescription = null) },
+        icon = { AppIcon(icon, contentDescription = null) },
         modifier = Modifier
             .testTag(testTag),
         onClick = onClick,
@@ -85,7 +86,7 @@ internal fun HomeCreateMenuSheet(
                 .padding(bottom = AppDimens.Space24),
         ) {
             Text(
-                text = "创作",
+                text = FeedStrings.create,
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(
                     start = AppDimens.Space24,
@@ -95,8 +96,8 @@ internal fun HomeCreateMenuSheet(
                 ),
             )
             HomeCreateAction(
-                title = "提问题",
-                subtitle = "向知友提问，获取回答",
+                title = FeedStrings.askQuestion,
+                subtitle = FeedStrings.askQuestionHint,
                 icon = Icons.AutoMirrored.Default.HelpOutline,
                 testTag = HOME_WRITE_QUESTION_BUTTON_TAG,
             ) {
@@ -104,8 +105,8 @@ internal fun HomeCreateMenuSheet(
                 navigator.onNavigate(WriteQuestion)
             }
             HomeCreateAction(
-                title = "写回答",
-                subtitle = "找一个问题，分享你的见解",
+                title = FeedStrings.writeAnswer,
+                subtitle = FeedStrings.writeAnswerHint,
                 icon = Icons.Default.Edit,
                 testTag = HOME_WRITE_ANSWER_BUTTON_TAG,
             ) {
@@ -113,8 +114,8 @@ internal fun HomeCreateMenuSheet(
                 navigator.onNavigate(WriteAnswerChooser(defaultSelectedPage = 1))
             }
             HomeCreateAction(
-                title = "写文章",
-                subtitle = "发布一篇长文",
+                title = FeedStrings.writeArticle,
+                subtitle = FeedStrings.writeArticleHint,
                 icon = Icons.Default.Description,
                 testTag = "home_write_article_button",
             ) {
@@ -122,8 +123,8 @@ internal fun HomeCreateMenuSheet(
                 navigator.onNavigate(WriteArticle)
             }
             HomeCreateAction(
-                title = "发想法",
-                subtitle = "发布一条简短的想法",
+                title = FeedStrings.writePin,
+                subtitle = FeedStrings.writePinHint,
                 icon = Icons.Default.MarkUnreadChatAlt,
                 testTag = HOME_WRITE_PIN_BUTTON_TAG,
             ) {

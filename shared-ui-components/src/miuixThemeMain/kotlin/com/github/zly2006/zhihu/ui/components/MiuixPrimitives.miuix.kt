@@ -74,8 +74,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
-import com.github.zly2006.zhihu.theme.ThemeManager
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -125,7 +126,7 @@ internal actual object MiuixPrimitives {
                     .requiredSizeIn(minWidth = AppDimens.TouchTarget, minHeight = AppDimens.TouchTarget)
                     .semantics(mergeDescendants = true) { role = Role.Button },
                 backdrop = LocalAppBackdrop.current,
-                style = GlassDefaults.style(ThemeManager.isDarkTheme()),
+                style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme),
                 size = AppDimens.TouchTarget,
             ) {
                 CompositionLocalProvider(LocalContentColor provides colors.contentColor, MiuixContentColor provides colors.contentColor) { content() }
@@ -253,7 +254,7 @@ internal actual object MiuixPrimitives {
                     .requiredSizeIn(minWidth = AppDimens.TouchTarget, minHeight = AppDimens.TouchTarget)
                     .semantics(mergeDescendants = true) { role = Role.Button },
                 backdrop = LocalAppBackdrop.current,
-                style = GlassDefaults.style(ThemeManager.isDarkTheme()),
+                style = GlassDefaults.style(LocalAppTheme.current.isDarkTheme),
                 size = AppDimens.TouchTarget,
             ) {
                 CompositionLocalProvider(LocalContentColor provides colors.contentColor, MiuixContentColor provides colors.contentColor) { content() }
@@ -459,7 +460,7 @@ internal actual object MiuixPrimitives {
                 modifier = modifier,
                 pullToRefreshState = state,
                 contentPadding = contentPadding,
-                refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新…", "刷新完成"),
+                refreshTexts = listOf(WidgetsStrings.refreshPull, WidgetsStrings.refreshRelease, WidgetsStrings.refreshing, WidgetsStrings.refreshComplete),
             ) {
                 Box(Modifier.fillMaxSize()) { content() }
             }

@@ -25,8 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.isPageTurnSupported
+import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppEmptyState
@@ -53,30 +55,32 @@ val PAGE_TURN_SETTINGS_KEYS: Set<String> = setOf(
 fun PageTurnSettingsScreen(setting: String?) {
     val settings = rememberSettingsStore()
     AppSettingsPage(
-        title = "电纸书翻页",
+        title = if (platformName != "Android") SettingsStrings.pageTurning else SettingsStrings.einkPageTurning,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = PAGE_TURN_SETTINGS_BACK_BUTTON_TAG,
-        highlightedKey = setting.orEmpty(),
+        highlightedKey = if (platformName != "Android" && setting == PREF_VOLUME_KEY_PAGE_TURN) PREF_SHOW_PAGE_TURN_FAB else setting.orEmpty(),
     ) {
         if (!isPageTurnSupported) {
             /** 不支持的平台已隐藏入口；此分支防止旧导航状态误示可用。 */
             AppEmptyState(
-                title = "当前平台不支持电纸书翻页",
-                description = "音量键翻页和翻页按钮只在 Android 上可用。",
+                title = SettingsStrings.pageTurnUnsupported,
+                description = SettingsStrings.pageTurnPlatformUnsupported,
             )
         } else {
             SettingItemGroup(
-                title = "翻页",
-                footer = { Text("在内容列表、Compose 正文、评论区和设置等可滚动页面生效；WebView 正文和私聊不支持。") },
+                title = SettingsStrings.pageTurning,
+                footer = { Text(SettingsStrings.pageTurnScope) },
             ) {
-                var volumeKeyPageTurn by rememberSetting(settings, PREF_VOLUME_KEY_PAGE_TURN, false)
-                SettingItemWithSwitch(
-                    title = { Text("音量键翻页") },
-                    description = { Text("短按翻页，长按跳到顶部或底部。") },
-                    checked = volumeKeyPageTurn,
-                    onCheckedChange = { volumeKeyPageTurn = it },
-                    settingKey = PREF_VOLUME_KEY_PAGE_TURN,
-                )
+                if (platformName == "Android") {
+                    var volumeKeyPageTurn by rememberSetting(settings, PREF_VOLUME_KEY_PAGE_TURN, false)
+                    SettingItemWithSwitch(
+                        title = { Text(SettingsStrings.volumeKeyPageTurn) },
+                        description = { Text(SettingsStrings.volumeKeyPageTurnDescription) },
+                        checked = volumeKeyPageTurn,
+                        onCheckedChange = { volumeKeyPageTurn = it },
+                        settingKey = PREF_VOLUME_KEY_PAGE_TURN,
+                    )
+                }
 
                 var pageTurnSwitchAnswer by rememberSetting(
                     settings,
@@ -84,8 +88,8 @@ fun PageTurnSettingsScreen(setting: String?) {
                     DEFAULT_PAGE_TURN_SWITCH_ANSWER,
                 )
                 SettingItemWithSwitch(
-                    title = { Text("翻页切换回答") },
-                    description = { Text("默认开启。在回答顶部继续上翻进入上一个回答，在底部继续下翻进入下一个回答。") },
+                    title = { Text(SettingsStrings.pageTurnSwitchAnswer) },
+                    description = { Text(SettingsStrings.pageTurnSwitchAnswerDescription) },
                     checked = pageTurnSwitchAnswer,
                     onCheckedChange = { pageTurnSwitchAnswer = it },
                     settingKey = PREF_PAGE_TURN_SWITCH_ANSWER,
@@ -93,8 +97,8 @@ fun PageTurnSettingsScreen(setting: String?) {
 
                 var showPageTurnFab by rememberSetting(settings, PREF_SHOW_PAGE_TURN_FAB, false)
                 SettingItemWithSwitch(
-                    title = { Text("显示翻页悬浮按钮") },
-                    description = { Text("只在支持翻页的可滚动页面显示，可上下左右拖动，松手贴靠左右边缘。横竖屏分别记忆位置。") },
+                    title = { Text(SettingsStrings.showPageTurnButton) },
+                    description = { Text(SettingsStrings.showPageTurnButtonDescription) },
                     checked = showPageTurnFab,
                     onCheckedChange = { showPageTurnFab = it },
                     settingKey = PREF_SHOW_PAGE_TURN_FAB,
@@ -102,8 +106,8 @@ fun PageTurnSettingsScreen(setting: String?) {
 
                 var pageTurnPercent by rememberSetting(settings, PREF_PAGE_TURN_PERCENT, DEFAULT_PAGE_TURN_PERCENT)
                 SettingItem(
-                    title = { Text("翻页距离") },
-                    description = { Text("每次滚动可见区域的 $pageTurnPercent%。") },
+                    title = { Text(SettingsStrings.pageTurnDistance) },
+                    description = { Text(SettingsStrings.pageTurnDistanceDescription(pageTurnPercent)) },
                     settingKey = PREF_PAGE_TURN_PERCENT,
                     bottomAction = {
                         val slider = rememberSliderState(value = pageTurnPercent.toFloat(), steps = 9, trackRange = 50f..100f)
@@ -121,8 +125,8 @@ fun PageTurnSettingsScreen(setting: String?) {
 
                 var showGuide by rememberSetting(settings, PREF_SHOW_PAGE_TURN_GUIDE, DEFAULT_SHOW_PAGE_TURN_GUIDE)
                 SettingItemWithSwitch(
-                    title = { Text("显示翻页位置线") },
-                    description = { Text("翻页后标记上一页与下一页的重叠位置。") },
+                    title = { Text(SettingsStrings.showPageTurnGuide) },
+                    description = { Text(SettingsStrings.showPageTurnGuideDescription) },
                     checked = showGuide,
                     onCheckedChange = { showGuide = it },
                     settingKey = PREF_SHOW_PAGE_TURN_GUIDE,
@@ -134,8 +138,8 @@ fun PageTurnSettingsScreen(setting: String?) {
                     DEFAULT_SHOW_CONTENT_END_MARKER,
                 )
                 SettingItemWithSwitch(
-                    title = { Text("显示内容结束标记") },
-                    description = { Text("方便电纸书用户确定内容结束了，再向下翻页将跳转下一个内容或无效果。") },
+                    title = { Text(SettingsStrings.showContentEndMarker) },
+                    description = { Text(SettingsStrings.showContentEndMarkerDescription) },
                     checked = showContentEndMarker,
                     onCheckedChange = { showContentEndMarker = it },
                     settingKey = PREF_SHOW_CONTENT_END_MARKER,

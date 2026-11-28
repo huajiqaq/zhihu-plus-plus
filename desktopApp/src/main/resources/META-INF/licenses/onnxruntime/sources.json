@@ -1,0 +1,21 @@
+{
+  "artifact": "com.microsoft.onnxruntime:onnxruntime:1.23.2",
+  "source": "https://github.com/microsoft/onnxruntime/tree/a83fc4d58cb48eb68890dd689f94f28288cf2278",
+  "maven": "https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.23.2/",
+  "notice": "ThirdPartyNotices.txt",
+  "licenseSource": "https://files.pythonhosted.org/packages/c0/b4/569d298f9fc4d286c11c45e85d9ffa9e877af12ace98af8cab52396e8f46/onnxruntime-1.23.2-cp312-cp312-win_amd64.whl",
+  "components": [
+    {
+      "id": "com.microsoft.onnxruntime:onnxruntime",
+      "name": "ONNX Runtime JVM",
+      "version": "1.23.2",
+      "license": "MIT and bundled third-party notices",
+      "source": "https://github.com/microsoft/onnxruntime/tree/a83fc4d58cb48eb68890dd689f94f28288cf2278",
+      "licenseFiles": [
+        "LICENSE",
+        "ThirdPartyNotices.txt"
+      ]
+    }
+  ],
+  "licenseSourceSha256": "25de5214923ce941a3523739d34a520aac30f21e631de53bba9174dc9c004435"
+}

@@ -22,9 +22,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.zly2006.zhihu.account.InvalidRefreshTokenException
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
+import com.github.zly2006.zhihu.account.ZhihuIdentityApiException
 import com.github.zly2006.zhihu.account.ZhihuLoginRequiredException
 import com.github.zly2006.zhihu.account.ZhihuRequestProfile
 import com.github.zly2006.zhihu.data.AigcVoteVoter
@@ -40,16 +43,22 @@ import com.github.zly2006.zhihu.data.ZhihuJson.decodeJson
 import com.github.zly2006.zhihu.data.ZhihuPaging
 import com.github.zly2006.zhihu.data.classifyHttpFailure
 import com.github.zly2006.zhihu.data.fetchZhihuContentDetail
+import com.github.zly2006.zhihu.data.findQualityFilterReason
 import com.github.zly2006.zhihu.data.isZhihuRequestHost
 import com.github.zly2006.zhihu.data.redactDiagnosticText
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.isJvm
 import com.github.zly2006.zhihu.platform.isNative
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.platform.platformSettingsStore
+import com.github.zly2006.zhihu.util.AppLog
+import com.github.zly2006.zhihu.util.buildArticleExportFileName
+import com.github.zly2006.zhihu.util.buildArticleExportHtml
+import com.github.zly2006.zhihu.util.buildOfflineArticleExportHtml
+import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.HttpStatusException
-import com.github.zly2006.zhihu.util.Log
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import io.ktor.client.HttpClient
@@ -67,8 +76,12 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
 import io.ktor.http.contentType
+import kotlin.reflect.KType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -85,7 +98,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.serializer
-import kotlin.reflect.KType
 
 abstract class PaginationViewModel<T : Any>(
     val dataType: KType,
@@ -94,13 +106,16 @@ abstract class PaginationViewModel<T : Any>(
     val debugData: MutableList<JsonElement> = mutableListOf()
     var isLoading: Boolean by mutableStateOf(false)
         protected set
-    var errorMessage: String? by mutableStateOf(null)
+    var errorText by mutableStateOf<(() -> String)?>(null)
         protected set
+    val errorMessage: String? get() = errorText?.invoke()
     var allowGuestAccess = false
     protected var lastPaging: ZhihuPaging? by mutableStateOf(null)
-    protected var isRefreshPending = false
+    protected var isRefreshPending by mutableStateOf(false)
         protected set
     open val isEnd: Boolean get() = lastPaging?.isEnd == true
+    open val hasNextPage: Boolean get() = lastPaging?.let { !it.isEnd && it.next.isNotBlank() } == true
+    val pageGeneration: Int get() = pagingGeneration
     protected abstract val initialUrl: String
     private var currentJob: Job? = null
     protected var pagingGeneration = 0
@@ -123,24 +138,62 @@ abstract class PaginationViewModel<T : Any>(
         currentJob?.cancel()
         currentJob = null
         isLoading = false
-        errorMessage = null
+        errorText = null
         isRefreshPending = true
         lastPaging = null
     }
 
-    protected open fun handlePageMetadata(json: JsonObject) = Unit
+    /** 准备阶段允许失败或挂起；返回的动作只能提交已经准备好的值。 */
+    protected open fun preparePageMetadata(json: JsonObject): () -> Unit = {}
 
-    protected open fun processResponse(environment: PaginationEnvironment, data: List<T>, rawData: JsonArray) {
+    protected open suspend fun prepareResponse(environment: PaginationEnvironment, data: List<T>, rawData: JsonArray): () -> Unit = {
         if (isRefreshPending) {
             debugData.clear()
             allData.clear()
             isRefreshPending = false
         }
-        debugData.addAll(rawData) // 保存原始JSON
-        allData.addAll(data) // 保存未flatten的数据
+        debugData.addAll(rawData)
+        allData.addAll(data)
     }
 
-    protected open fun decodePage(
+    /** 候选只用于显示；结束回调不提交分页，错误仍由原请求处理。 */
+    protected open fun previewPage(environment: PaginationEnvironment, data: List<T>, rawData: JsonArray): ((Throwable?) -> Unit)? = null
+
+    protected suspend fun commitPage(
+        environment: PaginationEnvironment,
+        data: List<T>,
+        rawData: JsonArray,
+        paging: ZhihuPaging? = null,
+        metadata: JsonObject? = null,
+        onCommit: () -> Unit = {},
+    ) {
+        val generation = pagingGeneration
+        val client = environment.httpClient()
+        currentCoroutineContext().ensureActive()
+        if (environment.accountClient?.isCurrent == false) return
+        val finishPreview = previewPage(environment, data, rawData)
+        try {
+            val commit = prepareResponse(environment, data, rawData)
+            val commitMetadata = metadata?.let(::preparePageMetadata)
+            currentCoroutineContext().ensureActive()
+            if (generation != pagingGeneration || environment.accountClient?.isCurrent == false || environment.httpClient() !== client) {
+                finishPreview?.invoke(CancellationException("分页请求已失效"))
+                return
+            }
+            Snapshot.withMutableSnapshot {
+                commit()
+                if (paging != null) lastPaging = paging
+                commitMetadata?.invoke()
+                onCommit()
+                finishPreview?.invoke(null)
+            }
+        } catch (error: Throwable) {
+            finishPreview?.invoke(error)
+            throw error
+        }
+    }
+
+    protected open suspend fun decodePage(
         environment: PaginationEnvironment,
         rawData: JsonArray,
     ): List<T> = rawData.mapNotNull {
@@ -172,12 +225,12 @@ abstract class PaginationViewModel<T : Any>(
 
             @Suppress("HttpUrlsUsage")
             val json = environment.fetchJson(url.replace("http://", "https://"), include)
-                ?: throw SerializationException("响应为空，无法加载列表，请重试")
+                ?: throw PageFormatException { DomainStrings.emptyResponse }
             currentCoroutineContext().ensureActive()
             if (generation != pagingGeneration || environment.httpClient() !== client) return
 
             val jsonArray = json["data"] as? JsonArray
-                ?: throw SerializationException("响应格式错误：缺少列表数据，请重试")
+                ?: throw PageFormatException { DomainStrings.missingList }
             val paging = (json["paging"] as? JsonObject)?.let { value ->
                 val terminal = (value["is_end"] ?: value["isEnd"])?.jsonPrimitive?.booleanOrNull == true
                 decodeJson<ZhihuPaging>(
@@ -185,9 +238,9 @@ abstract class PaginationViewModel<T : Any>(
                 )
             }
             val data = decodePage(environment, jsonArray)
-            processResponse(environment, data, jsonArray)
-            if (paging != null) lastPaging = paging
-            handlePageMetadata(json)
+            currentCoroutineContext().ensureActive()
+            if (generation != pagingGeneration || environment.accountClient?.isCurrent == false || environment.httpClient() !== client) return
+            commitPage(environment, data, jsonArray, paging, json)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -201,8 +254,13 @@ abstract class PaginationViewModel<T : Any>(
     }
 
     open fun loadMore(environment: PaginationEnvironment) {
-        if (isLoading || isEnd) return
-        errorMessage = null
+        launchPageRequest(environment)
+    }
+
+    /** 下拉、刷新按钮和追加共用同一个任务，刷新可以取消整条旧分页链。 */
+    protected fun launchPageRequest(environment: PaginationEnvironment): Job? {
+        if (isLoading || isEnd) return null
+        errorText = null
         isLoading = true
         val generation = pagingGeneration
         val client = environment.httpClient()
@@ -217,16 +275,17 @@ abstract class PaginationViewModel<T : Any>(
                 if (generation == pagingGeneration && environment.accountClient?.isCurrent != false && environment.httpClient() === client) isLoading = false
             }
         }
+        return currentJob
     }
 
     open fun retry(environment: PaginationEnvironment) {
-        if (errorMessage == null) return
+        if (errorText == null) return
         loadMore(environment)
     }
 
     protected fun errorHandle(e: Exception) {
         if (e !is CancellationException) {
-            errorMessage = zhihuFetchFailureMessage(e)
+            errorText = zhihuFetchFailureText(e)
             isLoading = false
         }
     }
@@ -244,9 +303,21 @@ interface ArticleImageExportRenderer {
     fun recycleExportBitmap(bitmap: Any)
 }
 
-fun zhihuFetchFailureMessage(error: Exception): String = when (error) {
-    is ZhihuLoginRequiredException -> "此功能需要登录，请先登录"
+fun zhihuFetchFailureMessage(error: Exception): String = zhihuFetchFailureText(error)()
+
+private class PageFormatException(
+    val displayMessage: () -> String,
+) : SerializationException() {
+    override val message: String get() = displayMessage()
+}
+
+internal fun zhihuFetchFailureText(error: Exception): () -> String = when (error) {
+    is PageFormatException -> error.displayMessage
+    is DisplayFailure -> error.displayMessage
+    is InvalidRefreshTokenException, is ZhihuIdentityApiException -> ({ redactDiagnosticText(error.message.orEmpty()) })
+    is ZhihuLoginRequiredException -> DomainStrings::loginRequired
     is HttpStatusException -> {
+        val status = error.status
         val failure = classifyHttpFailure(
             HttpFailureRecord(
                 id = "display",
@@ -262,18 +333,28 @@ fun zhihuFetchFailureMessage(error: Exception): String = when (error) {
             null,
             error.bodyText,
         )
-        when {
-            error.status == HttpStatusCode.NotFound -> "内容或接口不存在（HTTP 404）"
-            failure.kind == HttpFailureKind.SESSION_EXPIRED -> "登录已失效，请重新登录（HTTP ${error.status.value}）"
-            failure.kind == HttpFailureKind.HUMAN_VERIFICATION -> "知乎要求完成安全验证（HTTP ${error.status.value}）"
-            failure.kind == HttpFailureKind.LOGIN_REQUIRED -> "此内容需要登录（HTTP ${error.status.value}）"
-            else -> "请求失败：HTTP ${error.status.value} ${error.status.description}"
+        val kind = failure.kind
+        val render = {
+            when {
+                status == HttpStatusCode.NotFound -> DomainStrings.httpNotFound
+                kind == HttpFailureKind.SESSION_EXPIRED -> DomainStrings.sessionExpiredHttp(status.value)
+                kind == HttpFailureKind.HUMAN_VERIFICATION -> DomainStrings.verificationHttp(status.value)
+                kind == HttpFailureKind.LOGIN_REQUIRED -> DomainStrings.loginRequiredHttp(status.value)
+                else -> DomainStrings.httpFailed(status.value, status.description)
+            }
         }
+        render
     }
-    is SerializationException -> error.message?.takeIf { it.startsWith("响应格式错误") || it.startsWith("响应为空") } ?: "响应格式错误，无法解析数据，请重试"
-    is NoTransformationFoundException -> "响应格式错误，无法解析数据，请重试"
-    else -> error.message?.takeIf(String::isNotBlank)?.let(::redactDiagnosticText) ?: "网络请求失败，请重试"
+    is SerializationException, is NoTransformationFoundException -> DomainStrings::invalidResponse
+    else ->
+        error.message
+            ?.takeIf(String::isNotBlank)
+            ?.let(::redactDiagnosticText)
+            ?.let { detail -> { detail } } ?: DomainStrings::networkFailed
 }
+
+/** 只有这个无查询参数的移动端想法详情已映射为网页桥的只读操作。 */
+private val browserGuestPinUrl = Regex("https://api[.]zhihu[.]com/v2/pins/[1-9][0-9]{0,18}")
 
 interface ZhihuApiEnvironment {
     val accountClient: ZhihuAccountClient?
@@ -303,7 +384,11 @@ interface ZhihuApiEnvironment {
 
     suspend fun request(url: String, method: HttpMethod = HttpMethod.Get, profile: ZhihuRequestProfile = ZhihuRequestProfile.Web, block: suspend HttpRequestBuilder.() -> Unit = {}): HttpResponse {
         val owner = accountClient
-        if (owner != null && !owner.load().login && (!allowGuestAccess || profile == ZhihuRequestProfile.Mobile)) throw ZhihuLoginRequiredException()
+        if (owner != null && !owner.load().login) {
+            val guestProfileAllowed = profile != ZhihuRequestProfile.Mobile ||
+                (owner.accountStore.usesBrowserSession && method == HttpMethod.Get && browserGuestPinUrl.matches(url))
+            if (!allowGuestAccess || !guestProfileAllowed) throw ZhihuLoginRequiredException()
+        }
         return if (owner != null) {
             owner.request(url, method, profile, useCookies = owner.load().login, block = block)
         } else {
@@ -357,11 +442,12 @@ interface ZhihuApiEnvironment {
         if (failure.kind != HttpFailureKind.FORBIDDEN) {
             throw HttpStatusException(response.status, response.request.url, body, response.request.method)
         }
+        val status = response.status.value
         return try {
             ZhihuJson.json.parseToJsonElement(body) as? JsonObject
         } catch (_: SerializationException) {
-            throw SerializationException("响应格式错误（HTTP ${response.status.value}）：无法解析 JSON")
-        } ?: throw SerializationException("响应格式错误（HTTP ${response.status.value}）：不是 JSON 对象")
+            throw PageFormatException { DomainStrings.invalidJsonHttp(status) }
+        } ?: throw PageFormatException { DomainStrings.notJsonObjectHttp(status) }
     }
 
     suspend fun signedGetText(url: String): String {
@@ -398,7 +484,7 @@ interface ZhihuApiEnvironment {
         item: JsonElement,
         error: Exception,
     ) {
-        Log.e(tag ?: "PaginationViewModel", "Failed to decode item: $item", error)
+        AppLog.e(tag ?: "PaginationViewModel", "Failed to decode item: $item", error)
     }
 }
 
@@ -409,7 +495,7 @@ suspend fun ZhihuApiEnvironment.fetchContentDetail(destination: NavDestination):
         }
     }.getOrElse { error ->
         if (error is CancellationException) throw error
-        Log.e("ZhihuApiEnvironment", "Failed to fetch content detail for $destination", error)
+        AppLog.e("ZhihuApiEnvironment", "Failed to fetch content detail for $destination", error)
         null
     }
 
@@ -425,7 +511,7 @@ suspend fun ZhihuApiEnvironment.getOrFetchContentDetail(destination: NavDestinat
             }
     }.getOrElse { error ->
         if (error is CancellationException) throw error
-        Log.e("ZhihuApiEnvironment", "Failed to fetch content detail for $destination", error)
+        AppLog.e("ZhihuApiEnvironment", "Failed to fetch content detail for $destination", error)
         null
     }
 
@@ -433,7 +519,9 @@ suspend fun ZhihuApiEnvironment.addReadHistory(
     contentToken: String,
     contentTypeName: String,
 ) {
-    if (!platformSettingsStore().getBoolean(HISTORY_RECORDING_ENABLED_KEY, true) || authenticatedCookies()["d_c0"] == null) return
+    // Web 由桥的独立历史写授权控制；未授权会拒绝，而不是因页面无 Cookie 永久跳过。
+    val browserSession = accountClient?.accountStore?.usesBrowserSession == true
+    if (!platformSettingsStore().getBoolean(HISTORY_RECORDING_ENABLED_KEY, true) || (!browserSession && authenticatedCookies()["d_c0"] == null)) return
     runCatching {
         postSigned("https://www.zhihu.com/api/v4/read_history/add") {
             contentType(ContentType.Application.Json)
@@ -474,15 +562,18 @@ interface ContentOpenEnvironment {
 }
 
 interface AigcVoteEnvironment {
-    fun isAigcVoteEnabled(): Boolean = false
+    val accountClient: ZhihuAccountClient?
+        get() = null
 
-    fun aigcVoteHttpClient(): HttpClient = error("AIGC 内容标记客户端不可用")
+    fun isAigcVoteEnabled(): Boolean = accountClient?.aigcVoteEnvironment?.isAigcVoteEnabled() == true
 
-    fun aigcVoteBaseUrl(): String = ""
+    fun aigcVoteHttpClient(): HttpClient = accountClient?.aigcVoteEnvironment?.aigcVoteHttpClient() ?: error("AIGC 内容标记客户端不可用")
 
-    fun aigcVoteClientId(): String = ""
+    fun aigcVoteBaseUrl(): String = accountClient?.aigcVoteEnvironment?.aigcVoteBaseUrl().orEmpty()
 
-    fun aigcVoteVoter(): AigcVoteVoter? = null
+    fun aigcVoteClientId(): String = accountClient?.aigcVoteEnvironment?.aigcVoteClientId().orEmpty()
+
+    fun aigcVoteVoter(): AigcVoteVoter? = accountClient?.aigcVoteEnvironment?.aigcVoteVoter()
 }
 
 interface ContentBlocklistEnvironment {
@@ -490,7 +581,7 @@ interface ContentBlocklistEnvironment {
 
     suspend fun isQuestionAuthorBlocked(userId: String): Boolean = false
 
-    fun blockedUserIds(): Set<String> = emptySet()
+    suspend fun blockedUserIds(): Set<String> = emptySet()
 
     suspend fun addBlockedUser(
         userId: String,
@@ -522,6 +613,23 @@ interface ClipboardEnvironment {
     ) = Unit
 }
 
+/** 用户关闭系统交付面板不是协程取消；完成文案由真正交付产物的平台提供。 */
+sealed interface ArticleExportResult {
+    data class Completed(val completionMessage: String) : ArticleExportResult {
+        init {
+            require(completionMessage.isNotBlank())
+        }
+    }
+
+    data object Cancelled : ArticleExportResult
+}
+
+enum class ArticleExportPermission {
+    Granted,
+    RequestStarted,
+    Denied,
+}
+
 interface ArticleExportEnvironment {
     fun hasImageExportPermission(): Boolean = false
 
@@ -529,30 +637,112 @@ interface ArticleExportEnvironment {
 
     fun requestImageExportPermission() = Unit
 
-    fun loadExportAssetText(fileName: String): String = error("$platformName 暂不支持文章导出资源读取")
+    /** Android 请求后由既有宿主接收结果；原生平台可以挂起等待系统授权。 */
+    suspend fun ensureImageExportPermission(): ArticleExportPermission = withContext(Dispatchers.Main) {
+        if (hasImageExportPermission()) {
+            ArticleExportPermission.Granted
+        } else {
+            requestImageExportPermission()
+            ArticleExportPermission.RequestStarted
+        }
+    }
+
+    fun loadExportAssetText(fileName: String): String = error(DomainStrings.exportAssetsUnsupported(platformName))
 
     fun saveHtmlToDownloads(
         displayName: String,
         htmlContent: String,
-    ): String = error("$platformName 暂不支持文章 HTML 导出")
+    ): String = error(DomainStrings.htmlExportUnsupported(platformName))
 
     fun saveImageToMediaStore(
         displayName: String,
         bitmap: Any,
-    ): Unit = error("$platformName 暂不支持文章图片保存")
+    ): Unit = error(DomainStrings.exportSaveUnsupported(platformName))
 
     fun articleImageExportRenderer(): ArticleImageExportRenderer =
-        error("$platformName 暂不支持文章图片导出")
+        error(DomainStrings.imageExportUnsupported(platformName))
 }
 
 interface ArticleExportContentEnvironment :
     ArticleExportEnvironment,
-    ZhihuApiEnvironment
+    ZhihuApiEnvironment {
+    /** 使用平台的文本 PDF 渲染和文件交付，不将整页截图包装为 PDF。 */
+    suspend fun exportPdf(content: DataHolder.Content, includeAppAttribution: Boolean): ArticleExportResult =
+        error(DomainStrings.pdfExportUnsupported(platformName))
+
+    /** 平台负责资源读取与交付；浏览器只能确认下载已请求，不能确认文件已保存。 */
+    suspend fun exportHtml(content: DataHolder.Content, includeAppAttribution: Boolean): ArticleExportResult {
+        val html = buildOfflineArticleExportHtml(
+            loadAssetText = ::loadExportAssetText,
+            content = content,
+            includeAppAttribution = includeAppAttribution,
+            httpClient = httpClient(),
+            useOriginalOnImageFetchFailure = isJvm,
+        )
+        ensureExportAccountActive()
+        val location = saveHtmlToDownloads(buildArticleExportFileName(content, "html"), html)
+        return ArticleExportResult.Completed(DomainStrings.htmlSavedTo(location))
+    }
+
+    /** 平台可按自己的编码、内存及系统交付约束输出文件，默认保留 Android 的位图流程。 */
+    suspend fun exportImage(
+        content: DataHolder.Content,
+        includeAppAttribution: Boolean,
+        extraSectionsHtml: String,
+        includeComments: Boolean,
+    ): ArticleExportResult {
+        val renderer = articleImageExportRenderer()
+        var prepared: PreparedArticleExportContent? = null
+        var bitmap: Any? = null
+        var primaryError: Throwable? = null
+        var cleanupWarning = false
+        try {
+            prepared = renderer.prepareExportWebView(
+                htmlContent = buildArticleExportHtml(
+                    loadAssetText = ::loadExportAssetText,
+                    content = content,
+                    includeAppAttribution = includeAppAttribution,
+                    extraSectionsHtml = extraSectionsHtml,
+                ),
+                timeoutMs = if (includeComments) 18_000L else 15_000L,
+            )
+            val captured = renderer.captureExportBitmap(prepared)
+            bitmap = captured
+            withContext(Dispatchers.Default) {
+                ensureExportAccountActive()
+                saveImageToMediaStore(buildArticleExportFileName(content, "jpg"), captured)
+            }
+        } catch (error: Throwable) {
+            primaryError = error
+            throw error
+        } finally {
+            withContext(NonCancellable) {
+                val recycleError = runCatching { bitmap?.let(renderer::recycleExportBitmap) }.exceptionOrNull()
+                val destroyError = runCatching { prepared?.let { renderer.destroyExportWebView(it) } }.exceptionOrNull()
+                val primary = primaryError ?: recycleError ?: destroyError
+                for (error in arrayOf(recycleError, destroyError)) {
+                    if (primary != null && error != null && error !== primary && primary.suppressedExceptions.none { it === error }) {
+                        primary.addSuppressed(error)
+                    }
+                }
+                if (primaryError == null && primary != null) {
+                    AppLog.e("ArticleExport", "Image delivered but renderer cleanup failed", primary)
+                    cleanupWarning = true
+                }
+            }
+        }
+        val saved = if (includeComments) DomainStrings.imageCommentsSaved else DomainStrings.imageSaved
+        return ArticleExportResult.Completed(if (cleanupWarning) "$saved\n${DomainStrings.exportCleanupFailed}" else saved)
+    }
+}
 
 interface ContentLoadEnvironment :
     ZhihuApiEnvironment,
     ContentOpenEnvironment,
-    AigcVoteEnvironment
+    AigcVoteEnvironment {
+    override val accountClient: ZhihuAccountClient?
+        get() = null
+}
 
 interface ProfileLoadEnvironment :
     ContentLoadEnvironment,
@@ -577,34 +767,46 @@ data class FeedDisplaySettings(
     val reverseBlock: Boolean = false,
 ) {
     constructor(settings: SettingsStore) : this(
-        qualityFilterMode = if (isJvm || isNative) {
-            QualityFilterMode.OFF
-        } else {
-            QualityFilterMode.entries.firstOrNull {
-                it.name == settings.getString(QUALITY_FILTER_MODE_PREFERENCE_KEY, QualityFilterMode.RULES.name)
-            } ?: QualityFilterMode.RULES
-        },
-        qualityFilter = if (isJvm || isNative) {
-            QualityFilterSettings()
-        } else {
-            QualityFilterSettings(
-                answerVoteupCount = settings.getInt(ANSWER_VOTEUP_THRESHOLD_PREFERENCE_KEY, 10).coerceAtLeast(0),
-                articleVoteupCount = settings.getInt(ARTICLE_VOTEUP_THRESHOLD_PREFERENCE_KEY, 20).coerceAtLeast(0),
-                articleFollowersCount = settings.getInt(ARTICLE_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
-                videoVoteCount = settings.getInt(VIDEO_VOTE_THRESHOLD_PREFERENCE_KEY, 20).coerceAtLeast(0),
-                videoFollowersCount = settings.getInt(VIDEO_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
-                questionAnswerCount = settings.getInt(QUESTION_ANSWER_THRESHOLD_PREFERENCE_KEY, 0).coerceAtLeast(0),
-                questionFollowersCount = settings.getInt(QUESTION_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
-            )
-        },
+        qualityFilterMode = QualityFilterMode.entries.firstOrNull {
+            it.name == settings.getString(QUALITY_FILTER_MODE_PREFERENCE_KEY, if (isJvm || isNative) QualityFilterMode.OFF.name else QualityFilterMode.RULES.name)
+        } ?: QualityFilterMode.RULES,
+        qualityFilter = QualityFilterSettings(
+            answerVoteupCount = settings.getInt(ANSWER_VOTEUP_THRESHOLD_PREFERENCE_KEY, 10).coerceAtLeast(0),
+            articleVoteupCount = settings.getInt(ARTICLE_VOTEUP_THRESHOLD_PREFERENCE_KEY, 20).coerceAtLeast(0),
+            articleFollowersCount = settings.getInt(ARTICLE_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
+            videoVoteCount = settings.getInt(VIDEO_VOTE_THRESHOLD_PREFERENCE_KEY, 20).coerceAtLeast(0),
+            videoFollowersCount = settings.getInt(VIDEO_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
+            questionAnswerCount = settings.getInt(QUESTION_ANSWER_THRESHOLD_PREFERENCE_KEY, 0).coerceAtLeast(0),
+            questionFollowersCount = settings.getInt(QUESTION_FOLLOWERS_THRESHOLD_PREFERENCE_KEY, 50).coerceAtLeast(0),
+        ),
         reverseBlock = settings.getBoolean("reverseBlock", false),
     )
+
+    fun applyQualityFilter(item: FeedDisplayItem): FeedDisplayItem? {
+        val reason = if (qualityFilterMode == QualityFilterMode.OFF || reverseBlock) null else item.findQualityFilterReason(qualityFilter)
+        if (reason != null && qualityFilterMode == QualityFilterMode.HIDE) return null
+        return item.copy(
+            isFiltered = if (item.isQualityFiltered) reason != null else item.isFiltered || reason != null,
+            isQualityFiltered = reason != null,
+            qualityFilterReason = reason,
+            /** 旧版本把规则写进 content；不能再将这段说明当作用户正文。 */
+            content = item.content.takeUnless { item.isQualityFiltered && item.qualityFilterReason == null },
+        )
+    }
 }
 
 enum class QualityFilterMode {
     OFF,
     RULES,
     HIDE,
+    ;
+
+    val label: String
+        get() = when (this) {
+            OFF -> DomainStrings.qualityNoBlock
+            RULES -> DomainStrings.qualityShowRules
+            HIDE -> DomainStrings.qualityHide
+        }
 }
 
 const val QUALITY_FILTER_MODE_PREFERENCE_KEY = "qualityFilterMode"
@@ -615,12 +817,6 @@ const val VIDEO_VOTE_THRESHOLD_PREFERENCE_KEY = "videoVoteThreshold"
 const val VIDEO_FOLLOWERS_THRESHOLD_PREFERENCE_KEY = "videoFollowersThreshold"
 const val QUESTION_ANSWER_THRESHOLD_PREFERENCE_KEY = "questionAnswerThreshold"
 const val QUESTION_FOLLOWERS_THRESHOLD_PREFERENCE_KEY = "questionFollowersThreshold"
-
-data class HomeFeedFilterResult(
-    val foregroundItems: List<FeedDisplayItem>,
-    val filteredItems: List<FeedDisplayItem>,
-    val reverseBlock: Boolean,
-)
 
 @Composable
 expect fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationEnvironment

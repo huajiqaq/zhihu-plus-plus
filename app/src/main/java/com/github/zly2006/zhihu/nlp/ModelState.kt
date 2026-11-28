@@ -17,6 +17,8 @@
 
 package com.github.zly2006.zhihu.nlp
 
+import com.github.zly2006.zhihu.i18n.AndroidNlpStrings
+
 sealed interface ModelState {
     data object Uninitialized : ModelState
 
@@ -29,6 +31,9 @@ sealed interface ModelState {
     data object Ready : ModelState
 
     data class Error(
-        val message: String,
-    ) : ModelState
+        val cause: Throwable,
+    ) : ModelState {
+        val message: String
+            get() = cause.nlpDisplayMessage { AndroidNlpStrings.modelLoadFailed }
+    }
 }

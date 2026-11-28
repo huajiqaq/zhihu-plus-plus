@@ -49,13 +49,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.data.MobileNotificationTimelineItem
+import com.github.zly2006.zhihu.i18n.NotificationsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.navigation.Person
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.util.formatRelativeTime
 import com.github.zly2006.zhihu.viewmodel.MobileNotificationCategory
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 fun NotificationItemView(
@@ -69,9 +70,9 @@ fun NotificationItemView(
         if (splitTargets) (notification.headDestination as? Person) ?: author else author
     }
     val primary = if (splitTargets || notification.content?.isDeleted == true) notification.bodyDestination else notification.navDestination()
-    val primaryClick = Modifier.openNotificationTarget(primary, navigate, "打开通知正文")
+    val primaryClick = Modifier.openNotificationTarget(primary, navigate, NotificationsStrings.openBody)
     val headingClick = if (splitTargets && authorDestination != null) {
-        Modifier.openNotificationTarget(authorDestination, navigate, "查看个人主页")
+        Modifier.openNotificationTarget(authorDestination, navigate, NotificationsStrings.openProfile)
     } else {
         primaryClick
     }
@@ -82,7 +83,7 @@ fun NotificationItemView(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("notification_item_${notification.stableId}")
-            .semantics { if (showUnreadBadge) stateDescription = if (unread) "未读" else "已读" },
+            .semantics { if (showUnreadBadge) stateDescription = if (unread) NotificationsStrings.unread else NotificationsStrings.read },
         color = backgroundColor,
     ) {
         Column(
@@ -118,12 +119,12 @@ fun NotificationItemView(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .testTag("notification_avatar_${notification.stableId}")
-                        .openNotificationTarget(authorDestination, navigate, "查看个人主页")
-                    val description = authorDestination?.let { "${it.name}的头像" }
+                        .openNotificationTarget(authorDestination, navigate, NotificationsStrings.openProfile)
+                    val description = authorDestination?.let { NotificationsStrings.avatarDescription(it.name) }
                     if (avatarUrl.isNotBlank()) {
                         AsyncImage(model = avatarUrl, contentDescription = description, modifier = modifier)
                     } else {
-                        Box(modifier, contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Notifications, description) }
+                        Box(modifier, contentAlignment = Alignment.Center) { AppIcon(Icons.Outlined.Notifications, description) }
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                 }
@@ -189,12 +190,12 @@ internal fun NotificationItemQuotedContent(
                     NotificationPreviewText(
                         html = quotedPreview,
                         messageId = notification.stableId,
-                        modifier = Modifier.fillMaxWidth().openNotificationTarget(notification.quotedDestination, navigate, "打开引用"),
+                        modifier = Modifier.fillMaxWidth().openNotificationTarget(notification.quotedDestination, navigate, NotificationsStrings.openQuote),
                     )
                 }
                 if (sourceText.isNotBlank() || image != null) {
                     Row(
-                        Modifier.fillMaxWidth().openNotificationTarget(notification.sourceDestination, navigate, "打开来源"),
+                        Modifier.fillMaxWidth().openNotificationTarget(notification.sourceDestination, navigate, NotificationsStrings.openSource),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -210,12 +211,12 @@ internal fun NotificationItemQuotedContent(
                             Box(contentAlignment = Alignment.BottomEnd) {
                                 AsyncImage(
                                     model = image,
-                                    contentDescription = if (source?.hasVideo == true) "来源视频封面" else "来源配图",
+                                    contentDescription = if (source.hasVideo) NotificationsStrings.sourceVideoCover else NotificationsStrings.sourceImage,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
                                 )
-                                if (source?.hasVideo == true) {
-                                    Text("视频", Modifier.background(Color.Black.copy(alpha = 0.7f)).padding(horizontal = 4.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                if (source.hasVideo) {
+                                    Text(NotificationsStrings.video, Modifier.background(Color.Black.copy(alpha = 0.7f)).padding(horizontal = 4.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -239,7 +240,7 @@ private fun MobileNotificationTimelineItem.displaySubtitle(): String {
 
 private fun MobileNotificationTimelineItem.sourceText(): String =
     if (targetSource?.isDeleted == true) {
-        "该内容已被删除"
+        NotificationsStrings.contentDeleted
     } else {
         listOfNotNull(
             targetSource?.text?.takeIf { it.isNotBlank() },

@@ -20,6 +20,7 @@ package com.github.zly2006.zhihu.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.ui.components.AppAlertDialog
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
@@ -35,7 +36,7 @@ internal fun WriteOperationErrorDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("操作失败") },
+        title = { Text(ContentStrings.operationFailed) },
         text = {
             Text(
                 text = message,
@@ -44,13 +45,13 @@ internal fun WriteOperationErrorDialog(
         },
         confirmButton = {
             AppButton(
-                text = "确定",
+                text = ContentStrings.confirm,
                 onClick = onDismissRequest,
             )
         },
         dismissButton = {
             AppTextButton(
-                text = "复制",
+                text = ContentStrings.copy,
                 onClick = { onCopy(message) },
             )
         },
@@ -85,17 +86,14 @@ internal fun buildWriteOperationErrorMessage(
             append('\n')
         }
         if (httpStatusException != null) {
-            append("\nHTTP 状态: ")
-                .append(httpStatusException.status.value)
-                .append(' ')
-                .append(httpStatusException.status.description)
-                .append('\n')
-            httpStatusException.requestMethod?.value?.let { append("请求方法: ").append(it).append('\n') }
-            append("请求地址: ").append(redactWriteDiagnostic(httpStatusException.requestUrl.toString())).append('\n')
+            append('\n')
+            append(ContentStrings.httpStatus(httpStatusException.status.value, httpStatusException.status.description)).append('\n')
+            httpStatusException.requestMethod?.value?.let { append(ContentStrings.requestMethod(it)).append('\n') }
+            append(ContentStrings.requestUrl(redactWriteDiagnostic(httpStatusException.requestUrl.toString()))).append('\n')
             if (httpStatusException.bodyText.isNotBlank()) {
-                append("\n响应体:\n").append(redactWriteDiagnostic(httpStatusException.bodyText.trim())).append('\n')
+                append('\n').append(ContentStrings.responseBody(redactWriteDiagnostic(httpStatusException.bodyText.trim()))).append('\n')
             }
-            append("\n请求头已省略；认证字段已隐藏。")
+            append(ContentStrings.headersCredentialsHidden)
         }
     }.trim()
 }
@@ -105,9 +103,9 @@ private fun redactWriteDiagnostic(text: String): String {
     val credential = "(?:cookies?|set[-_]?cookie|authorization|proxy[-_]?authorization|(?:access|refresh|id)[-_]?token|token|x[-_]?xsrf[-_]?token|xsrf|csrf|x[-_]?csrf[-_]?token|password|passwd|secret|api[-_]?key|client[-_]?secret|z_c0|d_c0|_xsrf)"
     return text
         .replace(Regex("(?i)(https?://)[^/\\s?#]*@"), "$1")
-        .replace(Regex("(?i)([?&]$credential=)[^&#\\s]*")) { "${it.groupValues[1]}[已隐藏]" }
-        .replace(Regex("""(?i)("$credential"\s*:\s*)"(?:\\.|[^"\\])*["]""")) { "${it.groupValues[1]}\"[已隐藏]\"" }
-        .replace(Regex("""(?im)^.*(?:-H|--header)\s+['"].*$"""), "[请求头已省略]")
-        .replace(Regex("""(?im)\b($credential)\s*[:=]\s*(?:'[^'\r\n]*'|[^\r\n,;&"}]+)""")) { "${it.groupValues[1]}=[已隐藏]" }
-        .replace(Regex("""(?i)\bBearer\s+[^\s"'<>]+"""), "Bearer [已隐藏]")
+        .replace(Regex("(?i)([?&]$credential=)[^&#\\s]*")) { "${it.groupValues[1]}${ContentStrings.redacted}" }
+        .replace(Regex("""(?i)("$credential"\s*:\s*)"(?:\\.|[^"\\])*["]""")) { "${it.groupValues[1]}\"${ContentStrings.redacted}\"" }
+        .replace(Regex("""(?im)^.*(?:-H|--header)\s+['"].*$"""), ContentStrings.headersOmitted)
+        .replace(Regex("""(?im)\b($credential)\s*[:=]\s*(?:'[^'\r\n]*'|[^\r\n,;&"}]+)""")) { "${it.groupValues[1]}=${ContentStrings.redacted}" }
+        .replace(Regex("""(?i)\bBearer\s+[^\s"'<>]+"""), "Bearer ${ContentStrings.redacted}")
 }

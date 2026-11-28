@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,29 +46,28 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.github.zly2006.zhihu.data.VoteUpState
+import com.github.zly2006.zhihu.i18n.ContentStrings
 import com.github.zly2006.zhihu.platform.UserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
 import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppFloatingToolbar
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
 import com.github.zly2006.zhihu.ui.components.AppIconToggleButton
 import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import com.github.zly2006.zhihu.util.formatCompactCount
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
-import com.github.zly2006.zhihu.viewmodel.PaginationEnvironment
 import org.jetbrains.compose.resources.painterResource
 import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_vote_down_24dp
 import zhihu.uicomponents.generated.resources.ic_vote_up_24dp
-import androidx.compose.material3.Icon as MaterialIcon
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 @Composable
 internal fun ArticleActionBar(
     viewModel: ArticleViewModel,
-    environment: PaginationEnvironment,
+    onVote: ((VoteUpState) -> Unit)?,
     userMessages: UserMessageSink,
     onShowComments: () -> Unit,
     onShowCollectionDialog: () -> Unit,
@@ -91,37 +91,35 @@ internal fun ArticleActionBar(
                 AppIconButton(
                     onClick = {
                         toggleArticleSpeech("", "")
-                        userMessages.showMessage("已停止朗读")
+                        userMessages.showMessage(ContentStrings.readingStopped)
                     },
                     enabled = ttsState !in listOf(TtsState.Error, TtsState.Uninitialized, TtsState.Initializing),
                     modifier = Modifier.size(AppDimens.TouchTarget).testTag("article_stop_tts"),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeOff, contentDescription = "停止朗读")
+                    AppIcon(Icons.AutoMirrored.Filled.VolumeOff, contentDescription = ContentStrings.stopReading)
                 }
             }
         }
         AppFloatingToolbar(modifier = Modifier.testTag("article_action_dock")) {
             AppButton(
+                enabled = onVote != null,
                 onClick = {
-                    viewModel.toggleVoteUp(
-                        environment,
-                        if (viewModel.voteUpState == VoteUpState.Up) VoteUpState.Neutral else VoteUpState.Up,
-                    )
+                    onVote?.invoke(if (viewModel.voteUpState == VoteUpState.Up) VoteUpState.Neutral else VoteUpState.Up)
                 },
                 modifier = Modifier
                     .widthIn(min = AppDimens.TouchTarget)
                     .height(AppDimens.TouchTarget)
                     .testTag("article_vote_up")
                     .semantics {
-                        stateDescription = if (viewModel.voteUpState == VoteUpState.Up) "已赞同" else "未赞同"
+                        stateDescription = if (viewModel.voteUpState == VoteUpState.Up) ContentStrings.upvoted else ContentStrings.notUpvoted
                     },
                 containerColor = if (viewModel.voteUpState == VoteUpState.Up) tokens.primary else Color.Transparent,
                 contentColor = if (viewModel.voteUpState == VoteUpState.Up) tokens.onPrimary else actionContentColor,
                 contentPadding = PaddingValues(horizontal = AppDimens.Space8),
             ) {
-                MaterialIcon(
+                Icon(
                     painter = painterResource(Res.drawable.ic_vote_up_24dp),
-                    contentDescription = "赞同",
+                    contentDescription = if (onVote == null) ContentStrings.upvoteReadOnly else ContentStrings.upvote,
                     modifier = Modifier.size(AppDimens.IconSizeMedium),
                 )
                 Spacer(Modifier.width(AppDimens.Space4))
@@ -136,9 +134,9 @@ internal fun ArticleActionBar(
                 contentColor = actionContentColor,
                 contentPadding = PaddingValues(horizontal = AppDimens.Space8),
             ) {
-                Icon(
+                AppIcon(
                     Icons.AutoMirrored.Filled.Comment,
-                    contentDescription = "评论",
+                    contentDescription = ContentStrings.comments,
                     modifier = Modifier.size(AppDimens.IconSizeMedium),
                 )
                 Spacer(Modifier.width(AppDimens.Space4))
@@ -150,28 +148,29 @@ internal fun ArticleActionBar(
                     .size(AppDimens.TouchTarget)
                     .testTag("article_collection")
                     .semantics {
-                        stateDescription = if (viewModel.isFavorited) "已收藏" else "未收藏"
+                        stateDescription = if (viewModel.isFavorited) ContentStrings.saved else ContentStrings.notSaved
                     },
                 colors = IconButtonDefaults.iconButtonColors(
                     contentColor = if (viewModel.isFavorited) tokens.primary else actionContentColor,
                 ),
             ) {
-                Icon(
+                AppIcon(
                     if (viewModel.isFavorited) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                    contentDescription = "管理收藏",
+                    contentDescription = ContentStrings.manageCollections,
                     modifier = Modifier.size(AppDimens.IconSizeMedium),
                 )
             }
             AppIconToggleButton(
                 checked = viewModel.voteUpState == VoteUpState.Down,
+                enabled = onVote != null,
                 onCheckedChange = { checked ->
-                    viewModel.toggleVoteUp(environment, if (checked) VoteUpState.Down else VoteUpState.Neutral)
+                    onVote?.invoke(if (checked) VoteUpState.Down else VoteUpState.Neutral)
                 },
                 modifier = Modifier
                     .size(AppDimens.TouchTarget)
                     .testTag("article_vote_down")
                     .semantics {
-                        stateDescription = if (viewModel.voteUpState == VoteUpState.Down) "已反对" else "未反对"
+                        stateDescription = if (viewModel.voteUpState == VoteUpState.Down) ContentStrings.downvoted else ContentStrings.notDownvoted
                     },
                 colors = IconButtonDefaults.iconToggleButtonColors(
                     contentColor = actionContentColor,
@@ -179,9 +178,9 @@ internal fun ArticleActionBar(
                     checkedContentColor = tokens.onPrimary,
                 ),
             ) {
-                MaterialIcon(
+                Icon(
                     painter = painterResource(Res.drawable.ic_vote_down_24dp),
-                    contentDescription = "反对",
+                    contentDescription = if (onVote == null) ContentStrings.downvoteReadOnly else ContentStrings.downvote,
                     modifier = Modifier.size(AppDimens.IconSizeMedium),
                 )
             }

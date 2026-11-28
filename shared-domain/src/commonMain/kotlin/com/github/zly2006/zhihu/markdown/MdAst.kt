@@ -20,7 +20,9 @@ package com.github.zly2006.zhihu.markdown
 import com.fleeksoft.ksoup.Ksoup
 import com.fleeksoft.ksoup.nodes.Element
 import com.fleeksoft.ksoup.nodes.TextNode
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.Video
+import com.github.zly2006.zhihu.navigation.browserNavigationTarget
 import com.github.zly2006.zhihu.navigation.resolveContent
 import com.github.zly2006.zhihu.util.extractImageUrl
 import com.github.zly2006.zhihu.util.toSegmentSourceText
@@ -62,6 +64,7 @@ import com.hrm.markdown.parser.ast.ThematicBreak
 import com.hrm.markdown.parser.block.postprocessors.PostProcessor
 import com.hrm.markdown.parser.flavour.CommonMarkFlavour
 import io.ktor.http.Url
+import io.ktor.util.PlatformUtils
 import com.fleeksoft.ksoup.nodes.Node as HtmlNode
 import com.hrm.markdown.parser.ast.Node as MarkdownNode
 
@@ -460,7 +463,7 @@ private fun createVideoBoxLinkBlock(element: Element): MarkdownNode? {
     return Paragraph().apply {
         appendChild(
             Link(destination = normalizeLinkDestination(href)).apply {
-                appendChild(Text("视频"))
+                appendChild(Text(DomainStrings.videoLabel))
             },
         )
     }
@@ -840,7 +843,11 @@ private fun extractInlineNode(
 
 private fun normalizeLinkDestination(href: String): String =
     if (href.contains("link.zhihu.com")) {
-        runCatching { Url(href).parameters["target"] }.getOrNull()?.takeIf { it.isNotBlank() } ?: href
+        if (PlatformUtils.IS_BROWSER) {
+            browserNavigationTarget(href) ?: href
+        } else {
+            runCatching { Url(href).parameters["target"] }.getOrNull()?.takeIf { it.isNotBlank() } ?: href
+        }
     } else {
         href
     }

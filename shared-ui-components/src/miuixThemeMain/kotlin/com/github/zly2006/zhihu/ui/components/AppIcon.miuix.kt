@@ -80,7 +80,7 @@ import top.yukonga.miuix.kmp.icon.extended.VolumeUp
 
 /** 只匹配 Material 图标，未确认的业务语义不能用相似字形替代。 */
 @Composable
-internal actual fun MiuixAppIconVector(image: ImageVector): ImageVector {
+internal actual fun miuixAppIconVector(image: ImageVector): ImageVector {
     when (image.name.substringBeforeLast('.')) {
         "Filled", "Outlined", "Rounded", "Sharp", "TwoTone",
         "AutoMirrored.Filled", "AutoMirrored.Outlined", "AutoMirrored.Rounded",

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <data name="AppName" xml:space="preserve"><value>Zhihu++</value></data>
+    <data name="AppDescription" xml:space="preserve"><value>Free, ad-free third-party Zhihu client</value></data>
+    <data name="NotificationName" xml:space="preserve"><value>Zhihu++ notifications</value></data>
+    <data name="NewMessage" xml:space="preserve"><value>You have a new message. Click to view it.</value></data>
+    <data name="LaunchFailure" xml:space="preserve"><value>Could not start the Windows MSIX app. Reinstall the signed package or use the standard desktop version without system notifications.</value></data>
+</root>

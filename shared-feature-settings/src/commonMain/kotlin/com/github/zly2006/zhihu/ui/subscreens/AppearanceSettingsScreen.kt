@@ -46,23 +46,27 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import com.github.zly2006.zhihu.i18n.APP_LANGUAGE_KEY
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.AMOLED_THEME_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.DEFAULT_BACKGROUND_COLOR_DARK
 import com.github.zly2006.zhihu.theme.DEFAULT_BACKGROUND_COLOR_LIGHT
+import com.github.zly2006.zhihu.theme.LocalAppTheme
 import com.github.zly2006.zhihu.theme.MIUIX_STYLE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.MiuixStyle
 import com.github.zly2006.zhihu.theme.THEME_COLOR_SPEC_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.THEME_PALETTE_STYLE_PREFERENCE_KEY
 import com.github.zly2006.zhihu.theme.THEME_STYLE_PREFERENCE_KEY
-import com.github.zly2006.zhihu.theme.ThemeManager
 import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemePaletteStyle
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.miuixThemeAvailable
+import com.github.zly2006.zhihu.theme.resetPaletteAndBackground
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppSegmentedControl
 import com.github.zly2006.zhihu.ui.components.AppSettingsPage
 import com.github.zly2006.zhihu.ui.components.AppSlider
@@ -75,7 +79,6 @@ import com.github.zly2006.zhihu.ui.components.SettingItemWithSwitch
 import com.github.zly2006.zhihu.ui.components.appGlassRenderingSupported
 import com.github.zly2006.zhihu.ui.rememberSetting
 import kotlin.math.roundToInt
-import com.github.zly2006.zhihu.ui.components.AppIcon as Icon
 
 const val APPEARANCE_SETTINGS_BACK_BUTTON_TAG = "appearance_settings_back_button"
 
@@ -120,10 +123,10 @@ fun AppearanceSettingsScreen(
     val settings = rememberSettingsStore()
     val userMessages = rememberUserMessageSink()
 
-    val useDynamicColor = ThemeManager.getUseDynamicColor()
-    val currentThemeMode = ThemeManager.getThemeMode()
-    val currentThemeStyle = ThemeManager.getThemeStyle()
-    val currentMiuixStyle = ThemeManager.getMiuixStyle()
+    val useDynamicColor = LocalAppTheme.current.snapshot.useDynamicColor
+    val currentThemeMode = LocalAppTheme.current.snapshot.themeMode
+    val currentThemeStyle = LocalAppTheme.current.style
+    val currentMiuixStyle = LocalAppTheme.current.snapshot.miuixStyle
     val isMiuixSkin = currentThemeStyle == ThemeStyle.MIUIX
     var appBlurEnabled by rememberSetting(settings, APP_BLUR_PREFERENCE_KEY, true)
 
@@ -151,7 +154,7 @@ fun AppearanceSettingsScreen(
     }
 
     AppSettingsPage(
-        title = "外观",
+        title = SettingsStrings.appearance,
         onBack = LocalNavigator.current.onNavigateBack,
         backTag = APPEARANCE_SETTINGS_BACK_BUTTON_TAG,
         highlightedKey = highlightedKey,
@@ -159,21 +162,21 @@ fun AppearanceSettingsScreen(
         overlays = {
             if (showColorPicker) {
                 ColorPickerDialog(
-                    title = "选择主题色",
-                    initialColor = ThemeManager.getCustomColor(),
+                    title = SettingsStrings.themeColorPicker,
+                    initialColor = LocalAppTheme.current.customColor,
                     onDismiss = { showColorPicker = false },
                     onColorSelected = { color ->
                         settings.putInt("customThemeColor", color.toArgb())
-                        userMessages.showShortMessage("主题色已保存")
+                        userMessages.showShortMessage(SettingsStrings.themeColorSaved)
                         showColorPicker = false
                     },
                 )
             }
             if (showBackgroundColorPicker) {
-                val isDark = ThemeManager.isDarkTheme()
+                val isDark = LocalAppTheme.current.isDarkTheme
                 ColorPickerDialog(
-                    title = "选择背景颜色",
-                    initialColor = ThemeManager.getBackgroundColor(),
+                    title = SettingsStrings.backgroundColorPicker,
+                    initialColor = LocalAppTheme.current.backgroundColor,
                     presetColors = listOfNotNull(
                         Color(if (isDark) DEFAULT_BACKGROUND_COLOR_DARK else DEFAULT_BACKGROUND_COLOR_LIGHT),
                         MaterialTheme.colorScheme.surfaceContainer,
@@ -182,14 +185,14 @@ fun AppearanceSettingsScreen(
                     onDismiss = { showBackgroundColorPicker = false },
                     onColorSelected = { color ->
                         settings.putInt(if (isDark) "backgroundColorDark" else "backgroundColorLight", color.toArgb())
-                        userMessages.showShortMessage("背景颜色已保存")
+                        userMessages.showShortMessage(SettingsStrings.backgroundColorSaved)
                         showBackgroundColorPicker = false
                     },
                 )
             }
             if (showBrowserColorPicker) {
                 ColorPickerDialog(
-                    title = "选择浏览器主题色",
+                    title = SettingsStrings.browserColorPicker,
                     initialColor = Color(browserColorArgb),
                     presetColors = listOf(
                         Color(DEFAULT_BROWSER_TOOLBAR_COLOR),
@@ -202,32 +205,32 @@ fun AppearanceSettingsScreen(
                     onDismiss = { showBrowserColorPicker = false },
                     onColorSelected = { color ->
                         browserColorArgb = color.toArgb()
-                        userMessages.showShortMessage("浏览器主题色已保存")
+                        userMessages.showShortMessage(SettingsStrings.browserColorSaved)
                         showBrowserColorPicker = false
                     },
                 )
             }
         },
     ) {
-        SettingItemGroup(title = "主题") {
+        SettingItemGroup(title = SettingsStrings.theme) {
             if (miuixThemeAvailable) {
                 val themeStyles = ThemeStyle.entries
 
                 fun selectThemeStyle(index: Int) {
                     val style = themeStyles[index]
                     settings.putString(THEME_STYLE_PREFERENCE_KEY, style.name)
-                    userMessages.showShortMessage("已切换到${style.displayName}皮肤")
+                    userMessages.showShortMessage(SettingsStrings.skinChanged(style.displayName))
                 }
 
                 /** 弹层退出与换皮同帧会向已销毁的 NavigationEventDispatcher 注册 BackHandler，故不用弹层选择器。 */
                 SettingItem(
-                    title = { Text("界面皮肤") },
+                    title = { Text(SettingsStrings.interfaceSkin) },
                     description = {
                         Text(
                             if (isMiuixSkin) {
-                                "使用 HyperOS 原生中性色与蓝色强调色，不跟随 Material 配色。"
+                                SettingsStrings.miuixSkinDescription
                             } else {
-                                "使用 Material 3 Expressive 的形状、动态取色与强调动效。"
+                                SettingsStrings.materialSkinDescription
                             },
                         )
                     },
@@ -249,13 +252,13 @@ fun AppearanceSettingsScreen(
             if (isMiuixSkin) {
                 val miuixStyles = MiuixStyle.entries
                 SettingItem(
-                    title = { Text("HyperOS 风格") },
+                    title = { Text(SettingsStrings.hyperosStyle) },
                     description = {
                         Text(
                             when {
-                                currentMiuixStyle == MiuixStyle.HYPEROS_4 && !appBlurEnabled -> "已保存 HyperOS 4；悬浮玻璃已关闭，当前使用实心效果。"
-                                currentMiuixStyle == MiuixStyle.HYPEROS_4 && !appGlassRenderingSupported() -> "已保存 HyperOS 4；当前平台不支持玻璃渲染，使用实心效果。"
-                                else -> "HyperOS 4 的玻璃效果需开启悬浮玻璃且平台支持渲染；切换不重置配色、AMOLED 或悬浮控件偏好。"
+                                currentMiuixStyle == MiuixStyle.HYPEROS_4 && !appBlurEnabled -> SettingsStrings.hyperosGlassDisabled
+                                currentMiuixStyle == MiuixStyle.HYPEROS_4 && !appGlassRenderingSupported() -> SettingsStrings.hyperosGlassUnsupported
+                                else -> SettingsStrings.hyperosStyleDescription
                             },
                         )
                     },
@@ -275,19 +278,19 @@ fun AppearanceSettingsScreen(
             }
 
             val themeModes = listOf(
-                ThemeMode.SYSTEM to "自动",
-                ThemeMode.LIGHT to "亮色",
-                ThemeMode.DARK to "暗色",
+                ThemeMode.SYSTEM to SettingsStrings.themeAutomatic,
+                ThemeMode.LIGHT to SettingsStrings.themeLight,
+                ThemeMode.DARK to SettingsStrings.themeDark,
             )
 
             fun selectThemeMode(index: Int) {
                 val (mode, label) = themeModes[index]
                 settings.putString("themeMode", mode.name)
-                userMessages.showShortMessage("已切换到$label")
+                userMessages.showShortMessage(SettingsStrings.selectionChanged(label))
             }
 
             SettingItem(
-                title = { Text("主题模式") },
+                title = { Text(SettingsStrings.themeMode) },
                 settingKey = "nightMode",
                 bottomAction = {
                     AppSegmentedControl(
@@ -302,10 +305,21 @@ fun AppearanceSettingsScreen(
                 },
             )
 
+            var appLanguage by rememberSetting(settings, APP_LANGUAGE_KEY, "system")
+            val languageValues = listOf("system", "zh", "en")
+            SettingItemSelect(
+                title = { Text(SettingsStrings.appLanguage) },
+                options = listOf(SettingsStrings.systemDefault, "简体中文", "English"),
+                selectedIndex = languageValues.indexOf(appLanguage).coerceAtLeast(0),
+                onSelect = { appLanguage = languageValues[it] },
+                settingKey = APP_LANGUAGE_KEY,
+                modifier = Modifier.testTag("appearanceSettings.appLanguage"),
+            )
+
             if (!isMiuixSkin) {
                 SettingItemWithSwitch(
-                    title = { Text("使用 Material You 动态取色") },
-                    description = { Text("从系统壁纸提取主题色，并应用所选调色风格；不支持壁纸取色的平台使用保存的主题色。") },
+                    title = { Text(SettingsStrings.dynamicColor) },
+                    description = { Text(SettingsStrings.dynamicColorDescription) },
                     checked = useDynamicColor,
                     onCheckedChange = { checked -> settings.putBoolean("useDynamicColor", checked) },
                     settingKey = "dynamicColor",
@@ -315,21 +329,21 @@ fun AppearanceSettingsScreen(
             /** 分组只为直接子项留间距；包进同一 Column 会使行贴合，故逐行动画。 */
             AnimatedVisibility(visible = !isMiuixSkin && !useDynamicColor) {
                 SettingItem(
-                    title = { Text("自定义主题色") },
-                    description = { Text("选择自定义配色的基础强调色") },
+                    title = { Text(SettingsStrings.customThemeColor) },
+                    description = { Text(SettingsStrings.customThemeColorDescription) },
                     onClick = { showColorPicker = true },
-                    endAction = { ColorSwatch(ThemeManager.getCustomColor(), MaterialTheme.colorScheme.outline) },
+                    endAction = { ColorSwatch(LocalAppTheme.current.customColor, MaterialTheme.colorScheme.outline) },
                     settingKey = APPEARANCE_SETTINGS_CUSTOM_COLOR_KEY,
                 )
             }
 
             val amoledAvailable = currentThemeMode != ThemeMode.LIGHT
             SettingItemWithSwitch(
-                title = { Text("AMOLED 纯黑") },
+                title = { Text(SettingsStrings.amoledBlack) },
                 description = {
-                    Text(if (amoledAvailable) "暗色模式下使用纯黑背景和更低亮度的表面层级" else "仅深色模式可用")
+                    Text(if (amoledAvailable) SettingsStrings.amoledDescription else SettingsStrings.darkModeOnly)
                 },
-                checked = ThemeManager.getAmoledTheme(),
+                checked = LocalAppTheme.current.snapshot.amoledTheme,
                 onCheckedChange = { enabled -> settings.putBoolean(AMOLED_THEME_PREFERENCE_KEY, enabled) },
                 enabled = amoledAvailable,
                 settingKey = AMOLED_THEME_PREFERENCE_KEY,
@@ -338,17 +352,17 @@ fun AppearanceSettingsScreen(
 
         if (!isMiuixSkin) {
             SettingItemGroup {
-                val moreColorTitles = listOf("调色风格", "颜色规范", "背景颜色", "浏览器主题色")
+                val moreColorTitles = listOf(SettingsStrings.paletteStyle, SettingsStrings.colorSpecification, SettingsStrings.backgroundColor, SettingsStrings.browserThemeColor)
                 SettingItem(
-                    title = { Text("更多颜色选项") },
+                    title = { Text(SettingsStrings.moreColorOptions) },
                     description = if (moreColorsExpanded) {
                         null
                     } else {
-                        { Text(moreColorTitles.joinToString("、")) }
+                        { Text(moreColorTitles.joinToString(SettingsStrings.listSeparator)) }
                     },
                     onClick = { moreColorsExpanded = !moreColorsExpanded },
                     endAction = {
-                        Icon(
+                        AppIcon(
                             imageVector = if (moreColorsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -356,53 +370,53 @@ fun AppearanceSettingsScreen(
                     },
                     modifier = Modifier
                         .testTag(APPEARANCE_SETTINGS_MORE_COLORS_TAG)
-                        .semantics { stateDescription = if (moreColorsExpanded) "已展开" else "已收起" },
+                        .semantics { stateDescription = if (moreColorsExpanded) SettingsStrings.expanded else SettingsStrings.collapsed },
                 )
 
                 val paletteStyles = ThemePaletteStyle.entries
                 AnimatedVisibility(visible = moreColorsExpanded) {
                     SettingItemSelect(
-                        title = { Text("调色风格") },
-                        description = { Text("决定强调色与中性色之间的关系") },
+                        title = { Text(SettingsStrings.paletteStyle) },
+                        description = { Text(SettingsStrings.paletteDescription) },
                         options = paletteStyles.map { it.displayName },
-                        selectedIndex = paletteStyles.indexOf(ThemeManager.getPaletteStyle()),
+                        selectedIndex = paletteStyles.indexOf(LocalAppTheme.current.snapshot.paletteStyle),
                         onSelect = { index -> settings.putString(THEME_PALETTE_STYLE_PREFERENCE_KEY, paletteStyles[index].name) },
                         settingKey = THEME_PALETTE_STYLE_PREFERENCE_KEY,
                     )
                 }
-                val currentPalette = ThemeManager.getPaletteStyle()
+                val currentPalette = LocalAppTheme.current.snapshot.paletteStyle
                 val colorSpecs = currentPalette.supportedColorSpecs
                 AnimatedVisibility(visible = moreColorsExpanded) {
                     SettingItemSelect(
-                        title = { Text("颜色规范") },
+                        title = { Text(SettingsStrings.colorSpecification) },
                         description = {
                             Text(
                                 if (colorSpecs.size == 1) {
-                                    "当前调色风格仅支持 ${colorSpecs.single().displayName} 规范"
+                                    SettingsStrings.paletteSupportedSpec(colorSpecs.single().displayName)
                                 } else {
-                                    "2025 规范提供更强的明暗层次和 Expressive 色彩关系"
+                                    SettingsStrings.expressiveColorSpec
                                 },
                             )
                         },
                         options = colorSpecs.map { it.displayName },
-                        selectedIndex = colorSpecs.indexOf(currentPalette.effectiveColorSpec(ThemeManager.getColorSpec())),
+                        selectedIndex = colorSpecs.indexOf(currentPalette.effectiveColorSpec(LocalAppTheme.current.snapshot.colorSpec)),
                         onSelect = { index -> settings.putString(THEME_COLOR_SPEC_PREFERENCE_KEY, colorSpecs[index].name) },
                         settingKey = THEME_COLOR_SPEC_PREFERENCE_KEY,
                     )
                 }
                 AnimatedVisibility(visible = moreColorsExpanded) {
                     SettingItem(
-                        title = { Text("自定义背景颜色") },
-                        description = { Text(if (ThemeManager.isDarkTheme()) "深色模式背景色" else "浅色模式背景色") },
+                        title = { Text(SettingsStrings.customBackgroundColor) },
+                        description = { Text(if (LocalAppTheme.current.isDarkTheme) SettingsStrings.darkBackgroundColor else SettingsStrings.lightBackgroundColor) },
                         onClick = { showBackgroundColorPicker = true },
-                        endAction = { ColorSwatch(ThemeManager.getBackgroundColor(), MaterialTheme.colorScheme.outlineVariant) },
+                        endAction = { ColorSwatch(LocalAppTheme.current.backgroundColor, MaterialTheme.colorScheme.outlineVariant) },
                         settingKey = APPEARANCE_SETTINGS_BACKGROUND_COLOR_KEY,
                     )
                 }
                 AnimatedVisibility(visible = moreColorsExpanded) {
                     SettingItem(
-                        title = { Text("唤起浏览器主题色") },
-                        description = { Text("应用内浏览器的工具栏颜色") },
+                        title = { Text(SettingsStrings.openBrowserThemeColor) },
+                        description = { Text(SettingsStrings.browserToolbarColorDescription) },
                         onClick = { showBrowserColorPicker = true },
                         endAction = { ColorSwatch(Color(browserColorArgb), MaterialTheme.colorScheme.outlineVariant) },
                         settingKey = APPEARANCE_SETTINGS_BROWSER_COLOR_KEY,
@@ -410,25 +424,25 @@ fun AppearanceSettingsScreen(
                 }
                 AnimatedVisibility(visible = moreColorsExpanded) {
                     SettingItem(
-                        title = { Text("恢复默认") },
-                        description = { Text("仅恢复调色风格、颜色规范、深浅背景色和浏览器工具栏颜色。") },
-                        endAction = { Icon(Icons.Default.RestartAlt, contentDescription = null) },
+                        title = { Text(SettingsStrings.restoreDefaults) },
+                        description = { Text(SettingsStrings.restoreColorsDescription) },
+                        endAction = { AppIcon(Icons.Default.RestartAlt, contentDescription = null) },
                         onClick = {
-                            ThemeManager.resetPaletteAndBackground(settings)
+                            resetPaletteAndBackground(settings)
                             settings.remove(BROWSER_TOOLBAR_COLOR_PREFERENCE_KEY)
-                            userMessages.showShortMessage("已恢复本组默认颜色")
+                            userMessages.showShortMessage(SettingsStrings.colorsRestored)
                         },
                     )
                 }
             }
         }
 
-        SettingItemGroup(title = "列表") {
+        SettingItemGroup(title = SettingsStrings.listSection) {
             var feedCardStyle by rememberSetting(settings, FEED_CARD_STYLE_PREFERENCE_KEY, "card")
             SettingItemSelect(
-                title = { Text("信息流样式") },
-                description = { Text("卡片保留圆角与间距；分割线使用无底色的连续列表。") },
-                options = listOf("卡片", "分割线"),
+                title = { Text(SettingsStrings.feedCardStyle) },
+                description = { Text(SettingsStrings.feedCardStyleDescription) },
+                options = listOf(SettingsStrings.cardStyle, SettingsStrings.dividerStyle),
                 selectedIndex = if (feedCardStyle == "divider") 1 else 0,
                 onSelect = { feedCardStyle = if (it == 1) "divider" else "card" },
                 settingKey = FEED_CARD_STYLE_PREFERENCE_KEY,
@@ -436,10 +450,10 @@ fun AppearanceSettingsScreen(
             )
         }
 
-        SettingItemGroup(title = "悬浮控件") {
+        SettingItemGroup(title = SettingsStrings.floatingControls) {
             SettingItemWithSwitch(
-                title = { Text("悬浮玻璃") },
-                description = { Text("顶栏、悬浮底栏和悬浮控件使用背景模糊；关闭后使用不透明背景。") },
+                title = { Text(SettingsStrings.floatingGlass) },
+                description = { Text(SettingsStrings.floatingGlassDescription) },
                 checked = appBlurEnabled,
                 onCheckedChange = { appBlurEnabled = it },
                 settingKey = APP_BLUR_PREFERENCE_KEY,
@@ -447,8 +461,8 @@ fun AppearanceSettingsScreen(
 
             var floatingBottomBar by rememberSetting(settings, FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true)
             SettingItemWithSwitch(
-                title = { Text("悬浮底栏") },
-                description = { Text("底栏脱离屏幕边缘，以圆角浮层显示；关闭后，足够宽的横屏窗口使用侧边导航，竖屏或窄窗口保持贴底。") },
+                title = { Text(SettingsStrings.floatingBottomBar) },
+                description = { Text(SettingsStrings.floatingBottomBarDescription) },
                 checked = floatingBottomBar,
                 onCheckedChange = { floatingBottomBar = it },
                 settingKey = FLOATING_BOTTOM_BAR_PREFERENCE_KEY,
@@ -456,8 +470,8 @@ fun AppearanceSettingsScreen(
 
             var floatingStyle by rememberSetting(settings, FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY, "default")
             SettingItemSelect(
-                title = { Text("悬浮底栏样式") },
-                options = listOf("默认", "Apple"),
+                title = { Text(SettingsStrings.floatingBottomBarStyle) },
+                options = listOf(SettingsStrings.defaultOption, "Apple"),
                 selectedIndex = if (floatingStyle == "apple") 1 else 0,
                 onSelect = { floatingStyle = if (it == 1) "apple" else "default" },
                 enabled = floatingBottomBar,
@@ -468,8 +482,8 @@ fun AppearanceSettingsScreen(
             var squarePopups by rememberSetting(settings, DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY, false)
             SettingItemWithSwitch(
                 modifier = Modifier.testTag(APPEARANCE_SETTINGS_DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_TAG),
-                title = { Text("禁用 popup 圆角") },
-                description = { Text("评论等 popup 顶部改为直角。") },
+                title = { Text(SettingsStrings.squarePopups) },
+                description = { Text(SettingsStrings.squarePopupsDescription) },
                 checked = squarePopups,
                 onCheckedChange = { squarePopups = it },
                 settingKey = DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY,
@@ -477,8 +491,8 @@ fun AppearanceSettingsScreen(
 
             var showCreateFab by rememberSetting(settings, "showCreateFab", true)
             SettingItemWithSwitch(
-                title = { Text("显示发布按钮") },
-                description = { Text("在主页右下角显示创作/发布按钮。") },
+                title = { Text(SettingsStrings.showCreateButton) },
+                description = { Text(SettingsStrings.showCreateButtonDescription) },
                 checked = showCreateFab,
                 onCheckedChange = { showCreateFab = it },
                 settingKey = "showCreateFab",
@@ -486,8 +500,8 @@ fun AppearanceSettingsScreen(
 
             var fabOpacity by rememberSetting(settings, PREF_FAB_OPACITY, DEFAULT_FAB_OPACITY)
             SettingItem(
-                title = { Text("悬浮按钮透明度") },
-                description = { Text("控制所有悬浮按钮的透明度 ($fabOpacity%)。") },
+                title = { Text(SettingsStrings.floatingButtonOpacity) },
+                description = { Text(SettingsStrings.floatingButtonOpacityDescription(fabOpacity)) },
                 settingKey = PREF_FAB_OPACITY,
                 bottomAction = {
                     val slider = rememberSliderState(value = fabOpacity.toFloat(), steps = 17, trackRange = 10f..100f)

@@ -19,9 +19,9 @@ package com.github.zly2006.zhihu.data
 
 import io.ktor.http.Cookie
 import io.ktor.http.Url
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 
 class ZhihuCookieStorageTest {
     @Test

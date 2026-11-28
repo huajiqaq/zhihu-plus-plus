@@ -27,11 +27,10 @@ import com.github.zly2006.zhihu.editor.PIN_TOPIC_SEPARATOR
 import com.github.zly2006.zhihu.editor.PinContentTopicItem
 import com.github.zly2006.zhihu.editor.compilePinMarkdown
 import com.github.zly2006.zhihu.editor.toPinMarkdown
-import kotlinx.serialization.encodeToString
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlinx.serialization.encodeToString
 
 class WritePinTopicTest {
     @Test
@@ -60,19 +59,33 @@ class WritePinTopicTest {
     }
 
     @Test
-    fun oldDraftConvertsOnlyUnambiguousMarkersAndMapsBothSelectionEnds() {
-        val raw = """{"title":"保留","content":"#A] #坏 #坏","contentSelectionStart":9,"contentSelectionEnd":2,"topics":[{"topic":{"topic_id":"1","topic_name":"A]"},"start":0,"endExclusive":3},{"topic":{"topic_id":"2","topic_name":"坏"},"start":4,"endExclusive":6},{"topic":{"topic_id":"3","topic_name":"坏"},"start":4,"endExclusive":6},{"topic":{"topic_id":"-1","topic_name":"坏"},"start":7,"endExclusive":9},{}]}"""
-        val draft = checkNotNull(readLocalPinDraft(raw))
-        val link = "[#A\\]](https://www.zhihu.com/topic/1)"
-        assertEquals("$link$PIN_TOPIC_SEPARATOR#坏 #坏", draft.content)
-        assertEquals(draft.content.length, draft.contentSelectionStart)
-        assertEquals(3, draft.contentSelectionEnd)
+    fun currentDraftPreservesTopicIdentityAndSelectionWithoutRewritingLinks() {
+        val topic = PinContentTopicItem("1354", "机器 学习")
+        val content = "${checkNotNull(topic.toPinMarkdown())}$PIN_TOPIC_SEPARATOR[普通](https://www.zhihu.com/topic/2) [#普通](<https://www.zhihu.com/topic/3>)"
+        val draft = LocalPinDraft(
+            title = "保留",
+            content = content,
+            titleSelectionStart = 2,
+            titleSelectionEnd = 0,
+            contentSelectionStart = content.length,
+            contentSelectionEnd = 1,
+        )
         val saved = ZhihuJson.json.encodeToString(draft)
-        assertContains(saved, "\"schema\":2")
-        assertFalse("\"topics\"" in saved)
-        assertEquals(draft, readLocalPinDraft(saved))
-        val unowned = checkNotNull(readLocalPinDraft(raw.replace("\"start\":0", "\"hasTrailingSpace\":false,\"start\":0")))
-        assertEquals("$link #坏 #坏", unowned.content)
-        assertEquals(emptyList(), compilePinMarkdown(checkNotNull(readLocalPinDraft("""{"content":"[#普通](https://www.zhihu.com/topic/1)"}""")).content).topics)
+        val restored = checkNotNull(readLocalPinDraft(saved))
+        assertEquals(draft, restored)
+        assertEquals(listOf(topic), compilePinMarkdown(restored.content).topics)
+        val outOfBounds = draft.copy(titleSelectionStart = 99, titleSelectionEnd = -1, contentSelectionStart = Int.MAX_VALUE, contentSelectionEnd = -1)
+        assertEquals(
+            draft.copy(contentSelectionEnd = 0),
+            readLocalPinDraft(ZhihuJson.json.encodeToString(outOfBounds)),
+        )
+    }
+
+    @Test
+    fun nonCurrentDraftsAreNotRestored() {
+        assertNull(readLocalPinDraft("""{"content":"[#普通](https://www.zhihu.com/topic/1)"}"""))
+        assertNull(readLocalPinDraft("""{"schema":1,"content":"[#普通](https://www.zhihu.com/topic/1)","topics":[]}"""))
+        assertNull(readLocalPinDraft("""{"schema":3,"content":"保留"}"""))
+        assertNull(readLocalPinDraft("""{"schema":2,"content":null}"""))
     }
 }

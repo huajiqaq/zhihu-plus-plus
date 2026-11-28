@@ -1,0 +1,47 @@
+{
+  "extensionName": {
+    "message": "Zhihu++ Open on PC"
+  },
+  "extensionDescription": {
+    "message": "Open the latest item sent from Zhihu++ on your computer."
+  },
+  "htmlLang": {
+    "message": "en"
+  },
+  "opening": {
+    "message": "Opening the latest item…"
+  },
+  "login": {
+    "message": "Sign in to Zhihu"
+  },
+  "loginRequired": {
+    "message": "Sign in to Zhihu in this browser"
+  },
+  "loginHint": {
+    "message": "Use the same Zhihu account as on your phone. Then click the extension icon to open the latest item."
+  },
+  "noCollection": {
+    "message": "Collection not found"
+  },
+  "noCollectionHint": {
+    "message": "Check that you are signed in to the same account as on your phone, then choose “Open on PC” in Zhihu++."
+  },
+  "emptyCollection": {
+    "message": "The collection is empty"
+  },
+  "emptyCollectionHint": {
+    "message": "Choose “Open on PC” in Zhihu++ first."
+  },
+  "cannotOpen": {
+    "message": "Could not open this item"
+  },
+  "timedOut": {
+    "message": "The request timed out"
+  },
+  "readFailed": {
+    "message": "Could not load the latest item"
+  },
+  "retryHint": {
+    "message": "Check that you are signed in to the same Zhihu account as on your phone, then try again."
+  }
+}

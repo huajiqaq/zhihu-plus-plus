@@ -15,7 +15,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
+import buildlogic.configureAndroidVariant
 import buildlogic.configureAppleTargets
+import buildlogic.configureIosVariant
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -43,14 +48,10 @@ kotlin {
     configureAppleTargets()
     applyDefaultHierarchyTemplate()
     sourceSets {
-        val androidFull =
-            create("androidFull") {
-                dependsOn(commonMain.get())
-            }
-        val androidLite =
-            create("androidLite") {
-                dependsOn(commonMain.get())
-            }
+        val markdownEditorMain = create("markdownEditorMain") { dependsOn(commonMain.get()) }
+        if (targets.withType<KotlinNativeTarget>().isNotEmpty()) {
+            nativeMain { dependsOn(markdownEditorMain) }
+        }
         val miuixThemeMain =
             create("miuixThemeMain") {
                 dependsOn(commonMain.get())
@@ -60,11 +61,16 @@ kotlin {
                     implementation(libs.miuix.ui)
                 }
             }
-        androidFull.dependsOn(miuixThemeMain)
+        androidMain { configureAndroidVariant(miuixThemeMain) }
+        wasmJsMain {
+            dependsOn(miuixThemeMain)
+            dependsOn(markdownEditorMain)
+        }
         jvmMain.get().dependsOn(miuixThemeMain)
-        findByName("appleMain")?.dependsOn(miuixThemeMain)
+        findByName("macosMain")?.dependsOn(miuixThemeMain)
+        findByName("iosMain")?.configureIosVariant(miuixThemeMain)
         commonMain.dependencies {
-            api(project(":shared-ui-base"))
+            implementation(project(":shared-ui-base"))
             implementation(libs.jb.compose.runtime)
             implementation(libs.jb.compose.foundation)
             implementation(libs.material3)
