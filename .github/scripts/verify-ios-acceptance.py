@@ -249,7 +249,7 @@ def verify_test_products(products, command):
         for token in re.split(r'''[:=;\s"']+''', value):
             # Apple's test host uses these simulator-root paths, not the build machine's workspace.
             platform_path = token.startswith(('/Applications/', '/Library/Developer/', '/System/', '/usr/')) or (
-                test_runtime and token in ('/Developer/Library/Frameworks', '/Developer/usr/lib',
+                test_runtime and value in ('/Developer/Library/Frameworks', '/Developer/usr/lib',
                     '/Developer/Library/PrivateFrameworks/DTXConnectionServices.framework/DTXConnectionServices'))
             if ((token.startswith('/') and not platform_path)
                     or (token.startswith(('/', '__')) and '..' in PurePosixPath(token).parts)):
@@ -316,7 +316,7 @@ def verify_test_products(products, command):
             if magic in (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca', b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'):
                 commands = command('/usr/bin/otool', '-l', path, capture=True)
                 for value in re.findall(r'^\s+(?:name|path) (.+) \(offset \d+\)$', commands, flags=re.MULTILINE):
-                    check_path(value, test_runtime=path.resolve().is_relative_to(host))
+                    check_path(value, test_runtime=path.resolve().is_relative_to(host) and not path.resolve().is_relative_to(app))
     return plans[0]
 
 
@@ -511,6 +511,9 @@ def self_check_products():
             executable.chmod(0o755)
             (directory / 'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleIdentifier=BUNDLE_ID,
                 CFBundleSupportedPlatforms=['iPhoneSimulator'], CFBundleExecutable=executable.name)))
+        framework = products / host / 'Frameworks/XCTestCore.framework/XCTestCore'
+        framework.parent.mkdir(parents=True)
+        framework.write_bytes(b'\xcf\xfa\xed\xfe' + b'synthetic test framework')
         diagnostic_source = '/Users/runner/work/iosApp/ZhihuPlusPlusApp.swift'
         plan = {TEST_TARGET: dict(BlueprintName=TEST_TARGET, IsUITestBundle=True, TestHostPath='__TESTROOT__/' + host,
                 TestBundlePath='__TESTHOST__/PlugIns/IOSAcceptanceTests.xctest', UITargetAppPath='__TESTROOT__/' + app,
@@ -563,7 +566,8 @@ def self_check_products():
             xctestrun.write_bytes(plistlib.dumps(plan))
         for runtime_path in ('/Developer/Library/Frameworks-elsewhere', '/Developer/usr/lib/evil.dylib',
                              '/Developer/Library/PrivateFrameworks/Other.framework/Other',
-                             '/Developer/Library/Frameworks/../escape', '/Developer/tmp'):
+                             '/Developer/Library/Frameworks/../escape', '/Developer/tmp', '/Developer/usr/lib extra',
+                             '/Developer/usr/lib:/Developer/Library/Frameworks'):
             reject(lambda: verify_test_products(products, runtime_command))
         reject(lambda: verify_test_products(products, lambda *args, **kwargs: 'x86_64'))
         reject(lambda: verify_test_products(products, lambda *args, **kwargs: 'arm64' if args[0].endswith('lipo') else '     path /private/tmp/frameworks (offset 12)\n'))
