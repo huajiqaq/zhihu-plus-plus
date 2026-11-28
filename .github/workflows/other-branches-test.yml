@@ -78,7 +78,8 @@ jobs:
           case "$TARGET" in
             lite) bash ./gradlew :app:assembleLiteDebug -PzhihuAndroidVariant=lite -PzhihuUpstreamPatches=true --max-workers=2 ;;
             full) bash ./gradlew :app:assembleFullDebug -PzhihuAndroidVariant=full -PzhihuUpstreamPatches=true --max-workers=2 ;;
-            linux|desktop) bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2 ;;
+            # 当前 KGP 诊断 Provider 无法从配置缓存读回；保留诊断任务及构建输出缓存。
+            linux|desktop) bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2 --no-configuration-cache --stacktrace ;;
             web) bash ./gradlew :webApp:wasmJsBrowserDistribution -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g --max-workers=2 ;;
             *) exit 1 ;;
           esac
@@ -141,12 +142,12 @@ jobs:
           native-cache-scope: desktop-native-build-only
       - name: Compile desktop and platform helpers
         shell: bash
-        run: bash ./gradlew :desktopApp:jar -PzhihuUpstreamPatches=true --max-workers=2
+        run: bash ./gradlew :desktopApp:jar -PzhihuUpstreamPatches=true --max-workers=2 --no-configuration-cache --stacktrace
       - name: Build Windows release app-image
         if: matrix.target == 'windows'
         shell: bash
         run: |
-          bash ./gradlew :desktopApp:createReleaseDistributable -PzhihuUpstreamPatches=true --max-workers=2
+          bash ./gradlew :desktopApp:createReleaseDistributable -PzhihuUpstreamPatches=true --max-workers=2 --no-configuration-cache --stacktrace
           python -I .github/scripts/verify-package-resources.py --platform windows \
             --desktop 'desktopApp/build/compose/binaries/main-release/app/Zhihu++'
       - name: Package Windows x64 MSI and unsigned MSIX
@@ -172,7 +173,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2
+          bash ./gradlew :desktopApp:createDistributable -PzhihuUpstreamPatches=true --max-workers=2 --no-configuration-cache --stacktrace
           app='desktopApp/build/compose/binaries/main/app/Zhihu++.app'
           test -x "$app/Contents/app/resources/reading/zhihu-reading-host"
           test -f "$app/Contents/app/resources/native-notifications/libZhihuPortableNotifications.dylib"
