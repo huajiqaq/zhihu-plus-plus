@@ -561,6 +561,7 @@ jobs:
         id: ios_acceptance
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/verify-ios-acceptance.py --self-check
           chmod +x ./gradlew
           python3 -I .github/scripts/verify-ios-acceptance.py --stage "$IOS_STAGE" --root "$GITHUB_WORKSPACE" \
             --output "$RUNNER_TEMP/ios-acceptance-$IOS_STAGE" --handoff "$RUNNER_TEMP/ios-simulator-products"

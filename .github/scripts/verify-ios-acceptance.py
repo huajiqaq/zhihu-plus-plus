@@ -283,16 +283,20 @@ def verify_test_products(products, command):
         path = PurePosixPath(suffix)
         if base is None or not sep or not path.parts or path.is_absolute() or '..' in path.parts or '\\' in suffix:
             raise RuntimeError(f'Expected a product-relative .xctestrun path: {value}')
-        resolved = (base / path).resolve(strict=True)
+        declared = base / path
+        resolved = declared.resolve(strict=True)
         if not resolved.is_relative_to(products):
             raise RuntimeError(f'Test product escapes Build/Products: {value}')
+        if resolved != declared:
+            raise RuntimeError(f'Declared test product uses a symlink alias: {value}')
         return resolved
 
     host = product_path(target['TestHostPath'])
     bundle = product_path(target['TestBundlePath'], host)
     app = product_path(target['UITargetAppPath'], host)
-    for value in target.get('DependentProductPaths', []):
-        product_path(value, host)
+    required = {host, bundle, app}
+    required.update(product_path(value, host) for value in target.get('DependentProductPaths', []))
+    roots = {path for path in required if not any(path != other and path.is_relative_to(other) for other in required)}
     if bundle.name != TEST_TARGET + '.xctest' or host.suffix != '.app' or app.name != 'ZhihuPlusPlus.app':
         raise RuntimeError('Unexpected simulator test, host or application bundle')
     for directory in (host, bundle, app):
@@ -309,7 +313,7 @@ def verify_test_products(products, command):
         if 'arm64' not in slices or (directory != host and slices != ['arm64']):
             raise RuntimeError(f'Unexpected simulator architectures for {name}: {slices}')
     # Source/debug records may name the compiler's tree; only runtime load paths must be portable.
-    for path in products.rglob('*'):
+    for path in (entry for root in sorted(roots) for entry in (root, *root.rglob('*'))):
         if path.is_file() and not path.is_symlink():
             with path.open('rb') as stream:
                 magic = stream.read(4)
@@ -317,7 +321,7 @@ def verify_test_products(products, command):
                 commands = command('/usr/bin/otool', '-l', path, capture=True)
                 for value in re.findall(r'^\s+(?:name|path) (.+) \(offset \d+\)$', commands, flags=re.MULTILINE):
                     check_path(value, test_runtime=path.resolve().is_relative_to(host) and not path.resolve().is_relative_to(app))
-    return plans[0]
+    return plans[0], roots
 
 
 def product_member(member, destination):
@@ -338,16 +342,22 @@ def products_digest(archive):
 
 
 def pack_products(products, handoff, identity, command):
-    verify_test_products(products, command)
+    plan, roots = verify_test_products(products, command)
     handoff.mkdir(exist_ok=False)
     archive = handoff / 'products.tar'
     def checked(member):
         product_member(member, products)
+        if member.issym() or member.islnk():
+            base = (products / member.name).parent if member.issym() else products
+            target = Path(os.path.normpath(base / member.linkname))
+            if any(not any(path.is_relative_to(root) for root in roots) for path in (target, target.resolve(strict=True))):
+                raise ValueError(f'Link target is not a declared test product: {member.name}')
         return member
 
+    # Build/Products also contains compile-only framework links; ship only the declared test products.
     with tarfile.open(archive, 'x') as package:
-        for entry in sorted(products.iterdir()):
-            package.add(entry, arcname=entry.name, filter=checked)
+        for entry in (plan, *sorted(roots)):
+            package.add(entry, arcname=entry.relative_to(products).as_posix(), filter=checked)
     manifest = dict(identity, sha256=products_digest(archive))
     (handoff / 'products.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
@@ -370,7 +380,7 @@ def unpack_products(handoff, products, identity, expected_digest, command):
         if len(names) != len(set(names)):
             raise ValueError('Duplicate simulator archive members')
         package.extractall(products, filter=product_member)
-    return verify_test_products(products, command)
+    return verify_test_products(products, command)[0]
 
 
 def ios_identity(variant):
@@ -536,10 +546,10 @@ def self_check_products():
             assert (tool, option) == ('/usr/bin/otool', '-l')
             return '     path @executable_path/Frameworks (offset 12)\n'
 
-        assert verify_test_products(products, command) == xctestrun
+        assert verify_test_products(products, command) == (xctestrun, {products / host, products / app})
         version_two = dict(TestConfigurations=[dict(TestTargets=[plan[TEST_TARGET]])], __xctestrun_metadata__=dict(FormatVersion=2))
         xctestrun.write_bytes(plistlib.dumps(version_two))
-        assert verify_test_products(products, command) == xctestrun
+        assert verify_test_products(products, command) == (xctestrun, {products / host, products / app})
         xctestrun.write_bytes(plistlib.dumps(plan))
         for bad_path in ('/private/tmp/producer/App.app', '__TESTROOT__/../escape', '__TESTROOT__/missing',
                          '__TESTROOT__//absolute', '__TESTROOT__/C:\\escape'):
@@ -558,7 +568,7 @@ def self_check_products():
                 if tool == '/usr/bin/otool' and executable.is_relative_to(products / host):
                     return f'     path {runtime_path} (offset 12)\n'
                 return command(tool, option, executable, capture)
-            assert verify_test_products(products, runtime_command) == xctestrun
+            assert verify_test_products(products, runtime_command) == (xctestrun, {products / host, products / app})
             reject(lambda: verify_test_products(products, lambda *args, **kwargs:
                 'arm64' if args[0].endswith('lipo') else f'     path {runtime_path} (offset 12)\n'))
             bad = copy.deepcopy(plan)
@@ -578,6 +588,20 @@ def self_check_products():
         reject(lambda: verify_test_products(products, command))
         duplicate.unlink()
 
+        dependency = products / 'Debug-iphonesimulator/Standalone.dylib'
+        dependency.write_bytes(b'\xcf\xfa\xed\xfe' + b'synthetic dependency')
+        plan[TEST_TARGET]['DependentProductPaths'].append('__TESTROOT__/' + dependency.relative_to(products).as_posix())
+        xctestrun.write_bytes(plistlib.dumps(plan))
+        assert verify_test_products(products, command)[1] == {products / host, products / app, dependency}
+        compile_only = products / 'Debug-iphonesimulator/Shared.framework'
+        if os.name != 'nt':
+            outside = work / 'compile-only/Shared.framework'
+            outside.mkdir(parents=True)
+            compile_only.symlink_to(outside, target_is_directory=True)
+        else:
+            compile_only.mkdir()
+        unused = products / 'build-diagnostic.txt'
+        unused.write_text('not a declared test product')
         handoff = work / 'handoff'
         manifest = pack_products(products, handoff, identity, command)
         consumer = dict(identity, runAttempt=2)
@@ -586,6 +610,10 @@ def self_check_products():
         assert restored == destination / xctestrun.name
         assert (destination / app / 'Executable').read_bytes() == (products / app / 'Executable').read_bytes()
         with tarfile.open(handoff / 'products.tar') as package:
+            assert compile_only.relative_to(products).as_posix() not in package.getnames()
+            assert unused.name not in package.getnames()
+            assert dependency.relative_to(products).as_posix() in package.getnames()
+            assert len(package.getnames()) == len(set(package.getnames()))
             if os.name != 'nt':
                 assert package.getmember(app + '/Executable').mode & 0o111 == 0o111
                 assert (destination / app / 'Executable').stat().st_mode & 0o111 == 0o111
@@ -625,12 +653,22 @@ def self_check_products():
         inside.type, inside.linkname = tarfile.LNKTYPE, 'Executable'
         assert product_member(inside, work).linkname == 'Executable'
         if os.name != 'nt':
-            (products / 'ExecutableLink').symlink_to(app + '/Executable')
+            (products / app / 'ExecutableLink').symlink_to('Executable')
             linked = work / 'linked-handoff'
             link_manifest = pack_products(products, linked, identity, command)
             target = work / 'linked-products'
             unpack_products(linked, target, consumer, link_manifest['sha256'], command)
-            assert (target / 'ExecutableLink').is_symlink()
+            assert (target / app / 'ExecutableLink').is_symlink()
+            alias = products / 'AppAlias.app'
+            alias.symlink_to(app, target_is_directory=True)
+            for dependency in (alias, compile_only):
+                bad = copy.deepcopy(plan)
+                bad[TEST_TARGET]['DependentProductPaths'].append('__TESTROOT__/' + dependency.relative_to(products).as_posix())
+                xctestrun.write_bytes(plistlib.dumps(bad))
+                reject(lambda: verify_test_products(products, command))
+            xctestrun.write_bytes(plistlib.dumps(plan))
+            (products / app / 'UnpackedLink').symlink_to('../../build-diagnostic.txt')
+            reject(lambda: pack_products(products, work / 'missing-link-target', identity, command))
         else:
             print('Windows: link confinement and tar modes checked; POSIX symlink/chmod round-trip requires a Mac')
 
