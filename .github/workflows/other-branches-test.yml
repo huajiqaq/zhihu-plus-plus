@@ -73,6 +73,8 @@ jobs:
               row = dict(case=name, clock=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                          mtime=path.stat().st_mtime, sha256Before=hashlib.sha256(path.read_bytes()).hexdigest())
               command(name + '-before', ['/usr/bin/codesign', '-d', '--verbose=4', str(path)])
+              if name.startswith('runtime-'):
+                  row['removeExit'] = command(name + '-remove-old-signature', ['/usr/bin/codesign', '--remove-signature', str(path)], True)
               row['signExit'] = command(name + '-sign', ['/usr/bin/codesign', '--verbose=4', '--force',
                                                        '--sign', '-', '--timestamp=none', str(path)])
               command(name + '-after', ['/usr/bin/codesign', '-d', '--verbose=4', str(path)])
