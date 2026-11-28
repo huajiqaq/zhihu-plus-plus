@@ -1,8 +1,20 @@
 -dontwarn com.hrm.latex.parser.tokenizer.LatexTokenizer$Companion
 
-# PDFBox 的 mmap 清理器使用 JDK 签名多态调用，ProGuard 7.8.0 按普通方法描述符误报。
+# PDFBox 的 mmap 清理器与 ORT FP16 转换使用 JDK 签名多态调用，ProGuard 7.8.0 按普通方法描述符误报。
 # 待 https://github.com/Guardsquare/proguard-core/pull/180 随正式版本发布后移除。
 -dontwarn org.apache.pdfbox.io.IOUtils
+-dontwarn ai.onnxruntime.platform.Fp16Conversions
+
+# PDF 导出只创建不加密的文档，不使用 PDFBox POM 中 optional 的 BouncyCastle 公钥加密。
+-dontwarn org.apache.pdfbox.pdmodel.encryption.PublicKeySecurityHandler
+-dontwarn org.apache.pdfbox.pdmodel.encryption.SecurityProvider
+
+# BatikSVGDrawer 默认 SECURE，不执行 Batik POM 中 optional 的 Jython 脚本。
+-dontwarn org.apache.batik.script.jpython.JPythonInterpreter
+
+# jsoup 的 optional RE2J 不在运行时；Regex.hasRe2j() 缺库时使用 JDK 正则。
+-dontwarn org.jsoup.helper.Re2jRegex
+-dontwarn org.jsoup.helper.Re2jRegex$Re2jMatcher
 
 # XMPBox 的 TypeMapping/XMPSchemaFactory 反射读取属性注解并调用模型构造器。
 -keepclassmembers class org.apache.xmpbox.** {

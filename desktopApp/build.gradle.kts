@@ -183,7 +183,7 @@ val proguardProvidedLibraries = configurations.create("proguardProvidedLibraries
 }
 configurations.named("compileOnly") { extendsFrom(proguardProvidedLibraries) }
 
-/** provided 注解只用于编译和 Proguard 符号解析，不进入安装包的运行时依赖。 */
+/** provided 类库只用于编译和 ProGuard 符号解析，不进入安装包的运行时依赖。 */
 abstract class GenerateProguardProvidedLibraries : DefaultTask() {
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.ABSOLUTE)
@@ -209,6 +209,8 @@ val generateProguardProvidedLibraries =
 dependencies {
     // JavaCPP 1.5.14 POM 的 provided 依赖，包含 ConsumerType 和 Export；不引入 Maven 工具。
     add(proguardProvidedLibraries.name, "org.osgi:osgi.annotation:8.1.0")
+    // Batik 1.17 的 optional Rhino 仅供解析继承成员；PDF 静态 SVG 禁止脚本，不打包解释器。
+    add(proguardProvidedLibraries.name, "org.mozilla:rhino:1.7.7")
     implementation(projects.shared)
     implementation(project(":shared-feature-settings"))
     runtimeOnly(libs.dbus.java.transport.native.unixsocket)
