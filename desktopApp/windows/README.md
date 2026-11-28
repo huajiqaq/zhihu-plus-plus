@@ -15,7 +15,7 @@ Windows x64 JVM 宿主默认 Full。正式 MSI 使用 [package-windows-msi.ps1](
   -Version <四段MSIX包版本号>
 ```
 
-构建与包装统一使用完整 Temurin JDK 25，另需 Visual Studio C++ 桌面工具/CMake 和 Windows SDK。将 `JAVA_HOME` 与 IDE 的 Gradle JDK 指向同一 JDK 25；包装脚本默认使用 `JAVA_HOME`，也可用 `-JavaHome` 显式指定该安装。脚本通过 `vswhere`、Windows SDK 的已安装根和版本发现其他工具，也可指定 `WindowsSdkRoot`、`WindowsSdkVersion`。没有 .NET SDK、NuGet、Windows App SDK runtime 或网络下载依赖。
+构建与包装统一使用带官方 JMOD 的 Temurin JDK 25，另需 Visual Studio C++ 桌面工具/CMake 和 Windows SDK。Temurin 25 默认 JDK 包不含 `jmods`；Release 的 ProGuard 需要 JDK 类库，MSI 脚本还需从 `jdk.jpackage.jmod` 读取官方模板。CI 使用 `actions/setup-java@v6` 的 `java-package: jdk+jmods`；本地需将同一正式版本、操作系统与架构的官方 JMOD 制品安装到 JDK 的 `jmods` 目录。将 `JAVA_HOME` 与 IDE 的 Gradle JDK 指向该 JDK 25；包装脚本默认使用 `JAVA_HOME`，也可用 `-JavaHome` 显式指定该安装。脚本通过 `vswhere`、Windows SDK 的已安装根和版本发现其他工具，也可指定 `WindowsSdkRoot`、`WindowsSdkVersion`。没有 .NET SDK、NuGet、Windows App SDK runtime 或网络下载依赖。
 
 `OutputDirectory` 必须不存在，且不能在输入 app-image 内。脚本只读取项目 app-image 中固定的 `app/Zhihu++.cfg`，只接受固定 `MainKt`、同目录 JAR 文件名与列明的必要 JVM 选项；不接受主类、外部路径、任意 JVM 参数或运行命令。身份/发布者必须显式传入，示例身份只能用于未签名核验。脚本生成 `Zhihu++.unsigned.msix`，MakeAppx 默认语义验证保持启用。它不签名、安装、注册、启动程序或发送通知。发布者另行通过正常签名/分发渠道提供完整包，不能用修改机器信任来代替正式发布。
 

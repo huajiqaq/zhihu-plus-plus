@@ -147,7 +147,7 @@ Android、Windows、Linux、macOS、iOS 与 Web 的当前实现、使用前提�
 
 ### 打包与纯构建 CI
 
-- **Windows MSI**：使用 [.github/scripts/package-windows-msi.ps1](.github/scripts/package-windows-msi.ps1)，传入 `-AppImage` 和新的 `-OutputDirectory`，并安装 WiX 3。脚本默认使用 `JAVA_HOME` 指向的同一完整 Temurin JDK 25，也可用 `-JavaHome` 显式指定。脚本基于该 JDK 的官方 `jpackage` 模板生成 per-user 安装包，并纳入通知注册与开始菜单入口。普通 `packageMsi` 不能代替此注册流程。MSIX 使用 [package-msix.ps1](desktopApp/windows/package-msix.ps1)，同样使用该 JDK 编译 JNI 启动器；Build Check 只产出 unsigned 包，不创建或信任证书。
+- **Windows MSI**：使用 [.github/scripts/package-windows-msi.ps1](.github/scripts/package-windows-msi.ps1)，传入 `-AppImage` 和新的 `-OutputDirectory`，并安装 WiX 3。脚本默认使用 `JAVA_HOME` 指向的同一 Temurin JDK 25，也可用 `-JavaHome` 显式指定。该安装必须包含同版、同操作系统与架构的官方 JMOD：Temurin 25 默认不附带 `jmods`，CI 用 `java-package: jdk+jmods` 同时满足 Release ProGuard 类库输入与 MSI 模板读取。脚本基于该 JDK 的官方 `jpackage` 模板生成 per-user 安装包，并纳入通知注册与开始菜单入口。普通 `packageMsi` 不能代替此注册流程。MSIX 使用 [package-msix.ps1](desktopApp/windows/package-msix.ps1)，同样使用该 JDK 编译 JNI 启动器；Build Check 只产出 unsigned 包，不创建或信任证书。
 - **Linux AppImage**：使用 [.github/scripts/package-linux-appimage.py](.github/scripts/package-linux-appimage.py)，传入 `--app-image`、`--icon` 和新的 `--output`。脚本打包内置 JRE 的应用目录及朗读客户端依赖，保留许可证，不安装或启动宿主的语音服务。
 - **Apple**：macOS 原生与 JVM 应用分别归档；JVM CI 包只有 ad-hoc 签名，不代表已公证。iOS 设备包为 unsigned IPA，模拟器包不是设备安装包。
 - **Web**：分发完整静态目录、字体、按需编解码器及第三方许可证；站点部署与编译分开，见 [Web 分发说明](webApp/README.md#生产构建与-github-pages)。

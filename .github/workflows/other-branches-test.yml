@@ -137,6 +137,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          java-package: ${{ matrix.target == 'windows' && 'jdk+jmods' || 'jdk' }}
       - uses: ./.github/actions/setup-build-inputs
         with:
           native-cache-scope: desktop-native-build-only

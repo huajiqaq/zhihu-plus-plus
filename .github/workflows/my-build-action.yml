@@ -42,6 +42,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          java-package: ${{ runner.os != 'macOS' && 'jdk+jmods' || 'jdk' }}
           problem-matcher: true
 
       - name: Prepare build inputs
