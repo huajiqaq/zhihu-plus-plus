@@ -276,13 +276,16 @@ val prepareAndroidFullLicenseManifest = tasks.register<Exec>("prepareAndroidFull
     val script = layout.projectDirectory.file("tools/android_full_licenses.py")
     val tokenizer = rootProject.layout.projectDirectory.dir("rs-hf-tokenizer")
     val sentenceLicense = rootProject.layout.projectDirectory.file("sentence_embeddings/LICENSE")
+    val licenseSupplements = layout.projectDirectory.dir("third-party-licenses/android-full")
     val python = providers.environmentVariable("ZHIHU_PYTHON").orElse("python3")
     inputs.files(script, tokenizer.file("Cargo.toml"), tokenizer.file("Cargo.lock"), tokenizer.file("LICENSE"), sentenceLicense)
+    inputs.dir(licenseSupplements)
     outputs.file(androidFullLicenseManifest)
     commandLine(
         python.get(), "-I", script.asFile.absolutePath,
         "--manifest", tokenizer.file("Cargo.toml").asFile.absolutePath,
         "--sentence-license", sentenceLicense.asFile.absolutePath,
+        "--license-supplements", licenseSupplements.file("sources.json").asFile.absolutePath,
         "--target", "aarch64-linux-android",
         "--target", "x86_64-linux-android",
         "--output", androidFullLicenseManifest.get().asFile.absolutePath,

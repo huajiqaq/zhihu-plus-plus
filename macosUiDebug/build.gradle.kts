@@ -40,11 +40,17 @@ ktlint {
 
 kotlin {
     macosArm64 {
+        val onnxRuntimeLibrary = project(":shared-domain").layout.buildDirectory.file("generated/onnxruntime-apple/macosArm64/libonnxruntime.1.dylib")
         binaries {
             all {
                 freeCompilerArgs += "-Xoverride-konan-properties=ignoreXcodeVersionCheck=true"
-                linkerOpts("-rpath", "@executable_path/../Frameworks")
-                linkTaskProvider.configure { dependsOn(":shared-domain:prepareAppleOnnxRuntime") }
+                // 内联参数值，避免 konanc 将独立的 @executable_path token 当作 argfile。
+                freeCompilerArgs += listOf("-linker-option=-rpath", "-linker-option=@executable_path/../Frameworks")
+                linkerOpts(onnxRuntimeLibrary.get().asFile.absolutePath)
+                linkTaskProvider.configure {
+                    dependsOn(":shared-domain:prepareAppleOnnxRuntime")
+                    inputs.file(onnxRuntimeLibrary)
+                }
             }
             executable(listOf(DEBUG)) {
                 baseName = "ZhihuPlusPlusUiDebug"

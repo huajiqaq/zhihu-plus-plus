@@ -161,23 +161,26 @@ if (providers.systemProperty("os.name").get().startsWith("Mac", ignoreCase = tru
     kotlin.targets.withType<KotlinNativeTarget>().configureEach {
         val targetName = name
         if (targetName.startsWith("ios") && !iosFull) return@configureEach
+        require(targetName in setOf("macosArm64", "iosArm64", "iosSimulatorArm64")) { "Unsupported Apple ONNX Runtime target: $targetName" }
         val interop = compilations.getByName("main").cinterops.create("onnxruntime") {
             definitionFile.set(layout.projectDirectory.file("src/nativeInterop/cinterop/onnxruntime.def"))
             includeDirs(layout.projectDirectory.dir("src/nativeInterop/cinterop"), appleRuntime.map { it.dir("include") })
-            when (targetName) {
-                "macosArm64" -> linkerOpts(appleRuntime.get().file("macosArm64/libonnxruntime.1.dylib").asFile.absolutePath)
-                // Shared.framework 为静态库，ORT 及系统依赖只由最终 Xcode Full 宿主链接一次。
-                "iosArm64", "iosSimulatorArm64" -> Unit
-                else -> error("Unsupported Apple ONNX Runtime target: $targetName")
-            }
+            // cinterop 只绑定头文件；ORT 由最终 macOS binary 或 Xcode Full 宿主链接。
         }
         tasks.named(interop.interopProcessingTaskName) {
             dependsOn(prepareAppleOnnxRuntime)
             inputs.dir(appleRuntime)
         }
         if (targetName == "macosArm64") {
+            val onnxRuntimeLibrary = appleRuntime.map { it.file("macosArm64/libonnxruntime.1.dylib") }
             binaries.all {
-                linkerOpts("-rpath", "@executable_path/../Frameworks", "-rpath", appleRuntime.get().dir("macosArm64").asFile.absolutePath)
+                // 内联参数值，避免 konanc 将独立的 @executable_path token 当作 argfile。
+                freeCompilerArgs += listOf("-linker-option=-rpath", "-linker-option=@executable_path/../Frameworks")
+                linkerOpts(onnxRuntimeLibrary.get().asFile.absolutePath, "-rpath", appleRuntime.get().dir("macosArm64").asFile.absolutePath)
+                linkTaskProvider.configure {
+                    dependsOn(prepareAppleOnnxRuntime)
+                    inputs.file(onnxRuntimeLibrary)
+                }
             }
         }
     }

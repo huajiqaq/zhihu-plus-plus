@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "packages": {
+    "cesu8@1.1.0": {
+      "registry": "registry+https://github.com/rust-lang/crates.io-index",
+      "crateUrl": "https://static.crates.io/crates/cesu8/cesu8-1.1.0.crate",
+      "crateSha256": "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c",
+      "license": "Apache-2.0/MIT",
+      "repository": "https://github.com/emk/cesu8-rs",
+      "revision": "f18962a9de5189f21600b7ff2898845157df4447",
+      "reason": "The published crate and release commit contain no LICENSE-APACHE or LICENSE-MIT. README.md says the adapted Rust code and new code use the same terms; the src/lib.rs header identifies the Rust Project Developers and Eric Kidd and offers Apache-2.0 or MIT. COPYRIGHT-RUST.txt is byte-identical to rust-lang/rust COPYRIGHT at the pinned Rust 0.12.0 commit below (Git blob 52039ea7e5734462f2989ef7f30ebbaf80fef949). The missing license texts are copied verbatim from that exact upstream tree, not generated from SPDX templates.",
+      "packageEvidence": [
+        {
+          "path": "README.md",
+          "url": "https://raw.githubusercontent.com/emk/cesu8-rs/f18962a9de5189f21600b7ff2898845157df4447/README.md",
+          "bytes": 1475,
+          "sha256": "4fcc5d9b5db444ad3c33c79aebe18de4fa6351982646da0b78830fbad67f9e8f"
+        }
+      ],
+      "packageNotices": [
+        {
+          "path": "src/lib.rs",
+          "url": "https://raw.githubusercontent.com/emk/cesu8-rs/f18962a9de5189f21600b7ff2898845157df4447/src/lib.rs",
+          "bytes": 16846,
+          "sha256": "402f647c80ccaa86f43a5571cc081aa66777d2a538ce9d9dc52a7e588ef137c9",
+          "noticePrefixBytes": 454
+        },
+        {
+          "path": "COPYRIGHT-RUST.txt",
+          "url": "https://raw.githubusercontent.com/emk/cesu8-rs/f18962a9de5189f21600b7ff2898845157df4447/COPYRIGHT-RUST.txt",
+          "bytes": 17426,
+          "sha256": "5ca77347e58205d3b543c04a9c5bdd11d20a9f3108a7b246640edffa999b5f35",
+          "matchingUpstreamUrl": "https://raw.githubusercontent.com/rust-lang/rust/ba4081a5a8573875fed17545846f6f6902c8ba8d/COPYRIGHT",
+          "gitBlob": "52039ea7e5734462f2989ef7f30ebbaf80fef949"
+        }
+      ],
+      "upstreamLicenses": [
+        {
+          "path": "cesu8-1.1.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/rust-lang/rust/ba4081a5a8573875fed17545846f6f6902c8ba8d/LICENSE-APACHE",
+          "bytes": 10847,
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "gitBlob": "16fe87b06e802f094b3fbb0894b137bca2b16ef1"
+        },
+        {
+          "path": "cesu8-1.1.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/rust-lang/rust/ba4081a5a8573875fed17545846f6f6902c8ba8d/LICENSE-MIT",
+          "bytes": 1071,
+          "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+          "gitBlob": "39d4bdb5acd313c1a92dbeaa1c379aaf0596a315"
+        }
+      ]
+    }
+  }
+}

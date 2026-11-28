@@ -21,12 +21,63 @@ import hashlib
 import json
 import re
 import subprocess
-from pathlib import Path
+import tomllib
+from pathlib import Path, PurePosixPath
 
 NOTICE_NAME = re.compile(r"(?:licen[cs]e|copying|notice)(?:[._-].*)?", re.IGNORECASE)
 
 
-def notice_content(package):
+def checked_original(directory, entry):
+    relative = PurePosixPath(entry["path"])
+    if relative.is_absolute() or "\\" in entry["path"] or any(part in ("", ".", "..") for part in entry["path"].split("/")):
+        raise ValueError(f"Invalid original license path: {entry['path']}")
+    path = directory
+    for part in relative.parts:
+        path = path / part
+        if path.is_symlink():
+            raise ValueError(f"Symlink in original license path: {path}")
+    path.resolve().relative_to(directory.resolve())
+    size = entry["bytes"]
+    if not isinstance(size, int) or not 0 < size <= 2_000_000 or path.stat().st_size != size:
+        raise ValueError(f"Original license size mismatch: {path}")
+    with path.open("rb") as stream:
+        data = stream.read(size + 1)
+    if len(data) != size or hashlib.sha256(data).hexdigest() != entry["sha256"]:
+        raise ValueError(f"Original license checksum mismatch: {path}")
+    return data
+
+
+def supplemental_notice_content(package, directory, source_manifest, locked_packages):
+    sources = json.loads(source_manifest.read_text(encoding="utf-8"))
+    if sources.get("version") != 1:
+        raise ValueError("Unsupported Android license supplement manifest")
+    source = sources["packages"].get(f"{package['name']}@{package['version']}")
+    if source is None:
+        raise ValueError(f"No original LICENSE/COPYING/NOTICE text in locked package {package['id']}")
+    locked = [entry for entry in locked_packages if entry["name"] == package["name"]
+              and entry["version"] == package["version"] and entry.get("source") == package.get("source")]
+    if (len(locked) != 1 or package.get("source") != source["registry"]
+            or locked[0].get("checksum") != source["crateSha256"] or package.get("license") != source["license"]):
+        raise ValueError(f"License supplement does not match locked package {package['id']}")
+    for evidence in source["packageEvidence"]:
+        checked_original(directory, evidence)
+    contents = []
+    for root, entries in ((directory, source["packageNotices"]), (source_manifest.parent, source["upstreamLicenses"])):
+        for entry in entries:
+            data = checked_original(root, entry)
+            prefix = entry.get("noticePrefixBytes", len(data))
+            if not isinstance(prefix, int) or not 0 < prefix <= len(data):
+                raise ValueError(f"Invalid original notice boundary: {entry['path']}")
+            text = data[:prefix].decode("utf-8")
+            if not text.strip():
+                raise ValueError(f"Empty original notice: {entry['path']}")
+            contents.append(f"--- {entry['path']} ---\n{text}")
+    if not source["upstreamLicenses"] or not contents:
+        raise ValueError(f"Missing original supplemental license text for {package['id']}")
+    return "\n\n".join(contents)
+
+
+def notice_content(package, source_manifest, locked_packages):
     directory = Path(package["manifest_path"]).resolve().parent
     candidates = directory.iterdir() if package.get("source") is None else directory.rglob("*")
     paths = {path for path in candidates if path.is_file() and NOTICE_NAME.fullmatch(path.name)}
@@ -44,7 +95,7 @@ def notice_content(package):
         if text.strip():
             contents.append(f"--- {relative.as_posix()} ---\n{text}")
     if not contents:
-        raise ValueError(f"No original LICENSE/COPYING/NOTICE text in locked package {package['id']}")
+        return supplemental_notice_content(package, directory, source_manifest, locked_packages)
     return "\n\n".join(contents)
 
 
@@ -87,12 +138,14 @@ def main():
     parser.add_argument("--cargo", default="cargo")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--sentence-license", type=Path, required=True)
+    parser.add_argument("--license-supplements", type=Path, required=True)
     parser.add_argument("--target", action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     manifest = args.manifest.resolve()
     if manifest.parent.name != "rs-hf-tokenizer":
         raise ValueError("Only the Android HF tokenizer workspace is supported")
+    locked_packages = tomllib.loads(manifest.with_name("Cargo.lock").read_text(encoding="utf-8"))["package"]
     libraries = []
     licenses = {}
 
@@ -127,7 +180,7 @@ def main():
             f"android-full:rust:{package['name']}:{package['version']}",
             "huggingface/tokenizers" if package["name"] == "tokenizers" else package["name"],
             package.get("license") or ("Apache-2.0" if local_wrapper else "Packaged license"),
-            notice_content(package),
+            notice_content(package, args.license_supplements.resolve(), locked_packages),
             version=package["version"],
             website=package.get("homepage") or package.get("repository"),
         )
