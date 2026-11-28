@@ -491,7 +491,7 @@ private fun LoginNoticeRow(
                     expand(action = toggle)
                 }
             }.animateContentSize(),
-        title = { Text(notice.title) },
+        title = { Text(notice.title, modifier = Modifier.testTag("login_notice_step_${index + 1}_title")) },
         description = { Text(notice.summary) },
         icon = {
             if (read) {

@@ -98,11 +98,13 @@ final class IOSAcceptanceTests: XCTestCase {
         }
         for index in 1...3 {
             let tag = "login_notice_step_\(index)"
+            // The expanded row contains links; toggle through its real title instead of the whole row's center.
+            let titleTag = tag + "_title"
             state(tag, "已收起")
-            tap(tag)
+            tap(titleTag)
             state(tag, "已展开")
             if index == 1 { evidence("notice-expanded", screenshot: true) }
-            tap(tag)
+            tap(titleTag)
             state(tag, "已收起")
         }
         let confirm = node("login_notice_confirm")
