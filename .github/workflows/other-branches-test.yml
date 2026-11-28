@@ -227,7 +227,7 @@ jobs:
     name: Build native macOS arm64 app
     if: inputs.target == 'all' || inputs.target == 'macos'
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
