@@ -91,13 +91,8 @@ jobs:
           print(json.dumps(paths, indent=2))
           def command(*args, capture=False):
               return subprocess.check_output(list(map(str, args)), text=True)
-          try:
-              checks['verify_test_products'](products, command)
-          except RuntimeError as error:
-              (evidence / 'verification.txt').write_text(str(error))
-              print(str(error))
-          else:
-              (evidence / 'verification.txt').write_text('Product verification passed')
+          checks['verify_test_products'](products, command)
+          (evidence / 'verification.txt').write_text('Product verification passed')
           PY
       - uses: actions/upload-artifact@v7
         if: always()

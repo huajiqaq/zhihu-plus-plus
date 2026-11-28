@@ -245,9 +245,13 @@ def verify_test_products(products, command):
         raise RuntimeError('Expected one regular .xctestrun at the Build/Products root')
     plan = plistlib.loads(plans[0].read_bytes())
 
-    def check_path(value):
+    def check_path(value, *, test_runtime=False):
         for token in re.split(r'''[:=;\s"']+''', value):
-            if ((token.startswith('/') and not token.startswith(('/Applications/', '/Library/Developer/', '/System/', '/usr/')))
+            # Apple's test host uses these simulator-root paths, not the build machine's workspace.
+            platform_path = token.startswith(('/Applications/', '/Library/Developer/', '/System/', '/usr/')) or (
+                test_runtime and token in ('/Developer/Library/Frameworks', '/Developer/usr/lib',
+                    '/Developer/Library/PrivateFrameworks/DTXConnectionServices.framework/DTXConnectionServices'))
+            if ((token.startswith('/') and not platform_path)
                     or (token.startswith(('/', '__')) and '..' in PurePosixPath(token).parts)):
                 raise RuntimeError(f'Non-relocatable test product runtime path: {token}')
 
@@ -312,7 +316,7 @@ def verify_test_products(products, command):
             if magic in (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca', b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'):
                 commands = command('/usr/bin/otool', '-l', path, capture=True)
                 for value in re.findall(r'^\s+(?:name|path) (.+) \(offset \d+\)$', commands, flags=re.MULTILINE):
-                    check_path(value)
+                    check_path(value, test_runtime=path.resolve().is_relative_to(host))
     return plans[0]
 
 
@@ -543,6 +547,24 @@ def self_check_products():
         xctestrun.write_bytes(plistlib.dumps(bad))
         reject(lambda: verify_test_products(products, command))
         xctestrun.write_bytes(plistlib.dumps(plan))
+        for runtime_path in ('/Developer/Library/Frameworks', '/Developer/usr/lib',
+                             '/Developer/Library/PrivateFrameworks/DTXConnectionServices.framework/DTXConnectionServices'):
+            def runtime_command(tool, option, executable, capture):
+                if tool == '/usr/bin/otool' and executable.is_relative_to(products / host):
+                    return f'     path {runtime_path} (offset 12)\n'
+                return command(tool, option, executable, capture)
+            assert verify_test_products(products, runtime_command) == xctestrun
+            reject(lambda: verify_test_products(products, lambda *args, **kwargs:
+                'arm64' if args[0].endswith('lipo') else f'     path {runtime_path} (offset 12)\n'))
+            bad = copy.deepcopy(plan)
+            bad[TEST_TARGET]['TestingEnvironmentVariables']['DYLD_FRAMEWORK_PATH'] = runtime_path
+            xctestrun.write_bytes(plistlib.dumps(bad))
+            reject(lambda: verify_test_products(products, command))
+            xctestrun.write_bytes(plistlib.dumps(plan))
+        for runtime_path in ('/Developer/Library/Frameworks-elsewhere', '/Developer/usr/lib/evil.dylib',
+                             '/Developer/Library/PrivateFrameworks/Other.framework/Other',
+                             '/Developer/Library/Frameworks/../escape', '/Developer/tmp'):
+            reject(lambda: verify_test_products(products, runtime_command))
         reject(lambda: verify_test_products(products, lambda *args, **kwargs: 'x86_64'))
         reject(lambda: verify_test_products(products, lambda *args, **kwargs: 'arm64' if args[0].endswith('lipo') else '     path /private/tmp/frameworks (offset 12)\n'))
         duplicate = products / 'Other.xctestrun'
