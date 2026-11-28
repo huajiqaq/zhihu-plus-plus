@@ -18,7 +18,6 @@
 package buildlogic
 
 import java.io.File
-import java.time.Instant
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -65,19 +64,19 @@ abstract class ValidateAndSignMacosApp @Inject constructor(
         }
         val onnxRuntime = bundle.resolve("Contents/Frameworks/libonnxruntime.1.dylib")
         check(onnxRuntime.isFile) { "macOS app is missing ONNX Runtime" }
-        logger.lifecycle("codesign adhoc-sign-runtime: clock={}, mtime={}", Instant.now(), Instant.ofEpochMilli(onnxRuntime.lastModified()))
+        // 先清除安装副本的旧 CMS 时间戳，再重新签名；不修改校验过的上游下载缓存。
         execOperations.exec { spec ->
-            spec.commandLine("/usr/bin/codesign", "--verbose=4", "--force", "--sign", "-", "--timestamp=none", onnxRuntime.absolutePath)
+            spec.commandLine("/usr/bin/codesign", "--remove-signature", onnxRuntime.absolutePath)
         }.assertNormalExitValue()
-        logger.lifecycle("codesign verify-runtime: clock={}, mtime={}", Instant.now(), Instant.ofEpochMilli(onnxRuntime.lastModified()))
         execOperations.exec { spec ->
-            spec.commandLine("/usr/bin/codesign", "--verbose=4", "--verify", "--strict", onnxRuntime.absolutePath)
+            spec.commandLine("/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", onnxRuntime.absolutePath)
         }.assertNormalExitValue()
-        logger.lifecycle("codesign adhoc-sign-bundle: clock={}", Instant.now())
+        execOperations.exec { spec ->
+            spec.commandLine("/usr/bin/codesign", "--verify", "--strict", onnxRuntime.absolutePath)
+        }.assertNormalExitValue()
         execOperations.exec { spec ->
             spec.commandLine(
                 "/usr/bin/codesign",
-                "--verbose=4",
                 "--force",
                 "--deep",
                 "--sign",
@@ -86,11 +85,9 @@ abstract class ValidateAndSignMacosApp @Inject constructor(
                 bundle.absolutePath,
             )
         }.assertNormalExitValue()
-        logger.lifecycle("codesign verify-bundle: clock={}", Instant.now())
         execOperations.exec { spec ->
             spec.commandLine(
                 "/usr/bin/codesign",
-                "--verbose=4",
                 "--verify",
                 "--deep",
                 "--strict",

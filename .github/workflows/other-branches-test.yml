@@ -8,7 +8,7 @@ on:
         type: choice
         required: true
         default: all
-        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, macos, macos-signing, aigc-server]
+        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, macos, aigc-server]
 
 permissions:
   contents: read
@@ -18,82 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  macos-signing:
-    name: Check isolated macOS ad-hoc signing
-    if: inputs.target == 'macos-signing'
-    runs-on: macos-26
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Sign pinned runtime copies and a local control library
-        shell: bash
-        run: |
-          python -I - <<'PY'
-          from pathlib import Path
-          import datetime, hashlib, json, os, shutil, subprocess, sys, tempfile
-          root = Path(os.environ['GITHUB_WORKSPACE'])
-          temporary = Path(tempfile.mkdtemp(prefix='zhihu-signing-', dir=os.environ['RUNNER_TEMP']))
-          evidence = Path(os.environ['RUNNER_TEMP']) / 'zhihu-macos-signing-evidence'
-          evidence.mkdir()
-          def command(label, args, required=False):
-              print(label, flush=True)
-              result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
-              (evidence / (label + '.txt')).write_text(result.stdout, encoding='utf-8')
-              print(result.stdout, flush=True)
-              if required and result.returncode:
-                  raise subprocess.CalledProcessError(result.returncode, args)
-              return result.returncode
-          command('os-version', ['/usr/bin/sw_vers'], True)
-          command('xcode-version', ['/usr/bin/xcodebuild', '-version'], True)
-          command('codesign-tool', ['/usr/bin/codesign', '-d', '--verbose=4', '/usr/bin/codesign'], True)
-          subprocess.run([sys.executable, '-I', str(root / 'shared-domain/tools/prepare_apple_onnxruntime.py'),
-                          '--lock', str(root / 'shared-domain/onnxruntime-apple.lock.json'),
-                          '--cache', str(temporary / 'downloads'), '--output', str(temporary / 'runtime')],
-                         check=True, timeout=240)
-          lock = json.loads((root / 'shared-domain/onnxruntime-apple.lock.json').read_text())
-          original = temporary / 'runtime/macosArm64' / lock['macosArm64']['fileName']
-          assert hashlib.sha256(original.read_bytes()).hexdigest() == lock['macosArm64']['sha256']
-          source = temporary / 'control.c'
-          source.write_text('int zhihu_signing_control(void) { return 0; }\n')
-          control = temporary / 'control.dylib'
-          command('compile-control', ['/usr/bin/xcrun', 'clang', '-arch', 'arm64', '-dynamiclib',
-                                      str(source), '-o', str(control)], True)
-          cases = [('control', control)]
-          for name, relative in [('runtime-loose', 'loose/libonnxruntime.1.dylib'),
-                                 ('runtime-bundle', 'Zhihu++.app/Contents/Frameworks/libonnxruntime.1.dylib')]:
-              target = temporary / relative
-              target.parent.mkdir(parents=True)
-              shutil.copyfile(original, target)
-              cases.append((name, target))
-          results = []
-          for name, path in cases:
-              row = dict(case=name, clock=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                         mtime=path.stat().st_mtime, sha256Before=hashlib.sha256(path.read_bytes()).hexdigest())
-              command(name + '-before', ['/usr/bin/codesign', '-d', '--verbose=4', str(path)])
-              if name.startswith('runtime-'):
-                  row['removeExit'] = command(name + '-remove-old-signature', ['/usr/bin/codesign', '--remove-signature', str(path)], True)
-              row['signExit'] = command(name + '-sign', ['/usr/bin/codesign', '--verbose=4', '--force',
-                                                       '--sign', '-', '--timestamp=none', str(path)])
-              command(name + '-after', ['/usr/bin/codesign', '-d', '--verbose=4', str(path)])
-              row['verifyExit'] = command(name + '-verify', ['/usr/bin/codesign', '--verbose=4',
-                                                           '--verify', '--strict', str(path)])
-              results.append(row)
-              (evidence / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
-          # A successful verify cannot override a failed signing process.
-          raise SystemExit(int(any(item['signExit'] or item['verifyExit'] for item in results)))
-          PY
-      - name: Upload isolated signing diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-signing-diagnostics
-          path: ${{ runner.temp }}/zhihu-macos-signing-evidence/
-          if-no-files-found: warn
-          retention-days: 7
-
   aigc-server:
     name: Check Rust AIGC service without tests or deployment
     if: inputs.target == 'all' || inputs.target == 'aigc-server'
@@ -303,7 +227,7 @@ jobs:
     name: Build native macOS arm64 app
     if: inputs.target == 'all' || inputs.target == 'macos'
     runs-on: macos-26
-    timeout-minutes: 120
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
