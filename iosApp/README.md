@@ -2,7 +2,7 @@
 
 SwiftUI 只嵌入一个 `ComposeUIViewController`。启动页、主题、页面、账号、主栈和分栏均来自共享模块。工程支持 arm64 iOS 与模拟器；设备包可在 Intel 或 Apple Silicon Mac 上构建，arm64 模拟器验收使用 Apple Silicon。包型差异、当前限制和验收状态见[平台能力与边界](../docs/platform-capabilities.md#ios)。
 
-**因设备及验证环境条件限制，本轮 iOS 未验证，未运行对应构建 CI。** 下列构建和验收入口继续保留；它们不是当前版本已通过的证明。
+**Full 已通过 arm64 模拟器构建、跨 job 产物交接及游客导航 XCTest；Lite 已通过 arm64 模拟器打包、资源／许可与无 ORT 链接检查。** XCTest 使用 iOS 26.5，不能代替最低版本 iOS 16 或真机验收。设备 Release IPA 的最终归档验收仍未完成；签名安装、输入法及系统功能的验证边界见[平台能力与边界](../docs/platform-capabilities.md#ios)。
 
 ## 构建
 
@@ -44,7 +44,7 @@ Xcode 配置通过 `ZHIHU_IOS_VARIANT` 向 Gradle 传递 `-PzhihuIosVariant=full
 `Pull Request Check` 工作流默认不运行 iOS，XCTest 验收阶段只覆盖 Full，不代表 Lite 已验收。手动选择 `checks=ios` 可只重验 iOS；`checks=all` 并开启 `apple_release` 则一并验收 Apple Release。`ios_stage=all` 默认运行两项，任一失败都会使聚合门禁失败；仅重验失败阶段时可选 `release` 或 `simulator`，单项成功不代表完整 iOS 验收。两项职责分别为：
 
 - `release`：使用内存较大的 Intel 宿主交叉链接优化的 `Release` / `iosArm64`。检查应用身份、arm64、资源与调试协议隔离后生成 `Payload/ZhihuPlusPlus.app` 结构的 unsigned IPA，并校验归档结构、CRC 和内容。它未签名，不代表真机可安装、已通过运行验收或可提交 App Store。
-- `simulator`：两个独立 job 均使用 Apple Silicon `macos-26`。构建 job 在临时工程副本生成 XCTest target，执行 Debug `build-for-testing`；成功后归档可搬迁的 `Build/Products`（含唯一 `.xctestrun`），保留可执行位与树内相对链接。测试 job 不安装 Gradle/Haxe，只通过 `-xctestrun test-without-building` 在本任务创建的 Simulator 检查登录说明展开/收起、游客进入外观及返回；不依赖 Release 构建，不注入生产调试协议，不使用真实账号。结束后删除本任务 Simulator。
+- `simulator`：两个独立 job 均使用 Apple Silicon `macos-26`。构建 job 在临时工程副本生成 XCTest target，执行 Debug `build-for-testing`；成功后按唯一 `.xctestrun` 的声明归档应用、测试宿主和依赖产物，保留相对目录、可执行位与产物内链接，不携带编译期 framework 外链。测试 job 不安装 Gradle/Haxe，只通过 `-xctestrun test-without-building` 在本任务创建的 Simulator 检查登录说明展开/收起、游客进入外观及返回；不依赖 Release 构建，不注入生产调试协议，不使用真实账号。结束后删除本任务 Simulator。
 
 验收证据上传为 Actions 制品 `iOS Acceptance-release-<attempt>`、`iOS Acceptance-simulator-build-<attempt>` 和 `iOS Acceptance-simulator-test-<attempt>`。Release 成功时提供未签名 IPA 和 `SHA256SUMS`；Simulator 的结论以实际执行的 XCTest 结果为准。失败时也会上传已生成的日志，不能仅凭制品存在判断通过。对应脚本为 [verify-ios-acceptance.py](../.github/scripts/verify-ios-acceptance.py)，运行时必须指定 `--stage release|simulator-build|simulator-test`；模拟器阶段另需 `--handoff` 目录。`--self-check` 只做本地静态与合成归档校验。该流程不创建公开发布。
 
@@ -68,4 +68,4 @@ SwiftUI `.ignoresSafeArea(.all)` 将整个窗口交给 Compose；`OnFocusBehavio
 - **同步与标记**：设置中的 WebDAV 同步使用用户配置的服务；AIGC 标记默认关闭，需主动启用并连接可用的独立服务。客户端能力不代表服务已经部署。
 - **离线语义过滤**：Full 在 NLP 屏蔽词设置中提供模型下载、加载、卸载与删除入口，模型就绪后本地执行语义匹配；Lite 不包含 NLP。HanLP 自动抽词仍是未移植功能，与 embedding 推理不同。
 
-PDF、NLP 与外接键盘等接线尚未经过 CI 和运行验收，签名与商店发布状态统一见[平台能力与边界](../docs/platform-capabilities.md#ios)。如果你对此感兴趣，欢迎提交 PR 补充实现与验收。
+PDF、NLP 与外接键盘接线已随模拟器应用编译，但具体功能尚未运行验收；游客导航 XCTest 不覆盖这些路径。签名与商店发布状态统一见[平台能力与边界](../docs/platform-capabilities.md#ios)。如果你对此感兴趣，欢迎提交 PR 补充实现与验收。

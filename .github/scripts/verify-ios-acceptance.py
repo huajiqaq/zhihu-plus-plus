@@ -349,8 +349,9 @@ def pack_products(products, handoff, identity, command):
         product_member(member, products)
         if member.issym() or member.islnk():
             base = (products / member.name).parent if member.issym() else products
-            target = Path(os.path.normpath(base / member.linkname))
-            if any(not any(path.is_relative_to(root) for root in roots) for path in (target, target.resolve(strict=True))):
+            target = base / member.linkname
+            if any(not any(path.is_relative_to(root) for root in roots)
+                   for path in (Path(os.path.normpath(target)), target.resolve(strict=True))):
                 raise ValueError(f'Link target is not a declared test product: {member.name}')
         return member
 
@@ -669,6 +670,12 @@ def self_check_products():
             xctestrun.write_bytes(plistlib.dumps(plan))
             (products / app / 'UnpackedLink').symlink_to('../../build-diagnostic.txt')
             reject(lambda: pack_products(products, work / 'missing-link-target', identity, command))
+            (products / app / 'UnpackedLink').unlink()
+            (products / app / 'Sub').symlink_to('.', target_is_directory=True)
+            (products / app / 'Outside').write_text('inside')
+            (products / app).parent.joinpath('Outside').write_text('not archived')
+            (products / app / 'Link').symlink_to('Sub/../Outside')
+            reject(lambda: pack_products(products, work / 'resolved-link-outside', identity, command))
         else:
             print('Windows: link confinement and tar modes checked; POSIX symlink/chmod round-trip requires a Mac')
 
@@ -957,15 +964,20 @@ def run_acceptance(root, output, stage, handoff, variant='full'):
                     with suppress(subprocess.TimeoutExpired):
                         proc.wait(timeout=1)
             except BaseException:
-                if proc.returncode is None:
+                if proc.poll() is None:
                     # Only this fresh session's process group; a detached Gradle daemon is not in it.
                     status('Terminating this Xcode process group; full log retained')
-                    with suppress(ProcessLookupError):
+                    try:
                         os.killpg(proc.pid, signal.SIGTERM)
-                    time.sleep(2)
-                    with suppress(ProcessLookupError):
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait(timeout=10)
+                        try:
+                            proc.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                            proc.wait(timeout=10)
+                    except ProcessLookupError:
+                        pass
+                    except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                        status(f'Xcode process cleanup failed: {cleanup_error}')
                 raise
             finally:
                 elapsed = f'{log}: {time.monotonic() - started:.1f}s\n'

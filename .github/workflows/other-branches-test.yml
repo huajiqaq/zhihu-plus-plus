@@ -302,6 +302,7 @@ jobs:
         id: package
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/verify-ios-acceptance.py --self-check
           chmod +x ./gradlew
           # The release stage only builds and checks the archive/resources; it never starts a device or test target.
           python3 -I .github/scripts/verify-ios-acceptance.py --stage release --variant '${{ matrix.variant }}' \
