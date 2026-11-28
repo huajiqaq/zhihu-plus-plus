@@ -8,7 +8,7 @@ on:
         type: choice
         required: true
         default: all
-        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, ios-inputs, macos, aigc-server]
+        options: [all, lite, full, linux, desktop, windows, desktop-macos, web, ios, ios-device, ios-simulator, ios-device-full, ios-device-lite, ios-simulator-full, ios-simulator-lite, macos, aigc-server]
 
 permissions:
   contents: read
@@ -18,113 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ios-inputs:
-    name: Check isolated iOS link and localized inputs
-    if: inputs.target == 'ios-inputs'
-    runs-on: macos-26
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Check system linkage and Xcode strings compilation without Kotlin
-        run: |
-          python -I - <<'PY'
-          from pathlib import Path
-          import json, os, plistlib, subprocess, sys, tempfile
-          root = Path(os.environ['GITHUB_WORKSPACE'])
-          work = Path(tempfile.mkdtemp(prefix='zhihu-ios-inputs-', dir=os.environ['RUNNER_TEMP']))
-          evidence = Path(os.environ['RUNNER_TEMP']) / 'ios-inputs-evidence'
-          evidence.mkdir()
-          def run(label, args, timeout=180):
-              result = subprocess.run(list(map(str, args)), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
-              (evidence / (label + '.log')).write_text(result.stdout, encoding='utf-8')
-              print(label + ': exit ' + str(result.returncode), flush=True)
-              for line in result.stdout.splitlines():
-                  if 'error:' in line or 'Undefined symbols' in line or 'BUILD SUCCEEDED' in line:
-                      print(line[:1000], flush=True)
-              return result.returncode
-          prepare = [sys.executable, '-I', root / 'shared-domain/tools/prepare_apple_onnxruntime.py',
-                     '--lock', root / 'shared-domain/onnxruntime-apple.lock.json', '--cache', work / 'cache', '--output', work / 'ort']
-          if run('prepare-runtime', prepare, 240):
-              raise SystemExit(1)
-          code = work / 'ort-main.c'
-          code.write_text('#include "onnxruntime_c_api.h"\nint main(void) { return OrtGetApiBase() == 0; }\n')
-          results = {}
-          for sdk, triple, slice_name in [('iphonesimulator', 'arm64-apple-ios16.0-simulator', 'ios-arm64_x86_64-simulator'),
-                                          ('iphoneos', 'arm64-apple-ios16.0', 'ios-arm64')]:
-              sysroot = subprocess.check_output(['xcrun', '--sdk', sdk, '--show-sdk-path'], text=True).strip()
-              args = ['xcrun', '--sdk', sdk, 'clang', '-target', triple, '-isysroot', sysroot,
-                      '-I', work / 'ort/include', code, '-Xlinker', '-force_load', '-Xlinker',
-                      work / 'ort' / slice_name / 'onnxruntime.framework/onnxruntime',
-                      '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'Security', '-framework', 'Network',
-                      '-weak_framework', 'CoreML', '-lc++', '-lsqlite3', '-lz', '-o', work / ('ort-' + sdk)]
-              results[sdk + '-link'] = run(sdk + '-link', args)
-          main = work / 'main.c'
-          main.write_text('int main(void) { return 0; }\n')
-          info = work / 'Info.plist'
-          info.write_bytes(plistlib.dumps(dict(CFBundleIdentifier='io.zhihu.inputsprobe', CFBundleExecutable='InputsProbe',
-                                              CFBundlePackageType='APPL', CFBundleName='InputsProbe', CFBundleVersion='1', CFBundleShortVersionString='1')))
-          for kind in ('xml', 'utf16'):
-              folder = work / kind
-              folder.mkdir()
-              expected = {}
-              for language in ('en', 'zh-Hans'):
-                  source = root / 'iosApp' / (language + '.lproj') / 'InfoPlist.strings'
-                  values = json.loads(subprocess.check_output(['/usr/bin/plutil', '-convert', 'json', '-o', '-', str(source)]))
-                  for key in ('CFBundleDisplayName', 'CFBundleName'):
-                      values[key] += ' Lite'
-                  target = folder / (language + '.lproj') / 'InfoPlist.strings'
-                  target.parent.mkdir()
-                  expected[language] = values
-                  if kind == 'xml':
-                      target.write_bytes(source.read_bytes())
-                      subprocess.run(['/usr/bin/plutil', '-convert', 'xml1', str(target)], check=True)
-                      for key in ('CFBundleDisplayName', 'CFBundleName'):
-                          subprocess.run(['/usr/bin/plutil', '-replace', key, '-string', values[key], str(target)], check=True)
-                  else:
-                      target.write_text('\n'.join(json.dumps(k, ensure_ascii=False) + ' = ' + json.dumps(v, ensure_ascii=False) + ';' for k, v in values.items()) + '\n', encoding='utf-16')
-              ids = {name: f'{n:024X}' for n, name in enumerate(('project', 'group', 'products', 'target', 'product', 'configs', 'debug', 'sources', 'source', 'source-build', 'resources', 'strings', 'en', 'zh', 'strings-build'), 1)}
-              objects = {}
-              def obj(key, isa, **fields):
-                  objects[ids[key]] = dict(isa=isa, **fields)
-              obj('project', 'PBXProject', attributes={}, buildConfigurationList=ids['configs'], compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'zh-Hans'], mainGroup=ids['group'], productRefGroup=ids['products'], targets=[ids['target']])
-              obj('group', 'PBXGroup', children=[ids['source'], ids['strings'], ids['products']], sourceTree='<group>')
-              obj('products', 'PBXGroup', children=[ids['product']], name='Products', sourceTree='<group>')
-              obj('product', 'PBXFileReference', explicitFileType='wrapper.application', path='InputsProbe.app', sourceTree='BUILT_PRODUCTS_DIR')
-              obj('target', 'PBXNativeTarget', name='InputsProbe', productName='InputsProbe', productType='com.apple.product-type.application', productReference=ids['product'], buildConfigurationList=ids['configs'], buildPhases=[ids['sources'], ids['resources']], dependencies=[], buildRules=[])
-              obj('configs', 'XCConfigurationList', buildConfigurations=[ids['debug']], defaultConfigurationName='Debug', defaultConfigurationIsVisible=0)
-              obj('debug', 'XCBuildConfiguration', name='Debug', buildSettings=dict(SDKROOT='iphonesimulator', ARCHS='arm64', IPHONEOS_DEPLOYMENT_TARGET='16.0', PRODUCT_NAME='InputsProbe', PRODUCT_BUNDLE_IDENTIFIER='io.zhihu.inputsprobe', INFOPLIST_FILE=str(info), CODE_SIGNING_ALLOWED='NO'))
-              obj('source', 'PBXFileReference', lastKnownFileType='sourcecode.c.c', path=str(main), sourceTree='<absolute>')
-              obj('source-build', 'PBXBuildFile', fileRef=ids['source'])
-              obj('sources', 'PBXSourcesBuildPhase', buildActionMask=2147483647, files=[ids['source-build']], runOnlyForDeploymentPostprocessing=0)
-              obj('strings', 'PBXVariantGroup', children=[ids['en'], ids['zh']], name='InfoPlist.strings', sourceTree='<group>')
-              for name, language in [('en', 'en'), ('zh', 'zh-Hans')]:
-                  obj(name, 'PBXFileReference', lastKnownFileType='text.plist.strings', name=language, path=str(folder / (language + '.lproj') / 'InfoPlist.strings'), sourceTree='<absolute>')
-              obj('strings-build', 'PBXBuildFile', fileRef=ids['strings'])
-              obj('resources', 'PBXResourcesBuildPhase', buildActionMask=2147483647, files=[ids['strings-build']], runOnlyForDeploymentPostprocessing=0)
-              project = folder / 'InputsProbe.xcodeproj'
-              project.mkdir()
-              (project / 'project.pbxproj').write_bytes(plistlib.dumps(dict(archiveVersion='1', objectVersion='56', objects=objects, rootObject=ids['project'])))
-              results[kind + '-strings'] = run(kind + '-strings', ['xcodebuild', '-quiet', '-project', project, '-target', 'InputsProbe', '-configuration', 'Debug', '-sdk', 'iphonesimulator', 'CODE_SIGNING_ALLOWED=NO', 'SYMROOT=' + str(folder / 'products'), 'OBJROOT=' + str(folder / 'objects'), 'build'])
-              if results[kind + '-strings'] == 0:
-                  for language in ('en', 'zh-Hans'):
-                      packed = folder / 'products/Debug-iphonesimulator/InputsProbe.app' / (language + '.lproj') / 'InfoPlist.strings'
-                      parsed = json.loads(subprocess.check_output(['/usr/bin/plutil', '-convert', 'json', '-o', '-', str(packed)]))
-                      assert parsed == expected[language], (kind, language, parsed)
-          (evidence / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
-          print(json.dumps(results), flush=True)
-          raise SystemExit(int(results['iphonesimulator-link'] != 0 or results['iphoneos-link'] != 0 or (results['xml-strings'] != 0 and results['utf16-strings'] != 0)))
-          PY
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: ios-inputs-diagnostics
-          path: ${{ runner.temp }}/ios-inputs-evidence/
-          if-no-files-found: error
-          retention-days: 7
-
   aigc-server:
     name: Check Rust AIGC service without tests or deployment
     if: inputs.target == 'all' || inputs.target == 'aigc-server'

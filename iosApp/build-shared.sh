@@ -93,8 +93,8 @@ for language in en zh-Hans; do
     localized_strings="$localized_dir/InfoPlist.strings"
     cp "$SRCROOT/$language.lproj/InfoPlist.strings" "$localized_strings"
     if [ "$ZHIHU_IOS_VARIANT" = lite ]; then
-        # plutil can read OpenStep .strings, but mutations require a writable plist format.
-        /usr/bin/plutil -convert binary1 "$localized_strings"
+        # XML supports plutil mutations and remains text input for Xcode's CopyStringsFile.
+        /usr/bin/plutil -convert xml1 "$localized_strings"
         for key in CFBundleDisplayName CFBundleName; do
             name=$(/usr/bin/plutil -extract "$key" raw -o - "$localized_strings")
             /usr/bin/plutil -replace "$key" -string "$name Lite" "$localized_strings"
