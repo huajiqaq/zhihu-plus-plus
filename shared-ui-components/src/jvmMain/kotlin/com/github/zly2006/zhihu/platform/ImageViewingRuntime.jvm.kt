@@ -8,35 +8,19 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Affero General Public License for more details.
  *
  * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.github.zly2006.zhihu.platform
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import com.github.zly2006.zhihu.desktop.openDesktopExternalUrl
 
 @Composable
-actual fun rememberImagePreviewOpener(): ImagePreviewOpener = remember {
-    object : ImagePreviewOpener {
-        override fun invoke(url: String) {
-            openDesktopExternalUrl(url)
-        }
-    }
-}
+actual fun rememberImagePreviewOpener(): ImagePreviewOpener = rememberGalleryImagePreviewOpener()
 
 @Composable
-actual fun rememberImageGalleryOpener(): ImageGalleryOpener = remember {
-    object : ImageGalleryOpener {
-        override fun invoke(urls: List<String>, initialIndex: Int) {
-            if (urls.isNotEmpty()) {
-                openDesktopExternalUrl(urls[initialIndex.coerceIn(0, urls.lastIndex)])
-            }
-        }
-    }
-}
+actual fun rememberImageGalleryOpener(): ImageGalleryOpener = rememberComposeImageGalleryOpener()

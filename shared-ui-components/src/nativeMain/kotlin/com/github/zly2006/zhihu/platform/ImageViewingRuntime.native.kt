@@ -20,4 +20,4 @@ package com.github.zly2006.zhihu.platform
 import androidx.compose.runtime.Composable
 
 @Composable
-actual fun rememberImagePreviewOpener(): ImagePreviewOpener = rememberExternalUrlOpener()
+actual fun rememberImagePreviewOpener(): ImagePreviewOpener = rememberGalleryImagePreviewOpener()

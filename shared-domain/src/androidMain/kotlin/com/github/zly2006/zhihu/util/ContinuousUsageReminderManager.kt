@@ -23,52 +23,36 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.platform.androidSettingsStore
-import com.github.zly2006.zhihu.util.ContinuousUsageReminderPolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class ContinuousUsageReminderManager(
-    private val activity: ComponentActivity,
-) {
-    init {
-        current = this
-    }
-
-    private val settingsStore by lazy { androidSettingsStore(activity) }
-
-    private var policy = ContinuousUsageReminderPolicy(loadIntervalMinutes())
-    private var sessionAccumulatedForegroundMs =
-        settingsStore.getLong(KEY_SESSION_ACCUMULATED_FOREGROUND_MS, 0L).coerceAtLeast(0L)
-    private var foregroundStartElapsedMs: Long? = null
+/** Android 仍由原 Activity 前后台事件驱动，时钟与系统对话框语义不变。 */
+class ContinuousUsageReminderManager(private val activity: ComponentActivity) {
+    private val session = ContinuousUsageSession(androidSettingsStore(activity), SystemClock::elapsedRealtime, System::currentTimeMillis)
     private var checkJob: Job? = null
     private var reminderDialog: AlertDialog? = null
 
+    init { current = this }
+
     fun onAppForeground() {
-        if (foregroundStartElapsedMs == null) {
-            restoreSessionForForegroundStart()
-            foregroundStartElapsedMs = SystemClock.elapsedRealtime()
+        session.foreground()
+        if (checkJob?.isActive != true) {
+            checkJob = activity.lifecycleScope.launch {
+                while (isActive) {
+                    delay(ContinuousUsageSession.CHECK_INTERVAL_MS)
+                    checkAndShowReminder()
+                }
+            }
         }
-        val elapsedForegroundMs = currentElapsedForegroundMs()
-        syncIntervalWithPreferences(elapsedForegroundMs, forceUpdatePolicyBucket = true)
-        ensureCheckLoop()
         checkAndShowReminder()
     }
 
     fun onAppBackground() {
         checkJob?.cancel()
         checkJob = null
-
-        foregroundStartElapsedMs?.let { startElapsed ->
-            val foregroundDuration = SystemClock.elapsedRealtime() - startElapsed
-            sessionAccumulatedForegroundMs += foregroundDuration
-            sessionAccumulatedForegroundMs = sessionAccumulatedForegroundMs.coerceAtLeast(0L)
-            settingsStore.putLong(KEY_SESSION_ACCUMULATED_FOREGROUND_MS, sessionAccumulatedForegroundMs)
-            settingsStore.putLong(KEY_SESSION_LAST_BACKGROUND_WALL_CLOCK_MS, System.currentTimeMillis())
-        }
-        foregroundStartElapsedMs = null
-
+        session.background()
         reminderDialog?.dismiss()
         reminderDialog = null
     }
@@ -81,85 +65,23 @@ class ContinuousUsageReminderManager(
         if (current === this) current = null
     }
 
-    private fun ensureCheckLoop() {
-        if (checkJob?.isActive == true) return
-        checkJob = activity.lifecycleScope.launch {
-            while (isActive) {
-                delay(CHECK_INTERVAL_MS)
-                checkAndShowReminder()
-            }
-        }
-    }
+    fun currentElapsedForegroundMs(): Long = session.elapsedForegroundMs()
 
     private fun checkAndShowReminder() {
-        val elapsedForegroundMs = currentElapsedForegroundMs()
-        if (elapsedForegroundMs <= 0L) return
-
-        syncIntervalWithPreferences(elapsedForegroundMs)
-
-        val reminder = policy.consumeReminder(elapsedForegroundMs) ?: return
-        if (activity.isFinishing || activity.isDestroyed) return
-
-        if (reminderDialog?.isShowing == true) return
-        reminderDialog = AlertDialog
-            .Builder(activity)
+        val reminder = session.consumeReminder() ?: return
+        if (activity.isFinishing || activity.isDestroyed || reminderDialog?.isShowing == true) return
+        reminderDialog = AlertDialog.Builder(activity)
             .setTitle(DomainStrings.breakReminder)
             .setMessage(DomainStrings.breakReminderTime(reminder.durationText))
             .setPositiveButton(DomainStrings.gotIt, null)
             .show()
     }
 
-    private fun restoreSessionForForegroundStart() {
-        val now = System.currentTimeMillis()
-        val lastBackgroundWallClockMs = settingsStore.getLong(KEY_SESSION_LAST_BACKGROUND_WALL_CLOCK_MS, 0L)
-        val shouldContinueSession = shouldContinueSession(lastBackgroundWallClockMs, now)
-
-        if (shouldContinueSession) {
-            sessionAccumulatedForegroundMs =
-                settingsStore.getLong(KEY_SESSION_ACCUMULATED_FOREGROUND_MS, 0L).coerceAtLeast(0L)
-        } else {
-            sessionAccumulatedForegroundMs = 0L
-            policy.resetSession()
-            settingsStore.putLong(KEY_SESSION_ACCUMULATED_FOREGROUND_MS, 0L)
-        }
-
-        settingsStore.putLong(KEY_SESSION_LAST_BACKGROUND_WALL_CLOCK_MS, 0L)
-    }
-
-    fun currentElapsedForegroundMs(): Long {
-        val startElapsed = foregroundStartElapsedMs ?: return sessionAccumulatedForegroundMs
-        return sessionAccumulatedForegroundMs + (SystemClock.elapsedRealtime() - startElapsed)
-    }
-
-    private fun syncIntervalWithPreferences(
-        elapsedForegroundMs: Long = 0L,
-        forceUpdatePolicyBucket: Boolean = false,
-    ) {
-        val interval = loadIntervalMinutes()
-        if (!forceUpdatePolicyBucket && interval == policy.intervalMinutes) return
-        policy.updateInterval(intervalMinutes = interval, elapsedForegroundMs = elapsedForegroundMs)
-    }
-
-    private fun loadIntervalMinutes(): Int {
-        val storedInterval = settingsStore.getInt(KEY_CONTINUOUS_USAGE_REMINDER_INTERVAL_MINUTES, 0)
-        return ContinuousUsageReminderPolicy.normalizeIntervalMinutes(storedInterval)
-    }
-
     companion object {
         private var current: ContinuousUsageReminderManager? = null
-
         fun currentElapsedForegroundMs(): Long = current?.currentElapsedForegroundMs() ?: 0L
-
-        const val KEY_CONTINUOUS_USAGE_REMINDER_INTERVAL_MINUTES = "continuousUsageReminderIntervalMinutes"
-        private const val KEY_SESSION_ACCUMULATED_FOREGROUND_MS = "continuousUsageReminderSessionAccumulatedMs"
-        private const val KEY_SESSION_LAST_BACKGROUND_WALL_CLOCK_MS = "continuousUsageReminderLastBackgroundWallClockMs"
-        private const val CHECK_INTERVAL_MS = 10_000L
-        private const val CONTINUITY_GRACE_MS = 5 * 60_000L
-
-        internal fun shouldContinueSession(lastBackgroundWallClockMs: Long, nowWallClockMs: Long): Boolean {
-            if (lastBackgroundWallClockMs <= 0L) return false
-            if (nowWallClockMs < lastBackgroundWallClockMs) return false
-            return nowWallClockMs - lastBackgroundWallClockMs <= CONTINUITY_GRACE_MS
-        }
+        const val KEY_CONTINUOUS_USAGE_REMINDER_INTERVAL_MINUTES = ContinuousUsageSession.INTERVAL_KEY
+        internal fun shouldContinueSession(lastBackgroundWallClockMs: Long, nowWallClockMs: Long): Boolean =
+            ContinuousUsageSession.shouldContinueSession(lastBackgroundWallClockMs, nowWallClockMs)
     }
 }

@@ -15,6 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package com.github.zly2006.zhihu.ui
 
 import androidx.compose.foundation.layout.Box
@@ -22,8 +24,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
@@ -42,11 +47,15 @@ import com.github.zly2006.zhihu.reading.ReadingPlayerHost
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.components.AppDialog
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
+import com.github.zly2006.zhihu.ui.components.ContinuousUsageReminderHost
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnFab
 import com.github.zly2006.zhihu.ui.components.WebUserMessageHost
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
+import kotlinx.browser.document
+import kotlinx.browser.window
+import org.w3c.dom.events.Event
 
 @Composable
 fun WebZhihuMain() {
@@ -68,6 +77,7 @@ fun WebZhihuMain() {
                         )
                     },
                 ) {
+                    WebContinuousUsageReminder()
                     val client = store.client
                     key(client) {
                         val pageTurnDispatcher = remember { PageTurnDispatcher() }
@@ -86,18 +96,44 @@ fun WebZhihuMain() {
     }
 }
 
+@JsFun("() => document.visibilityState === 'visible'")
+private external fun webPageIsVisible(): Boolean
+
+@Composable
+private fun WebContinuousUsageReminder() {
+    var visible by remember { mutableStateOf(webPageIsVisible()) }
+    DisposableEffect(Unit) {
+        val onVisible: (Event) -> Unit = { visible = webPageIsVisible() }
+        val onHidden: (Event) -> Unit = { visible = false }
+        document.addEventListener("visibilitychange", onVisible)
+        document.addEventListener("freeze", onHidden)
+        document.addEventListener("resume", onVisible)
+        window.addEventListener("pagehide", onHidden)
+        window.addEventListener("pageshow", onVisible)
+        onDispose {
+            document.removeEventListener("visibilitychange", onVisible)
+            document.removeEventListener("freeze", onHidden)
+            document.removeEventListener("resume", onVisible)
+            window.removeEventListener("pagehide", onHidden)
+            window.removeEventListener("pageshow", onVisible)
+        }
+    }
+    ContinuousUsageReminderHost(active = visible)
+}
+
 @Composable
 private fun WebMainContent(client: ZhihuAccountClient) {
     val main = rememberAppNavHost(MainTabs)
     val tabsState = rememberZhihuMainTabsState()
     val messages = rememberUserMessageSink()
     val openUrl = rememberExternalUrlOpener()
-    val coordinator = remember(main, tabsState, messages, openUrl) {
+    val openVideo = rememberVideoPlaybackOpener()
+    val coordinator = remember(main, tabsState, messages, openVideo) {
         ZhihuMainNavigationCoordinator(
             mainHost = { main },
             tabs = { tabsState },
             showMessage = messages::showShortMessage,
-            openVideo = { video, _, _ -> openUrl("https://www.zhihu.com/video/${video.id}") },
+            openVideo = openVideo,
         )
     }
     WebSystemNotificationHost(rememberZhihuAccountStore(), { coordinator.navigate(it) }) {

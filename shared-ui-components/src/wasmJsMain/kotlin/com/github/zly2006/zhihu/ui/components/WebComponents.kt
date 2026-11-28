@@ -24,6 +24,7 @@ import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.PopupProperties
+import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.nlp.KeywordWithWeight
@@ -54,8 +55,14 @@ actual fun rememberShareActionExecutor(): ShareActionExecutor {
     return remember(messages) {
         object : ShareActionExecutor {
             override fun invoke(action: ShareAction, content: NavDestination, shareText: String) {
-                shareInBrowser(action == ShareAction.CopyLink, shareText) { message ->
-                    if (message.isNotEmpty()) messages.showShortMessage(message)
+                shareInBrowser(action == ShareAction.CopyLink, shareText) { result ->
+                    val message = when (result) {
+                        "copied" -> if (action == ShareAction.CopyLink) WidgetsStrings.linkCopied else WidgetsStrings.shareTextCopied
+                        "copy-failed" -> DomainStrings.clipboardDenied
+                        "share-failed" -> WidgetsStrings.systemShareFailed
+                        else -> null
+                    }
+                    message?.let(messages::showShortMessage)
                 }
             }
         }
@@ -65,16 +72,17 @@ actual fun rememberShareActionExecutor(): ShareActionExecutor {
 private fun shareInBrowser(copy: Boolean, text: String, done: (String) -> Unit): Unit = js(
     """{
         (async () => {
+            const sharing = !copy && typeof navigator.share === 'function';
             try {
-                if (!copy && navigator.share) {
+                if (sharing) {
                     await navigator.share({text});
-                    done('');
+                    done('shared');
                 } else {
                     await navigator.clipboard.writeText(text);
-                    done(copy ? '已复制链接' : '已复制分享文本');
+                    done('copied');
                 }
-            } catch (e) {
-                done(e.name === 'AbortError' ? '' : '浏览器未能完成分享或复制：' + e.message);
+            } catch (error) {
+                done(error?.name === 'AbortError' ? 'cancelled' : sharing ? 'share-failed' : 'copy-failed');
             }
         })();
     }""",

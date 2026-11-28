@@ -43,8 +43,16 @@ internal fun webBusinessOperation(data: HttpRequestData): WebBusinessOperation? 
     }
     val number = "([1-9][0-9]{0,18})"
     val person = "([A-Za-z0-9_-]{1,128})"
+    if (host == "api.zhihu.com" && path == "/topstory/recommend" && method == "GET") {
+        return WebBusinessOperation(if (data.attributes.contains(mobileBrowserRead)) "homeFeedMobile" else "homeFeedWeb")
+    }
     return when (host) {
-        "www.zhihu.com" -> route("POST", "/api/v4/(answers|articles)/$number/voters", "vote")
+        "www.zhihu.com" -> route("POST", "/api/v4/video/play_info", "videoPlayInfo")
+            ?: route("POST", "/ai_ingress/stream/completion", "summary")
+            ?: route("GET", "/appview/v2/answer/$number", "paidAnswer")
+            ?: route("POST", "/lastread/touch", "feedTouch")
+            ?: route("POST|DELETE", "/api/v4/reaction/(answers|articles)/$number/segment_reaction", "segmentReaction")
+            ?: route("POST", "/api/v4/(answers|articles)/$number/voters", "vote")
             ?: route("POST|DELETE", "/api/v4/pins/$number/voters/up", "pinVote")
             ?: route("POST|DELETE", "/api/v4/(members|questions|topics)/$person/followers", "follow")
             ?: route("POST|DELETE", "/api/v4/members/$person/actions/block", "block")
@@ -113,6 +121,7 @@ suspend fun ZhihuAccountClient.requestBrowserBusiness(
     query: String = "",
     body: String = "",
     bytes: ByteArray? = null,
+    onStream: ((String) -> Unit)? = null,
 ): Pair<Int, String> = coroutineScope {
     if (!accountStore.usesBrowserSession || !isCurrent) throw BrowserBridgeException(BrowserSessionStatus.Denied)
     val owner = load().profile?.id ?: throw BrowserBridgeException(BrowserSessionStatus.Guest)
@@ -127,8 +136,13 @@ suspend fun ZhihuAccountClient.requestBrowserBusiness(
                 if (!continuation.isActive) return@startBrowserBridge
                 if (!isCurrent) {
                     continuation.cancel(CancellationException("账号客户端已关闭"))
+                } else if (kind == "stream" && operation == "summary" && onStream != null) {
+                    onStream(text)
                 } else if (kind == "http") {
                     continuation.resume(code to text)
+                } else if (kind == "unsupported") {
+                    val issue = WebBridgeIssue.entries.firstOrNull { it.wire == text }
+                    continuation.resumeWithException(issue?.let(::WebBridgeCapabilityException) ?: BrowserBridgeException(BrowserSessionStatus.Unavailable))
                 } else if (kind == "uncertain") {
                     continuation.resumeWithException(BrowserMutationUncertain())
                 } else if (kind == "challenge") {

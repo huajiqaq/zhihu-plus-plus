@@ -17,16 +17,12 @@
 
 package com.github.zly2006.zhihu.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import kotlinx.cinterop.ExperimentalForeignApi
-import platform.AppKit.NSAppearanceNameAqua
-import platform.AppKit.NSAppearanceNameDarkAqua
-import platform.AppKit.NSApplication
-import platform.AppKit.effectiveAppearance
 
 @Composable
-@OptIn(ExperimentalForeignApi::class)
-actual fun currentSystemInDarkTheme(): Boolean =
-    NSApplication.sharedApplication
-        .effectiveAppearance()
-        .bestMatchFromAppearancesWithNames(listOf(NSAppearanceNameAqua, NSAppearanceNameDarkAqua)) == NSAppearanceNameDarkAqua
+actual fun currentSystemInDarkTheme(): Boolean = isSystemInDarkTheme()
+
+/** macOS 没有属于页面的系统状态栏，窗口 chrome 的主题由宿主设置。 */
+@Composable
+actual fun PlatformSystemBarEffect(darkTheme: Boolean) = Unit

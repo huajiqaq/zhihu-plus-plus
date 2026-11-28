@@ -65,6 +65,7 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
     val accounts by store.accountsState.collectAsState()
     if (!accounts.session.login) return
     val owner = store.client
+    val restoreRequired by owner.browserCommentRestoreRequired.collectAsState()
     val local = accounts.accounts.mapNotNull { account ->
         account.session.profile
             ?.takeIf { it.id.isNotBlank() && it.name.isNotBlank() }
@@ -76,8 +77,12 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
     var attempt by remember { mutableIntStateOf(0) }
     var expanded by remember(owner) { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
-    LaunchedEffect(expanded, owner, sources, attempt) {
+    LaunchedEffect(expanded, owner, sources, attempt, restoreRequired) {
         if (!expanded) return@LaunchedEffect
+        if (restoreRequired) {
+            expanded = false
+            return@LaunchedEffect
+        }
         loading = true
         try {
             for ((source, _) in sources) {
@@ -99,7 +104,7 @@ internal fun CommentSenderMenu(store: ZhihuAccountStore, selected: CommentSender
         Row(
             Modifier
                 .sizeIn(minWidth = AppDimens.TouchTarget, minHeight = AppDimens.TouchTarget)
-                .clickable(enabled = enabled, role = Role.Button) { expanded = true }
+                .clickable(enabled = enabled && !restoreRequired, role = Role.Button) { expanded = true }
                 .semantics { contentDescription = CommentsStrings.senderDescription(shown?.name.orEmpty()) }
                 .testTag("comment_account_selector"),
             verticalAlignment = Alignment.CenterVertically,

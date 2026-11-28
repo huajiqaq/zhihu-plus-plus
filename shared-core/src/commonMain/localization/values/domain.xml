@@ -49,17 +49,18 @@
     <string name="break_reminder_time">You’ve been browsing Zhihu for %1$s.
 
 Time for a break.</string>
-    <string name="bridge_denied">This tab is not authorized to make that request.</string>
+    <string name="bridge_denied">This request is outside this tab’s permissions. Open Account → Sign in to verify the account and grant the required private-read, interaction, creation or history permission.</string>
     <string name="bridge_expired">Your browser’s Zhihu session expired.</string>
     <string name="bridge_guest">Your browser is not signed in to Zhihu.</string>
     <string name="bridge_missing">No local Zhihu request bridge was found.</string>
     <string name="bridge_unavailable">The browser request bridge is temporarily unavailable.</string>
     <string name="bridge_manager_info_missing">The userscript manager did not expose GM_info. Check the script permissions and reload this page.</string>
-    <string name="bridge_manager_unsupported">This bridge requires Tampermonkey 5.4 or newer to prevent credential-bearing redirects.</string>
+    <string name="bridge_manager_unsupported">This manager does not have a verified request contract. Use Tampermonkey 5.4+; supported ScriptCat versions provide public anonymous reads only.</string>
+    <string name="bridge_session_isolation_unsupported">Public anonymous reads are available, but account access is disabled because ScriptCat’s upstream Cookie isolation issue #1870 is unresolved. Use Tampermonkey 5.4+ for account features.</string>
     <string name="bridge_manager_version_unknown">The userscript manager version is missing or unrecognized. Safe redirect handling cannot be confirmed; update Tampermonkey and reload.</string>
     <string name="bridge_redirect_unsupported">This Tampermonkey version cannot safely block redirects. Update to 5.4 or newer and reload.</string>
     <string name="bridge_request_api_missing">GM_xmlhttpRequest is unavailable. Enable the script’s request permission and reload.</string>
-    <string name="bridge_cookie_api_missing">GM_cookie list/set/delete is unavailable in this manager. QR sign-in cannot write the session; use official-page sign-in instead.</string>
+    <string name="bridge_cookie_api_missing">The manager does not provide the required GM.cookie list/set/delete API. Account operations cannot safely bind a session; enable the API permission or use a supported manager.</string>
     <string name="bridge_web_locks_missing">This browser cannot coordinate QR session writes with Web Locks. Use official-page sign-in instead.</string>
     <string name="bridge_secure_random_missing">This page has no secure randomUUID API for the QR cookie check. Use official-page sign-in instead.</string>
     <string name="bridge_cookie_attributes_unsupported">The manager could not preserve the required HttpOnly, Secure and host-only cookie attributes. QR sign-in was stopped; use official-page sign-in.</string>

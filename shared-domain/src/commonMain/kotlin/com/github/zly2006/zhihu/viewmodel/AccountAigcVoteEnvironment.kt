@@ -21,7 +21,6 @@ import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.createDirectHttpClient
 import com.github.zly2006.zhihu.data.AIGC_MARKING_ENABLED_PREFERENCE_KEY
 import com.github.zly2006.zhihu.data.AigcVoteVoter
-import com.github.zly2006.zhihu.data.Person
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import io.ktor.client.HttpClient
@@ -63,10 +62,8 @@ internal class AccountAigcVoteEnvironment(override val accountClient: ZhihuAccou
 
     override fun aigcVoteVoter(): AigcVoteVoter? = accountClient.accountStore.withSessionLock {
         if (!accountClient.isCurrent) return@withSessionLock null
-        accountClient.load().takeIf { it.login }?.self?.let { raw ->
-            runCatching { ZhihuJson.decodeJson<Person>(raw) }.getOrNull()
-        }?.let { self ->
-            AigcVoteVoter(id = self.id, name = self.name, urlToken = self.urlToken, avatarUrl = self.avatarUrl)
+        accountClient.load().takeIf { it.login }?.profile?.takeIf { it.id.isNotBlank() }?.let { profile ->
+            AigcVoteVoter(id = profile.id, name = profile.name, urlToken = profile.urlToken, avatarUrl = profile.avatarUrl)
         }
     }
 

@@ -15,16 +15,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalWasmJsInterop::class)
+
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import com.github.zly2006.zhihu.ui.WebZhihuMain
 import kotlinx.browser.document
 import kotlinx.browser.window
+import org.jetbrains.compose.resources.configureWebResources
 import org.w3c.dom.events.Event
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    val resourceBase = webAppResourceBase()
+    configureWebResources { resourcePathMapping { path -> resourceBase + path.removePrefix("./") } }
     ComposeViewport(checkNotNull(document.getElementById("app"))) {
         WebZhihuMain()
         LaunchedEffect(Unit) {
@@ -32,3 +37,6 @@ fun main() {
         }
     }
 }
+
+@JsFun("() => window.zhihuAppResourceBase || new URL('./', location.href).href")
+private external fun webAppResourceBase(): String

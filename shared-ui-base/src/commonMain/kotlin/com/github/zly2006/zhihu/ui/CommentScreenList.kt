@@ -48,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
 import com.github.zly2006.zhihu.data.decodeFeedNavDestinationOrNull
 import com.github.zly2006.zhihu.data.encodeStoredNavDestination
@@ -253,7 +252,6 @@ internal fun CommentScreenForwardList(
 ) {
     val scope = rememberCoroutineScope()
     val loadMore: () -> Unit = { scope.launch { forwards.loadMore() } }
-    val readOnly = rememberZhihuAccountStore().usesBrowserSession
     val gallery = rememberImageGalleryOpener()
     var targetKey by rememberSaveable(forwards) { mutableStateOf<String?>(null) }
     var showComments by rememberSaveable(forwards) { mutableStateOf(false) }
@@ -282,7 +280,7 @@ internal fun CommentScreenForwardList(
         onLoadMore = loadMore,
         onRetry = loadMore,
     ) { forward ->
-        CommentForwardCard(forward, readOnly, gallery) { thread ->
+        CommentForwardCard(forward, readOnly = false, gallery = gallery) { thread ->
             targetKey = thread.encodeStoredNavDestination()
             authorPolicy = forward.author?.id == DataHolder.ZH_PLUS_AUTHOR_USER_ID
             showComments = true

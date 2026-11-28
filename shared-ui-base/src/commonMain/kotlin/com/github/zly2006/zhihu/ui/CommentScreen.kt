@@ -141,7 +141,6 @@ fun CommentScreen(
 ) {
     val paginationEnvironment = rememberPaginationEnvironment(allowGuestAccess = false)
     val commentAccount = rememberZhihuAccountStore()
-    val readOnly = commentAccount.usesBrowserSession
     val commentClient = commentAccount.client
     val readingSettings = rememberSettingsStore()
     val squarePopups by rememberSetting(readingSettings, DISABLE_BOTTOM_SHEET_ROUNDED_CORNERS_PREFERENCE_KEY, false)
@@ -276,7 +275,7 @@ fun CommentScreen(
     val canReplyToCurrentThread = resolvedContent !is CommentHolder ||
         activeCommentItem?.item?.resourceType != "segment" ||
         resolvedContent.article is SegmentCommentHolder
-    val composerAllowed = !readOnly && activeTab == CommentPanelTab.Normal && viewModel.commentClosedMessage == null && canReplyToCurrentThread
+    val composerAllowed = activeTab == CommentPanelTab.Normal && viewModel.commentClosedMessage == null && canReplyToCurrentThread
     val initialChildComment = (viewModel as? RootCommentViewModel)?.initialChildComment
     var initialChildCommentHandled by remember(viewModelKey) { mutableStateOf(false) }
     LaunchedEffect(initialChildComment?.id, viewModel.allData.size) {
@@ -308,7 +307,7 @@ fun CommentScreen(
                 }
             },
             onConfirm = confirm@{
-                if (readOnly || commentAccount.client !== commentClient) return@confirm
+                if (commentAccount.client !== commentClient) return@confirm
                 isDeletingComment = true
                 deleteCommentError = null
                 viewModel.deleteComment(
@@ -643,7 +642,7 @@ fun CommentScreen(
                     viewModel = viewModel,
                     paginationEnvironment = paginationEnvironment,
                     activeCommentItem = activeCommentItem,
-                    readOnly = readOnly,
+                    readOnly = false,
                     sentenceMode = sentenceMode,
                     activeListState = activeListState,
                     pageTurnTarget = pageTurnTarget,
@@ -672,9 +671,7 @@ fun CommentScreen(
                     modifier = Modifier.weight(1f),
                 )
 
-                if (readOnly) {
-                    Text(CommentsStrings.webCommentsReadOnly, style = skin.footnote1, color = skin.onSurfaceVariantSummary, modifier = Modifier.padding(12.dp))
-                } else if (!canReplyToCurrentThread) {
+                if (!canReplyToCurrentThread) {
                     Text(CommentsStrings.segmentReplyLocationMissing, modifier = Modifier.padding(12.dp))
                 }
                 if (!composerAllowed) return@Column

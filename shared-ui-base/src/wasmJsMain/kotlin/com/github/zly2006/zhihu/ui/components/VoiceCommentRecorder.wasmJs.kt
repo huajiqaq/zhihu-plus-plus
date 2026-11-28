@@ -201,7 +201,7 @@ private external fun browserRecordingSupported(): Boolean
 @JsFun(
     """(failed) => {
         let stream = null, recorder = null, chunks = [], started = 0, generation = 0;
-        let startDone = null, stopDone = null, worker = null, workerUrl = null, timer = null, rejectEncoding = null;
+        let startDone = null, stopDone = null, worker = null, workerUrl = null, timer = null, rejectEncoding = null, codecController = null;
         const files = new Map();
         const stopTracks = () => {
             if (stream) for (const track of stream.getTracks()) {
@@ -211,6 +211,7 @@ private external fun browserRecordingSupported(): Boolean
             stream = null;
         };
         const stopWorker = () => {
+            codecController?.abort(); codecController = null;
             if (timer !== null) clearTimeout(timer);
             timer = null;
             if (worker) worker.terminate();
@@ -242,20 +243,39 @@ private external fun browserRecordingSupported(): Boolean
         window.addEventListener('pagehide', leaving);
         const transcode = data => new Promise((resolve, reject) => {
             rejectEncoding = reject;
-            const base = new URL('voice-codec/', document.baseURI);
+            const base = new URL('voice-codec/', window.zhihuAppResourceBase || new URL('./', location.href));
             const source = "self.onmessage = async ({data}) => { try { importScripts(data.core); " +
                 "const ffmpeg = await createFFmpegCore({mainScriptUrlOrBlob: data.core + '#' + btoa(JSON.stringify({wasmURL:data.wasm}))}); " +
                 "ffmpeg.FS.writeFile('input', data.bytes); ffmpeg.setTimeout(120000); " +
                 "ffmpeg.exec('-nostdin','-y','-i','input','-vn','-ac','1','-ar','44100','-c:a','aac','-b:a','64k','-movflags','+faststart','output.m4a'); " +
                 "if (ffmpeg.ret !== 0) throw new Error('encoding'); const bytes = ffmpeg.FS.readFile('output.m4a'); " +
                 "self.postMessage({bytes}, [bytes.buffer]); } catch (_) { self.postMessage({error: true}); } };";
-            workerUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
-            worker = new Worker(workerUrl);
+            const core = new URL('ffmpeg-core.js', base).href, wasm = new URL('ffmpeg-core.wasm', base).href;
+            const operation = generation;
             const finish = (bytes, error) => { rejectEncoding = null; stopWorker(); error ? reject(new Error('encoding')) : resolve(bytes); };
-            worker.onmessage = event => finish(event.data.bytes, event.data.error);
-            worker.onerror = () => finish(null, true);
+            codecController = new AbortController();
+            const signal = codecController.signal;
             timer = setTimeout(() => finish(null, true), 180000);
-            worker.postMessage({core: new URL('ffmpeg-core.js', base).href, wasm: new URL('ffmpeg-core.wasm', base).href, bytes: data}, [data.buffer]);
+            (async () => {
+                const cache = window.zhihuAppCache?.snapshot();
+                if (cache?.mode === 'production' && cache.available && !cache.suppressed && cache.cached &&
+                    cache.cached.versionCode === cache.running?.versionCode && cache.cached.versionName === cache.running?.versionName) {
+                    // Blob workers have their own client ID; only the owning page may populate this visit's lazy app cache.
+                    for (const url of [core, wasm]) {
+                        const response = await fetch(url, {mode: 'same-origin', credentials: 'omit', cache: 'no-store',
+                            redirect: 'error', referrerPolicy: 'no-referrer', signal});
+                        if (!response.ok) throw new Error('encoding');
+                        await response.body?.cancel();
+                    }
+                }
+                signal.throwIfAborted();
+                if (operation !== generation) return;
+                workerUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+                worker = new Worker(workerUrl);
+                worker.onmessage = event => finish(event.data.bytes, event.data.error);
+                worker.onerror = () => finish(null, true);
+                worker.postMessage({core, wasm, bytes: data}, [data.buffer]);
+            })().catch(() => { if (operation === generation && !signal.aborted) finish(null, true); });
         });
         return {
             async start(done) {

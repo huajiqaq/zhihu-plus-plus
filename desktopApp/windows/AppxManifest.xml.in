@@ -21,6 +21,9 @@
                           BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="zhihu-plus-plus"><uap:DisplayName>Zhihu++ content</uap:DisplayName></uap:Protocol>
+        </uap:Extension>
         <desktop:Extension Category="windows.toastNotificationActivation">
           <desktop:ToastNotificationActivation ToastActivatorCLSID="A198161D-C0D7-4500-87F0-AC2A791570E1" />
         </desktop:Extension>

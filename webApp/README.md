@@ -23,15 +23,21 @@
 ./gradlew -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g :webApp:wasmJsBrowserDistribution
 ```
 
-将 **`webApp/build/dist/wasmJs/productionExecutable/` 的完整内容**作为站点分发，包括 HTML、带内容哈希的 JavaScript/Wasm、Compose 资源、导出模板、`web-version.json`、`zhihu-web-bridge.user.js`、`zhihu-notifications-sw.js`、`export/`、`voice-codec/`、`nlp/`、`LICENSE` 和 `aboutlibraries.json`，不要只上传 HTML/JS。页面使用相对资源地址和 hash 路由，可直接部署到 `/zhihu-plus-plus/`，无需改 `base` 或添加 404 路由回退。生产 source map 留在本地构建目录，不随站点发布。
+将 **`webApp/build/dist/wasmJs/productionExecutable/` 的完整内容**作为站点分发。根目录保留启动页面、版本指针 `web-version.json`、配套用户脚本、启动／缓存脚本、`zhihu-notifications-sw.js` 及站点图标；应用 JavaScript/Wasm、动态 chunk、Compose 资源、导出模板、编解码器、NLP 运行库和许可位于 `app-resources/<versionCode>-<versionName>/`，并附大小及 SHA-256 资源清单。不要只上传 HTML/JS，也不要遗漏版本目录。页面基址与资源基址独立，支持 `/zhihu-plus-plus/`、`index.html` 和 hash 路由；无需改 `<base>` 或添加 404 回退。生产 source map 不随站点发布。
 
 图片导出使用 `html2canvas-pro 2.6.5`，数学公式使用随包分发的 KaTeX CSS 与字体，集合 ZIP 使用 `fflate`。录音转换使用 `@ffmpeg/core 0.12.10` 的单线程构建，在独立 Worker 中按需加载本地 `voice-codec/ffmpeg-core.js` 和 Wasm；核心资源约 32 MB，**不参与首屏预加载**。离线 NLP 的 ONNX Runtime Web 及校验组件放在 `nlp/`，按需加载，模型由用户另行下载。不要遗漏这些静态资源及其原始许可证、FFmpeg 和 ONNX Runtime 第三方声明；应用内许可证清单也会合并对应组件。
 
-首屏在应用下载、编译期间显示原生加载状态，失败可重试；加载完成后由共享 UI 接管。哈希资源可复用浏览器 HTTP 缓存，实际传输体积和缓存时长取决于托管服务的压缩与响应头，不是 Service Worker 离线缓存。
+正式版首次下载并校验核心资源后启动；再次访问时，从已有完整缓存启动，并检查很小的版本指针。发现新版后在后台下载、校验，再由用户确认刷新。检查失败或离线时仍可使用已有完整版本。Pages 发布流程拒绝降级以及相同版本号对应不同资源摘要的发布。浏览器可能因配额或自身策略回收缓存；已删除、缺失或损坏的资源需要重新下载。
+
+开发构建明确标为 debug，不使用应用持久缓存。通过上述 `DevelopmentRun` 启动时，所有资源响应均为 `Cache-Control: no-store`，每次访问从网络加载。自行静态托管 debug 产物也需配置该响应头，否则浏览器普通 HTTP 缓存仍可能复用 Wasm 或动态 chunk。本地托管的生产构建仍按正式规则。首次升级缓存组件遇到旧标签持有的通知 Worker 时，界面会提示关闭本站旧标签后重新打开，使用浏览器标准激活流程，不强行替换正在使用的 Worker。
 
 首次启用时，由 `zly2006` 或具备仓库 maintain/admin 权限的维护者，在 GitHub 的 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**；仅有 write 权限未必能修改该设置。之后在 Actions 中手动运行 Pages 发布工作流，选择 `master`。本地构建成功不代表 Pages 已启用或部署成功，应以发布任务结果为准。
 
-部署时完整替换静态分发。生产构建同步生成 `web-version.json` 与 HTML 构建标识；「设置 → 系统与更新 → 检查更新」匿名读取当前站点的版本清单，发现更新后先保存输入、再确认刷新。刷新保留 hash 地址和已保存的网站数据，不自动刷新或清缓存。通知专用 Service Worker 不接管资源更新。
+部署时发布匹配的根目录版本指针与完整版本目录；已发布的相同版本资源保持不变。若需要保证旧标签页首次使用尚未下载的可选功能，应保留其旧版本目录；删除旧目录不会破坏已缓存的核心资源，但尚未下载的旧版按需资源将明确加载失败，不会混用新版。
+
+「设置 → 系统与更新」显示当前版本、候选下载／校验状态及应用资源存储占用，支持取消、应用、删除与重新下载。下载占用的是浏览器本地存储，运行 Wasm 还会另外占用内存，二者不能等同。删除只清除此站点作用域的应用静态资源，不删除偏好、账号信息、草稿、历史、过滤规则或独立 NLP 模型；当前已运行代码不会立即从内存卸载。删除后的当前标签不会自动回填缓存，刷新或手动重新下载才重建。刷新前需保存输入；确认后保留 hash 和已保存的网站数据。
+
+缓存与系统通知共用既有 Worker 注册，但协议与存储独立；Worker 不保存知乎凭据、不轮询业务接口，也不提供关闭页面后的消息推送。
 
 ## 页面地址
 
@@ -50,8 +56,8 @@
 
 使用同一源码构建的完整 Web 分发及其配套脚本，保留脚本的 `@sandbox DOM` 设置。只启用一个脚本实例，安装后重新加载应用页面；不要混用不配套的页面与脚本。
 
-1. 使用更新版 Tampermonkey 安装脚本；5.4 是安全重定向控制的最低门槛，不代表所有后续版本的 Cookie 行为均已验证。运行时只允许上述本地与 Pages 的顶层根入口及各自的 `index.html`，拒绝带用户名/密码的 URL、iframe、其他端口或路径；hash 导航不受影响。授权确认和油猴菜单均标出当前站点，请核对后再操作。知乎域上的精确匹配仅用于权限检查，脚本不在官网安装应用桥监听器。
-2. 打开「登录」。扫码方式需本人在知乎 App 确认，再在本标签页确认使用此账号。二维码在本机绘制，只有本次登录签发的 Cookie 可以由油猴写入。不支持安全设置 `HttpOnly` Cookie 或不能安全展示扫码链接时，使用「备用网页」在知乎官网完成登录（包括短信），回来点击「我已授权」核对基本资料。已有官网会话无需重新设置 Cookie。
+1. 安装配套脚本。Tampermonkey 5.4 是手动重定向支持的最低版本；ScriptCat 支持匿名公共读取，但因[请求隔离问题](https://github.com/scriptscat/scriptcat/issues/1870)，当前不能使用涉及账号的操作。桥仅接受上述本地与 Pages 的顶层根入口或 `index.html`，不接受 iframe 或其他端口；hash 导航不受影响。请核对授权提示中的站点。
+2. 打开「登录」。手机号方式只建立当前标签页的会话，不改变官网账号；扫码方式由本人在知乎 App 确认，再在此标签页确认使用该账号。「备用网页」打开知乎官网，返回后由用户核对已有会话。授权失败不会提交候选账号。
 3. 遇到人机验证时，点「打开知乎验证」，手动完成官方 `unhuman` 页面，再回到弹窗点「我已授权」。只有知乎确认通过才关闭提示，原操作需自行重试。普通 403 不会冒充人机验证。
 
 确认扫码写入会同时登录知乎官网。若此时关闭本标签页或复核失败，应用页面不会认定登录成功；已提交给浏览器的 Cookie 写入不能原子撤回，可在官网检查或退出当前账号。
@@ -87,7 +93,7 @@
 - 阅读页「朗读」接入 Web Speech 和完整共享播放器，包括队列、暂停/继续、进度及语速控制；可用音色由浏览器与系统提供。
 - 语音评论通过 `MediaRecorder` 录音，按需使用本地 FFmpeg Worker 转换为 AAC 后再经桥上传。需要 HTTPS 或本地可信入口、麦克风权限及对应桥授权。录音、语音播放与 TTS 共用音频占用协调，不能把互斥或中断当成后台同时播放。
 - 页面关闭、系统休眠或浏览器后台节流会影响朗读、录音和通知轮询；不保证后台连续运行。
-- 在通知设置中主动启用并授予浏览器许可；只在页面可见时轮询。`zhihu-notifications-sw.js` 承接页面投递的通知及点击恢复，点击后核对账号并导航。关闭页面后不再获取新通知；后台与 Web Push 范围见[平台能力与边界](../docs/platform-capabilities.md#web)。
+- 在通知设置中主动启用并授予浏览器许可，页面可运行时才检查消息；标签被冻结或页面关闭后停止轮询。通知点击后仍需核对账号并导航。后台限制见[平台能力与边界](../docs/platform-capabilities.md#web)。
 
 ## WebDAV 与 AIGC
 

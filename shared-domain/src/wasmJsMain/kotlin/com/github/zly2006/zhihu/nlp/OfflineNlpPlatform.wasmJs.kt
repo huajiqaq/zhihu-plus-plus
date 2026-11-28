@@ -246,7 +246,8 @@ private external fun webNlpUnsupportedReason(): String
         const workerHash = '0993988a98e00d8ef29a35129ceb809d4683164f70bc20ce66d45bab54e70cc4';
         const workerSize = 16611;
         const cacheName = 'zhihu++:offline-nlp-runtime:' + version + ':' + workerHash;
-        const base = new URL('nlp/', document.baseURI);
+        const base = new URL('nlp/', window.zhihuAppResourceBase || new URL('./', location.href));
+        const debug = window.zhihuAppCache?.snapshot().mode === 'debug';
         const artifacts = [
             ['offline-nlp-worker.mjs', workerSize, workerHash],
             ['ort/ort.wasm.min.mjs', 53725, 'c21d9c326d453a4a61398270c804d5979e118540597cb0c07f7b3d64e6098234'],
@@ -329,15 +330,15 @@ private external fun webNlpUnsupportedReason(): String
                 const value = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
                 return value === hash ? buffer : null;
             };
-            let buffer = await valid(await cache.match(key));
+            let buffer = debug ? null : await valid(await cache.match(key));
             signal.throwIfAborted();
             if (buffer) return buffer;
             if (!allowNetwork) throw failure('RUNTIME_MISSING');
-            const response = await fetch(url, {credentials: 'omit', cache: 'no-cache', referrerPolicy: 'no-referrer', signal});
+            const response = await fetch(url, {credentials: 'omit', cache: debug ? 'no-store' : 'no-cache', referrerPolicy: 'no-referrer', signal});
             buffer = await valid(response);
             if (!buffer) throw failure('RUNTIME_INTEGRITY', {fileName: path});
             signal.throwIfAborted();
-            await cache.put(key, new Response(buffer, {headers: {'Content-Type': path.endsWith('.wasm') ? 'application/wasm' : 'text/javascript'}}));
+            if (!debug) await cache.put(key, new Response(buffer, {headers: {'Content-Type': path.endsWith('.wasm') ? 'application/wasm' : 'text/javascript'}}));
             return buffer;
         }
         async function boot(allowNetwork) {
@@ -349,7 +350,7 @@ private external fun webNlpUnsupportedReason(): String
             opening = holder;
             window.addEventListener('pagehide', onPageHide);
             holder.promise = (async () => {
-                const cache = await caches.open(cacheName);
+                const cache = debug ? null : await caches.open(cacheName);
                 const contents = new Map();
                 for (const item of artifacts) contents.set(item[0], await artifact(cache, item, allowNetwork, controller.signal));
                 controller.signal.throwIfAborted();

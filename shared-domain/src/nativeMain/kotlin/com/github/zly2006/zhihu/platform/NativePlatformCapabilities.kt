@@ -31,7 +31,6 @@ import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.nlp.OfflineNlpController
 import com.github.zly2006.zhihu.nlp.OfflineNlpModelState
-import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import com.github.zly2006.zhihu.viewmodel.ArticleExportResult
 import kotlinx.coroutines.CancellationException
@@ -130,8 +129,6 @@ actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
 
 actual val platformSemanticRuntimeGeneration: StateFlow<Long>
     get() = OfflineNlpController.policyGeneration
-
-actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
 
 @Composable
 actual fun rememberSettingsStore(): SettingsStore = remember { nativeSettingsStore("settings.properties") }

@@ -18,18 +18,10 @@
 package com.github.zly2006.zhihu.editor
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import com.github.zly2006.zhihu.i18n.EditorStrings
-import com.github.zly2006.zhihu.platform.rememberFileImporter
-
 actual val isImagePickerSupported: Boolean = true
 
 @Composable
-actual fun rememberImagePickerLauncher(onPicked: (PickedImage) -> Unit): ImagePickerLauncher {
-    val pick = rememberFileImporter(
-        title = EditorStrings.chooseImage,
-        mimeTypes = listOf("image/jpeg", "image/png", "image/gif", "image/webp"),
-        extensions = listOf("jpg", "jpeg", "png", "gif", "webp"),
-    ) { name, bytes -> onPicked(PickedImage(bytes, mimeType = guessMimeTypeFromFileName(name), fileName = name)) }
-    return remember(pick) { ImagePickerLauncher(pick) }
-}
+actual fun rememberImagePickerLauncher(onPicked: (PickedImage) -> Unit): ImagePickerLauncher = rememberNativeImagePicker(onPicked)
+
+@Composable
+internal expect fun rememberNativeImagePicker(onPicked: (PickedImage) -> Unit): ImagePickerLauncher

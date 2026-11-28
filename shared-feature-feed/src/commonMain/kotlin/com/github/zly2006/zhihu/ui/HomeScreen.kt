@@ -204,7 +204,7 @@ fun HomeScreen(
     )
 
     val missingNativeCookie = account.login && !browserSession && !account.hasRequiredCookie
-    val currentRecommendationMode = if (!account.login || browserSession) {
+    val currentRecommendationMode = if (!account.login) {
         RecommendationMode.WEB
     } else {
         RecommendationMode.entries.find {
@@ -277,7 +277,7 @@ fun HomeScreen(
     val unreadOwner = accountStore.client
     var unreadCount by remember(unreadOwner, account.login) { mutableIntStateOf(0) }
     LaunchedEffect(lifecycleOwner, unreadOwner, account.login, isActive, showUnreadBadge) {
-        if (!account.login || browserSession || !isActive || !showUnreadBadge) return@LaunchedEffect
+        if (!account.login || !isActive || !showUnreadBadge) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 val total = paginationEnvironment
@@ -346,7 +346,6 @@ fun HomeScreen(
         if (!isActive) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (account.login &&
-                !browserSession &&
                 !missingNativeCookie &&
                 settings.getBoolean("enableContentFilter", true) &&
                 !settings.getBoolean("reverseBlock", false)

@@ -23,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -46,7 +45,6 @@ val FEED_SETTINGS_KEYS: Set<String> = setOf(
 @Composable
 fun FeedSettingsScreen(setting: String?) {
     val settings = rememberSettingsStore()
-    val browserSession = rememberZhihuAccountStore().usesBrowserSession
     AppSettingsPage(
         title = SettingsStrings.recommendationsFeed,
         onBack = LocalNavigator.current.onNavigateBack,
@@ -55,13 +53,12 @@ fun FeedSettingsScreen(setting: String?) {
         scrollTag = "feedSettings:scroll",
     ) {
         SettingItemGroup(title = SettingsStrings.recommendationSource) {
-            val modes = if (browserSession) listOf(RecommendationMode.WEB) else RecommendationMode.entries
+            val modes = RecommendationMode.entries
             var modeKey by rememberSetting(settings, "recommendationMode", RecommendationMode.MIXED.key)
-            val mode = if (browserSession) RecommendationMode.WEB else modes.find { it.key == modeKey } ?: RecommendationMode.MIXED
+            val mode = modes.find { it.key == modeKey } ?: RecommendationMode.MIXED
             SettingItemSelect(
                 title = { Text(SettingsStrings.recommendationAlgorithm) },
-                description = { Text(if (browserSession) SettingsStrings.browserRecommendations else mode.description) },
-                enabled = !browserSession,
+                description = { Text(mode.description) },
                 options = modes.map { it.displayName },
                 summaries = modes.map { it.description },
                 selectedIndex = modes.indexOf(mode),

@@ -19,6 +19,15 @@
           <RegistryValue Name="CustomActivator" Type="string" Value="{B7243AF7-29EA-49D5-8AF2-66AA06C78D55}" />
         </RegistryKey>
       </Component>
+      <Component Id="ZhihuContentUrlProtocol" Guid="{1CEB9156-741C-4E78-B394-C6A7A74652BB}">
+        <RegistryKey Root="HKCU" Key="Software\Classes\zhihu-plus-plus" ForceDeleteOnUninstall="yes">
+          <RegistryValue Type="string" Value="URL:Zhihu++ content" KeyPath="yes" />
+          <RegistryValue Name="URL Protocol" Type="string" Value="" />
+          <RegistryKey Key="shell\open\command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLDIR]Zhihu++.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
     </DirectoryRef>
     <DirectoryRef Id="ZhihuNotificationsProgramMenu">
       <Component Id="ZhihuPortableNotificationShortcut" Guid="{5B9F6FB6-F662-4B0C-8429-88AD161D1AC7}">
@@ -34,6 +43,7 @@
     <ComponentGroup Id="ZhihuPortableNotificationRegistration">
       <ComponentRef Id="ZhihuPortableNotificationCom" />
       <ComponentRef Id="ZhihuPortableNotificationShortcut" />
+      <ComponentRef Id="ZhihuContentUrlProtocol" />
     </ComponentGroup>
   </Fragment>
 </Include>

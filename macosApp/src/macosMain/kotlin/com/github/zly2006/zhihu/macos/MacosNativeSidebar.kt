@@ -67,6 +67,8 @@ import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSIndexSet
 import platform.Foundation.NSSelectorFromString
 import platform.darwin.NSObject
+import com.github.zly2006.zhihu.ui.LocalNativeReadingImmersiveMode
+import androidx.compose.runtime.CompositionLocalProvider
 
 private const val SIDEBAR_WIDTH = 240.0
 private const val SIDEBAR_COLUMN_IDENTIFIER = "com.github.zly2006.zhihu.macos.sidebar.column"
@@ -92,27 +94,35 @@ internal fun MacosNativeWindowChrome(
     content: @Composable (Modifier) -> Unit,
 ) {
     var sidebarVisible by remember { mutableStateOf(true) }
+    var readingImmersive by remember { mutableStateOf(false) }
+    val setReadingImmersive = remember { { value: Boolean -> readingImmersive = value } }
     val sidebarInset by animateDpAsState(
-        targetValue = if (sidebarVisible) SIDEBAR_WIDTH.dp else 0.dp,
+        targetValue = if (sidebarVisible && !readingImmersive) SIDEBAR_WIDTH.dp else 0.dp,
         animationSpec = tween(durationMillis = 240),
         label = "macos-sidebar-content-inset",
     )
 
     SideEffect {
         macosContentAreaInsetState.value = sidebarInset
+        window.toolbar?.visible = !readingImmersive
+    }
+    DisposableEffect(window) {
+        onDispose { window.toolbar?.visible = true }
     }
 
     Box(Modifier.fillMaxSize()) {
         val contentAreaModifier = Modifier.padding(start = sidebarInset)
         Box(contentAreaModifier) {
-            content(Modifier.fillMaxSize())
+            CompositionLocalProvider(LocalNativeReadingImmersiveMode provides setReadingImmersive) {
+                content(Modifier.fillMaxSize())
+            }
         }
     }
 
     MacosNativeSidebar(
         window = window,
         items = chrome.navigationItems,
-        visible = sidebarVisible,
+        visible = sidebarVisible && !readingImmersive,
     )
     MacosNativeToolbar(
         window = window,

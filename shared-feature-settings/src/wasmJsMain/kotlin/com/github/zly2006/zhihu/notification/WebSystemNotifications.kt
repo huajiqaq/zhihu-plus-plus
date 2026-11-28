@@ -33,7 +33,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 
-/** 只借用当前账号与共用只读消息源；SW 不持有凭据、不轮询、不缓存应用资源。 */
+/** 只借用当前账号与共用只读消息源；SW 不持有凭据或执行业务轮询。 */
 @Composable
 fun WebSystemNotificationHost(
     accountStore: ZhihuAccountStore,
@@ -54,7 +54,7 @@ private class WebSystemNotificationAdapter : RunningSystemNotificationAdapter {
     private var stored: String? = null
     private var readRevision: String? = null
     override val sharedState: Boolean = true
-    override val canPoll: Boolean get() = bridge?.visible() == true
+    override val canPoll: Boolean get() = bridge?.canRun() == true
     override val availabilityDescription: String
         get() = if (bridge?.available() == true) NotificationsStrings.webAvailability else NotificationsStrings.webUnavailable
 
@@ -169,7 +169,7 @@ private external interface WebNotificationLease : JsAny {
 
 private external interface WebNotificationBridge : JsAny {
     fun available(): Boolean
-    fun visible(): Boolean
+    fun canRun(): Boolean
     fun permission(): String
     fun requestPermission(done: (Boolean) -> Unit)
     fun lock(done: (WebNotificationLease?) -> Unit): WebNotificationHandle
@@ -223,7 +223,7 @@ private external interface WebNotificationBridge : JsAny {
         };
         const releaseLocks = () => { for (const release of [...activeLocks]) release(); };
         const onVisibility = () => {
-            // 隐藏先同步取消Kotlin任务，再释放锁；冻结标签页不能长期阻塞活跃标签。
+            // 切到后台先让出当前租约；仍可运行的标签不停止后续轮询，freeze/pagehide 才暂停。
             changed();
             if (document.visibilityState !== 'visible') releaseLocks();
             else handshake();
@@ -269,7 +269,7 @@ private external interface WebNotificationBridge : JsAny {
         };
         return {
             available,
-            visible: () => !closed && !suspended && document.visibilityState === 'visible',
+            canRun: () => !closed && !suspended,
             permission: () => Notification.permission,
             requestPermission(done) {
                 if (!available() || !navigator.userActivation?.isActive) { done(false); return; }

@@ -48,7 +48,6 @@ import com.github.zly2006.zhihu.ui.PREFERENCE_NAME
 import com.github.zly2006.zhihu.util.clipboardManager
 import com.github.zly2006.zhihu.util.saveImageToGallery
 import com.github.zly2006.zhihu.util.shareImage
-import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import com.github.zly2006.zhihu.viewmodel.filter.androidKeywordSemanticMatcher
 import kotlinx.coroutines.CancellationException
@@ -195,12 +194,6 @@ actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
     get() = androidKeywordSemanticMatcher
 
 actual val platformSemanticRuntimeGeneration: StateFlow<Long> = MutableStateFlow(0L).asStateFlow()
-
-actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
-    if (blocked.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        androidUserMessageSink(currentAndroidApplicationContext()).showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
-    }
-}
 
 @Composable
 actual fun rememberSettingsStore(): SettingsStore {

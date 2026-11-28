@@ -27,6 +27,11 @@ struct ZhihuPlusPlusApp: App {
     var body: some Scene {
         WindowGroup {
             ComposeRoot().ignoresSafeArea(.all)
+                .onOpenURL { url in
+                    if !PlatformIncomingLinksKt.handlePlatformIncomingUrl(value: url.absoluteString) {
+                        Logger().notice("Unsupported incoming content link")
+                    }
+                }
         }
     }
 }

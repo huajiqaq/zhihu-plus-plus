@@ -33,7 +33,6 @@ import com.github.zly2006.zhihu.navigation.Pin
 import com.github.zly2006.zhihu.platform.SettingsStore
 import com.github.zly2006.zhihu.platform.platformKeywordSemanticMatcher
 import com.github.zly2006.zhihu.platform.platformSemanticRuntimeGeneration
-import com.github.zly2006.zhihu.platform.showNlpBlockedMessage
 import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.ZhihuFetchSignature
 import com.github.zly2006.zhihu.viewmodel.FeedDisplaySettings
@@ -108,6 +107,7 @@ class FeedContentFilterPipeline(
     database: ContentFilterDatabase = getContentFilterDatabase(),
     semanticMatcher: KeywordSemanticMatcher? = platformKeywordSemanticMatcher,
     private val rules: FeedFilterRules? = null,
+    private val onNlpBlocked: ((Collection<FilterableContent>) -> Unit)? = null,
 ) {
     private val database = database
     private val blockedKeywordService = BlockedKeywordService(database.blockedContentRecordDao(), semanticMatcher)
@@ -180,7 +180,7 @@ class FeedContentFilterPipeline(
             }
 
             if (blockedThisRound.isNotEmpty()) {
-                showNlpBlockedMessage(blockedThisRound)
+                onNlpBlocked?.invoke(blockedThisRound)
             }
 
             filteredContents = finalFilteredContents
@@ -240,8 +240,9 @@ class FeedDisplayFilterPipeline(
     semanticMatcher: KeywordSemanticMatcher? = platformKeywordSemanticMatcher,
     private val displaySettings: FeedDisplaySettings? = null,
     rules: FeedFilterRules? = null,
+    onNlpBlocked: ((Collection<FilterableContent>) -> Unit)? = null,
 ) {
-    private val contentFilterPipeline = FeedContentFilterPipeline(settings, database, semanticMatcher, rules)
+    private val contentFilterPipeline = FeedContentFilterPipeline(settings, database, semanticMatcher, rules, onNlpBlocked)
     private val blockedFeedRecordDao = database.blockedFeedRecordDao()
 
     suspend fun filter(items: List<FeedDisplayItem>): List<FeedDisplayItem> {
@@ -562,7 +563,12 @@ suspend fun readHomeFeedFilterPolicy(settings: SettingsStore, database: ContentF
 )
 
 /** 复检只使用现有内容，不请求详情或重新登记曝光。 */
-suspend fun recheckHomeFeedItems(items: List<FeedDisplayItem>, policy: HomeFeedFilterPolicy, database: ContentFilterDatabase): List<FeedDisplayItem> {
+suspend fun recheckHomeFeedItems(
+    items: List<FeedDisplayItem>,
+    policy: HomeFeedFilterPolicy,
+    database: ContentFilterDatabase,
+    onNlpBlocked: ((Collection<FilterableContent>) -> Unit)? = null,
+): List<FeedDisplayItem> {
     val contentItems = items.filter { it.feed != null || it.navDestination != null || it.filterFacts != null }
     val filtered = FeedDisplayFilterPipeline(
         settings = policy.filterSettings,
@@ -570,6 +576,7 @@ suspend fun recheckHomeFeedItems(items: List<FeedDisplayItem>, policy: HomeFeedF
         database = database,
         displaySettings = policy.displaySettings,
         rules = policy.rules,
+        onNlpBlocked = onNlpBlocked,
     ).filter(contentItems).associateBy { it.stableKey }
     val contentKeys = contentItems.mapTo(hashSetOf()) { it.stableKey }
     return items.mapNotNull { if (it.stableKey in contentKeys) filtered[it.stableKey] else it }

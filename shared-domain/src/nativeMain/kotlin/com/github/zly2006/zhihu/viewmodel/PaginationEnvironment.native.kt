@@ -22,6 +22,10 @@ import androidx.compose.runtime.remember
 import com.github.zly2006.zhihu.account.ZhihuAccountStore
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.platform.UserMessageSink
+import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.platform.LocalNativeFileDelivery
 import com.github.zly2006.zhihu.platform.NativeFileDelivery
 import com.github.zly2006.zhihu.platform.exportNativeArticleHtml
@@ -38,8 +42,9 @@ import com.github.zly2006.zhihu.platform.copyNativePlainText
 actual fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationEnvironment {
     val store = rememberZhihuAccountStore()
     val delivery = LocalNativeFileDelivery.current
-    return remember(allowGuestAccess, store, delivery) {
-        NativePaginationEnvironment(accountStore = store, allowGuestAccess = allowGuestAccess, fileDelivery = delivery)
+    val messages = rememberUserMessageSink()
+    return remember(allowGuestAccess, store, delivery, messages) {
+        NativePaginationEnvironment(accountStore = store, allowGuestAccess = allowGuestAccess, fileDelivery = delivery, userMessages = messages)
     }
 }
 
@@ -48,7 +53,12 @@ class NativePaginationEnvironment(
     accountStore: ZhihuAccountStore,
     allowGuestAccess: Boolean = false,
     private val fileDelivery: NativeFileDelivery? = null,
+    private val userMessages: UserMessageSink? = null,
 ) : StoredPaginationEnvironment(notificationSettingsStore, accountStore, allowGuestAccess) {
+    override fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
+        if (blocked.isNotEmpty()) userMessages?.showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
+    }
+
     override fun setPlainTextClipboard(label: String, text: String) = copyNativePlainText(text)
 
     override fun loadExportAssetText(fileName: String): String = readNativeExportAsset(fileName)

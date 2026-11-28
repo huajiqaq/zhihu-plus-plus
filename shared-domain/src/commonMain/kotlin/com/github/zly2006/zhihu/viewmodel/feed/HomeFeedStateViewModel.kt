@@ -135,6 +135,11 @@ abstract class HomeFeedStateViewModel(
                     displaySettings = policy.displaySettings,
                     rules = policy.rules,
                     database = database,
+                    onNlpBlocked = { blocked ->
+                        if (requestIsCurrent(environment, generation, client) && revision == filterPolicyRevision) {
+                            environment.showNlpBlockedMessage(blocked)
+                        }
+                    },
                     contentDetailProvider = detailProvider ?: ContentDetailProvider { destination ->
                         if (environment.isLoggedIn) environment.getOrFetchContentDetail(destination) else null
                     },
@@ -144,7 +149,11 @@ abstract class HomeFeedStateViewModel(
                 val filtered = items.mapNotNull { if (it.stableKey in contentKeys) checkedByKey[it.stableKey] else it }
                 val original = committedDisplayItems.toList()
                 val rechecked = if (!isRefreshPending && checkedFingerprint != policy.fingerprint) {
-                    recheckHomeFeedItems(original, policy, database)
+                    recheckHomeFeedItems(original, policy, database) { blocked ->
+                        if (requestIsCurrent(environment, generation, client) && revision == filterPolicyRevision) {
+                            environment.showNlpBlockedMessage(blocked)
+                        }
+                    }
                 } else null
                 currentCoroutineContext().ensureActive()
                 if (!requestIsCurrent(environment, generation, client)) return@withLock
@@ -197,7 +206,11 @@ abstract class HomeFeedStateViewModel(
             val policy = readHomeFeedFilterPolicy(platformSettingsStore(), database)
             if (checkedFingerprint == policy.fingerprint) return@withLock
             val original = committedDisplayItems.toList()
-            val filtered = recheckHomeFeedItems(original, policy, database)
+            val filtered = recheckHomeFeedItems(original, policy, database) { blocked ->
+                if (requestIsCurrent(environment, generation, client) && revision == filterPolicyRevision) {
+                    environment.showNlpBlockedMessage(blocked)
+                }
+            }
             currentCoroutineContext().ensureActive()
             if (!requestIsCurrent(environment, generation, client)) return@withLock
             if (revision != filterPolicyRevision || policy.semanticRuntimeGeneration != platformSemanticRuntimeGeneration.value) continue

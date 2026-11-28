@@ -61,6 +61,7 @@ import com.github.zly2006.zhihu.util.DisplayFailure
 import com.github.zly2006.zhihu.util.HttpStatusException
 import com.github.zly2006.zhihu.util.raiseForStatus
 import com.github.zly2006.zhihu.util.signZhihuFetchRequest
+import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.request.HttpRequestBuilder
@@ -759,7 +760,9 @@ interface PaginationEnvironment :
     ClipboardEnvironment,
     ProfileLoadEnvironment,
     ArticleLoadEnvironment,
-    ArticleExportContentEnvironment
+    ArticleExportContentEnvironment {
+    fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
+}
 
 data class FeedDisplaySettings(
     val qualityFilterMode: QualityFilterMode = QualityFilterMode.RULES,

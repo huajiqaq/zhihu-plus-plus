@@ -150,7 +150,9 @@ internal actual fun rememberFilePicker(
             picker.shouldShowFileExtensions = true
             picker.delegate = delegate
             activePicker = picker
-            host.presentViewController(picker, animated = true, completion = null)
+            var presenter = host
+            while (presenter.presentedViewController != null) presenter = presenter.presentedViewController!!
+            presenter.presentViewController(picker, animated = true, completion = null)
         }
     }
 }

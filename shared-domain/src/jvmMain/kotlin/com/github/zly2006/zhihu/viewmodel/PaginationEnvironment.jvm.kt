@@ -33,12 +33,15 @@ import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.desktopNotificationSettingsStore
+import com.github.zly2006.zhihu.platform.UserMessageSink
+import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.util.AppLog
 import com.github.zly2006.zhihu.util.buildArticleExportFileName
 import com.github.zly2006.zhihu.util.buildCollectionExportZipFileName
 import com.github.zly2006.zhihu.util.sanitizeArticleExportFileNamePart
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
+import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
 import java.io.File
@@ -55,10 +58,15 @@ class DesktopPaginationEnvironment(
     override val notificationSettingsStore: NotificationSettingsStore = desktopNotificationSettingsStore(),
     private val store: ZhihuAccountStore,
     override val allowGuestAccess: Boolean = false,
+    private val userMessages: UserMessageSink? = null,
 ) : PaginationEnvironment,
     CollectionContentEnvironment,
     NotificationEnvironment {
     private val contentFilterDb by lazy { desktopContentFilterDb }
+
+    override fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
+        if (blocked.isNotEmpty()) userMessages?.showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
+    }
 
     override val accountClient: ZhihuAccountClient
         get() = store.client
@@ -339,5 +347,8 @@ private fun addFileToZip(
 @Composable
 actual fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationEnvironment {
     val store = rememberZhihuAccountStore()
-    return remember(allowGuestAccess, store) { DesktopPaginationEnvironment(store = store, allowGuestAccess = allowGuestAccess) }
+    val messages = rememberUserMessageSink()
+    return remember(allowGuestAccess, store, messages) {
+        DesktopPaginationEnvironment(store = store, allowGuestAccess = allowGuestAccess, userMessages = messages)
+    }
 }

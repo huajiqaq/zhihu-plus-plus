@@ -22,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.WebPage
-import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.io.files.Path
@@ -124,8 +123,6 @@ expect val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
 
 /** 语义模型进入或离开可推理状态时变化；不随下载进度变化，Android 保持原模型生命周期。 */
 expect val platformSemanticRuntimeGeneration: StateFlow<Long>
-
-expect suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>)
 
 @Composable
 expect fun rememberSettingsStore(): SettingsStore

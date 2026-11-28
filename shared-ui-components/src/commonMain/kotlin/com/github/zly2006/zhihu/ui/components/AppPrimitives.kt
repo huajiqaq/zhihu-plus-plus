@@ -869,7 +869,7 @@ val LocalNavHostLifecycleOwner = compositionLocalOf<LifecycleOwner?> { null }
 
 /** 窗口活跃时按条目 RESUMED 状态显示；失焦时保留浮层，避免中断选图和权限回调。 */
 @Composable
-internal fun rememberNavEntryOnTop(): Boolean {
+fun rememberNavEntryOnTop(): Boolean {
     val host = LocalNavHostLifecycleOwner.current?.lifecycle ?: return true
     val entry = LocalLifecycleOwner.current.lifecycle
     val onTop = remember(entry, host) {

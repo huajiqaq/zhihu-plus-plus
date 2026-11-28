@@ -106,6 +106,11 @@ class ZhihuMainTabsState internal constructor(
         }
     }
 
+    /** Compose 导航与原生 chrome 共享重选契约；首次选择仍交各宿主既有路由动作。 */
+    fun selectOrReselect(destination: TopLevelDestination, selected: Boolean, onSelect: (TopLevelDestination) -> Unit) {
+        if (!selected) onSelect(destination) else if (preferences.tapToScrollToTopEnabled) scrollToTopTrigger++
+    }
+
     /** 宿主只能发起请求或读取状态；null 撤销尚未执行的外部请求。 */
     fun requestTab(destination: TopLevelDestination?) {
         pendingNavigation = destination?.let(::MainTabRequest)
@@ -311,7 +316,7 @@ internal fun rememberZhihuMainTabs(
         navigateTopLevel = ::navigateTopLevel,
         onTabClick = { destination, selected ->
             onTabClicked()
-            if (!selected) navigateTopLevel(destination) else if (preferences.tapToScrollToTopEnabled) state.scrollToTopTrigger++
+            state.selectOrReselect(destination, selected, ::navigateTopLevel)
         },
     )
 }

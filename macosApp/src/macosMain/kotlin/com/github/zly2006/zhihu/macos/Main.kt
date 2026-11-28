@@ -34,6 +34,8 @@ import com.github.zly2006.zhihu.platform.isMacosQuitOnWindowCloseEnabled
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.MacosZhihuMain
+import com.github.zly2006.zhihu.ui.handlePlatformIncomingUrl
+import platform.Foundation.NSURL
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
 import com.github.zly2006.zhihu.ui.components.MacosUserMessageHost
 import kotlin.experimental.ExperimentalNativeApi
@@ -115,6 +117,14 @@ private class MacosApplicationDelegate(
     NSApplicationDelegateProtocol,
     NSWindowDelegateProtocol {
     var window: NSWindow? = null
+
+    override fun application(application: NSApplication, openURLs: List<*>) {
+        openURLs.filterIsInstance<NSURL>().forEach { url ->
+            url.absoluteString?.let(::handlePlatformIncomingUrl)
+        }
+        window?.makeKeyAndOrderFront(null)
+        application.activateIgnoringOtherApps(true)
+    }
 
     override fun applicationWillTerminate(notification: NSNotification) {
         accountStore.close()

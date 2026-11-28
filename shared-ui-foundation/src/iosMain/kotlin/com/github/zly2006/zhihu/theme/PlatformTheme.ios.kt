@@ -17,13 +17,33 @@
 
 package com.github.zly2006.zhihu.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.uikit.LocalUIViewController
+import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import kotlinx.cinterop.ExperimentalForeignApi
-import platform.UIKit.UITraitCollection
 import platform.UIKit.UIUserInterfaceStyle
-import platform.UIKit.currentTraitCollection
+
+@Composable
+actual fun currentSystemInDarkTheme(): Boolean = isSystemInDarkTheme()
 
 @Composable
 @OptIn(ExperimentalForeignApi::class)
-actual fun currentSystemInDarkTheme(): Boolean =
-    UITraitCollection.currentTraitCollection.userInterfaceStyle == UIUserInterfaceStyle.UIUserInterfaceStyleDark
+actual fun PlatformSystemBarEffect(darkTheme: Boolean) {
+    val controller = LocalUIViewController.current
+    val mode = rememberThemeSnapshot(rememberSettingsStore()).value.themeMode
+    DisposableEffect(controller, darkTheme, mode) {
+        val previous = controller.overrideUserInterfaceStyle
+        controller.overrideUserInterfaceStyle = when {
+            mode == ThemeMode.SYSTEM -> UIUserInterfaceStyle.UIUserInterfaceStyleUnspecified
+            darkTheme -> UIUserInterfaceStyle.UIUserInterfaceStyleDark
+            else -> UIUserInterfaceStyle.UIUserInterfaceStyleLight
+        }
+        controller.setNeedsStatusBarAppearanceUpdate()
+        onDispose {
+            controller.overrideUserInterfaceStyle = previous
+            controller.setNeedsStatusBarAppearanceUpdate()
+        }
+    }
+}

@@ -28,6 +28,9 @@ import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.notification.rememberNotificationSettingsStore
 import com.github.zly2006.zhihu.platform.PlainTextClipboard
+import com.github.zly2006.zhihu.platform.UserMessageSink
+import com.github.zly2006.zhihu.platform.rememberUserMessageSink
+import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.platform.readWebExportResource
 import com.github.zly2006.zhihu.platform.rememberPlainTextClipboard
 import com.github.zly2006.zhihu.util.ARTICLE_EXPORT_TEMPLATE_ASSET
@@ -41,8 +44,9 @@ actual fun rememberPaginationEnvironment(allowGuestAccess: Boolean): PaginationE
     val store = rememberZhihuAccountStore()
     val notifications = rememberNotificationSettingsStore()
     val clipboard = rememberPlainTextClipboard()
-    return remember(store, notifications, clipboard, allowGuestAccess) {
-        WebPaginationEnvironment(notifications, store, allowGuestAccess, clipboard)
+    val messages = rememberUserMessageSink()
+    return remember(store, notifications, clipboard, allowGuestAccess, messages) {
+        WebPaginationEnvironment(notifications, store, allowGuestAccess, clipboard, messages)
     }
 }
 
@@ -51,7 +55,12 @@ private class WebPaginationEnvironment(
     accountStore: ZhihuAccountStore,
     allowGuestAccess: Boolean,
     private val clipboard: PlainTextClipboard,
+    private val userMessages: UserMessageSink,
 ) : StoredPaginationEnvironment(notifications, accountStore, allowGuestAccess) {
+    override fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
+        if (blocked.isNotEmpty()) userMessages.showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
+    }
+
     override fun setPlainTextClipboard(label: String, text: String) = clipboard(label, text)
 
     override suspend fun ensureImageExportPermission(): ArticleExportPermission = ArticleExportPermission.Granted
@@ -88,9 +97,12 @@ private class WebPaginationEnvironment(
     }
 }
 
-internal suspend fun loadWebExportTemplate(): String = readWebExportResource(ARTICLE_EXPORT_TEMPLATE_ASSET).also { template ->
+internal suspend fun loadWebExportTemplate(): String = readWebExportResource(webExportAssetUrl(ARTICLE_EXPORT_TEMPLATE_ASSET)).also { template ->
     check("{{bodyHtml}}" in template && "{{title}}" in template) { DomainStrings.missingExportAsset(ARTICLE_EXPORT_TEMPLATE_ASSET) }
 }
+
+@JsFun("(path) => new URL(path, window.zhihuAppResourceBase || new URL('./', location.href)).href")
+private external fun webExportAssetUrl(path: String): String
 
 /** 单篇和收藏夹共用同一安全模板、匿名图片读取及仍需联网的图片计数。 */
 internal suspend fun buildWebExportHtml(

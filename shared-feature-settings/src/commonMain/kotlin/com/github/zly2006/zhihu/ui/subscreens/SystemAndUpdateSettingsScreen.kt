@@ -65,6 +65,7 @@ import com.github.zly2006.zhihu.ui.components.AppButton
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppIcon
 import com.github.zly2006.zhihu.ui.components.AppIconButton
+import com.github.zly2006.zhihu.ui.components.AppLinearProgress
 import com.github.zly2006.zhihu.ui.components.AppLinearProgressIndeterminate
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppSecureTextField
@@ -103,6 +104,8 @@ fun SystemAndUpdateSettingsScreen(
     val skipUpdateVersion = rememberSystemUpdateVersionSkipper()
     val downloadUpdate = rememberSystemUpdateDownloader()
     val installDownloadedUpdate = rememberDownloadedSystemUpdateInstaller()
+    val cancelUpdateDownload = rememberSystemUpdateCanceller()
+    val webCacheAction = rememberWebAppCacheAction()
     val openWebUrl = rememberWebViewUrlOpener()
     val coroutineScope = rememberCoroutineScope()
     val githubToken = remember(settings) { TextFieldState(settings.getString("githubToken", "")) }
@@ -152,7 +155,12 @@ fun SystemAndUpdateSettingsScreen(
                 saveEditedToken()
                 coroutineScope.launch { downloadUpdate() }
             },
-            onInstall = { coroutineScope.launch { installDownloadedUpdate() } },
+            onInstall = {
+                saveEditedToken()
+                coroutineScope.launch { installDownloadedUpdate() }
+            },
+            onCancel = cancelUpdateDownload,
+            onWebCacheAction = { action -> coroutineScope.launch { webCacheAction(action) } },
             onSkip = skipUpdateVersion,
             onOpenCnDownload = { url ->
                 try {
@@ -283,8 +291,20 @@ internal fun SystemUpdateStatusCard(
     onSkip: (version: String) -> Unit,
     onOpenCnDownload: (url: String) -> Unit,
     onOpenUrl: (url: String) -> Unit,
+    onCancel: () -> Unit,
+    onWebCacheAction: (WebAppCacheAction) -> Unit,
 ) {
-    var showReloadConfirmation by remember(state) { mutableStateOf(false) }
+    var showReloadConfirmation by remember { mutableStateOf(false) }
+    var showClearConfirmation by remember { mutableStateOf(false) }
+    val web = (state as? SystemUpdateState.Web)?.snapshot
+    val candidate = web?.candidate
+    val webError = web?.error?.code?.let(::webCacheErrorText)
+    val cacheMetadataInvalid = web?.error?.code == "cache-metadata-invalid"
+    val canClear = web?.let {
+        it.mode == "production" && !it.busy &&
+            (cacheMetadataInvalid || (it.available && (it.cachedBytes > 0 || it.cached != null || candidate?.downloaded == true)))
+    } == true
+    val webCanApply = web?.let { !it.busy && (it.mode == "debug" || candidate?.downloaded == true) } == true
     val pending = state.pendingUpdate
     val pendingName = pending?.let { if (it.isNightly) SettingsStrings.nightlyVersion(it.version) else SettingsStrings.stableVersion(it.version) }
     val downloadLabel = if (pending?.opensExternally == true) SettingsStrings.openDownloadPage else SettingsStrings.downloadUpdate
@@ -293,29 +313,54 @@ internal fun SystemUpdateStatusCard(
         SystemUpdateState.Checking -> SettingsStrings.checkingUpdates to null
         SystemUpdateState.Latest -> SettingsStrings.alreadyLatest to null
         SystemUpdateState.Unpublished -> SettingsStrings.webUnpublished to SettingsStrings.webUnpublishedDescription
-        is SystemUpdateState.WebUpdateAvailable -> SettingsStrings.updateAvailable to SettingsStrings.webUpdateReady(state.buildId.take(12))
+        is SystemUpdateState.Web -> when {
+            web!!.phase == "starting" || web.phase == "checking" -> SettingsStrings.checkingUpdates to null
+            web.phase == "verifying" -> SettingsStrings.webVerifying to null
+            web.phase == "downloading" -> SettingsStrings.downloading to null
+            web.phase == "clearing" -> SettingsStrings.webCacheClearing to null
+            web.mode == "debug" -> SettingsStrings.webUnpublished to SettingsStrings.webDebugCacheDescription
+            web.error?.code == "worker-update-pending" -> SettingsStrings.webCacheWorkerPending to webError
+            web.error?.code == "cancelled" -> SettingsStrings.appName to webError
+            webError != null -> SettingsStrings.webCacheOperationFailed to webError
+            !web.available -> SettingsStrings.webCacheUnavailable to SettingsStrings.webCacheUnavailableDescription
+            candidate?.downloaded == true -> SettingsStrings.webCandidateReady to SettingsStrings.webUpdateReady(candidate.versionName)
+            candidate != null -> SettingsStrings.updateAvailable to SettingsStrings.webCandidateAvailable(candidate.versionName, cacheSize(candidate.coreBytes))
+            else -> SettingsStrings.appName to web.running?.let { SettingsStrings.webVersionActive(it.versionName) }
+        }
         is SystemUpdateState.UpdateAvailable -> SettingsStrings.updateAvailable to pendingName
         is SystemUpdateState.Downloading -> SettingsStrings.downloading to pendingName
-        is SystemUpdateState.Downloaded -> SettingsStrings.downloaded to SettingsStrings.updateReady(pendingName)
+        is SystemUpdateState.Downloaded -> SettingsStrings.downloaded to when {
+            installSupported -> SettingsStrings.updateReady(pendingName)
+            state.delivered -> SettingsStrings.updateFileDelivered
+            else -> SettingsStrings.updateFileReady(if (isJvm) state.filePath ?: state.update.asset?.name.orEmpty() else state.update.asset?.name.orEmpty())
+        }
         is SystemUpdateState.Error -> {
             val failedStep = when (state.step) {
                 UpdateStep.Check -> SettingsStrings.updateCheckFailed
                 UpdateStep.Download if pending?.opensExternally == true -> SettingsStrings.openDownloadFailed
                 UpdateStep.Download -> SettingsStrings.downloadFailed
-                UpdateStep.Install -> SettingsStrings.installFailed
+                UpdateStep.Install -> if (installSupported) SettingsStrings.installFailed else SettingsStrings.updateDeliveryFailed
             }
             failedStep to state.message
         }
     }
-    val (actionLabel, action) = when (state) {
+    val primaryAction: Pair<String, (() -> Unit)?> = when (state) {
         SystemUpdateState.NoUpdate, SystemUpdateState.Latest -> SettingsStrings.checkUpdates to onCheck
         SystemUpdateState.Checking -> SettingsStrings.checking to null
         SystemUpdateState.Unpublished -> SettingsStrings.checkUpdates to null
-        is SystemUpdateState.WebUpdateAvailable -> SettingsStrings.webReloadUpdate to { showReloadConfirmation = true }
+        is SystemUpdateState.Web -> when {
+            web!!.busy -> title to null
+            web.mode == "debug" -> SettingsStrings.webDebugRefresh to { showReloadConfirmation = true }
+            web.error?.code == "worker-update-pending" -> SettingsStrings.webCacheWorkerPending to null
+            !web.available -> SettingsStrings.checkUpdates to onCheck
+            webCanApply -> SettingsStrings.webReloadUpdate to { showReloadConfirmation = true }
+            candidate != null -> SettingsStrings.downloadUpdate to onDownload
+            else -> SettingsStrings.checkUpdates to onCheck
+        }
         is SystemUpdateState.UpdateAvailable -> downloadLabel to onDownload
         is SystemUpdateState.Downloading -> SettingsStrings.downloadInProgress to null
         is SystemUpdateState.Downloaded if installSupported -> SettingsStrings.installUpdate to onInstall
-        is SystemUpdateState.Downloaded -> SettingsStrings.apkInstallUnsupported to null
+        is SystemUpdateState.Downloaded -> (if (isJvm) SettingsStrings.openUpdateFile else SettingsStrings.saveUpdateFile) to onInstall
         is SystemUpdateState.Error -> {
             val retry = when {
                 state.update == null -> onCheck
@@ -325,17 +370,18 @@ internal fun SystemUpdateStatusCard(
             SettingsStrings.retry to retry
         }
     }
-    if (showReloadConfirmation && state is SystemUpdateState.WebUpdateAvailable) {
+    val (actionLabel, action) = primaryAction
+    if (showReloadConfirmation && webCanApply) {
         AppAlertDialog(
             onDismissRequest = { showReloadConfirmation = false },
             title = { Text(SettingsStrings.webReloadConfirmation) },
             text = { Text(SettingsStrings.webReloadWarning) },
             confirmButton = {
                 AppButton(
-                    text = SettingsStrings.webReloadUpdate,
+                    text = if (web.mode == "debug") SettingsStrings.webDebugRefresh else SettingsStrings.webReloadUpdate,
                     onClick = {
                         showReloadConfirmation = false
-                        onDownload()
+                        onInstall()
                     },
                 )
             },
@@ -344,24 +390,55 @@ internal fun SystemUpdateStatusCard(
             },
         )
     }
+    if (showClearConfirmation && web != null) {
+        AppAlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text(SettingsStrings.webCacheClearConfirmation) },
+            text = { Text(SettingsStrings.webCacheClearWarning) },
+            confirmButton = {
+                AppButton(
+                    text = SettingsStrings.webCacheClear,
+                    enabled = canClear,
+                    onClick = {
+                        showClearConfirmation = false
+                        onWebCacheAction(WebAppCacheAction.Clear)
+                    },
+                )
+            },
+            dismissButton = { AppTextButton(onClick = { showClearConfirmation = false }) { Text(SettingsStrings.cancel) } },
+        )
+    }
     val skippableVersion = (state as? SystemUpdateState.UpdateAvailable)?.version
     val cnDownloadUrl = pending?.cnDownloadUrl?.takeIf { it.isNotBlank() && (state is SystemUpdateState.UpdateAvailable || state is SystemUpdateState.Error) }
 
     SettingItemGroup {
         SettingItem(
+            settingKey = "systemUpdate",
             title = { Text(title) },
             description = {
                 Column {
                     status?.let {
-                        Text(it, color = if (state is SystemUpdateState.Error) MaterialTheme.colorScheme.error else Color.Unspecified)
+                        Text(it, color = if (state is SystemUpdateState.Error || (webError != null && web.error?.code !in listOf("cancelled", "worker-update-pending"))) MaterialTheme.colorScheme.error else Color.Unspecified)
                     }
                     Text(SettingsStrings.currentVersion(currentVersion))
+                    web?.running?.let { Text(SettingsStrings.webRunningBuild(it.versionName, it.versionCode.toString(), it.buildId.take(12))) }
+                    if (pending?.unsignedIos == true) Text(SettingsStrings.iosUpdateChannelDescription)
+                    if (pending?.opensExternally == true && !installSupported) Text(SettingsStrings.updateMatchingPackageMissing)
+                    if (state is SystemUpdateState.Downloaded && !installSupported && pending?.unsignedIos != true) {
+                        Text(SettingsStrings.desktopUpdateManualInstall)
+                    }
                 }
             },
             icon = { AppIcon(Icons.Default.SystemUpdate, null) },
             bottomAction = {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space12)) {
-                    if (state is SystemUpdateState.Checking || state is SystemUpdateState.Downloading) {
+                    if (web?.phase == "downloading" && web.totalBytes > 0) {
+                        AppLinearProgress(
+                            progress = (web.downloadedBytes.toDouble() / web.totalBytes).toFloat().coerceIn(0f, 1f),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = AppDimens.Space8),
+                        )
+                        Text(SettingsStrings.webDownloadProgress(cacheSize(web.downloadedBytes), cacheSize(web.totalBytes)))
+                    } else if (state is SystemUpdateState.Checking || state is SystemUpdateState.Downloading || web?.busy == true) {
                         AppLinearProgressIndeterminate(modifier = Modifier.fillMaxWidth().padding(bottom = AppDimens.Space12))
                     }
                     FlowRow(
@@ -369,6 +446,12 @@ internal fun SystemUpdateStatusCard(
                         verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
                     ) {
                         AppButton(text = actionLabel, onClick = { action?.invoke() }, enabled = action != null)
+                        if (state is SystemUpdateState.Downloading || web?.phase in listOf("checking", "downloading", "verifying")) {
+                            AppOutlinedButton(text = SettingsStrings.cancel, onClick = onCancel)
+                        }
+                        if (pending != null && !pending.opensExternally) {
+                            AppTextButton(text = SettingsStrings.openReleasePage, onClick = { onOpenUrl(pending.releasePageUrl) })
+                        }
                         if (skippableVersion != null) {
                             AppOutlinedButton(text = SettingsStrings.skipVersion, onClick = { onSkip(skippableVersion) })
                         }
@@ -405,6 +488,69 @@ internal fun SystemUpdateStatusCard(
             )
         }
     }
+    if (web != null) {
+        SettingItemGroup(title = SettingsStrings.webAppCache) {
+            SettingItem(
+                settingKey = "webAppCache",
+                title = {
+                    Text(
+                        when {
+                            cacheMetadataInvalid -> SettingsStrings.webCacheDiskSizeUnknown
+                            web.available || web.mode == "debug" -> SettingsStrings.webCacheDiskSize(cacheSize(web.cachedBytes))
+                            else -> SettingsStrings.webAppCache
+                        },
+                    )
+                },
+                description = {
+                    Column {
+                        Text(SettingsStrings.webCacheScope)
+                        Text(SettingsStrings.webCacheMemoryNote)
+                        if (cacheMetadataInvalid) {
+                            Text(SettingsStrings.webCacheMetadataInvalid)
+                        } else {
+                            web.cached?.let { Text(SettingsStrings.webCachedVersion(it.versionName, it.buildId.take(12))) }
+                            if (web.suppressed) Text(SettingsStrings.webCacheCleared)
+                        }
+                        if (web.mode == "debug") Text(SettingsStrings.webDebugCacheDescription)
+                    }
+                },
+                bottomAction = {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = AppDimens.Space12),
+                        horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
+                        verticalArrangement = Arrangement.spacedBy(AppDimens.Space8),
+                    ) {
+                        AppOutlinedButton(
+                            text = SettingsStrings.webCacheClear,
+                            enabled = canClear,
+                            onClick = { showClearConfirmation = true },
+                        )
+                        AppOutlinedButton(
+                            text = SettingsStrings.webCacheRestore,
+                            enabled = web.available && !web.busy && (web.suppressed || web.cached == null),
+                            onClick = { onWebCacheAction(WebAppCacheAction.Restore) },
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+private fun cacheSize(bytes: Long): String {
+    val tenths = bytes.coerceAtLeast(0) * 10 / (1024 * 1024)
+    return "${tenths / 10}.${tenths % 10} MiB"
+}
+
+private fun webCacheErrorText(code: String): String = when (code) {
+    "cache-metadata-invalid" -> SettingsStrings.webCacheMetadataInvalid
+    "worker-update-pending" -> SettingsStrings.webCacheWorkerPendingDescription
+    "network" -> SettingsStrings.webUpdateCheckFailed
+    "manifest", "integrity", "immutable-version" -> SettingsStrings.webCacheIntegrityFailed
+    "quota" -> SettingsStrings.webCacheQuotaFailed
+    "cache-missing" -> SettingsStrings.webCacheMissing
+    "cancelled" -> SettingsStrings.webCacheCancelled
+    else -> SettingsStrings.webCacheUnavailableDescription
 }
 
 @Composable

@@ -75,6 +75,7 @@ import com.github.zly2006.zhihu.theme.miuixThemeAvailable
 import com.github.zly2006.zhihu.ui.ANSWER_DOUBLE_TAP_ACTION_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.ARTICLE_USE_WEBVIEW_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.AUTO_REFRESH_HOME_ON_STARTUP_PREFERENCE_KEY
+import com.github.zly2006.zhihu.ui.LocalSharedMainNavigationBarAvailable
 import com.github.zly2006.zhihu.ui.components.ANSWER_SWITCH_SENSITIVITY_PREFERENCE_KEY
 import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
@@ -241,7 +242,7 @@ private fun NotificationType.searchAliases(): List<String> = when (this) {
     NotificationType.INVITE_ANSWER -> searchAliases(SettingsSearchStrings::notificationInviteAnswer)
 }
 
-private fun buildSettingsSearchEntries() = buildList {
+private fun buildSettingsSearchEntries(sharedMainNavigationBarAvailable: Boolean = true) = buildList {
     add(
         SettingsSearchEntry(
             id = "appearance.appLanguage",
@@ -309,8 +310,10 @@ private fun buildSettingsSearchEntries() = buildList {
     add(SettingsSearchEntry("appearance.showSearchHistory", SettingsStrings.recordSearchHistory, SettingsSearchSection.Navigation, SettingsStrings.searchHistoryDescription, Account.NavigationSettings(setting = "showSearchHistory"), searchAliases(SettingsSearchStrings::appearanceShowSearchHistory)))
     add(SettingsSearchEntry("navigation.pageTransition", SettingsStrings.pageTransition, SettingsSearchSection.Navigation, SettingsStrings.searchPageTransitionDescription, Account.NavigationSettings(setting = PAGE_TRANSITION_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::navigationPageTransition)))
     add(SettingsSearchEntry("appearance.appBlur", SettingsStrings.floatingGlass, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingGlassDescription, Account.AppearanceSettings(setting = APP_BLUR_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::appearanceAppBlur)))
-    add(SettingsSearchEntry("appearance.floatingBottomBar", SettingsStrings.floatingBottomBar, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingBarDescription, Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::appearanceFloatingBottomBar)))
-    add(SettingsSearchEntry("appearance.floatingBottomBarStyle", SettingsStrings.floatingBottomBarStyle, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingBarStyleDescription, Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::appearanceFloatingBottomBarStyle), requiresFloatingBottomBar))
+    if (sharedMainNavigationBarAvailable) {
+        add(SettingsSearchEntry("appearance.floatingBottomBar", SettingsStrings.floatingBottomBar, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingBarDescription, Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::appearanceFloatingBottomBar)))
+        add(SettingsSearchEntry("appearance.floatingBottomBarStyle", SettingsStrings.floatingBottomBarStyle, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingBarStyleDescription, Account.AppearanceSettings(setting = FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::appearanceFloatingBottomBarStyle), requiresFloatingBottomBar))
+    }
     add(SettingsSearchEntry("reading.contentAndHome", SettingsStrings.typography, SettingsSearchSection.Reading, SettingsStrings.searchTypographyDescription, Account.ReadingSettings(setting = "contentAndHome"), searchAliases(SettingsSearchStrings::readingContentAndHome)))
     if (isTiqianMarkdownRendererAvailable) {
         add(SettingsSearchEntry("reading.tiqianMarkdown", SettingsStrings.tiqianRenderer, SettingsSearchSection.Reading, SettingsStrings.searchTiqianDescription, Account.ReadingSettings(setting = TIQIAN_MARKDOWN_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::readingTiqianMarkdown)))
@@ -364,6 +367,10 @@ private fun buildSettingsSearchEntries() = buildList {
         ),
     )
 
+    add(SettingsSearchEntry("system.update", SettingsStrings.checkUpdates, SettingsSearchSection.System, SettingsStrings.searchSystemUpdateDescription, Account.SystemAndUpdateSettings(setting = "systemUpdate"), searchAliases(SettingsSearchStrings::systemUpdate)))
+    if (platformName == "Web") {
+        add(SettingsSearchEntry("system.webAppCache", SettingsStrings.webAppCache, SettingsSearchSection.System, SettingsStrings.webCacheScope, Account.SystemAndUpdateSettings(setting = "webAppCache"), searchAliases(SettingsSearchStrings::systemWebAppCache)))
+    }
     add(SettingsSearchEntry("system.githubToken", "GitHub Token", SettingsSearchSection.System, SettingsStrings.searchGithubTokenDescription, Account.SystemAndUpdateSettings(setting = "githubToken"), searchAliases(SettingsSearchStrings::systemGithubToken)))
     add(SettingsSearchEntry("system.checkNightlyUpdates", SettingsStrings.checkNightlyUpdates, SettingsSearchSection.System, SettingsStrings.searchNightlyDescription, Account.SystemAndUpdateSettings(setting = "checkNightlyUpdates"), searchAliases(SettingsSearchStrings::systemCheckNightlyUpdates)))
     add(SettingsSearchEntry("system.allowTelemetry", SettingsStrings.allowTelemetry, SettingsSearchSection.System, SettingsStrings.searchTelemetryDescription, Account.SystemAndUpdateSettings(setting = "allowTelemetry"), searchAliases(SettingsSearchStrings::systemAllowTelemetry)))
@@ -403,7 +410,9 @@ private fun buildSettingsSearchEntries() = buildList {
     add(SettingsSearchEntry("appearance.fabOpacity", SettingsStrings.floatingButtonOpacity, SettingsSearchSection.Appearance, SettingsStrings.searchFloatingOpacityDescription, Account.AppearanceSettings(setting = PREF_FAB_OPACITY), searchAliases(SettingsSearchStrings::appearanceFabOpacity)))
     add(SettingsSearchEntry("navigation.startDestination", SettingsStrings.startupPage, SettingsSearchSection.Navigation, SettingsStrings.searchStartupPageDescription, Account.NavigationSettings(setting = START_DESTINATION_PREFERENCE_KEY), searchAliases(SettingsSearchStrings::navigationStartDestination)))
     add(SettingsSearchEntry("navigation.tapScrollToTop", SettingsStrings.bottomBarTapToTop, SettingsSearchSection.Navigation, SettingsStrings.searchTapToTopDescription, Account.NavigationSettings(setting = "bottomBarTapScrollToTop"), searchAliases(SettingsSearchStrings::navigationTapScrollToTop)))
-    add(SettingsSearchEntry("navigation.autoHideBottomBar", SettingsStrings.autoHideBottomBar, SettingsSearchSection.Navigation, SettingsStrings.autoHideBottomBarDescription, Account.NavigationSettings(setting = "autoHideBottomBar"), searchAliases(SettingsSearchStrings::navigationAutoHideBottomBar)))
+    if (sharedMainNavigationBarAvailable) {
+        add(SettingsSearchEntry("navigation.autoHideBottomBar", SettingsStrings.autoHideBottomBar, SettingsSearchSection.Navigation, SettingsStrings.autoHideBottomBarDescription, Account.NavigationSettings(setting = "autoHideBottomBar"), searchAliases(SettingsSearchStrings::navigationAutoHideBottomBar)))
+    }
     add(SettingsSearchEntry("reading.lineHeight", SettingsStrings.lineHeight, SettingsSearchSection.Reading, SettingsStrings.searchLineHeightDescription, Account.ReadingSettings(setting = PREF_LINE_HEIGHT), searchAliases(SettingsSearchStrings::readingLineHeight)))
     add(SettingsSearchEntry("reading.blockSpacing", SettingsStrings.paragraphSpacing, SettingsSearchSection.Reading, SettingsStrings.searchParagraphSpacingDescription, Account.ReadingSettings(setting = PREF_BLOCK_SPACING), searchAliases(SettingsSearchStrings::readingBlockSpacing)))
     if (isAnswerSwipeSupported) {
@@ -482,7 +491,8 @@ fun SettingsSearchScreen() {
     val queryState = rememberTextFieldState()
     val query = queryState.text.toString()
     val language = AppLocale.current
-    val entries = remember(language) { buildSettingsSearchEntries() }
+    val sharedMainNavigationBarAvailable = LocalSharedMainNavigationBarAvailable.current
+    val entries = remember(language, sharedMainNavigationBarAvailable) { buildSettingsSearchEntries(sharedMainNavigationBarAvailable) }
     val groups = remember(query, entries) {
         entries.filter { entry -> entry.matches(query) }.groupBy { it.section }
     }

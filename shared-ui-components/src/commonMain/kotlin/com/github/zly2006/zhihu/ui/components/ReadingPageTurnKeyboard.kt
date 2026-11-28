@@ -55,11 +55,11 @@ import com.github.zly2006.zhihu.navigation.LocalAppNavEntry
 import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
 import com.github.zly2006.zhihu.ui.LocalArticleNavHost
 
-private val LocalIosPageTurnKeyboardAvailable = staticCompositionLocalOf<() -> Boolean> { { false } }
+private val LocalReadingPageTurnKeyboardAvailable = staticCompositionLocalOf<() -> Boolean> { { false } }
 
-/** CMP 的 UIKit UIPress 已转为 KeyEvent；仅在子控件未消费时兜底，不注册系统快捷键。 */
+/** 仅处理子控件未消费的阅读按键，不接管输入框或注册系统快捷键。 */
 @Composable
-fun IosPageTurnKeyboardHost(content: @Composable () -> Unit) {
+fun ReadingPageTurnKeyboardHost(content: @Composable () -> Unit) {
     val dispatcher = LocalPageTurnDispatcher.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
@@ -90,7 +90,7 @@ fun IosPageTurnKeyboardHost(content: @Composable () -> Unit) {
         if (isAvailable() && dispatcher.hasKeyboardTarget && !hasFocus) focusRequester.requestFocus()
     }
     InterceptPlatformTextInput(inputInterceptor) {
-        CompositionLocalProvider(LocalIosPageTurnKeyboardAvailable provides isAvailable) {
+        CompositionLocalProvider(LocalReadingPageTurnKeyboardAvailable provides isAvailable) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -111,10 +111,10 @@ fun IosPageTurnKeyboardHost(content: @Composable () -> Unit) {
     }
 }
 
-/** 只在 iOS 的正文路由装配处启用；页面自身的 enabled 仍控制菜单和首尾切篇。 */
+/** 只在正文路由启用；页面自身的 enabled 仍控制菜单和首尾切篇。 */
 @Composable
-fun IosReadingPageTurnKeyboardScope(enabled: Boolean, content: @Composable () -> Unit) {
-    val isAvailable = LocalIosPageTurnKeyboardAvailable.current
+fun ReadingPageTurnKeyboardScope(enabled: Boolean, content: @Composable () -> Unit) {
+    val isAvailable = LocalReadingPageTurnKeyboardAvailable.current
     val navHost = LocalArticleNavHost.current
     val entryId = LocalAppNavEntry.current?.id
     val overlays = LocalAppOverlayBlurController.current

@@ -22,8 +22,15 @@
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleURLTypes</key>
+    <array><dict>
+        <key>CFBundleURLName</key><string>com.github.zly2006.zhihu.content</string>
+        <key>CFBundleURLSchemes</key><array><string>zhihu-plus-plus</string></array>
+    </dict></array>
     <key>NSMicrophoneUsageDescription</key>
     <string>Record voice comments you choose to send.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Take a photo you choose to attach, or scan a Zhihu sign-in code.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>Save selected images and exported articles to Photos.</string>
     <key>UIBackgroundModes</key>

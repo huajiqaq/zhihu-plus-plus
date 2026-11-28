@@ -170,8 +170,8 @@ def package(app_image, icon, destination):
         (appdir / '.DirIcon').symlink_to(f'{icon_name}.png')
         (appdir / 'zhihu-plus-plus.desktop').write_text(
             '[Desktop Entry]\nType=Application\nName=Zhihu++\n'
-            f'Comment=自由、无广告的知乎第三方客户端\nExec=AppRun\nIcon={icon_name}\n'
-            'Terminal=false\nCategories=Network;\n', encoding='utf-8')
+            f'Comment=自由、无广告的知乎第三方客户端\nExec=AppRun %u\nIcon={icon_name}\n'
+            'Terminal=false\nCategories=Network;\nMimeType=x-scheme-handler/zhihu-plus-plus;\n', encoding='utf-8')
         launcher = appdir / 'AppRun'
         launcher.write_text('#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/bin/Zhihu++" "$@"\n', encoding='utf-8')
         launcher.chmod(0o755)

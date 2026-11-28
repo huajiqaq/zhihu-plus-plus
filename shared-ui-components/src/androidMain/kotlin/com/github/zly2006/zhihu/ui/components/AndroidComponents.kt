@@ -42,7 +42,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnPreDraw
-import com.github.zly2006.zhihu.i18n.AppLocale
 import com.github.zly2006.zhihu.i18n.WidgetsStrings
 import com.github.zly2006.zhihu.navigation.NavDestination
 import com.github.zly2006.zhihu.nlp.KeywordAnalyzerCore
@@ -169,33 +168,6 @@ class OpenImageDialog(
         }, 64L)
     }
 }
-
-fun richEditorUiLabels(): Map<String, String> = mapOf(
-    "lang" to AppLocale.languageTag,
-    "undo" to WidgetsStrings.editorUndo,
-    "redo" to WidgetsStrings.editorRedo,
-    "headingLevel" to WidgetsStrings.editorHeadingLevel,
-    "paragraph" to WidgetsStrings.editorParagraph,
-    "heading1" to WidgetsStrings.editorHeadingOne,
-    "heading2" to WidgetsStrings.editorHeadingTwo,
-    "heading3" to WidgetsStrings.editorHeadingThree,
-    "heading4" to WidgetsStrings.editorHeadingFour,
-    "bold" to WidgetsStrings.editorBold,
-    "italic" to WidgetsStrings.editorItalic,
-    "underline" to WidgetsStrings.editorUnderline,
-    "ordered" to WidgetsStrings.editorOrderedList,
-    "bullet" to WidgetsStrings.editorBulletList,
-    "blockquote" to WidgetsStrings.editorQuote,
-    "code" to WidgetsStrings.editorInlineCode,
-    "code-block" to WidgetsStrings.editorCodeBlock,
-    "link" to WidgetsStrings.editorInsertLink,
-    "clean" to WidgetsStrings.editorClearFormatting,
-    "visitLink" to WidgetsStrings.editorVisitLink,
-    "enterLink" to WidgetsStrings.editorEnterLink,
-    "editLink" to WidgetsStrings.editorEditLink,
-    "saveLink" to WidgetsStrings.editorSaveLink,
-    "removeLink" to WidgetsStrings.editorRemoveLink,
-)
 
 actual suspend fun extractFeedKeywords(
     title: String,

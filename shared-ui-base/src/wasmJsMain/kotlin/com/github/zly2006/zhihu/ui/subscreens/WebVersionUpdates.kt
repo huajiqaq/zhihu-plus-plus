@@ -22,70 +22,74 @@ package com.github.zly2006.zhihu.ui.subscreens
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import com.github.zly2006.zhihu.i18n.ReaderStrings
-import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.platform.platformName
 import com.github.zly2006.zhihu.updater.UpdateStep
 import kotlin.coroutines.resume
-import kotlinx.browser.window
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.Json
 
-private val loadedBuildId = readWebBuildId().takeIf { Regex("[a-f0-9]{16,64}").matches(it) }
-private val webUpdateState = MutableStateFlow<SystemUpdateState>(
-    if (loadedBuildId == null) SystemUpdateState.Unpublished else SystemUpdateState.NoUpdate,
-)
+private val webCacheJson = Json { ignoreUnknownKeys = true }
+private val webUpdateState = MutableStateFlow<SystemUpdateState>(SystemUpdateState.Web(WebAppCacheSnapshot()))
 
-@Composable
-actual fun rememberSystemUpdateState(): StateFlow<SystemUpdateState> = webUpdateState
+/** JS 缓存宿主拥有任务和缓存；Kotlin 仅订阅快照，离开设置页不取消下载。 */
+private val webCacheSubscription by lazy {
+    subscribeWebAppCache(::acceptWebCacheSnapshot)
+    true
+}
 
-@Composable
-actual fun rememberSystemUpdateChecker(): suspend () -> Unit = check@{
-    if (loadedBuildId == null) {
-        webUpdateState.value = SystemUpdateState.Unpublished
-        return@check
+private fun acceptWebCacheSnapshot(json: String) {
+    val snapshot = runCatching {
+        webCacheJson.decodeFromString<WebAppCacheSnapshot>(json).also {
+            require(it.schema == 1 && it.cachedBytes >= 0 && it.downloadedBytes >= 0 && it.totalBytes >= 0)
+        }
+    }.getOrElse {
+        WebAppCacheSnapshot(phase = "unavailable", error = WebCacheError("unavailable"))
     }
-    if (webUpdateState.value == SystemUpdateState.Checking) return@check
-    webUpdateState.value = SystemUpdateState.Checking
-    try {
-        val publishedBuildId = suspendCancellableCoroutine<String?> { continuation ->
-            val request = requestWebBuildId { success, buildId ->
-                if (continuation.isActive) continuation.resume(buildId.takeIf { success })
-            }
-            continuation.invokeOnCancellation { request.abort() }
+    webUpdateState.value = SystemUpdateState.Web(snapshot)
+}
+
+private suspend fun runWebCacheAction(action: String) {
+    webCacheSubscription
+    suspendCancellableCoroutine { continuation ->
+        invokeWebAppCache(action) { snapshot ->
+            acceptWebCacheSnapshot(snapshot)
+            if (continuation.isActive) continuation.resume(Unit)
         }
-        webUpdateState.value = when (publishedBuildId) {
-            null -> SystemUpdateState.Error({ SettingsStrings.webUpdateCheckFailed })
-            loadedBuildId -> SystemUpdateState.Latest
-            else -> SystemUpdateState.WebUpdateAvailable(publishedBuildId)
-        }
-    } catch (error: CancellationException) {
-        resetSystemUpdateState()
-        throw error
-    } catch (_: Exception) {
-        webUpdateState.value = SystemUpdateState.Error({ SettingsStrings.webUpdateCheckFailed })
     }
 }
+
+@Composable
+actual fun rememberSystemUpdateState(): StateFlow<SystemUpdateState> {
+    webCacheSubscription
+    return webUpdateState
+}
+
+@Composable
+actual fun rememberSystemUpdateChecker(auto: Boolean): suspend () -> Unit = { runWebCacheAction("check") }
 
 @Composable
 actual fun rememberSystemUpdateVersionSkipper(): (String) -> Unit = {
     error("Web updates do not support skipping versions")
 }
 
-/** 由更新卡的保存输入确认框调用；普通 reload 保留当前 hash 和浏览器存储。 */
 @Composable
-actual fun rememberSystemUpdateDownloader(): suspend () -> Unit = {
-    if (webUpdateState.value is SystemUpdateState.WebUpdateAvailable) window.location.reload()
-}
+actual fun rememberSystemUpdateDownloader(): suspend () -> Unit = { runWebCacheAction("download") }
+
+/** 只由保存输入确认框调用；应用候选与调试刷新均由同一 JS 宿主保留 hash。 */
+@Composable
+actual fun rememberDownloadedSystemUpdateInstaller(): suspend () -> Unit = { runWebCacheAction("apply") }
 
 @Composable
-actual fun rememberDownloadedSystemUpdateInstaller(): suspend () -> Unit = {
-    webUpdateState.value = SystemUpdateState.Error({ ReaderStrings.apkInstallUnavailable(platformName) }, UpdateStep.Install)
-}
+actual fun rememberWebAppCacheAction(): suspend (WebAppCacheAction) -> Unit = { runWebCacheAction(it.name.lowercase()) }
+
+@Composable
+actual fun rememberSystemUpdateCanceller(): () -> Unit = { invokeWebAppCache("cancel", ::acceptWebCacheSnapshot) }
 
 actual fun resetSystemUpdateState() {
-    webUpdateState.value = if (loadedBuildId == null) SystemUpdateState.Unpublished else SystemUpdateState.NoUpdate
+    // 关闭提示不撤销已验证候选，也不改变活动下载的所有权。
+    webCacheSubscription
 }
 
 actual fun setSystemUpdateError(message: String, step: UpdateStep) {
@@ -100,51 +104,29 @@ actual fun WebViewCustomFontSettings(customFontName: String?, onCustomFontNameCh
     Text(ReaderStrings.webviewFontUnavailable(platformName))
 }
 
-@JsFun("() => document.querySelector('meta[name=\"zhihu-build-id\"]')?.content || ''")
-private external fun readWebBuildId(): String
-
-private external interface WebVersionRequest : JsAny {
-    fun abort()
-}
-
-/** 只读取当前静态站点的发布标识，不使用账号请求桥、Cookie 或 GitHub 凭据。 */
 @JsFun(
     """(done) => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15000);
-        (async () => {
-            try {
-                const url = new URL('web-version.json', document.baseURI);
-                if (url.origin !== location.origin || !['http:', 'https:'].includes(url.protocol) ||
-                    url.username || url.password) throw new Error();
-                const response = await fetch(url.href, {
-                    mode: 'same-origin', credentials: 'omit', cache: 'no-store', redirect: 'error',
-                    referrerPolicy: 'no-referrer', signal: controller.signal
-                });
-                if (response.status !== 200 || !response.body ||
-                    (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() !== 'application/json' ||
-                    Number(response.headers.get('content-length')) > 2048) throw new Error();
-                const reader = response.body.getReader();
-                const bytes = new Uint8Array(2048);
-                let size = 0;
-                try {
-                    while (true) {
-                        const part = await reader.read();
-                        if (part.done) break;
-                        if (size + part.value.byteLength > bytes.length) throw new Error();
-                        bytes.set(part.value, size);
-                        size += part.value.byteLength;
-                    }
-                } finally { await reader.cancel(); reader.releaseLock(); }
-                const manifest = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes.subarray(0, size)));
-                if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) ||
-                    typeof manifest.buildId !== 'string' || !/^[a-f0-9]{16,64}$/.test(manifest.buildId) ||
-                    controller.signal.aborted) throw new Error();
-                done(true, manifest.buildId);
-            } catch { done(false, ''); }
-            finally { clearTimeout(timer); controller.abort(); }
-        })();
-        return {abort: () => controller.abort()};
+        const snapshot = () => JSON.stringify(window.zhihuAppCache?.snapshot() || {
+            schema: 1, available: false, phase: 'unavailable', error: {code: 'unavailable'}
+        });
+        window.addEventListener('zhihu-app-cache-changed', () => done(snapshot()));
+        done(snapshot());
     }""",
 )
-private external fun requestWebBuildId(done: (Boolean, String) -> Unit): WebVersionRequest
+private external fun subscribeWebAppCache(done: (String) -> Unit)
+
+@JsFun(
+    """(action, done) => {
+        const cache = window.zhihuAppCache;
+        const snapshot = () => JSON.stringify(cache?.snapshot() || {
+            schema: 1, available: false, phase: 'unavailable', error: {code: 'unavailable'}
+        });
+        if (!cache || !['check', 'download', 'apply', 'clear', 'restore', 'cancel'].includes(action)) {
+            done(snapshot()); return;
+        }
+        Promise.resolve().then(() => cache[action]()).then(() => done(snapshot())).catch(() => {
+            done(JSON.stringify({...cache.snapshot(), error: {code: 'unavailable'}}));
+        });
+    }""",
+)
+private external fun invokeWebAppCache(action: String, done: (String) -> Unit)

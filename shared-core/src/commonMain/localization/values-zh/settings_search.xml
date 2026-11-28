@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="system_update">
+        <item>检查更新</item>
+        <item>版本</item>
+        <item>下载</item>
+        <item>发布</item>
+        <item>应用更新</item>
+    </string-array>
+    <string-array name="system_web_app_cache">
+        <item>应用缓存</item>
+        <item>磁盘占用</item>
+        <item>Wasm</item>
+        <item>离线启动</item>
+        <item>清理缓存</item>
+        <item>恢复缓存</item>
+        <item>运行内存</item>
+    </string-array>
     <string-array name="appearance_app_language">
         <item>语言</item>
         <item>界面语言</item>

@@ -197,6 +197,56 @@ class PhoneLoginStateProtocolTest {
         }
     }
 
+    @Test
+    fun browserPhoneBackendKeepsFormValidationWithoutCallingNativeEndpoints() = runTest {
+        val calls = mutableListOf<String>()
+        var closed = false
+        val engine = MockEngine { error("Browser phone form must not use native HTTP") }
+        val backend = object : BrowserPhoneLoginBackend {
+            override suspend fun countries() = listOf(PhoneLoginCountry("+86", "中国", "CN"))
+            override suspend fun send(phone: String): ZhihuPhoneDigitsResult {
+                calls += "send:$phone"
+                return ZhihuPhoneDigitsResult.CaptchaRequired(null)
+            }
+            override suspend fun captcha(): String? = null
+            override suspend fun verifyCaptcha(input: String): ZhihuPhoneDigitsResult {
+                calls += "captcha:$input"
+                return ZhihuPhoneDigitsResult.Sent
+            }
+            override suspend fun signIn(phone: String, digits: String): String {
+                calls += "commit:$phone:$digits"
+                return "Fixture"
+            }
+            override fun close() { closed = true }
+        }
+        val state = PhoneLoginState(engine, browserBackend = backend)
+        val store = ZhihuAccountStore(ZhihuAccountRepository(Path(directory.resolve("account.json").toString())), engine)
+        try {
+            state.phoneNumber.setTextAndPlaceCursorAtEnd("13800138000")
+            assertFalse(state.canSendDigits)
+            state.agreementAccepted = true
+            assertTrue(state.canSendDigits)
+            state.requestDigits()
+            assertTrue(state.captchaRequired)
+            assertFalse(state.hasRequestedDigits)
+            state.captchaInput.setTextAndPlaceCursorAtEnd("fixture")
+            state.verifyCaptchaAndRequestDigits()
+            assertTrue(state.hasRequestedDigits)
+            assertFalse(state.captchaRequired)
+            assertEquals(60, state.resendSeconds)
+            state.digits.setTextAndPlaceCursorAtEnd("123456")
+            assertTrue(state.canSignIn)
+            assertEquals("Fixture", state.signIn(store, store.client))
+            assertEquals(listOf("send:+8613800138000", "captcha:fixture", "commit:+8613800138000:123456"), calls)
+            state.phoneNumber.setTextAndPlaceCursorAtEnd("13800138001")
+            assertFalse(state.canSignIn)
+        } finally {
+            state.close()
+            store.close()
+        }
+        assertTrue(closed)
+    }
+
     private fun phoneLoginTestClient(
         engine: MockEngine,
         cookies: MutableMap<String, String>,

@@ -33,6 +33,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,11 @@ actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Web,
 )
 
+@Composable
+internal actual fun LoginMethodReady(method: LoginMethod): Boolean = true
+
+internal actual fun createBrowserPhoneLoginBackend(store: ZhihuAccountStore, owner: ZhihuAccountClient): BrowserPhoneLoginBackend? = null
+
 actual val isLoginRiskControlSupported: Boolean = true
 
 actual val phoneLoginDeviceInfo: ZhihuPhoneLoginDeviceInfo
@@ -84,7 +90,7 @@ actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) {
 }
 
 @Composable
-actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit) {
+actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
     val context = LocalContext.current
     val accountStore = rememberZhihuAccountStore()
     val accountClient = accountStore.client
@@ -109,6 +115,7 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerifi
                         scope.launch {
                             try {
                                 if (accountStore.login(accountClient, cookies.toMutableMap())) {
+                                    accountStore.reportLoginSuccess(accountStore.client, accountStore.session.username)
                                     telemetry(context, "login")
                                     loginSuccess.value(accountStore.session.username)
                                 }
@@ -128,12 +135,22 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerifi
 }
 
 @Composable
+internal actual fun AccountQrConfirmationPane(url: String, owner: ZhihuAccountClient, modifier: Modifier) =
+    ExternalAccountQrConfirmationPane(url, modifier)
+
+@Composable
 actual fun LoginRiskControlPane(
     url: String,
     cookies: Map<String, String>,
     onCookiesChanged: (Map<String, String>) -> Unit,
+    onCookieReaderReady: ((suspend () -> Map<String, String>)?) -> Unit,
     onVerificationComplete: () -> Unit,
 ) {
+    val readerReady by rememberUpdatedState(onCookieReaderReady)
+    DisposableEffect(url) {
+        readerReady { readLoginRiskControlCookies(url) }
+        onDispose { readerReady(null) }
+    }
     val cookiesChanged = rememberUpdatedState(onCookiesChanged)
     val verificationComplete = rememberUpdatedState(onVerificationComplete)
     val accountClient = rememberZhihuAccountStore().client
@@ -264,7 +281,7 @@ private fun configureRiskControlWebView(
     webView.loadUrl(url)
 }
 
-internal actual fun readLoginRiskControlCookies(url: String): Map<String, String> {
+private fun readLoginRiskControlCookies(url: String): Map<String, String> {
     CookieManager.getInstance().flush()
     return readWebViewCookies(ZHIHU_HOME_URL) + readWebViewCookies(url)
 }

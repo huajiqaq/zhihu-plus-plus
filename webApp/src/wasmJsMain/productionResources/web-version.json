@@ -1,1 +1,1 @@
-{"buildId":"@WEB_BUILD_ID@"}
+{"schema":1,"versionName":"@WEB_VERSION_NAME@","versionCode":@WEB_VERSION_CODE@,"buildId":"@WEB_BUILD_ID@","manifest":"@WEB_RESOURCE_BASE@app-assets.json","sha256":"@WEB_MANIFEST_SHA256@"}

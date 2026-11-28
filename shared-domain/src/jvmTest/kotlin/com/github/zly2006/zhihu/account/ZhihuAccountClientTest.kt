@@ -50,6 +50,8 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import java.nio.file.Path as JavaPath
 
 class ZhihuAccountClientTest {
@@ -91,6 +93,192 @@ class ZhihuAccountClientTest {
             assertFalse(owner.isCurrent)
             assertFalse(store.session.login)
             assertNull(store.session.profile)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun browserSignOutRevokesOnlyTheCurrentTabBeforeRetiringItsClient() = runTest {
+        var requests = 0
+        var rejectRevocation = true
+        var revocations = 0
+        val mock = MockEngine {
+            requests++
+            respond("""{"id":"fixture-person","name":"Fixture"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {
+            override suspend fun revokeSession(owner: ZhihuAccountClient) {
+                check(owner.isCurrent)
+                revocations++
+                check(!rejectRevocation) { "synthetic revocation failure" }
+            }
+        })
+        try {
+            assertEquals(BrowserSessionStatus.Authenticated, store.refreshBrowserSession())
+            val owner = store.client
+            val session = store.session
+            assertFailsWith<IllegalStateException> { store.signOut(owner) }
+            assertSame(owner, store.client)
+            assertEquals(session, store.session)
+            rejectRevocation = false
+            assertTrue(store.signOut(owner))
+            assertFalse(owner.isCurrent)
+            assertFalse(store.session.login)
+            assertNull(store.session.profile)
+            assertEquals(BrowserSessionStatus.Guest, store.browserSessionStatus.value)
+            assertFalse(store.signOut(owner))
+            assertEquals(2, revocations)
+            assertEquals(1, requests, "Sign-out must not call a website logout or cookie endpoint")
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun loginReceiptSurvivesPageRecreationAndCannotOutliveItsAccount() = runTest {
+        var id = "fixture-A"
+        val mock = MockEngine {
+            respond("""{"id":"$id","name":"Fixture"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {
+            override suspend fun revokeSession(owner: ZhihuAccountClient) = Unit
+        })
+        try {
+            val guest = store.client
+            store.refreshBrowserSession()
+            val owner = store.client
+            assertNull(store.loginSuccessReceipt.value, "Automatic profile refresh is not an explicit login")
+            assertFalse(store.reportLoginSuccess(guest, "Fixture"))
+            assertTrue(store.reportLoginSuccess(owner, "Fixture"))
+            val receipt = assertNotNull(store.loginSuccessReceipt.value)
+            assertSame(receipt, store.loginSuccessReceipt.value, "A new page reads the same store-owned receipt")
+            assertFalse(store.reportLoginSuccess(guest, "Fixture"))
+            assertTrue(store.consumeLoginSuccess(receipt))
+            assertFalse(store.consumeLoginSuccess(receipt))
+            store.reportLoginSuccess(owner, "Fixture")
+            id = "fixture-B"
+            store.refreshBrowserSession()
+            assertNull(store.loginSuccessReceipt.value)
+            assertFalse(store.reportLoginSuccess(owner, "Fixture"))
+            val current = store.client
+            assertTrue(store.reportLoginSuccess(current, "Fixture"))
+            store.signOut(current)
+            assertNull(store.loginSuccessReceipt.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun browserIdentitySwitchRequiresTheRequestedVerifiedProfile() = runTest {
+        var profileId = "fixture-A"
+        var wrongAccount = true
+        val mock = MockEngine { request ->
+            assertEquals("/api/v4/me", request.url.encodedPath)
+            respond("""{"id":"$profileId","name":"Fixture"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {
+            override suspend fun identityAccounts(owner: ZhihuAccountClient) = listOf(ZhihuIdentityAccount("fixture-B", name = "Other"))
+            override suspend fun changeIdentity(owner: ZhihuAccountClient, targetUserId: String?): Boolean {
+                check(owner.isCurrent)
+                profileId = if (wrongAccount) "fixture-C" else checkNotNull(targetUserId)
+                return true
+            }
+        })
+        try {
+            assertEquals(BrowserSessionStatus.Authenticated, store.refreshBrowserSession())
+            val owner = store.client
+            assertEquals("fixture-B", store.browserIdentityAccounts(owner).single().id)
+            assertFailsWith<Exception> { store.changeBrowserIdentity(owner, "fixture-B") }
+            assertSame(owner, store.client)
+            assertEquals("fixture-A", store.session.profile?.id, "A mismatched candidate must not replace the visible account")
+            wrongAccount = false
+            val result = store.changeBrowserIdentity(owner, "fixture-B")
+            assertFalse(owner.isCurrent)
+            assertEquals("fixture-B", result.account.id)
+            assertEquals("fixture-B", store.session.profile?.id)
+            assertTrue(store.session.cookies.isEmpty(), "Browser identity results contain no credentials")
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun browserSenderDeniedByEngineDoesNotRequireIdentityRecovery() = runTest {
+        var sendAttempts = 0
+        var restores = 0
+        var requests = 0
+        val mock = MockEngine { request ->
+            requests++
+            assertEquals("/api/v4/me", request.url.encodedPath)
+            respond("""{"id":"viewer","name":"Viewer"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        // 仅验证 store 对引擎拒绝的契约，不执行 Wasm 对 authorized=false 的实际解码。
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {
+            override suspend fun sendCommentAs(owner: ZhihuAccountClient, sender: CommentSender, url: String, body: JsonObject): BrowserCommentSendResult {
+                sendAttempts++
+                throw BrowserBridgeException(BrowserSessionStatus.Denied)
+            }
+            override suspend fun restoreCommentIdentity(owner: ZhihuAccountClient): Boolean {
+                restores++
+                return true
+            }
+        })
+        try {
+            assertEquals(BrowserSessionStatus.Authenticated, store.refreshBrowserSession())
+            val owner = store.client
+            val session = store.session
+            val sender = CommentSender("viewer", ZhihuAccountProfileSnapshot("alias", "Alias"))
+            val body = Json.parseToJsonElement("""{"content":"<p>Fixture draft</p>"}""") as JsonObject
+            val denied = assertFailsWith<BrowserBridgeException> {
+                store.sendBrowserCommentAs(owner, sender, "https://www.zhihu.com/api/v4/comment_v5/answers/1/comment", body)
+            }
+            assertEquals(BrowserSessionStatus.Denied, denied.status)
+            assertFalse(owner.browserCommentRestoreRequired.value)
+            assertSame(owner, store.client)
+            assertTrue(owner.isCurrent)
+            assertEquals(session, store.session)
+            assertTrue(store.restoreBrowserCommentIdentity(owner), "A refused send needs no identity recovery")
+            assertEquals(0, restores, "Do not start a recovery transaction after user refusal")
+            assertEquals(1, sendAttempts)
+            assertEquals(1, requests, "Only the synthetic initial profile lookup was requested")
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun browserSenderRecoveryRetainsTheViewerAndNeverResends() = runTest {
+        var sends = 0
+        var restores = 0
+        val mock = MockEngine {
+            respond("""{"id":"viewer","name":"Viewer"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val store = ZhihuAccountStore(null, object : HttpClientEngine by mock, BrowserAccountEngine {
+            override suspend fun sendCommentAs(owner: ZhihuAccountClient, sender: CommentSender, url: String, body: JsonObject): BrowserCommentSendResult {
+                sends++
+                return BrowserCommentSendResult(Json.parseToJsonElement("""{"id":"fixture-comment"}""") as JsonObject, restored = false)
+            }
+            override suspend fun restoreCommentIdentity(owner: ZhihuAccountClient): Boolean = ++restores > 1
+        })
+        try {
+            store.refreshBrowserSession()
+            val owner = store.client
+            val sender = CommentSender("viewer", ZhihuAccountProfileSnapshot("alias", "Alias"))
+            val body = JsonObject(emptyMap())
+            val result = store.sendBrowserCommentAs(owner, sender, "https://www.zhihu.com/api/v4/comment_v5/answers/1/comment", body)
+            assertFalse(result.restored)
+            assertTrue(owner.browserCommentRestoreRequired.value)
+            assertSame(owner, store.client)
+            assertEquals("viewer", store.session.profile?.id)
+            assertFailsWith<Exception> { store.sendBrowserCommentAs(owner, sender, "https://www.zhihu.com/api/v4/comment_v5/answers/1/comment", body) }
+            assertFalse(store.restoreBrowserCommentIdentity(owner))
+            assertTrue(owner.browserCommentRestoreRequired.value)
+            assertTrue(store.restoreBrowserCommentIdentity(owner))
+            assertFalse(owner.browserCommentRestoreRequired.value)
+            assertEquals(1, sends)
+            assertEquals(2, restores)
         } finally {
             store.close()
         }

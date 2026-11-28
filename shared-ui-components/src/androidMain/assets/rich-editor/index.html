@@ -21,6 +21,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src https: data:; font-src 'none'; connect-src 'none'; frame-src 'none'">
+<!-- EDITOR_HOST_BRIDGE -->
 <link rel="stylesheet" href="quill.snow.css">
 <style>
 :root {
@@ -171,9 +172,46 @@ function localizeControls(labels) {
   remove.dataset.removeLink = labels.removeLink;
   remove.setAttribute('aria-label', labels.removeLink);
 }
-function publish() {
-  if (window.EditorBridge) EditorBridge.contentChanged(quill.getSemanticHTML(), quill.getText());
+function editorNotify(event, data) {
+  const bridge = window.EditorBridge;
+  if (!bridge) return;
+  if (bridge.postMessage) { bridge.postMessage(JSON.stringify(Object.assign({event}, data || {}))); return; }
+  if (event === 'ready') bridge.ready();
+  else if (event === 'content') bridge.contentChanged(data.html, data.text);
+  else if (event === 'size') bridge.resized(data.height);
+  else if (event === 'caret') bridge.revealCaret(data.top, data.bottom);
 }
+const privateImageSources = new Map();
+const privateImageRequests = new Set();
+function editorSemanticHtml() {
+  const container = document.createElement('div');
+  container.innerHTML = quill.getSemanticHTML();
+  for (const image of container.querySelectorAll('img[src]')) {
+    const original = privateImageSources.get(image.getAttribute('src'));
+    if (original) image.setAttribute('src', original);
+  }
+  return container.innerHTML;
+}
+function editorPrivateImages() {
+  // Android 的受限资源拦截已负责私有图片，其他宿主通过当前账号请求而非共享浏览器 Cookie。
+  if (!window.EditorBridge?.postMessage) return;
+  for (const image of quill.root.querySelectorAll('img[src]')) {
+    const source = image.getAttribute('src');
+    const cached = Array.from(privateImageSources.entries()).find(entry => entry[1] === source);
+    if (cached) { image.setAttribute('src', cached[0]); continue; }
+    try {
+      const url = new URL(source);
+      if (url.protocol === 'https:' && url.hostname === 'pic-private.zhihu.com' && !url.username && !url.password && !privateImageRequests.has(source)) {
+        privateImageRequests.add(source);
+        editorNotify('privateImage', {url:source});
+      }
+    } catch (_) {}
+  }
+}
+function editorSnapshot() {
+  return {html: editorSemanticHtml(), text: quill.getText(), index: lastSelection.index, length: lastSelection.length};
+}
+function publish() { editorNotify('content', editorSnapshot()); }
 let caretFrame = 0;
 function revealCaret() {
   if (caretFrame || !window.EditorBridge) return;
@@ -184,12 +222,12 @@ function revealCaret() {
     const caret = quill.getBounds(range.index + range.length);
     if (!caret) return;
     const top = quill.container.getBoundingClientRect().top + window.scrollY;
-    EditorBridge.revealCaret(Math.floor(top + caret.top), Math.ceil(top + caret.bottom));
+    editorNotify('caret', {top: Math.floor(top + caret.top), bottom: Math.ceil(top + caret.bottom)});
   });
 }
-quill.on('text-change', () => { publish(); revealCaret(); });
+quill.on('text-change', () => { publish(); editorPrivateImages(); revealCaret(); });
 quill.on('selection-change', range => {
-  if (range) { lastSelection = range; revealCaret(); }
+  if (range) { lastSelection = range; editorNotify('selection', {index: range.index, length: range.length}); revealCaret(); }
 });
 document.getElementById('undo').onclick = () => { quill.history.undo(); publish(); };
 document.getElementById('redo').onclick = () => { quill.history.redo(); publish(); };
@@ -197,6 +235,7 @@ window.editorLoad = function(html) {
   quill.setContents(quill.clipboard.convert({ html: html || '<p><br></p>' }), 'silent');
   quill.history.clear();
   publish();
+  editorPrivateImages();
 };
 window.editorImage = function(url, width, height) {
   const index = Math.min(lastSelection.index, quill.getLength() - 1);
@@ -215,12 +254,39 @@ window.editorConfigure = function(enabled, placeholder, foreground, background, 
   document.documentElement.style.setProperty('--background', background);
   document.documentElement.style.setProperty('--muted', muted);
 };
-if (window.EditorBridge) {
-  new ResizeObserver(entries => {
-    EditorBridge.resized(Math.ceil(entries[0].contentRect.height));
-  }).observe(document.body);
-  EditorBridge.ready();
-}
+let editorResizeObserver;
+window.editorConnect = function() {
+  if (!editorResizeObserver) {
+    editorResizeObserver = new ResizeObserver(entries => {
+      editorNotify('size', {height: Math.ceil(entries[0].contentRect.height)});
+    });
+    editorResizeObserver.observe(document.body);
+  }
+  editorNotify('ready');
+};
+window.editorCommand = function(command) {
+  switch (command.action) {
+    case 'configure': editorConfigure(command.enabled, command.placeholder, command.foreground, command.background, command.muted, command.labels); break;
+    case 'load':
+      editorLoad(command.html);
+      lastSelection = {index: Math.min(command.index || 0, quill.getLength() - 1), length: 0};
+      lastSelection.length = Math.min(command.length || 0, quill.getLength() - 1 - lastSelection.index);
+      break;
+    case 'image': editorImage(command.url, command.width, command.height); break;
+    case 'imageSource':
+      if (typeof command.data === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,/.test(command.data) && privateImageRequests.has(command.url)) {
+        privateImageSources.set(command.data, command.url);
+        for (const image of quill.root.querySelectorAll('img[src]')) {
+          if (image.getAttribute('src') === command.url) image.setAttribute('src', command.data);
+        }
+      }
+      break;
+    case 'snapshot': return JSON.stringify(editorSnapshot());
+    default: throw new Error('Unknown editor action');
+  }
+  return '';
+};
+if (window.EditorBridge) editorConnect();
 </script>
 </body>
 </html>

@@ -41,6 +41,16 @@ class RichEditorState(
     val hasContent: Boolean
         get() = text.isNotBlank() || "<img" in html || "<video" in html
 
+    internal var selectionIndex: Int = 0
+        private set
+    internal var selectionLength: Int = 0
+        private set
+
+    internal fun updateSelection(index: Int, length: Int) {
+        selectionIndex = index.coerceAtLeast(0)
+        selectionLength = length.coerceAtLeast(0)
+    }
+
     private val channel = Channel<RichEditorCommand>(Channel.UNLIMITED)
     private val snapshots = mutableSetOf<CompletableDeferred<String>>()
     internal val commands = channel.receiveAsFlow()

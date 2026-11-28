@@ -25,6 +25,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     id("zhihu.kmp-conventions")
+    id("zhihu.javafx")
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.android.kmp.library)
@@ -67,6 +68,7 @@ kotlin {
             dependsOn(markdownEditorMain)
         }
         jvmMain.get().dependsOn(miuixThemeMain)
+        jvmMain.get().dependsOn(markdownEditorMain)
         findByName("macosMain")?.dependsOn(miuixThemeMain)
         findByName("iosMain")?.configureIosVariant(miuixThemeMain)
         commonMain.dependencies {

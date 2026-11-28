@@ -27,7 +27,7 @@ import kotlinx.coroutines.await
 
 @Composable
 actual fun rememberLicenseManifestReader(): suspend () -> String = {
-    val response = window.fetch("aboutlibraries.json").await()
+    val response = window.fetch(webLicenseManifestUrl()).await()
     if (!response.ok) {
         throw ReaderDisplayFailure("$LICENSE_MANIFEST_MISSING_MESSAGE（HTTP ${response.status}）") {
             ReaderStrings.licenseHttpError(ReaderStrings.licenseManifestMissing, response.status)
@@ -35,3 +35,6 @@ actual fun rememberLicenseManifestReader(): suspend () -> String = {
     }
     response.text().await().toString()
 }
+
+@JsFun("() => new URL('aboutlibraries.json', window.zhihuAppResourceBase || new URL('./', location.href)).href")
+private external fun webLicenseManifestUrl(): String

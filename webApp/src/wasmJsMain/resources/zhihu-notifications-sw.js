@@ -16,11 +16,49 @@
  */
 'use strict';
 
-// 仅处理已经由页面投递的系统通知及点击；没有 fetch 缓存、定时联网或伪造 push。
+// 通知只处理页面投递及点击；应用静态资源缓存独立于通知收据，不轮询 API 或伪造 push。
 const base = new URL('./', self.location.href);
 const receiptPattern = /^zhihu-web-v1-[0-9a-f]{64}$/;
 const databaseName = 'zhihu-notification-clicks-v1:' + base.pathname;
 const readyClients = new Set();
+
+// Keep this worker URL and scope stable: notification opt-in and receipt recovery use this exact registration.
+let appCache;
+try {
+    importScripts('./zhihu-app-cache.js');
+    appCache = new ZhihuAppCacheStore(base.href, (id, snapshot) => {
+        self.clients.get(id).then(client => {
+            if (trustedClient(client)) client.postMessage({type: 'zhihu-app-cache-changed-v1', snapshot});
+        }).catch(() => {});
+    });
+} catch (error) { console.error('App cache unavailable', error); }
+// Use normal activation: an old worker must finish its clients/writes before a new cache owner can run.
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('message', event => {
+    if (!trustedClient(event.source) || !event.ports[0]) return;
+    if (event.data?.type === 'zhihu-app-cache-probe-v1') {
+        event.ports[0].postMessage({protocol: appCache ? 1 : 0});
+        event.ports[0].close();
+        return;
+    }
+    if (event.data?.type !== 'zhihu-app-cache-v1') return;
+    const {action, mode, version} = event.data;
+    if (!['begin', 'snapshot', 'check', 'download', 'clear', 'restore', 'apply', 'cancel'].includes(action)) return;
+    event.waitUntil((async () => {
+        if (!appCache) { event.ports[0].postMessage({unavailable: true}); event.ports[0].close(); return; }
+        const liveIds = (await self.clients.matchAll({type: 'window', includeUncontrolled: true})).filter(trustedClient).map(client => client.id);
+        const result = await appCache.command(event.source.id, action, {mode, version, liveIds});
+        event.ports[0].postMessage(result);
+        event.ports[0].close();
+    })());
+});
+self.addEventListener('fetch', event => {
+    const url = new URL(event.request.url);
+    if (!appCache || event.request.method !== 'GET' || url.origin !== base.origin || url.search || !url.pathname.startsWith(base.pathname)) return;
+    const path = url.pathname.slice(base.pathname.length);
+    if (!path.startsWith('app-resources/') && !['', 'index.html', 'zhihu-app-bootstrap.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'].includes(path)) return;
+    event.respondWith(appCache.serve(event.request, event.clientId).then(response => response || fetch(event.request)));
+});
 
 function trustedClient(client) {
     if (!client || client.type !== 'window' || client.frameType !== 'top-level') return false;

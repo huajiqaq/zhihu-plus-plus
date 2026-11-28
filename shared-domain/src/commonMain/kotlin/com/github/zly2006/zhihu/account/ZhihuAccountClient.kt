@@ -101,7 +101,23 @@ enum class ZhihuRequestProfile { Web, Mobile }
 
 enum class BrowserSessionStatus { Unchecked, MissingBridge, Guest, Authenticated, Expired, Denied, Unavailable }
 
+/** 只跨账号客户端重建保存一次登录反馈，不保留凭据或旧页面回调。 */
+class LoginSuccessReceipt internal constructor(val username: String, internal val owner: ZhihuAccountClient)
+
+data class BrowserCommentSendResult(val comment: JsonObject, val restored: Boolean)
+
 internal interface BrowserAccountEngine : HttpClientEngine {
+    suspend fun revokeSession(owner: ZhihuAccountClient): Unit = throw BrowserBridgeException(BrowserSessionStatus.Denied)
+
+    suspend fun identityAccounts(owner: ZhihuAccountClient): List<ZhihuIdentityAccount> = throw BrowserBridgeException(BrowserSessionStatus.Denied)
+
+    suspend fun changeIdentity(owner: ZhihuAccountClient, targetUserId: String?): Boolean = throw BrowserBridgeException(BrowserSessionStatus.Denied)
+
+    suspend fun sendCommentAs(owner: ZhihuAccountClient, sender: CommentSender, url: String, body: JsonObject): BrowserCommentSendResult =
+        throw BrowserBridgeException(BrowserSessionStatus.Denied)
+
+    suspend fun restoreCommentIdentity(owner: ZhihuAccountClient): Boolean = throw BrowserBridgeException(BrowserSessionStatus.Denied)
+
     suspend fun sendMessage(owner: ZhihuAccountClient, receiverId: String, content: String): String =
         throw BrowserBridgeException(BrowserSessionStatus.Denied)
 }
@@ -209,6 +225,16 @@ class ZhihuAccountClient internal constructor(
 
     private val pendingBrowserVerification = if (accountStore.usesBrowserSession) MutableStateFlow<BrowserVerification?>(null) else null
     val browserVerification = pendingBrowserVerification?.asStateFlow()
+    private val pendingCommentRestore = MutableStateFlow(false)
+    val browserCommentRestoreRequired: StateFlow<Boolean> = pendingCommentRestore.asStateFlow()
+
+    internal fun reportBrowserCommentRestoreRequired() {
+        if (isCurrent && accountStore.usesBrowserSession) pendingCommentRestore.value = true
+    }
+
+    internal fun clearBrowserCommentRestoreRequired() {
+        if (isCurrent) pendingCommentRestore.value = false
+    }
 
     /** 操作只属于发出 challenge 的 client 和这一轮验证；URL、session 均由本标签页脚本持有。 */
     inner class BrowserVerification internal constructor(
@@ -911,6 +937,20 @@ class ZhihuAccountStore(
     private val browserProbe = Mutex()
     private val mutableBrowserStatus = MutableStateFlow(BrowserSessionStatus.Unchecked)
     val browserSessionStatus: StateFlow<BrowserSessionStatus> = mutableBrowserStatus.asStateFlow()
+    private val pendingLoginSuccess = MutableStateFlow<LoginSuccessReceipt?>(null)
+    val loginSuccessReceipt: StateFlow<LoginSuccessReceipt?> = pendingLoginSuccess.asStateFlow()
+
+    fun reportLoginSuccess(expectedClient: ZhihuAccountClient, username: String): Boolean = sessionLock.withLock {
+        if (closed.value || mutableClient !== expectedClient || !expectedClient.isCurrent || !session.login || session.username != username) return@withLock false
+        pendingLoginSuccess.value = LoginSuccessReceipt(username, expectedClient)
+        true
+    }
+
+    fun consumeLoginSuccess(receipt: LoginSuccessReceipt): Boolean = sessionLock.withLock {
+        if (pendingLoginSuccess.value !== receipt || mutableClient !== receipt.owner || !receipt.owner.isCurrent) return@withLock false
+        pendingLoginSuccess.value = null
+        true
+    }
     private val closed = MutableStateFlow(false)
     private var mutableClient by mutableStateOf(
         try {
@@ -930,7 +970,7 @@ class ZhihuAccountStore(
         get() = sessionLock.withLock { mutableClient }
 
     /** 只有经本标签页授权的 /me 能建立浏览器身份；账号文件、网页声明和旧会话均不能替代。 */
-    suspend fun refreshBrowserSession(): BrowserSessionStatus = browserProbe.withLock {
+    suspend fun refreshBrowserSession(expectedAccountId: String? = null): BrowserSessionStatus = browserProbe.withLock {
         check(usesBrowserSession && !closed.value) { "没有可用的浏览器账号会话" }
         val owner = client
         var profile: ZhihuAccountProfileSnapshot? = null
@@ -940,7 +980,7 @@ class ZhihuAccountStore(
                 profile = ZhihuJson
                     .decodeJson<ZhihuAccountProfileSnapshot>(ZhihuJson.json.parseToJsonElement(response.bodyAsText()))
                     .takeIf { it.id.isNotBlank() && it.name.isNotBlank() && !it.id.all { c -> c == '0' } }
-                if (profile != null) BrowserSessionStatus.Authenticated else BrowserSessionStatus.Denied
+                if (profile != null && (expectedAccountId == null || profile.id == expectedAccountId)) BrowserSessionStatus.Authenticated else BrowserSessionStatus.Denied
             } else {
                 BrowserSessionStatus.Unavailable
             }
@@ -995,6 +1035,24 @@ class ZhihuAccountStore(
         replaceClient {
             accountState.saveCurrent(session, reauthenticated = true)
             credentialRefreshers.remove(accountState.value.activeAccountId)
+        }
+    }
+
+    /** 浏览器只撤本应用授权；官网会话与其 Cookie 仍由浏览器管理。 */
+    suspend fun signOut(owner: ZhihuAccountClient): Boolean {
+        if (!owner.isCurrent || client !== owner || owner.verificationState.value.blocksSessionChange) return false
+        if (!usesBrowserSession) return sessionLock.withLock {
+            if (mutableClient !== owner || owner.verificationState.value.blocksSessionChange) return@withLock false
+            clear()
+            true
+        }
+        (engine as BrowserAccountEngine).revokeSession(owner)
+        currentCoroutineContext().ensureActive()
+        return sessionLock.withLock {
+            if (closed.value || mutableClient !== owner) return@withLock false
+            replaceClient { accountState.setBrowserProfile(null) }
+            mutableBrowserStatus.value = BrowserSessionStatus.Guest
+            true
         }
     }
 
@@ -1095,6 +1153,52 @@ class ZhihuAccountStore(
 
     private fun canCompleteLogin(owner: ZhihuAccountClient): Boolean = !closed.value &&
         mutableClient === owner && owner.isCurrent && !owner.verificationState.value.blocksSessionChange
+
+    suspend fun sendBrowserCommentAs(owner: ZhihuAccountClient, sender: CommentSender, url: String, body: JsonObject): BrowserCommentSendResult {
+        val bridge = engine as? BrowserAccountEngine ?: throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        if (client !== owner || !owner.isCurrent || sender.sourceId != accountsState.value.activeAccountId) {
+            throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+        }
+        if (owner.browserCommentRestoreRequired.value) throw DisplayFailure { DomainStrings.identityRestoreInProgress }
+        val result = bridge.sendCommentAs(owner, sender, url, body)
+        if (!result.restored) owner.reportBrowserCommentRestoreRequired()
+        return result
+    }
+
+    suspend fun restoreBrowserCommentIdentity(owner: ZhihuAccountClient): Boolean {
+        val bridge = engine as? BrowserAccountEngine ?: throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        if (client !== owner || !owner.isCurrent) return false
+        if (!owner.browserCommentRestoreRequired.value) return true
+        val restored = bridge.restoreCommentIdentity(owner)
+        if (!restored || client !== owner || !owner.isCurrent) return false
+        owner.clearBrowserCommentRestoreRequired()
+        return true
+    }
+
+    suspend fun browserIdentityAccounts(owner: ZhihuAccountClient): List<ZhihuIdentityAccount> {
+        val bridge = engine as? BrowserAccountEngine ?: throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        if (client !== owner || !owner.isCurrent) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+        if (owner.browserCommentRestoreRequired.value) throw DisplayFailure { DomainStrings.identityRestoreInProgress }
+        val accounts = bridge.identityAccounts(owner)
+        if (client !== owner || !owner.isCurrent) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+        return accounts
+    }
+
+    /** 桥内完成签发和双域核身；公共会话只接收经过 /me 复核的资料，不接触新凭据。 */
+    suspend fun changeBrowserIdentity(owner: ZhihuAccountClient, targetUserId: String?): ZhihuIdentityChangeResult {
+        val bridge = engine as? BrowserAccountEngine ?: throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        if (client !== owner || !owner.isCurrent) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+        if (owner.browserCommentRestoreRequired.value) throw DisplayFailure { DomainStrings.identityRestoreInProgress }
+        if (!bridge.changeIdentity(owner, targetUserId)) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        if (client !== owner || !owner.isCurrent) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+        if (refreshBrowserSession(targetUserId) != BrowserSessionStatus.Authenticated) throw DisplayFailure { DomainStrings.serverAccountMismatch }
+        val verified = session
+        val profile = verified.profile ?: throw DisplayFailure { DomainStrings.serverProfileIncomplete }
+        return ZhihuIdentityChangeResult(
+            ZhihuIdentityAccount(profile.id, profile.urlToken, profile.name, profile.avatarUrl, isActive = true),
+            verified,
+        )
+    }
 
     suspend fun completeIdentityChange(
         owner: ZhihuAccountClient,
@@ -1234,6 +1338,7 @@ class ZhihuAccountStore(
         if (mutableClient.verificationState.value.blocksSessionChange) throw DisplayFailure { DomainStrings.verifyBeforeSwitch }
         commentIdentities.checkCanChangeAccounts()
         // 先使旧 client 失效，再发布新会话；否则关闭前完成的旧响应可能写入新账号。
+        pendingLoginSuccess.value = null
         mutableClient.close()
         try {
             updateAccounts()
@@ -1247,6 +1352,7 @@ class ZhihuAccountStore(
         if (!closed.compareAndSet(false, true)) return@withLock
         notificationReadAllObservers.clear()
         credentialRefreshers.clear()
+        pendingLoginSuccess.value = null
         val clientError = runCatching { mutableClient.close() }.exceptionOrNull()
         val engineError = runCatching { engine.close() }.exceptionOrNull()
         val error = clientError ?: engineError

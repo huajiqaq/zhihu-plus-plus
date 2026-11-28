@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.i18n.ReaderStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -294,10 +295,13 @@ private fun SystemUpdateSummary(state: SystemUpdateState) {
             ReaderStrings.updateAvailable(state.version),
             color = MaterialTheme.colorScheme.primary,
         )
-        is SystemUpdateState.WebUpdateAvailable -> Text(
-            ReaderStrings.updateAvailable(state.buildId.take(12)),
-            color = MaterialTheme.colorScheme.primary,
-        )
+        is SystemUpdateState.Web -> {
+            val candidate = state.snapshot.candidate
+            if (candidate == null) Text(ReaderStrings.systemUpdatesDescription) else Text(
+                ReaderStrings.updateAvailable(candidate.versionName),
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         is SystemUpdateState.Downloading -> Text(ReaderStrings.updateDownloading(state.update.version))
         is SystemUpdateState.Downloaded -> Text(
             ReaderStrings.updateReady(state.update.version),
@@ -317,6 +321,8 @@ private fun SystemUpdateSummary(state: SystemUpdateState) {
 internal fun AccountSettingLogoutDialog(
     accountCount: Int,
     error: String?,
+    browserSession: Boolean = false,
+    busy: Boolean = false,
     confirmEnabled: Boolean,
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
@@ -328,7 +334,9 @@ internal fun AccountSettingLogoutDialog(
         text = {
             Column {
                 Text(
-                    if (accountCount > 1) {
+                    if (browserSession) {
+                        AccountStrings.webSignOutConfirmation
+                    } else if (accountCount > 1) {
                         ReaderStrings.signOutRemoveConfirmation
                     } else {
                         ReaderStrings.signOutConfirmation
@@ -346,7 +354,7 @@ internal fun AccountSettingLogoutDialog(
             }
         },
         dismissButton = {
-            AppTextButton(onClick = onCancel) {
+            AppTextButton(enabled = !busy, onClick = onCancel) {
                 Text(ReaderStrings.cancel)
             }
         },

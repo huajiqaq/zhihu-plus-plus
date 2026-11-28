@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,8 +85,10 @@ import com.github.zly2006.zhihu.ui.subscreens.shouldShowAccountHistoryShortcut
 import com.github.zly2006.zhihu.updater.UpdateStep
 import com.github.zly2006.zhihu.util.AppLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import zhihu.uicomponents.generated.resources.Res
 import zhihu.uicomponents.generated.resources.ic_github_24dp
@@ -165,6 +168,8 @@ fun AccountSettingScreen(
     val data by accountState
     var profileRefresh by remember(accountClient, data.id) { mutableStateOf(ProfileRefresh.Idle) }
     var profileRetryKey by remember(accountClient, data.id) { mutableIntStateOf(0) }
+    val accountActions = rememberCoroutineScope()
+    var signingOut by remember { mutableStateOf(false) }
     var logoutTarget by remember { mutableStateOf<ZhihuAccountClient?>(null) }
     var logoutError by remember { mutableStateOf<String?>(null) }
     val showLogoutDialog = logoutTarget != null
@@ -281,6 +286,8 @@ fun AccountSettingScreen(
                     )
                 }
 
+                SettingItemGroup { PlatformLinkActions() }
+
                 AccountSettingSearch(onClick = { navigateAway(Account.SettingsSearch) })
 
                 AccountSettingSecuritySection(
@@ -324,28 +331,38 @@ fun AccountSettingScreen(
         AccountSettingLogoutDialog(
             accountCount = accountStore.accounts.size,
             error = logoutError?.let { ReaderStrings.logoutFailed(it) },
-            confirmEnabled = accountStore.client === owner && !verification.blocksSessionChange,
+            browserSession = accountStore.usesBrowserSession,
+            busy = signingOut,
+            confirmEnabled = !signingOut && accountStore.client === owner && !verification.blocksSessionChange,
             onDismissRequest = {
-                logoutTarget = null
-                logoutError = null
+                if (!signingOut) {
+                    logoutTarget = null
+                    logoutError = null
+                }
             },
             onConfirm = {
-                if (accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) {
-                    val accountsBefore = accountStore.accountsState.value
-                    try {
-                        accountStore.clear()
-                        logoutTarget = null
-                        logoutError = null
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        if (accountStore.accountsState.value === accountsBefore) {
-                            /** 保存失败会重建可用客户端；账号快照未变时，确认和错误归还给恢复的客户端。 */
-                            logoutTarget = accountStore.client
-                            logoutError = e.message.orEmpty()
-                        } else {
-                            logoutTarget = null
-                            logoutError = null
+                if (!signingOut && accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) {
+                    accountActions.launch(start = CoroutineStart.UNDISPATCHED) {
+                        signingOut = true
+                        val accountsBefore = accountStore.accountsState.value
+                        try {
+                            if (accountStore.signOut(owner)) {
+                                logoutTarget = null
+                                logoutError = null
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            if (accountStore.accountsState.value === accountsBefore) {
+                                /** 保存失败会重建可用客户端；账号快照未变时，确认和错误归还给恢复的客户端。 */
+                                logoutTarget = accountStore.client
+                                logoutError = e.message.orEmpty()
+                            } else {
+                                logoutTarget = null
+                                logoutError = null
+                            }
+                        } finally {
+                            signingOut = false
                         }
                     }
                 }

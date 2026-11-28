@@ -79,6 +79,11 @@ fun AccountVerificationDialogs(
             key(it) { BrowserVerificationDialog(it) }
             return
         }
+        val restoreRequired by client.browserCommentRestoreRequired.collectAsState()
+        if (restoreRequired) {
+            key(client) { BrowserCommentRecoveryDialog(client) }
+            return
+        }
     }
     val state by client.verificationState.collectAsState()
     val loginPrompt by client.loginPrompt.collectAsState()
@@ -104,6 +109,7 @@ fun AccountVerificationDialogs(
     val url = state.url
     val initialCookies = remember(client, url) { state.candidateCookies ?: client.load().cookies.toMap() }
     val changedCookies = remember(client, url) { mutableMapOf<String, String>() }
+    var readCookies by remember(client, url) { mutableStateOf<(suspend () -> Map<String, String>)?>(null) }
     var completing by remember(client, url) { mutableStateOf(false) }
     var completionError by remember(client, url) { mutableStateOf<(() -> String)?>(null) }
     val scope = rememberCoroutineScope()
@@ -153,7 +159,7 @@ fun AccountVerificationDialogs(
                     completionError = null
                     scope.launch {
                         try {
-                            readLoginRiskControlCookies(url).forEach { (name, value) ->
+                            checkNotNull(readCookies).invoke().forEach { (name, value) ->
                                 if (initialCookies[name] != value) changedCookies[name] = value else changedCookies.remove(name)
                             }
                             if (automaticallyVerified) {
@@ -191,7 +197,7 @@ fun AccountVerificationDialogs(
                         ) {
                             AppButton(
                                 text = if (completing) AccountStrings.verificationConfirming else AccountStrings.verificationDone,
-                                enabled = !completing,
+                                enabled = !completing && readCookies != null,
                                 onClick = { complete(automaticallyVerified = false) },
                                 modifier = Modifier.testTag("human_verification_complete"),
                             )
@@ -223,6 +229,7 @@ fun AccountVerificationDialogs(
                                                 if (initialCookies[name] != value) changedCookies[name] = value else changedCookies.remove(name)
                                             }
                                         },
+                                        onCookieReaderReady = { readCookies = it },
                                         onVerificationComplete = { complete(automaticallyVerified = true) },
                                     )
                                 }
@@ -255,6 +262,40 @@ fun AccountVerificationDialogs(
             )
         }
     }
+}
+
+@Composable
+private fun BrowserCommentRecoveryDialog(client: ZhihuAccountClient) {
+    val store = rememberZhihuAccountStore()
+    val scope = rememberCoroutineScope()
+    var dismissed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    if (dismissed) return
+    AppDialog(
+        title = AccountStrings.webRestoreIdentity,
+        summary = if (failed) AccountStrings.webRestoreIdentityFailed else AccountStrings.webRestoreIdentitySummary,
+        confirmText = if (busy) AccountStrings.verificationConfirming else AccountStrings.webRestoreIdentity,
+        confirmEnabled = !busy,
+        dismissText = AccountStrings.later,
+        onDismissRequest = { if (!busy) dismissed = true },
+        onConfirm = {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                busy = true
+                failed = false
+                try {
+                    failed = !store.restoreBrowserCommentIdentity(client)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failed = true
+                } finally {
+                    busy = false
+                }
+            }
+        },
+        modifier = Modifier.testTag("web_comment_identity_restore"),
+    )
 }
 
 @Composable

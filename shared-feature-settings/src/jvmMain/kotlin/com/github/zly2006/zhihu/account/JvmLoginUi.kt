@@ -48,6 +48,11 @@ actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Web,
 )
 
+@Composable
+internal actual fun LoginMethodReady(method: LoginMethod): Boolean = true
+
+internal actual fun createBrowserPhoneLoginBackend(store: ZhihuAccountStore, owner: ZhihuAccountClient): BrowserPhoneLoginBackend? = null
+
 actual val isLoginRiskControlSupported: Boolean = true
 
 actual val phoneLoginDeviceInfo: ZhihuPhoneLoginDeviceInfo
@@ -80,7 +85,7 @@ actual fun decodePhoneLoginCaptchaImage(content: String) = runCatching {
 actual fun QrLoginPane(onLoginSuccess: (String) -> Unit) = AccountQrLoginPane(onLoginSuccess)
 
 @Composable
-actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit) {
+actual fun WebLoginPane(onLoginSuccess: (String) -> Unit) {
     val store = rememberZhihuAccountStore()
     val owner = store.client
     val currentOwner = rememberUpdatedState(owner)
@@ -109,6 +114,7 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerifi
                         scope.launch {
                             try {
                                 if (store.login(owner, cookies.toMutableMap())) {
+                                    store.reportLoginSuccess(store.client, store.session.username)
                                     loginSuccess.value(store.session.username)
                                 }
                             } finally {
@@ -131,12 +137,22 @@ actual fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerifi
 }
 
 @Composable
+internal actual fun AccountQrConfirmationPane(url: String, owner: ZhihuAccountClient, modifier: Modifier) =
+    ExternalAccountQrConfirmationPane(url, modifier)
+
+@Composable
 actual fun LoginRiskControlPane(
     url: String,
     cookies: Map<String, String>,
     onCookiesChanged: (Map<String, String>) -> Unit,
+    onCookieReaderReady: ((suspend () -> Map<String, String>)?) -> Unit,
     onVerificationComplete: () -> Unit,
 ) {
+    val readerReady by rememberUpdatedState(onCookieReaderReady)
+    DisposableEffect(url) {
+        readerReady { readLoginRiskControlCookies(url) }
+        onDispose { readerReady(null) }
+    }
     val store = rememberZhihuAccountStore()
     val owner = store.client
     val currentOwner = rememberUpdatedState(owner)
@@ -198,7 +214,7 @@ actual fun LoginRiskControlPane(
     }
 }
 
-internal actual fun readLoginRiskControlCookies(url: String): Map<String, String> = buildMap {
+private fun readLoginRiskControlCookies(url: String): Map<String, String> = buildMap {
     val handler = java.net.CookieHandler.getDefault() ?: return@buildMap
     for (origin in arrayOf(ZHIHU_HOME_URL, url)) {
         handler.get(java.net.URI(origin), emptyMap()).forEach { (name, values) ->

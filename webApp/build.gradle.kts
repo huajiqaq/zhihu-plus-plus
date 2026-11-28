@@ -17,6 +17,9 @@
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import java.io.OutputStream
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootExtension
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpack
@@ -75,6 +78,7 @@ kotlin {
         dependencies {
             implementation(projects.shared)
             implementation(libs.jb.compose.ui)
+            implementation(libs.jb.compose.components.resources)
             // 不 import 到应用 bundle；只由录音流程按需加载本地 UMD 文件。
             implementation(npm("@ffmpeg/core", libs.versions.ffmpegWasm.get()))
         }
@@ -226,6 +230,22 @@ kotlin.sourceSets.named("wasmJsMain") {
     resources.srcDir(files(mergedWebLicenseDirectory).builtBy(mergeWebLicenses))
 }
 
+tasks.named<Copy>("wasmJsProcessResources") {
+    val versionName = providers.gradleProperty("app.versionName")
+    val versionCode = providers.gradleProperty("app.versionCode")
+    inputs.property("webVersionName", versionName)
+    inputs.property("webVersionCode", versionCode)
+    filteringCharset = "UTF-8"
+    filesMatching("index.html") {
+        val name = versionName.get()
+        val code = versionCode.get()
+        filter {
+            it.replace("name=\"zhihu-version-name\" content=\"development\"", "name=\"zhihu-version-name\" content=\"$name\"")
+                .replace("name=\"zhihu-version-code\" content=\"0\"", "name=\"zhihu-version-code\" content=\"$code\"")
+        }
+    }
+}
+
 val productionWebpack =
     tasks.named<KotlinWebpack>("wasmJsBrowserProductionWebpack") {
         devtool = WebpackDevtool.HIDDEN_SOURCE_MAP
@@ -237,19 +257,77 @@ tasks.named<Sync>("wasmJsBrowserDistribution") {
             directory.asFile.listFiles().orEmpty().single { it.name.matches(Regex("zhihu\\.[a-f0-9]+\\.js")) }.name
         }
     val productionBuildId = productionBundleName.map { it.removePrefix("zhihu.").removeSuffix(".js") }
+    val versionName = providers.gradleProperty("app.versionName")
+    val versionCode = providers.gradleProperty("app.versionCode").map(String::toInt)
+    val resourceBase = versionName.zip(versionCode) { name, code ->
+        require(name.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")) && code > 0) { "Invalid published Web version" }
+        "app-resources/$code-$name/"
+    }
     inputs.property("webBuildId", productionBuildId)
+    inputs.property("webVersionName", versionName)
+    inputs.property("webVersionCode", versionCode)
     // 调试映射留在 kotlin-webpack / compileSync 中，不随静态站点发布；完整许可证仍分发。
     exclude("**/*.map")
     filteringCharset = "UTF-8"
-    from(layout.projectDirectory.file("src/wasmJsMain/productionResources/web-version.json")) {
-        filter { it.replace("@WEB_BUILD_ID@", productionBuildId.get()) }
-    }
+    from(layout.projectDirectory.file("src/wasmJsMain/productionResources/web-version.json"))
     filesMatching("index.html") {
         val bundleName = productionBundleName.get()
         val buildId = productionBuildId.get()
+        val name = versionName.get()
+        val code = versionCode.get()
+        val base = resourceBase.get()
         filter {
-            it.replace("src=\"zhihu.js\"", "src=\"$bundleName\"")
+            it.replace("name=\"zhihu-app-entry\" content=\"zhihu.js\"", "name=\"zhihu-app-entry\" content=\"$bundleName\"")
                 .replace("name=\"zhihu-build-id\" content=\"development\"", "name=\"zhihu-build-id\" content=\"$buildId\"")
+                .replace("name=\"zhihu-cache-mode\" content=\"debug\"", "name=\"zhihu-cache-mode\" content=\"production\"")
+                .replace("name=\"zhihu-version-name\" content=\"development\"", "name=\"zhihu-version-name\" content=\"$name\"")
+                .replace("name=\"zhihu-version-code\" content=\"0\"", "name=\"zhihu-version-code\" content=\"$code\"")
+                .replace("name=\"zhihu-resource-base\" content=\"./\"", "name=\"zhihu-resource-base\" content=\"$base\"")
         }
+    }
+    doLast {
+        val root = destinationDir
+        val base = resourceBase.get()
+        val target = root.resolve(base)
+        val stableFiles = setOf(
+            "index.html", "zhihu-app-bootstrap.js", "zhihu-app-cache.js", "zhihu-notifications-sw.js",
+            "manifest.webmanifest", "icon-192.png", "icon-512.png", "LICENSE",
+        )
+        // Enumerate after Sync, not webpack compilation: this also covers copied resources and dynamic chunks.
+        val payload = root.walkTopDown().filter { it.isFile && it.relativeTo(root).invariantSeparatorsPath != "web-version.json" }
+            .map { it to it.relativeTo(root).invariantSeparatorsPath }.sortedBy { it.second }.toList()
+        check(payload.none { (_, path) -> path.startsWith("app-resources/") || path.endsWith(".onnx") || path.endsWith(".onnx_data") }) {
+            "Stale version directory or NLP model in Web app distribution"
+        }
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            DigestInputStream(file.inputStream(), digest).use { it.copyTo(OutputStream.nullOutputStream()) }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        val assets = payload.map { (file, path) ->
+            val destination = target.resolve(path)
+            destination.parentFile.mkdirs()
+            file.copyTo(destination, overwrite = true)
+            if (path !in stableFiles && !path.endsWith(".user.js")) check(file.delete()) { "Cannot relocate Web resource: $path" }
+            mapOf(
+                "path" to path,
+                "bytes" to destination.length(),
+                "sha256" to sha256(destination),
+                "group" to if (path.startsWith("voice-codec/") || path.startsWith("nlp/") || path.startsWith("export/")) "lazy" else "core",
+            )
+        }
+        val manifest = target.resolve("app-assets.json")
+        manifest.writeText(JsonOutput.toJson(mapOf(
+            "schema" to 1, "versionName" to versionName.get(), "versionCode" to versionCode.get(),
+            "buildId" to productionBuildId.get(), "base" to base, "entry" to productionBundleName.get(), "assets" to assets,
+        )))
+        val pointer = root.resolve("web-version.json")
+        pointer.writeText(pointer.readText()
+            .replace("@WEB_VERSION_NAME@", versionName.get())
+            .replace("@WEB_VERSION_CODE@", versionCode.get().toString())
+            .replace("@WEB_BUILD_ID@", productionBuildId.get())
+            .replace("@WEB_RESOURCE_BASE@", base)
+            .replace("@WEB_MANIFEST_SHA256@", sha256(manifest)))
+        check(pointer.length() <= 2048) { "Web version pointer must remain small" }
     }
 }

@@ -181,7 +181,7 @@ open class QuestionFeedViewModel(
     }
 
     suspend fun followQuestion(environment: ZhihuApiEnvironment, follow: Boolean) {
-        check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { ContentStrings.followQuestionLoginRequired }
+        check(environment.isLoggedIn) { ContentStrings.followQuestionLoginRequired }
         val url = "https://www.zhihu.com/api/v4/questions/$questionId/followers"
         if (follow) {
             environment.post(url).raiseForStatus()

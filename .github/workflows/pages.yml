@@ -24,10 +24,14 @@ jobs:
       - uses: ./.github/actions/setup-build-inputs
         with:
           upstream-tools: 'false'
-      - name: Check browser bridge boundaries
-        run: node --test misc/zhihu-web-bridge/bridge.test.mjs
+      - name: Check browser bridge and application cache
+        run: node --test misc/zhihu-web-bridge/bridge.test.mjs webApp/src/test/js/app-cache.test.cjs
       - name: Build static Web distribution
         run: bash ./gradlew -PzhihuUpstreamPatches=false -Pkotlin.daemon.jvmargs=-Xmx4g :webApp:wasmJsBrowserDistribution --max-workers=2
+      - name: Verify Web resources and published version
+        run: |
+          python -I .github/scripts/verify-package-resources.py --web webApp/build/dist/wasmJs/productionExecutable
+          node .github/scripts/verify-web-publication.cjs webApp/build/dist/wasmJs/productionExecutable/web-version.json
       - uses: actions/upload-pages-artifact@v5
         with:
           path: webApp/build/dist/wasmJs/productionExecutable/

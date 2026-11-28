@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dynamic_color_unavailable">当前平台未提供系统取色来源，可在下方选择自定义主题色。</string>
+    <string name="open_link">打开链接</string>
+    <string name="open_clipboard_link">打开剪贴板中的链接</string>
+    <string name="clipboard_link_unavailable">剪贴板中没有受支持的知乎链接。</string>
+    <string name="choose_image_source">选择图片</string>
+    <string name="photo_library">照片图库</string>
+    <string name="camera">相机</string>
+    <string name="camera_permission_required">请在系统设置中允许相机访问，以拍照或识别二维码。</string>
+    <string name="files">文件</string>
+    <string name="scan_qr_image">识别二维码图片</string>
+    <string name="scan_qr_failed">图片中未找到受支持的知乎登录二维码。</string>
+    <string name="photo_read_failed">无法读取所选照片，请重试或改用文件选择。</string>
+    <string name="shared_navigation_only">此选项仅适用于共享底部导航栏；当前窗口使用原生侧栏。</string>
+    <string name="cancel">取消</string>
+</resources>

@@ -45,6 +45,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -83,7 +84,8 @@ fun IdentityManagementScreen() {
     val accountStore = rememberZhihuAccountStore()
     val accountClient = accountStore.client
     val verification by accountClient.verificationState.collectAsState()
-    val sessionChangeBlocked = verification.blocksSessionChange
+    val restoreRequired by accountClient.browserCommentRestoreRequired.collectAsState()
+    val sessionChangeBlocked = verification.blocksSessionChange || restoreRequired
     val userMessages = rememberUserMessageSink()
     val coroutineScope = rememberCoroutineScope()
     var state by remember(accountStore, accountClient) {
@@ -92,11 +94,12 @@ fun IdentityManagementScreen() {
                 currentAccountId = accountStore.session.profile
                     ?.id
                     .orEmpty(),
-                loading = true,
+                loading = !accountStore.usesBrowserSession,
             ),
         )
     }
 
+    var browserListRequested by remember(accountClient) { mutableStateOf(false) }
     var switchTarget by remember(accountClient) { mutableStateOf<ZhihuIdentityAccount?>(null) }
     var showCreateDialog by remember(accountClient) { mutableStateOf(false) }
     var acceptedCreateRules by remember(accountClient) { mutableStateOf(false) }
@@ -111,15 +114,20 @@ fun IdentityManagementScreen() {
         val session = owner.load()
         state = state.copy(loading = true, errorMessage = null)
         val accounts = try {
-            ZhihuJson
-                .decodeJson<ZhihuIdentityAccountListResponse>(
-                    ZhihuJson.json.parseToJsonElement(
-                        owner
-                            .get("https://api.zhihu.com/people/account/list", ZhihuRequestProfile.Mobile) {
-                                applyIdentityHeaders(owner.load())
-                            }.identitySuccessBody { SettingsStrings.fetchIdentities },
-                    ),
-                ).data
+            if (accountStore.usesBrowserSession) {
+                browserListRequested = true
+                accountStore.browserIdentityAccounts(owner)
+            } else {
+                ZhihuJson
+                    .decodeJson<ZhihuIdentityAccountListResponse>(
+                        ZhihuJson.json.parseToJsonElement(
+                            owner
+                                .get("https://api.zhihu.com/people/account/list", ZhihuRequestProfile.Mobile) {
+                                    applyIdentityHeaders(owner.load())
+                                }.identitySuccessBody { SettingsStrings.fetchIdentities },
+                        ),
+                    ).data
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -137,7 +145,7 @@ fun IdentityManagementScreen() {
     }
 
     LaunchedEffect(accountStore, accountClient) {
-        refresh()
+        if (!accountStore.usesBrowserSession) refresh()
     }
 
     AppSettingsPage(
@@ -150,8 +158,10 @@ fun IdentityManagementScreen() {
         IdentityManagementContent(
             state = state,
             savedAccounts = savedAccounts,
+            browserSession = accountStore.usesBrowserSession,
+            browserListRequested = browserListRequested,
             sessionChangeBlocked = sessionChangeBlocked,
-            onRetry = { coroutineScope.launch { refresh() } },
+            onRetry = { coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { refresh() } },
             onSwitchTargetChange = { switchTarget = it },
             onRemoveLoginAccountChange = { removeLoginAccount = it },
             onSwitchLoginAccountChange = { switchLoginAccount = it },
@@ -172,7 +182,7 @@ fun IdentityManagementScreen() {
             },
             onConfirm = {
                 switchTarget = null
-                coroutineScope.launch {
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     runCatching {
                         check(!state.busy) { SettingsStrings.accountOperationBusy }
                         state = state.copy(switchingToAccountId = account.id, operationError = null)
@@ -181,20 +191,24 @@ fun IdentityManagementScreen() {
                             val owner = accountClient
                             val oldSession = owner.load()
                             check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { SettingsStrings.accountChangedOrVerificationNeeded }
-                            val response = owner.post(
-                                "https://api.zhihu.com/account/switch",
-                                ZhihuRequestProfile.Mobile,
-                            ) {
-                                applyIdentityHeaders(owner.load())
-                                contentType(ContentType.Application.Json)
-                                setBody(SwitchAccountRequest(account.id))
+                            val result = if (accountStore.usesBrowserSession) {
+                                accountStore.changeBrowserIdentity(owner, account.id)
+                            } else {
+                                val response = owner.post(
+                                    "https://api.zhihu.com/account/switch",
+                                    ZhihuRequestProfile.Mobile,
+                                ) {
+                                    applyIdentityHeaders(owner.load())
+                                    contentType(ContentType.Application.Json)
+                                    setBody(SwitchAccountRequest(account.id))
+                                }
+                                accountStore.completeIdentityChange(
+                                    owner,
+                                    oldSession,
+                                    response.identitySuccessBody { SettingsStrings.switchAccount },
+                                    account.id,
+                                )
                             }
-                            val result = accountStore.completeIdentityChange(
-                                owner,
-                                oldSession,
-                                response.identitySuccessBody { SettingsStrings.switchAccount },
-                                account.id,
-                            )
                             state = state.copy(
                                 currentAccountId = result.account.id,
                                 switchingToAccountId = null,
@@ -236,7 +250,7 @@ fun IdentityManagementScreen() {
             },
             onConfirm = {
                 showCreateDialog = false
-                coroutineScope.launch {
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     runCatching {
                         check(!state.busy) { SettingsStrings.accountOperationBusy }
                         check(state.canCreateSubAccount) { SettingsStrings.cannotCreateAccount }
@@ -245,17 +259,21 @@ fun IdentityManagementScreen() {
                             val owner = accountClient
                             val oldSession = owner.load()
                             check(accountStore.client === owner && !owner.verificationState.value.blocksSessionChange) { SettingsStrings.accountChangedOrVerificationNeeded }
-                            val response = owner.post(
-                                "https://api.zhihu.com/account/sub/register",
-                                ZhihuRequestProfile.Mobile,
-                            ) {
-                                applyIdentityHeaders(owner.load())
+                            val result = if (accountStore.usesBrowserSession) {
+                                accountStore.changeBrowserIdentity(owner, null)
+                            } else {
+                                val response = owner.post(
+                                    "https://api.zhihu.com/account/sub/register",
+                                    ZhihuRequestProfile.Mobile,
+                                ) {
+                                    applyIdentityHeaders(owner.load())
+                                }
+                                accountStore.completeIdentityChange(
+                                    owner,
+                                    oldSession,
+                                    response.identitySuccessBody { SettingsStrings.createAccount },
+                                )
                             }
-                            val result = accountStore.completeIdentityChange(
-                                owner,
-                                oldSession,
-                                response.identitySuccessBody { SettingsStrings.createAccount },
-                            )
                             state = state.copy(
                                 accounts = state.accounts + result.account,
                                 currentAccountId = result.account.id,
@@ -298,7 +316,7 @@ fun IdentityManagementScreen() {
                 if (state.busy || accountStore.client !== owner || owner.verificationState.value.blocksSessionChange) return@confirm
                 switchLoginAccount = null
                 state = state.copy(switchingToAccountId = account.id, operationError = null)
-                coroutineScope.launch {
+                coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     if (accountStore.client !== owner) return@launch
                     try {
                         if (!accountStore.switchAccount(account.id) && accountStore.client === owner) {

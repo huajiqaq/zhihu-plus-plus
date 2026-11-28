@@ -101,13 +101,24 @@ data class ZhihuPhoneLoginDeviceInfo(
     val freeStorageMegabytes: Int,
 )
 
-private sealed interface ZhihuPhoneDigitsResult {
+internal sealed interface ZhihuPhoneDigitsResult {
     data object Sent : ZhihuPhoneDigitsResult
 
     data class CaptchaRequired(
         val imageBase64: String?,
     ) : ZhihuPhoneDigitsResult
 }
+
+/** 浏览器只接收登录步骤的显示结果，移动端票据由请求桥持有。 */
+internal interface BrowserPhoneLoginBackend : AutoCloseable {
+    suspend fun countries(): List<PhoneLoginCountry>
+    suspend fun send(phone: String): ZhihuPhoneDigitsResult
+    suspend fun captcha(): String?
+    suspend fun verifyCaptcha(input: String): ZhihuPhoneDigitsResult
+    suspend fun signIn(phone: String, digits: String): String?
+}
+
+internal expect fun createBrowserPhoneLoginBackend(store: ZhihuAccountStore, owner: ZhihuAccountClient): BrowserPhoneLoginBackend?
 
 private const val SMS_CODE_LENGTH = 6
 private const val RESEND_COOLDOWN_SECONDS = 60
@@ -141,6 +152,7 @@ class PhoneLoginState internal constructor(
     agreementAccepted: Boolean = false,
     country: PhoneLoginCountry = DEFAULT_COUNTRY,
     initialCookies: Map<String, String> = emptyMap(),
+    private val browserBackend: BrowserPhoneLoginBackend? = null,
     onFailure: suspend (HttpFailureRecord, Map<String, String>) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     val phoneNumber = TextFieldState(phoneNumber)
@@ -207,18 +219,20 @@ class PhoneLoginState internal constructor(
             digits.text.length == SMS_CODE_LENGTH &&
             !isBusy
 
-    internal suspend fun loadCountries(httpClient: HttpClient) {
+    internal suspend fun loadCountries(httpClient: HttpClient?) {
         if (isLoadingCountries || countries != null) return
         isLoadingCountries = true
         countryLoadErrorText = null
         try {
-            val response = httpClient.get(SUPPORTED_COUNTRIES_URL)
-            check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
-            val result = ZhihuJson.decodeJson<SupportedCountriesResponse>(
-                ZhihuJson.json.parseToJsonElement(response.bodyAsText()),
-            )
-            if (result.data.isEmpty()) throw LoginMessageException { AccountStrings.countriesMissing }
-            countries = result.data
+            val result = if (browserBackend != null) {
+                browserBackend.countries()
+            } else {
+                val response = checkNotNull(httpClient).get(SUPPORTED_COUNTRIES_URL)
+                check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
+                ZhihuJson.decodeJson<SupportedCountriesResponse>(ZhihuJson.json.parseToJsonElement(response.bodyAsText())).data
+            }
+            if (result.isEmpty()) throw LoginMessageException { AccountStrings.countriesMissing }
+            countries = result
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -274,31 +288,20 @@ class PhoneLoginState internal constructor(
             val username = normalizePhoneNumber(number, country.code) ?: throw LoginMessageException {
                 if (country.code == "+86") INVALID_PHONE_NUMBER_MESSAGE else INVALID_INTERNATIONAL_PHONE_NUMBER_MESSAGE
             }
-            ensureGuestToken()
-            if (currentRequestPhone != number) return
-            val captchaState = requestCaptchaState()
-            if (currentRequestPhone != number) return
-            val result = if (captchaState.showCaptcha) {
-                ZhihuPhoneDigitsResult.CaptchaRequired(loadCaptchaImage())
+            val result = if (browserBackend != null) {
+                browserBackend.send(username)
             } else {
-                sendDigits(username, recheckCaptchaWhenRequested = true) ?: return
-            }
-            if (currentRequestPhone != number) return
-            when (result) {
-                ZhihuPhoneDigitsResult.Sent -> {
-                    smsSent = true
-                    needsCaptcha = false
-                    captchaImageBase64 = null
-                    captchaInput.clearText()
-                    captchaInput.undoState.clearHistory()
-                    resendSeconds = RESEND_COOLDOWN_SECONDS
-                }
-
-                is ZhihuPhoneDigitsResult.CaptchaRequired -> {
-                    needsCaptcha = true
-                    captchaImageBase64 = result.imageBase64
+                ensureGuestToken()
+                if (currentRequestPhone != number) return
+                val captchaState = requestCaptchaState()
+                if (currentRequestPhone != number) return
+                if (captchaState.showCaptcha) {
+                    ZhihuPhoneDigitsResult.CaptchaRequired(loadCaptchaImage())
+                } else {
+                    sendDigits(username, recheckCaptchaWhenRequested = true) ?: return
                 }
             }
+            if (currentRequestPhone == number) applyDigitsResult(result)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -308,15 +311,34 @@ class PhoneLoginState internal constructor(
         }
     }
 
+    private fun applyDigitsResult(result: ZhihuPhoneDigitsResult) {
+        when (result) {
+            ZhihuPhoneDigitsResult.Sent -> {
+                smsSent = true
+                needsCaptcha = false
+                captchaImageBase64 = null
+                captchaInput.clearText()
+                captchaInput.undoState.clearHistory()
+                resendSeconds = RESEND_COOLDOWN_SECONDS
+            }
+            is ZhihuPhoneDigitsResult.CaptchaRequired -> {
+                needsCaptcha = true
+                captchaImageBase64 = result.imageBase64
+            }
+        }
+    }
+
     suspend fun refreshCaptcha() {
         val number = currentRequestPhone ?: return
         if (isBusy || !needsCaptcha) return
         errorText = null
         isSendingDigits = true
         try {
-            ensureGuestToken()
-            if (currentRequestPhone != number) return
-            val image = loadCaptchaImage()
+            val image = if (browserBackend != null) browserBackend.captcha() else {
+                ensureGuestToken()
+                if (currentRequestPhone != number) return
+                loadCaptchaImage()
+            }
             if (currentRequestPhone == number) captchaImageBase64 = image
         } catch (error: CancellationException) {
             throw error
@@ -335,6 +357,11 @@ class PhoneLoginState internal constructor(
         val verified = try {
             val captcha = captchaInput.text.toString().trim()
             if (captcha.isEmpty()) throw LoginMessageException { AccountStrings.captchaRequired }
+            if (browserBackend != null) {
+                val result = browserBackend.verifyCaptcha(captcha)
+                if (currentRequestPhone == number) applyDigitsResult(result)
+                return
+            }
             ensureGuestToken()
             if (currentRequestPhone != number) return
             val response = loginHttpClient.value.post("$PHONE_LOGIN_API_BASE_URL$CAPTCHA_PATH") {
@@ -372,6 +399,11 @@ class PhoneLoginState internal constructor(
             }
             val code = digits.text.toString().trim()
             if (code.isEmpty()) throw LoginMessageException { AccountStrings.smsRequired }
+            if (browserBackend != null) {
+                val username = browserBackend.signIn(username, code)
+                if (username == null) errorText = { AccountStrings.loginTokenInvalid } else accountStore.reportLoginSuccess(accountStore.client, username)
+                return username
+            }
             ensureGuestToken()
             if (currentRequestPhone != number) return null
             val timestamp = Clock.System.now().epochSeconds
@@ -409,7 +441,9 @@ class PhoneLoginState internal constructor(
                 cookies = cookies.toMap(),
             )
             if (accountStore.login(owner, token)) {
-                return accountStore.session.username
+                val username = accountStore.session.username
+                accountStore.reportLoginSuccess(accountStore.client, username)
+                return username
             }
             errorText = { AccountStrings.loginTokenInvalid }
         } catch (error: CancellationException) {
@@ -612,6 +646,7 @@ class PhoneLoginState internal constructor(
     }
 
     override fun close() {
+        browserBackend?.close()
         if (loginHttpClient.isInitialized()) loginHttpClient.value.close()
     }
 }
@@ -620,12 +655,14 @@ class PhoneLoginState internal constructor(
 fun rememberPhoneLoginState(): PhoneLoginState {
     val owner = rememberZhihuAccountStore()
     val client = owner.client
+    val backend = remember(owner, client) { createBrowserPhoneLoginBackend(owner, client) }
     val saver = remember(owner, client) {
         listSaver<PhoneLoginState, Any>(
             save = { listOf(it.phoneNumber.text.toString(), it.agreementAccepted, it.country.code, it.country.name, it.country.abbr) },
             restore = {
                 PhoneLoginState(
                     engine = owner.engine,
+                    browserBackend = backend,
                     initialCookies = owner.accountsState.value.guestCookies,
                     onFailure = { record, cookies -> client.reportHttpFailure(record, cookies) },
                     phoneNumber = it[0] as String,
@@ -642,6 +679,7 @@ fun rememberPhoneLoginState(): PhoneLoginState {
     val state = rememberSaveable(owner, client, saver = saver) {
         PhoneLoginState(
             owner.engine,
+            browserBackend = backend,
             initialCookies = owner.accountsState.value.guestCookies,
             onFailure = { record, cookies -> client.reportHttpFailure(record, cookies) },
         )

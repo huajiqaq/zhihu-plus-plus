@@ -38,10 +38,26 @@ import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.io.files.Path
 
 @OptIn(ExperimentalTestApi::class)
 class QrLoginPaneTest {
+    @Test
+    fun scanConfirmationOnlyAcceptsTheKnownOfficialPath() {
+        assertTrue(isAccountQrConfirmationUrl("https://www.zhihu.com/account/scan/login/fixture-123"))
+        listOf(
+            "http://www.zhihu.com/account/scan/login/fixture-123",
+            "https://www.zhihu.com.example/account/scan/login/fixture-123",
+            "https://user@www.zhihu.com/account/scan/login/fixture-123",
+            "https://www.zhihu.com:444/account/scan/login/fixture-123",
+            "https://www.zhihu.com/account/scan/login/fixture-123?next=https://example.com",
+            "https://www.zhihu.com/account/scan/login/fixture-123#redirect",
+            "https://www.zhihu.com/account/scan/login/../signin",
+        ).forEach { assertFalse(isAccountQrConfirmationUrl(it), it) }
+    }
+
     @Test
     fun malformedLoginResponseDoesNotExposeCredentialsInStatus() {
         val ownerIsCurrent = mutableStateOf(true)

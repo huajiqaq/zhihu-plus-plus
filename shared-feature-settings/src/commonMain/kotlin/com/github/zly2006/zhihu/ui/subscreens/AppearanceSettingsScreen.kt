@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.github.zly2006.zhihu.i18n.APP_LANGUAGE_KEY
 import com.github.zly2006.zhihu.i18n.SettingsStrings
+import com.github.zly2006.zhihu.i18n.PlatformStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.platform.rememberSettingsStore
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
@@ -64,6 +65,7 @@ import com.github.zly2006.zhihu.theme.ThemeMode
 import com.github.zly2006.zhihu.theme.ThemePaletteStyle
 import com.github.zly2006.zhihu.theme.ThemeStyle
 import com.github.zly2006.zhihu.theme.miuixThemeAvailable
+import com.github.zly2006.zhihu.theme.platformDynamicThemeSeedColor
 import com.github.zly2006.zhihu.theme.resetPaletteAndBackground
 import com.github.zly2006.zhihu.ui.components.AppDimens
 import com.github.zly2006.zhihu.ui.components.AppIcon
@@ -78,6 +80,7 @@ import com.github.zly2006.zhihu.ui.components.SettingItemSelect
 import com.github.zly2006.zhihu.ui.components.SettingItemWithSwitch
 import com.github.zly2006.zhihu.ui.components.appGlassRenderingSupported
 import com.github.zly2006.zhihu.ui.rememberSetting
+import com.github.zly2006.zhihu.ui.LocalSharedMainNavigationBarAvailable
 import kotlin.math.roundToInt
 
 const val APPEARANCE_SETTINGS_BACK_BUTTON_TAG = "appearance_settings_back_button"
@@ -123,7 +126,10 @@ fun AppearanceSettingsScreen(
     val settings = rememberSettingsStore()
     val userMessages = rememberUserMessageSink()
 
-    val useDynamicColor = LocalAppTheme.current.snapshot.useDynamicColor
+    val dynamicColorAvailable = platformDynamicThemeSeedColor() != null
+    // 保留迁移来的偏好，但没有系统色源时不能隐藏唯一可用的自定义颜色入口。
+    val useDynamicColor = LocalAppTheme.current.snapshot.useDynamicColor && dynamicColorAvailable
+    val sharedNavigationAvailable = LocalSharedMainNavigationBarAvailable.current
     val currentThemeMode = LocalAppTheme.current.snapshot.themeMode
     val currentThemeStyle = LocalAppTheme.current.style
     val currentMiuixStyle = LocalAppTheme.current.snapshot.miuixStyle
@@ -319,8 +325,9 @@ fun AppearanceSettingsScreen(
             if (!isMiuixSkin) {
                 SettingItemWithSwitch(
                     title = { Text(SettingsStrings.dynamicColor) },
-                    description = { Text(SettingsStrings.dynamicColorDescription) },
+                    description = { Text(if (dynamicColorAvailable) SettingsStrings.dynamicColorDescription else PlatformStrings.dynamicColorUnavailable) },
                     checked = useDynamicColor,
+                    enabled = dynamicColorAvailable,
                     onCheckedChange = { checked -> settings.putBoolean("useDynamicColor", checked) },
                     settingKey = "dynamicColor",
                 )
@@ -462,8 +469,9 @@ fun AppearanceSettingsScreen(
             var floatingBottomBar by rememberSetting(settings, FLOATING_BOTTOM_BAR_PREFERENCE_KEY, true)
             SettingItemWithSwitch(
                 title = { Text(SettingsStrings.floatingBottomBar) },
-                description = { Text(SettingsStrings.floatingBottomBarDescription) },
-                checked = floatingBottomBar,
+                description = { Text(if (sharedNavigationAvailable) SettingsStrings.floatingBottomBarDescription else PlatformStrings.sharedNavigationOnly) },
+                checked = floatingBottomBar && sharedNavigationAvailable,
+                enabled = sharedNavigationAvailable,
                 onCheckedChange = { floatingBottomBar = it },
                 settingKey = FLOATING_BOTTOM_BAR_PREFERENCE_KEY,
             )
@@ -474,7 +482,7 @@ fun AppearanceSettingsScreen(
                 options = listOf(SettingsStrings.defaultOption, "Apple"),
                 selectedIndex = if (floatingStyle == "apple") 1 else 0,
                 onSelect = { floatingStyle = if (it == 1) "apple" else "default" },
-                enabled = floatingBottomBar,
+                enabled = floatingBottomBar && sharedNavigationAvailable,
                 settingKey = FLOATING_BOTTOM_BAR_STYLE_PREFERENCE_KEY,
                 modifier = Modifier.testTag("appearanceSettings.floatingBottomBarStyle"),
             )

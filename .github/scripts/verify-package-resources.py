@@ -29,7 +29,8 @@ from zipfile import ZipFile
 FONTS = ('pdf-fonts/NotoSansSC-Regular.ttf', 'pdf-fonts/NotoSansSC-Bold.ttf')
 RUNTIME_RELEASE = {'windows': 'runtime/release', 'linux': 'lib/runtime/release', 'macos': 'Contents/runtime/Contents/Home/release'}
 WEB_FILES = (
-    'index.html', 'web-version.json', 'aboutlibraries.json', 'LICENSE', 'zhihu-notifications-sw.js',
+    'index.html', 'aboutlibraries.json', 'LICENSE', 'zhihu-notifications-sw.js', 'zhihu-app-bootstrap.js', 'zhihu-app-cache.js',
+    'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
     'voice-codec/ffmpeg-core.js', 'voice-codec/ffmpeg-core.wasm', 'voice-codec/licenses/sources.json',
     'export/katex/katex.min.css', 'export/katex/LICENSE', 'export/html2canvas-pro/LICENSE', 'export/fflate/LICENSE',
     'nlp/offline-nlp-worker.mjs', 'nlp/ort/ort.wasm.min.mjs', 'nlp/ort/ort-wasm-simd-threaded.mjs',
@@ -86,11 +87,82 @@ def check_components(read, manifest, directory, platform=None, id_prefix=''):
     return sources
 
 
-def verify_web(root):
+def verify_web_inventory(root):
     read = file_reader(root)
+    pointer_bytes = read('web-version.json')
+    pointer = json.loads(pointer_bytes)
+    if (len(pointer_bytes) > 2048 or pointer.get('schema') != 1 or
+            type(pointer.get('versionCode')) is not int or pointer['versionCode'] < 1 or
+            not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', pointer.get('versionName', '')) or
+            not re.fullmatch(r'[a-f0-9]{16,64}', pointer.get('buildId', ''))):
+        raise RuntimeError('Invalid published Web version pointer')
+    base = f'app-resources/{pointer["versionCode"]}-{pointer["versionName"]}/'
+    if pointer.get('manifest') != base + 'app-assets.json':
+        raise RuntimeError('Web inventory is not version-qualified')
+    manifest_bytes = read(pointer['manifest'])
+    if hashlib.sha256(manifest_bytes).hexdigest() != pointer.get('sha256'):
+        raise RuntimeError('Web inventory integrity differs from version pointer')
+    manifest = json.loads(manifest_bytes)
+    if (manifest.get('schema') != 1 or manifest.get('base') != base or
+            any(manifest.get(key) != pointer[key] for key in ('versionName', 'versionCode', 'buildId'))):
+        raise RuntimeError('Web inventory and published version disagree')
+    assets = manifest.get('assets', [])
+    if not assets or len(assets) > 10000 or len(manifest_bytes) > 4194304:
+        raise RuntimeError('Invalid Web inventory size')
+    paths = set()
+    for asset in assets:
+        path = relative_name(asset['path'])
+        if (path != asset['path'] or re.search(r'[%?#\x00-\x1f\x7f]', path) or path in paths or
+                path.endswith(('.map', '.onnx', '.onnx_data')) or asset.get('group') not in ('core', 'lazy')):
+            raise RuntimeError(f'Invalid or duplicate Web app asset: {path}')
+        paths.add(path)
+        data = read(base + path)
+        if type(asset.get('bytes')) is not int or asset['bytes'] != len(data) or hashlib.sha256(data).hexdigest() != asset.get('sha256'):
+            raise RuntimeError(f'Web app resource integrity mismatch: {path}')
+        if path.startswith(('voice-codec/', 'nlp/', 'export/')) and asset['group'] != 'lazy':
+            raise RuntimeError(f'Runtime resource must remain lazy: {path}')
+    actual = {path.relative_to(root / base).as_posix() for path in (root / base).rglob('*') if path.is_file()}
+    if actual != paths | {'app-assets.json'}:
+        raise RuntimeError('Web inventory does not cover the finalized distribution')
+    if not all(any(asset['path'] == path and asset['group'] == 'core' for asset in assets)
+               for path in (manifest.get('entry'), 'index.html', 'zhihu-app-bootstrap.js')):
+        raise RuntimeError('Web bootstrap or entry missing from atomic core')
+    if not re.fullmatch(r'zhihu\.[a-f0-9]+\.js', manifest['entry']):
+        raise RuntimeError('Missing content-addressed Web entry')
+    shell = read('index.html').decode('utf-8')
+    for marker in ('name="zhihu-cache-mode" content="production"',
+                   f'name="zhihu-resource-base" content="{base}"',
+                   f'name="zhihu-app-entry" content="{manifest["entry"]}"',
+                   f'name="zhihu-version-name" content="{pointer["versionName"]}"',
+                   f'name="zhihu-version-code" content="{pointer["versionCode"]}"'):
+        if marker not in shell:
+            raise RuntimeError(f'Web shell is missing metadata: {marker}')
+    if re.search(r'<base\b', shell, re.I) or re.search(r'<script[^>]+src=["\'][^"\']*zhihu\.', shell, re.I):
+        raise RuntimeError('Web main must start after cache selection without changing the page base')
+    stable = {'index.html', 'zhihu-app-bootstrap.js', 'zhihu-app-cache.js', 'zhihu-notifications-sw.js',
+              'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'LICENSE'}
+    for path in stable:
+        if path not in paths or read(path) != read(base + path):
+            raise RuntimeError(f'Missing or mismatched stable Web bootstrap: {path}')
+    for file in root.rglob('*'):
+        if not file.is_file():
+            continue
+        path = file.relative_to(root).as_posix()
+        if path == 'web-version.json' or path.startswith(base):
+            continue
+        if path not in stable and not path.endswith('.user.js'):
+            raise RuntimeError(f'Unversioned or stale Web resource: {path}')
+        if path not in paths or read(path) != read(base + path):
+            raise RuntimeError(f'Root bootstrap differs from versioned inventory: {path}')
+    return root / base
+
+
+def verify_web(root):
+    resources = verify_web_inventory(root)
+    read = file_reader(resources)
     for name in WEB_FILES:
         read(name)
-    if not any(path.is_file() and path.stat().st_size for path in (root / 'export/katex/fonts').glob('*.woff2')):
+    if not any(path.is_file() and path.stat().st_size for path in (resources / 'export/katex/fonts').glob('*.woff2')):
         raise RuntimeError('Missing local KaTeX fonts')
     for name in ('voice-codec/ffmpeg-core.wasm', 'nlp/ort/ort-wasm-simd-threaded.wasm'):
         if read(name)[:8] != b'\0asm\x01\0\0\0':
@@ -105,7 +177,7 @@ def verify_web(root):
         if package.get('name') != name or not package.get('version') or entry.get('artifactVersion') != package['version']:
             raise RuntimeError(f'Runtime and license metadata version disagree: {name}')
     check_components(read, manifest, 'voice-codec/licenses', id_prefix='native:ffmpegwasm-')
-    print('Web production worker, local runtimes, fonts and original/displayed licenses verified')
+    print('Web versioned inventory, sizes/hashes, bootstrap, lazy runtimes, fonts and original/displayed licenses verified')
 
 
 def verify_desktop(root, platform):
@@ -227,24 +299,52 @@ def self_check():
         def licensed(identifier, text, version='1'):
             manifest['libraries'].append(dict(uniqueId=identifier, licenses=[identifier], artifactVersion=version))
             manifest['licenses'][identifier] = dict(content=text)
-        for name in WEB_FILES + ('export/katex/fonts/example.woff2',):
-            (root / name).parent.mkdir(parents=True, exist_ok=True)
-            (root / name).write_bytes(b'fixture')
+        web = root / 'web'
+        base = 'app-resources/1-1/'
+        resources = web / base
+        entry = 'zhihu.' + 'a' * 20 + '.js'
+        for name in WEB_FILES + ('export/katex/fonts/example.woff2', entry, 'lazy-chunk.js'):
+            (resources / name).parent.mkdir(parents=True, exist_ok=True)
+            (resources / name).write_bytes(b'fixture')
         for name in ('voice-codec/ffmpeg-core.wasm', 'nlp/ort/ort-wasm-simd-threaded.wasm'):
-            (root / name).write_bytes(b'\0asm\x01\0\0\0')
+            (resources / name).write_bytes(b'\0asm\x01\0\0\0')
         for directory, name in (('nlp/ort', 'onnxruntime-web'), ('nlp/hashes', '@noble/hashes')):
-            (root / directory / 'package.json').write_text(json.dumps(dict(name=name, version='1')))
+            (resources / directory / 'package.json').write_text(json.dumps(dict(name=name, version='1')))
             licensed('npm:' + name, 'fixture')
-        (root / 'voice-codec/licenses/NOTICE').write_text('fixture')
-        (root / 'voice-codec/licenses/sources.json').write_text(json.dumps(dict(components=[dict(id='runtime', licenseFiles=['NOTICE'])])))
+        (resources / 'voice-codec/licenses/NOTICE').write_text('fixture')
+        (resources / 'voice-codec/licenses/sources.json').write_text(json.dumps(dict(components=[dict(id='runtime', licenseFiles=['NOTICE'])])))
         licensed('native:ffmpegwasm-runtime', 'fixture')
-        (root / 'aboutlibraries.json').write_text(json.dumps(manifest))
-        verify_web(root)
-        for name in ('nlp/offline-nlp-worker.mjs', 'nlp/hashes/_u64.js', 'nlp/ort/ThirdPartyNotices.txt'):
-            saved = (root / name).read_bytes()
-            (root / name).unlink()
-            reject(lambda: verify_web(root))
-            (root / name).write_bytes(saved)
+        (resources / 'aboutlibraries.json').write_text(json.dumps(manifest))
+        (resources / 'index.html').write_text('<meta name="zhihu-cache-mode" content="production">' +
+            f'<meta name="zhihu-resource-base" content="{base}"><meta name="zhihu-app-entry" content="{entry}">' +
+            '<meta name="zhihu-version-name" content="1"><meta name="zhihu-version-code" content="1">' +
+            '<script src="zhihu-app-bootstrap.js"></script>')
+        for name in ('index.html', 'zhihu-app-bootstrap.js', 'zhihu-app-cache.js', 'zhihu-notifications-sw.js', 'LICENSE',
+                     'manifest.webmanifest', 'icon-192.png', 'icon-512.png'):
+            (web / name).write_bytes((resources / name).read_bytes())
+        assets = [dict(path=path.relative_to(resources).as_posix(), bytes=path.stat().st_size,
+                       sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                       group='lazy' if path.relative_to(resources).as_posix().startswith(('nlp/', 'voice-codec/', 'export/')) else 'core')
+                  for path in sorted(resources.rglob('*')) if path.is_file()]
+        inventory = dict(schema=1, versionName='1', versionCode=1, buildId='a' * 20, base=base, entry=entry, assets=assets)
+        inventory_bytes = json.dumps(inventory).encode()
+        (resources / 'app-assets.json').write_bytes(inventory_bytes)
+        (web / 'web-version.json').write_text(json.dumps(dict(schema=1, versionName='1', versionCode=1, buildId='a' * 20,
+            manifest=base + 'app-assets.json', sha256=hashlib.sha256(inventory_bytes).hexdigest())))
+        verify_web(web)
+        for name in ('nlp/offline-nlp-worker.mjs', 'nlp/hashes/_u64.js', 'nlp/ort/ThirdPartyNotices.txt', 'lazy-chunk.js'):
+            saved = (resources / name).read_bytes()
+            (resources / name).unlink()
+            reject(lambda: verify_web(web))
+            (resources / name).write_bytes(saved + b'tampered')
+            reject(lambda: verify_web(web))
+            (resources / name).write_bytes(saved)
+        (resources / 'unexpected.js').write_text('unexpected')
+        reject(lambda: verify_web(web))
+        (resources / 'unexpected.js').unlink()
+        (web / 'unversioned.js').write_text('unexpected')
+        reject(lambda: verify_web(web))
+        (web / 'unversioned.js').unlink()
         reject(lambda: check_license(manifest, 'npm:onnxruntime-web', ['missing notice']))
         for name in ('../escape', '/absolute', 'C:/escape', 'a\\b'):
             reject(lambda: relative_name(name))

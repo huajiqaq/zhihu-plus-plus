@@ -19,6 +19,7 @@
 
 package com.github.zly2006.zhihu.account
 
+import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.util.DisplayFailure
@@ -38,11 +39,17 @@ import io.ktor.http.URLProtocol
 import io.ktor.http.headersOf
 import io.ktor.util.date.GMTDate
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.writeStringUtf8
 import io.ktor.utils.io.InternalAPI
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.js.JsAny
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -70,6 +77,34 @@ private class WebBridgeEngine(
     override val config: HttpClientEngineConfig,
 ) : HttpClientEngineBase("ZhihuWebBridge"),
     BrowserAccountEngine {
+    override suspend fun revokeSession(owner: ZhihuAccountClient) {
+        check(owner.requestBrowserSessionAction("revokeProfile")["revoked"] == JsonPrimitive(true))
+    }
+
+    override suspend fun identityAccounts(owner: ZhihuAccountClient): List<ZhihuIdentityAccount> =
+        ZhihuJson.decodeJson<ZhihuIdentityAccountListResponse>(owner.requestBrowserSessionAction("identityList")).data
+
+    override suspend fun changeIdentity(owner: ZhihuAccountClient, targetUserId: String?): Boolean {
+        val body = targetUserId?.let { JsonObject(mapOf("target_user_id" to JsonPrimitive(it))).toString() }.orEmpty()
+        return owner.requestBrowserSessionAction(if (targetUserId == null) "identityCreate" else "identitySwitch", body)["authorized"] == JsonPrimitive(true)
+    }
+
+    override suspend fun sendCommentAs(owner: ZhihuAccountClient, sender: CommentSender, url: String, body: JsonObject): BrowserCommentSendResult {
+        val resource = Regex("https://www[.]zhihu[.]com/api/v4/comment_v5/((?:answers|articles|questions|pins)/[1-9][0-9]{0,18}/(?:comment|segment/comment))").matchEntire(url)?.groupValues?.get(1)
+            ?: throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        val result = owner.requestBrowserSessionAction("commentSendAs", JsonObject(mapOf(
+            "target_user_id" to JsonPrimitive(sender.profile.id), "resource" to JsonPrimitive(resource), "comment" to body,
+        )).toString())
+        if (result["authorized"] == JsonPrimitive(false)) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+        val restored = result["restored"] == JsonPrimitive(true)
+        if (!restored) owner.reportBrowserCommentRestoreRequired()
+        val comment = result["comment"] as? JsonObject ?: throw BrowserBridgeException(BrowserSessionStatus.Unavailable)
+        return BrowserCommentSendResult(comment, restored)
+    }
+
+    override suspend fun restoreCommentIdentity(owner: ZhihuAccountClient): Boolean =
+        owner.requestBrowserSessionAction("identityRestore")["restored"] == JsonPrimitive(true)
+
     override suspend fun sendMessage(owner: ZhihuAccountClient, receiverId: String, content: String): String {
         val body = JsonObject(mapOf("receiver_id" to JsonPrimitive(receiverId), "content" to JsonPrimitive(content))).toString()
         val (status, response) = owner.requestBrowserBusiness("messageSend", body = body)
@@ -83,21 +118,56 @@ private class WebBridgeEngine(
 
         fun denied(): Nothing = throw BrowserBridgeException(BrowserSessionStatus.Denied)
         val business = webBusinessOperation(data)
-        val guestCompatible = business?.name in setOf("contentDetail", "topstoryRead", "questionFeedsRead") &&
+        val guestCompatible = business?.name in setOf("contentDetail", "topstoryRead", "questionFeedsRead", "homeFeedWeb") &&
             (data.attributes.contains(anonymousBrowserRead) || data.attributes.getOrNull(browserRequestOwner)?.load()?.login != true)
         if (business != null && !guestCompatible) {
             if (url.protocol != URLProtocol.HTTPS || url.port != 443 || url.user != null || url.password != null ||
                 url.fragment.isNotEmpty() || url.toString().any(Char::isISOControl) || data.attributes.contains(anonymousBrowserRead)
             ) denied()
             // 共享 consumer 的签名/CSRF 不出页面；油猴从自己的账号快照重新生成。
-            val consumerHeaders = setOf("accept", "content-type", "referer", "user-agent", "x-api-version", "x-app-version", "x-app-za", "x-xsrftoken", "x-zse-93", "x-zse-96", "x-requested-with")
+            val consumerHeaders = setOf("accept", "content-type", "referer", "user-agent", "x-api-version", "x-app-version", "x-app-za", "x-xsrftoken", "x-zse-93", "x-zse-96", "x-requested-with", "x-referer")
             if (data.headers.entries().any { (name, values) -> name.lowercase() !in consumerHeaders || values.any { it.length > 4096 || it.any(Char::isISOControl) } }) denied()
             val owner = data.attributes.getOrNull(browserRequestOwner) ?: denied()
             val started = GMTDate()
+            if (business.name == "summary") {
+                val context = callContext()
+                val channel = ByteChannel(autoFlush = true)
+                val chunks = Channel<String>(Channel.UNLIMITED)
+                val status = CompletableDeferred<Int>()
+                val scope = CoroutineScope(context)
+                scope.launch {
+                    try {
+                        for (chunk in chunks) channel.writeStringUtf8(chunk)
+                        channel.flushAndClose()
+                    } catch (error: Throwable) {
+                        channel.cancel(error)
+                    }
+                }
+                scope.launch {
+                    try {
+                        val response = owner.requestBrowserBusiness(business.name, business.id, url.encodedQuery, webBusinessBody(data), onStream = { chunk ->
+                            chunks.trySend(chunk)
+                            status.complete(200)
+                        })
+                        status.complete(response.first)
+                        if (response.second.isNotEmpty()) chunks.send(response.second)
+                        chunks.close()
+                    } catch (error: Throwable) {
+                        status.completeExceptionally(error)
+                        chunks.close(error)
+                    }
+                }
+                return HttpResponseData(HttpStatusCode.fromValue(status.await()), started,
+                    headersOf(HttpHeaders.ContentType, "text/event-stream; charset=utf-8"), HttpProtocolVersion.HTTP_1_1, channel, context)
+            }
             val (status, body) = owner.requestBrowserBusiness(business.name, business.id, url.encodedQuery, webBusinessBody(data))
             return HttpResponseData(
                 HttpStatusCode.fromValue(status), started,
-                headersOf(HttpHeaders.ContentType, "application/json; charset=utf-8"),
+                headersOf(HttpHeaders.ContentType, when (business.name) {
+                    "summary" -> "text/event-stream; charset=utf-8"
+                    "paidAnswer" -> "text/html; charset=utf-8"
+                    else -> "application/json; charset=utf-8"
+                }),
                 HttpProtocolVersion.HTTP_1_1, ByteReadChannel(body.encodeToByteArray()), callContext(),
             )
         }
@@ -121,6 +191,21 @@ private class WebBridgeEngine(
         }
         var id = ""
         val op = when (url.host) {
+            "news-at.zhihu.com", "daily.zhihu.com" -> {
+                val stories = Regex("/api/4/stories/(latest|before/[0-9]{8})").matchEntire(url.encodedPath)
+                val story = Regex("/api/7/story/([1-9][0-9]{0,18})").matchEntire(url.encodedPath)
+                when {
+                    stories != null -> {
+                        id = (if (url.host == "news-at.zhihu.com") "news/" else "daily/") + stories.groupValues[1]
+                        "dailyStories"
+                    }
+                    story != null && url.host == "daily.zhihu.com" -> {
+                        id = story.groupValues[1]
+                        "dailyStory"
+                    }
+                    else -> denied()
+                }
+            }
             "www.zhihu.com" -> when (url.encodedPath) {
                 "/api/v4/me" -> if (data.attributes.contains(anonymousBrowserRead)) denied() else "profile"
                 "/api/v3/feed/topstory/hot-lists/total" -> "hotList"
@@ -176,7 +261,7 @@ private class WebBridgeEngine(
             id = data.attributes.getOrNull(browserHistoryOwner) ?: denied()
         }
         val owner = data.attributes.getOrNull(browserRequestOwner) ?: denied()
-        val authenticatedRead = owner.load().login && op !in setOf("profile", "history", "historySetting") && !data.attributes.contains(anonymousBrowserRead)
+        val authenticatedRead = owner.load().login && op !in setOf("profile", "history", "historySetting", "dailyStories", "dailyStory") && !data.attributes.contains(anonymousBrowserRead)
         if (data.attributes.contains(mobileBrowserRead) && op != "pinV2" && !authenticatedRead) denied()
         val started = GMTDate()
         val (status, body) = if (authenticatedRead) {
@@ -210,6 +295,7 @@ enum class WebBridgeIssue(
 ) {
     ManagerInfoMissing("manager-info-missing", { DomainStrings.bridgeManagerInfoMissing }),
     ManagerUnsupported("manager-unsupported", { DomainStrings.bridgeManagerUnsupported }),
+    SessionIsolationUnsupported("session-isolation-unsupported", { DomainStrings.bridgeSessionIsolationUnsupported }),
     ManagerVersionUnknown("manager-version-unknown", { DomainStrings.bridgeManagerVersionUnknown }),
     RedirectUnsupported("redirect-unsupported", { DomainStrings.bridgeRedirectUnsupported }),
     RequestApiMissing("request-api-missing", { DomainStrings.bridgeRequestApiMissing }),
@@ -288,6 +374,46 @@ suspend fun ZhihuAccountClient.requestBrowserLoginAction(op: String): Boolean {
 suspend fun ZhihuAccountClient.requestBrowserQrStep(op: String): JsonObject {
     if (op != "loginQrStart" && op != "loginQrPoll") throw BrowserBridgeException(BrowserSessionStatus.Denied)
     return browserAction(op) { status, body -> browserQrProjection(op, status, body) }
+}
+
+suspend fun ZhihuAccountClient.requestBrowserPhoneAction(op: String, body: String = ""): JsonObject {
+    require(op in setOf("loginPhoneCountries", "loginPhoneSend", "loginPhoneCaptcha", "loginPhoneVerifyCaptcha", "loginPhoneCommit", "loginPhoneCancel"))
+    return requestBrowserSessionAction(op, body)
+}
+
+/** 登录和身份事务只接收用户输入及公开结果；票据仅留在桥内。 */
+private suspend fun ZhihuAccountClient.requestBrowserSessionAction(op: String, body: String = ""): JsonObject = coroutineScope {
+    if (!accountStore.usesBrowserSession || !isCurrent) throw BrowserBridgeException(BrowserSessionStatus.Denied)
+    require(body.length <= if (op == "commentSendAs") 1024 * 1024 else 4096)
+    val action = coroutineContext.job
+    val subscription = httpClient().coroutineContext.job.invokeOnCompletion { action.cancel() }
+    try {
+        suspendCancellableCoroutine { continuation ->
+            val handle = startBrowserBridge("session", op, load().profile?.id.orEmpty(), "", "", body, null) { kind, code, text ->
+                if (!continuation.isActive) return@startBrowserBridge
+                if (!isCurrent) continuation.cancel(CancellationException("账号客户端已关闭"))
+                else try {
+                    when (kind) {
+                        "http" -> {
+                            check(code in 200..299 && text.length <= 512 * 1024)
+                            continuation.resume(Json.parseToJsonElement(text) as JsonObject)
+                        }
+                        "unsupported" -> throw WebBridgeCapabilityException(WebBridgeIssue.entries.firstOrNull { it.wire == text } ?: throw BrowserBridgeException(BrowserSessionStatus.Unavailable))
+                        "uncertain" -> {
+                            if (op == "commentSendAs") reportBrowserCommentRestoreRequired()
+                            throw BrowserMutationUncertain()
+                        }
+                        "cancelled" -> continuation.cancel()
+                        else -> throw BrowserBridgeException(if (kind == "missing") BrowserSessionStatus.MissingBridge else BrowserSessionStatus.Denied)
+                    }
+                } catch (error: Exception) { continuation.resumeWithException(error) }
+            }
+            continuation.invokeOnCancellation {
+                if (op == "commentSendAs") reportBrowserCommentRestoreRequired()
+                handle.abort()
+            }
+        }
+    } finally { subscription.dispose() }
 }
 
 /** 独立交互不经过 Ktor 的 callContext，也须在发起它的 client 关闭时取消端口。 */
@@ -383,15 +509,16 @@ internal external interface BrowserBridgeHandle : JsAny {
                 ((current.origin === 'http://127.0.0.1:8080' && ['/', '/index.html'].includes(current.pathname)) ||
                     (current.origin === 'https://zly2006.github.io' && ['/zhihu-plus-plus/', '/zhihu-plus-plus/index.html'].includes(current.pathname)));
         };
-        const business = channel === 'business';
-        const loginAction = !business && ['authorizeProfile', 'cookieSignIn', 'loginQrStart', 'authorizePrivate', 'authorizeInteractions', 'authorizeCreation', 'authorizeHistoryWrite'].includes(op);
-        const gesture = loginAction || (!business && op === 'verificationCheck');
+        const business = channel === 'business', session = channel === 'session';
+        const loginAction = !business && !session && ['authorizeProfile', 'cookieSignIn', 'loginQrStart', 'authorizePrivate', 'authorizeInteractions', 'authorizeCreation', 'authorizeHistoryWrite'].includes(op);
+        const gesture = loginAction || (!business && op === 'verificationCheck') || (session && ['loginPhoneSend', 'loginPhoneCommit', 'loginPhoneVerifyCaptcha', 'identitySwitch', 'identityCreate', 'commentSendAs', 'identityRestore'].includes(op));
         const qr = !business && (op === 'loginQrStart' || op === 'loginQrPoll');
         const status = !business && op === 'bridgeStatus';
         const history = !business && (op === 'history' || op === 'historySetting');
-        const bodyLimit = status ? 1024 : qr && op === 'loginQrStart' ? 576 : (qr || gesture) ? 64 : 4194304;
-        if (!trustedPage() || !['read', 'business'].includes(channel) ||
-            (!business && (body !== '' || bytes !== null || (history ? id !== 'account-bound' : owner !== '') ||
+        const bodyLimit = session ? 524288 : status ? 1024 : qr && op === 'loginQrStart' ? 576 : (qr || gesture) ? 64 : 4194304;
+        if (!trustedPage() || !['read', 'business', 'session'].includes(channel) ||
+            (session && (id !== '' || query !== '' || bytes !== null || typeof body !== 'string' || body.length > (op === 'commentSendAs' ? 1048576 : 4096))) ||
+            (!business && !session && (body !== '' || bytes !== null || (history ? id !== 'account-bound' : owner !== '') ||
                 ((qr || gesture || status) && (id !== '' || query !== ''))))) {
             done('denied', 0, '');
             return {abort() {}};
@@ -403,10 +530,10 @@ internal external interface BrowserBridgeHandle : JsAny {
         // 同步进入脚本的监听器，由脚本亲自核对激活并取得同意；端口消息不传授权声明。
         const gestureHandled = !gesture || !window.dispatchEvent(new Event('zhihu++/gesture/' + op + '/1', {cancelable: true}));
         const {port1, port2} = new MessageChannel();
-        const mutation = business && (['vote', 'commentSend', 'voiceCommentSend', 'commentDelete', 'collectionCreate', 'collectionDelete', 'pollVote', 'emojiWrite',
+        const mutation = session && ['loginPhoneSend', 'loginPhoneVerifyCaptcha', 'loginPhoneCommit', 'identitySwitch', 'identityCreate', 'commentSendAs', 'identityRestore'].includes(op) || business && (['vote', 'commentSend', 'voiceCommentSend', 'commentDelete', 'collectionCreate', 'collectionDelete', 'pollVote', 'emojiWrite',
             'publish', 'pinDraft', 'pinTopicSuggest', 'questionCreate', 'articleCreate', 'historyWrite', 'historyAdd', 'recentFollowRead',
-            'notificationReadAll', 'messageSend', 'uploadImage', 'uploadVoice'].includes(op) || /-(POST|PUT|DELETE)$/.test(op));
-        let settled = false, accepted = false, submitted = false, timer;
+            'notificationReadAll', 'messageSend', 'feedTouch', 'summary', 'uploadImage', 'uploadVoice'].includes(op) || /-(POST|PUT|DELETE)$/.test(op));
+        let settled = false, accepted = false, submitted = false, timer, streamSize = 0;
         const finish = (kind, status = 0, body = '') => {
             if (settled) return;
             settled = true;
@@ -436,22 +563,25 @@ internal external interface BrowserBridgeHandle : JsAny {
             const signal = data !== null && typeof data === 'object' && Object.keys(data).length === 1;
             const response = data !== null && typeof data === 'object' && Object.keys(data).length === 3;
             // 提交信号可能在 pathname 改变前已排队；先记录它，再处理入口失信。
-            if (business && accepted && signal && data.kind === 'submitted') submitted = true;
+            if ((business || session) && accepted && signal && data.kind === 'submitted') submitted = true;
             if (!trustedPage()) return business ? cancel() : stop('denied');
             if (!accepted && signal && data.kind === 'unavailable') {
                 finish('unavailable');
             } else if (!accepted && signal && data.kind === 'accepted') {
                 accepted = true;
                 clearTimeout(timer);
-                timer = setTimeout(business ? cancel : () => stop('unavailable'), business ? (bytes ? 180000 : 65000) : (loginAction ? 65000 : 17000));
+                timer = setTimeout(business || session ? cancel : () => stop('unavailable'), business ? (bytes ? 180000 : 65000) : session || loginAction ? 65000 : 17000);
                 if (!gestureHandled) return stop('unsupported', 0, 'gesture-required');
                 try {
                     port1.postMessage({channel, op, owner, id, query, body, bytes}, bytes ? [bytes] : []);
                 } catch { if (business) cancel(); else stop('unavailable'); }
-            } else if (business && accepted && signal && data.kind === 'submitted') {
+            } else if ((business || session) && accepted && signal && data.kind === 'submitted') {
                 submitted = true;
             } else if (accepted && signal && data.kind === 'challenge' && (business || op !== 'verificationCheck')) {
                 finish('challenge');
+            } else if (business && op === 'summary' && accepted && response && data.kind === 'stream' && data.status === 200 &&
+                typeof data.body === 'string' && (streamSize += data.body.length) <= bodyLimit) {
+                done('stream', 200, data.body);
             } else if (accepted && response && data.kind === 'http' && Number.isInteger(data.status) && data.status >= 200 &&
                 data.status <= 599 && !(data.status >= 300 && data.status < 400) &&
                 typeof data.body === 'string' && data.body.length <= bodyLimit) {
@@ -459,7 +589,7 @@ internal external interface BrowserBridgeHandle : JsAny {
             } else if (accepted && response && data.kind === 'unsupported' && data.status === 0 &&
                 typeof data.body === 'string' && /^[a-z-]{1,64}$/.test(data.body)) {
                 finish('unsupported', 0, data.body);
-            } else if (accepted && signal && (['denied', 'guest', 'expired', 'unavailable', 'cancelled'].includes(data.kind) || (business && data.kind === 'uncertain'))) {
+            } else if (accepted && signal && (['denied', 'guest', 'expired', 'unavailable', 'cancelled'].includes(data.kind) || ((business || session) && data.kind === 'uncertain'))) {
                 finish(data.kind);
             } else if (business) cancel();
             else stop('denied');

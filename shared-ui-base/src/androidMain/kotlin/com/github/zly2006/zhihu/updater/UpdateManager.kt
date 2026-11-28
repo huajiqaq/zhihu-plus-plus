@@ -22,29 +22,28 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.github.zly2006.zhihu.i18n.ReaderStrings
+import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.platform.androidSettingsStore
 import com.github.zly2006.zhihu.platform.isLiteVariant
 import com.github.zly2006.zhihu.ui.ReaderDisplayFailure
-import com.github.zly2006.zhihu.util.raiseForStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.request.prepareGet
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.readAvailable
 import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 object UpdateManager {
-    private const val AUTO_CHECK_INTERVAL_MILLIS = 3 * 60 * 60 * 1000L
-
     private const val PREF_SKIPPED_VERSION = "skippedVersion"
     private const val PREF_LAST_UPDATE_CHECK = "lastUpdateCheck"
 
@@ -62,6 +61,7 @@ object UpdateManager {
             val downloadUrl: String,
             val cnDownloadUrl: String?,
             val opensExternally: Boolean = false,
+            val asset: GithubAsset? = null,
         ) : UpdateState()
 
         data class Downloading(
@@ -89,6 +89,7 @@ object UpdateManager {
     /** 下载跟随进程而不是页面：离开更新页不会丢掉下了一半的安装包。 */
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val downloadInProgress = AtomicBoolean(false)
+    private var downloadJob: Job? = null
 
     private fun getGitHubToken(context: Context): String? = androidSettingsStore(context).getStringOrNull("githubToken")?.takeIf { it.isNotBlank() }
 
@@ -99,13 +100,26 @@ object UpdateManager {
     private fun Context.updateApkFile() = File(applicationContext.cacheDir, "update.apk")
 
     fun skipVersion(context: Context, version: String) {
+        val before = updateState.value
+        if (before !is UpdateState.UpdateAvailable) return
         androidSettingsStore(context).putString(PREF_SKIPPED_VERSION, version)
-        updateState.value = UpdateState.NoUpdate
+        updateState.compareAndSet(before, UpdateState.NoUpdate)
+    }
+
+    fun resetState() {
+        val before = updateState.value
+        if (before !is UpdateState.Downloading && before != UpdateState.Checking) {
+            updateState.compareAndSet(before, UpdateState.NoUpdate)
+        }
+    }
+
+    fun cancelDownload() {
+        downloadJob?.cancel()
     }
 
     private fun shouldPerformAutoCheck(context: Context): Boolean {
         val settings = androidSettingsStore(context)
-        return (System.currentTimeMillis() - settings.getLong(PREF_LAST_UPDATE_CHECK, 0)) >= AUTO_CHECK_INTERVAL_MILLIS
+        return (System.currentTimeMillis() - settings.getLong(PREF_LAST_UPDATE_CHECK, 0)) >= SYSTEM_UPDATE_AUTO_CHECK_INTERVAL_MILLIS
     }
 
     suspend fun autoCheckForUpdate(context: Context, engine: HttpClientEngine): Boolean {
@@ -191,6 +205,7 @@ object UpdateManager {
             downloadUrl = info.browserDownloadUrl,
             cnDownloadUrl = info.cnDownloadUrl,
             opensExternally = info.opensExternally,
+            asset = info.asset,
         )
     }
 
@@ -213,22 +228,26 @@ object UpdateManager {
         val tempFile = File(apkFile.parentFile, "${apkFile.name}.tmp")
         if (!downloadInProgress.compareAndSet(false, true)) return
         updateState.value = UpdateState.Downloading(update)
-        downloadScope.launch {
+        downloadJob = downloadScope.launch(start = CoroutineStart.UNDISPATCHED) {
             updateState.value = try {
+                yield()
+                val asset = checkNotNull(update.asset) { SettingsStrings.updateFileInvalid }
+                check(asset.name == "zhihu++-${if (isLiteVariant) "lite" else "full"}.apk" &&
+                    asset.browserDownloadUrl == update.downloadUrl
+                ) { SettingsStrings.updateFileInvalid }
+                val hash = MessageDigest.getInstance("SHA-256")
                 withUpdateHttpClient(engine) { client ->
-                    client.prepareGet(update.downloadUrl).execute { response ->
-                        response.raiseForStatus()
-                        val channel = response.bodyAsChannel()
-                        tempFile.outputStream().use { output ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                            while (true) {
-                                currentCoroutineContext().ensureActive()
-                                val bytesRead = channel.readAvailable(buffer)
-                                if (bytesRead == -1) break
-                                output.write(buffer, 0, bytesRead)
-                            }
+                    tempFile.outputStream().use { output ->
+                        downloadReleaseAsset(client, asset) { bytes, count ->
+                            output.write(bytes, 0, count)
+                            hash.update(bytes, 0, count)
                         }
                     }
+                }
+                asset.verifySha256(hash.digest().toHexString())
+                currentCoroutineContext().ensureActive()
+                check(context.packageManager.getPackageArchiveInfo(tempFile.absolutePath, 0)?.packageName == context.packageName) {
+                    SettingsStrings.updateFileInvalid
                 }
                 currentCoroutineContext().ensureActive()
                 if (!tempFile.renameTo(apkFile)) throw ReaderDisplayFailure("无法保存安装包") { ReaderStrings.apkSaveFailed }
@@ -276,6 +295,7 @@ object UpdateManager {
     }
 
     fun reportFailure(message: String, step: UpdateStep) {
+        if (updateState.value is UpdateState.Downloading) return
         val update = when (val state = updateState.value) {
             is UpdateState.UpdateAvailable -> state
             is UpdateState.Downloading -> state.update

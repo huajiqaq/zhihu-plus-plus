@@ -65,6 +65,7 @@ import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.AppTextField
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 @Composable
@@ -96,12 +97,14 @@ fun PhoneLoginPane(
     val uriHandler = LocalUriHandler.current
 
     /** 地区接口用独立访客 Cookie，避免网页 Cookie 混入移动端初始化。 */
-    val countryHttpClient = rememberLoginHttpClient(accountStore, accountClient, remember(accountClient) { mutableMapOf<String, String>() })
+    val countryHttpClient = if (accountStore.usesBrowserSession) null else {
+        rememberLoginHttpClient(accountStore, accountClient, remember(accountClient) { mutableMapOf<String, String>() })
+    }
     val scope = rememberCoroutineScope()
     val fieldShape = RoundedCornerShape(AppDimens.LoginFieldCornerRadius)
     var countryPickerOpen by remember(state) { mutableStateOf(false) }
     val verifyCaptcha: () -> Unit = {
-        scope.launch { if (state.canVerifyCaptcha) state.verifyCaptchaAndRequestDigits() }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { if (state.canVerifyCaptcha) state.verifyCaptchaAndRequestDigits() }
     }
 
     LaunchedEffect(state, countryPickerOpen) {
@@ -130,7 +133,7 @@ fun PhoneLoginPane(
             CaptchaStep(
                 state = state,
                 fieldShape = fieldShape,
-                onRefresh = { scope.launch { state.refreshCaptcha() } },
+                onRefresh = { scope.launch(start = CoroutineStart.UNDISPATCHED) { state.refreshCaptcha() } },
                 onVerify = verifyCaptcha,
             )
         }
@@ -157,7 +160,7 @@ fun PhoneLoginPane(
                     .testTag("phone_login_digits"),
             )
             AppButton(
-                onClick = { scope.launch { if (state.canSendDigits) state.requestDigits() } },
+                onClick = { scope.launch(start = CoroutineStart.UNDISPATCHED) { if (state.canSendDigits) state.requestDigits() } },
                 enabled = state.canSendDigits,
                 modifier = Modifier.testTag("phone_login_send_digits"),
             ) {
@@ -209,7 +212,7 @@ fun PhoneLoginPane(
 
         AppButton(
             onClick = {
-                scope.launch {
+                scope.launch(start = CoroutineStart.UNDISPATCHED) {
                     if (state.canSignIn) state.signIn(accountStore, accountClient)?.let(onLoginSuccess)
                 }
             },
@@ -237,7 +240,7 @@ fun PhoneLoginPane(
         }
 
         Text(
-            text = AccountStrings.phoneProtocolNote,
+            text = if (accountStore.usesBrowserSession) AccountStrings.webPhoneSessionNote else AccountStrings.phoneProtocolNote,
             style = if (settingSkinIsMiuix()) {
                 LocalAppSkinTokens.current.footnote2
             } else {
@@ -256,7 +259,7 @@ fun PhoneLoginPane(
         PhoneLoginPaneCountryPicker(
             state = state,
             onDismiss = { countryPickerOpen = false },
-            onRetry = { scope.launch { state.loadCountries(countryHttpClient) } },
+            onRetry = { scope.launch(start = CoroutineStart.UNDISPATCHED) { state.loadCountries(countryHttpClient) } },
             onSelectCountry = { country ->
                 state.selectCountry(country)
                 countryPickerOpen = false

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dynamic_color_unavailable">This platform does not provide a system color source. You can choose a custom theme color below.</string>
+    <string name="open_link">Open link</string>
+    <string name="open_clipboard_link">Open link from clipboard</string>
+    <string name="clipboard_link_unavailable">The clipboard does not contain a supported Zhihu link.</string>
+    <string name="choose_image_source">Choose an image</string>
+    <string name="photo_library">Photo library</string>
+    <string name="camera">Camera</string>
+    <string name="camera_permission_required">Allow camera access in system Settings to take a photo or scan a code.</string>
+    <string name="files">Files</string>
+    <string name="scan_qr_image">Scan a QR code image</string>
+    <string name="scan_qr_failed">No supported Zhihu sign-in QR code was found in this image.</string>
+    <string name="photo_read_failed">The selected photo could not be read. Try again or choose a file.</string>
+    <string name="shared_navigation_only">This option applies to the shared bottom navigation bar. This window uses the native sidebar.</string>
+    <string name="cancel">Cancel</string>
+</resources>

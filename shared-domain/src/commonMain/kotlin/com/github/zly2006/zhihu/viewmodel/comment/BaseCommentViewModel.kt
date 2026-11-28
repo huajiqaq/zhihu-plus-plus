@@ -24,6 +24,7 @@ import androidx.lifecycle.viewModelScope
 import com.github.zly2006.zhihu.account.CommentSender
 import com.github.zly2006.zhihu.data.CommentSortOrder
 import com.github.zly2006.zhihu.data.DataHolder
+import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.navigation.CommentHolder
 import com.github.zly2006.zhihu.navigation.NavDestination
@@ -47,6 +48,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlin.reflect.typeOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -153,7 +155,7 @@ abstract class BaseCommentViewModel(
         val thread = content as? CommentHolder
         val target = thread?.article ?: content
         errorText = null
-        viewModelScope.launch {
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             var accepted = false
             var decoded = false
             try {
@@ -164,6 +166,18 @@ abstract class BaseCommentViewModel(
                 val hasVoice = !voiceId.isNullOrBlank()
                 val url = if (hasVoice) target.submitCommentUrl.replace("https://www.zhihu.com/api/v4/", "https://api.zhihu.com/") else target.submitCommentUrl
                 val viewer = if (sender != null) requireNotNull(owner).httpClient() else null
+                fun acceptComment(model: DataHolder.Comment, client: HttpClient) {
+                    accepted = true
+                    check(sender == null || model.author.id == sender.profile.id) { DomainStrings.commentAuthorMismatch }
+                    if (sender == null || (!model.isVisibleOnlyToMyself && !model.reviewing)) {
+                        /** 别的发送身份拥有的操作权限不能带入当前阅读账号。 */
+                        allData.add(0, if (sender == null) model else model.copy(canDelete = false, canCollapse = false, liked = false, disliked = false))
+                        if (target is SegmentCommentHolder) {
+                            SegmentCommentEvents.notifyChanged(viewer ?: client, target, 1, ownComment = sender == null)
+                        }
+                    }
+                    decoded = true
+                }
                 val submit: suspend (HttpClient, Map<String, String>) -> Unit = { client, cookies ->
                     val response = client.post(url) {
                         contentType(ContentType.Application.Json)
@@ -177,17 +191,7 @@ abstract class BaseCommentViewModel(
                         signZhihuFetchRequest(cookies)
                     }
                     if (response.status.isSuccess()) {
-                        val model = response.json<DataHolder.Comment>()
-                        accepted = true
-                        check(sender == null || model.author.id == sender.profile.id) { DomainStrings.commentAuthorMismatch }
-                        if (sender == null || (!model.isVisibleOnlyToMyself && !model.reviewing)) {
-                            /** 别的发送身份拥有的操作权限不能带入当前阅读账号。 */
-                            allData.add(0, if (sender == null) model else model.copy(canDelete = false, canCollapse = false, liked = false, disliked = false))
-                            if (target is SegmentCommentHolder) {
-                                SegmentCommentEvents.notifyChanged(viewer ?: client, target, 1, ownComment = sender == null)
-                            }
-                        }
-                        decoded = true
+                        acceptComment(response.json<DataHolder.Comment>(), client)
                     } else {
                         val status = response.status
                         errorText = { DomainStrings.commentSendStatus(status) }
@@ -195,8 +199,14 @@ abstract class BaseCommentViewModel(
                 }
                 if (sender == null) {
                     environment.withAuthenticatedClient(submit)
+                } else if (requireNotNull(owner).accountStore.usesBrowserSession) {
+                    val result = owner.accountStore.sendBrowserCommentAs(owner, sender, url, body)
+                    // 成功已由桥确认；即使解码或切回失败，也不得让用户再次提交同一评论。
+                    accepted = true
+                    acceptComment(ZhihuJson.decodeJson(result.comment), checkNotNull(viewer))
+                    if (!result.restored) throw DisplayFailure { DomainStrings.commentSentRestoreFailed }
                 } else {
-                    requireNotNull(owner).accountStore.commentIdentities.sendAs(owner, sender, submit)
+                    owner.accountStore.commentIdentities.sendAs(owner, sender, submit)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

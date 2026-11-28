@@ -17,24 +17,17 @@
 
 package com.github.zly2006.zhihu.ui
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
-import com.github.zly2006.zhihu.desktop.openDesktopExternalUrl
-import com.github.zly2006.zhihu.i18n.AppStrings
+import com.github.zly2006.zhihu.account.rememberAccountQrConfirmationOpener
 import com.github.zly2006.zhihu.navigation.Article
 import com.github.zly2006.zhihu.navigation.MainTabs
-import com.github.zly2006.zhihu.navigation.Video
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.notification.JvmSystemNotificationHost
 import com.github.zly2006.zhihu.notification.LocalJvmNotificationWindow
@@ -43,15 +36,18 @@ import com.github.zly2006.zhihu.reading.ReadingPlayerHost
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnFab
-import com.github.zly2006.zhihu.util.signZhihuFetchRequest
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardHost
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardScope
+import com.github.zly2006.zhihu.ui.components.ContinuousUsageReminderHost
+import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateAutoCheck
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun DesktopZhihuMain() {
-    ReadingPlayerHost { DesktopMainContent() }
+    SystemUpdateAutoCheck()
+    CompositionLocalProvider(LocalAccountQrConfirmationOpener provides rememberAccountQrConfirmationOpener()) {
+        ReadingPlayerHost { DesktopMainContent() }
+    }
 }
 
 @Composable
@@ -63,34 +59,9 @@ private fun DesktopMainContent() {
     val accounts by accountStore.accountsState.collectAsState()
     val accountSession = accounts.session
     val httpClient = remember(accountStore, accountSession) { accountStore.client.httpClient() }
-    val coroutineScope = rememberCoroutineScope()
     val userMessages = rememberUserMessageSink()
 
-    val currentOpenVideo by rememberUpdatedState<(Video, String, String) -> Unit>(
-        { route, contentId, contentType ->
-            coroutineScope.launch {
-                val cookies = accountStore.session.cookies
-                val videoUrl = withContext(Dispatchers.IO) {
-                    runCatching {
-                        fetchHighestQualityZhihuVideoUrl(
-                            httpClient = httpClient,
-                            videoId = route.id.toString(),
-                            contentId = contentId,
-                            contentType = contentType,
-                            xsrfToken = cookies["_xsrf"],
-                        ) {
-                            signZhihuFetchRequest(cookies)
-                        }
-                    }.getOrNull()
-                }
-                if (videoUrl == null) {
-                    userMessages.showMessage(AppStrings.videoLoadFailed)
-                } else {
-                    openDesktopExternalUrl(videoUrl)
-                }
-            }
-        },
-    )
+    val currentOpenVideo by rememberUpdatedState(rememberVideoPlaybackOpener())
     val currentShowMessage by rememberUpdatedState<(String) -> Unit>({ userMessages.showMessage(it) })
     val navigationCoordinator = remember(navHost, tabsState) {
         ZhihuMainNavigationCoordinator(
@@ -101,13 +72,15 @@ private fun DesktopMainContent() {
         )
     }
 
+    PlatformIncomingLinksHost { navigationCoordinator.navigate(it) }
     JvmSystemNotificationHost(
         accounts = accountStore,
         onOpen = { navigationCoordinator.navigate(it) },
         wakeWindow = LocalJvmNotificationWindow.current,
     ) {
         CompositionLocalProvider(LocalPageTurnDispatcher provides pageTurnDispatcher) {
-            Box(Modifier.fillMaxSize()) {
+            ContinuousUsageReminderHost()
+            ReadingPageTurnKeyboardHost {
                 ZhihuMain(
                     navHost = navHost,
                     tabsState = tabsState,
@@ -118,7 +91,9 @@ private fun DesktopMainContent() {
                         val articleViewModel: ArticleViewModel = viewModel {
                             ArticleViewModel(article, httpClient, userMessages)
                         }
-                        ArticleScreen(article, articleViewModel)
+                        ReadingPageTurnKeyboardScope(articleViewModel.content.isNotBlank() || articleViewModel.attachment != null) {
+                            ArticleScreen(article, articleViewModel)
+                        }
                     },
                 )
                 PageTurnFab(dispatcher = pageTurnDispatcher)

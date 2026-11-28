@@ -44,6 +44,7 @@ import platform.darwin.NSObject
 actual val supportedLoginMethods: List<LoginMethod> = listOf(
     LoginMethod.Phone,
     LoginMethod.Qr,
+    LoginMethod.Web,
 )
 
 actual fun generateQrLoginBitmap(content: String): ImageBitmap {

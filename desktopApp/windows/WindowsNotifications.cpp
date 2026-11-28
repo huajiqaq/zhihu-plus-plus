@@ -50,7 +50,7 @@ using Microsoft::WRL::RuntimeClassFlags;
 using Microsoft::WRL::ClassicCom;
 
 namespace {
-// 此 CLSID 只属于本应用；清单必须使用同一值，不提供 ProgID、协议或自注册入口。
+// 此 CLSID 只属于本应用通知；内容协议由清单独立声明，不提供自注册入口。
 constexpr CLSID activatorClsid{0xa198161d, 0xc0d7, 0x4500, {0x87, 0xf0, 0xac, 0x2a, 0x79, 0x15, 0x70, 0xe1}};
 constexpr std::wstring_view appId = L"Zhihu";
 constexpr std::string_view bridgeClass = "com/github/zly2006/zhihu/notification/WindowsNotificationBridge";
@@ -369,7 +369,7 @@ std::string utf8(const std::wstring& value) {
     return result;
 }
 
-int runApplication() {
+int runApplication(std::wstring_view contentUrl) {
     const auto image = packageRoot / L"app-image";
     const auto runtimeBin = image / L"runtime" / L"bin";
     const auto jvm = runtimeBin / L"server" / L"jvm.dll";
@@ -437,8 +437,14 @@ int runApplication() {
         disconnect();
     }
     const auto main = env->FindClass(mainClass.data());
-    const auto method = main ? env->GetStaticMethodID(main, "main", "()V") : nullptr;
-    if (method) env->CallStaticVoidMethod(main, method);
+    const auto method = main ? env->GetStaticMethodID(main, "main", "([Ljava/lang/String;)V") : nullptr;
+    const auto stringClass = env->FindClass("java/lang/String");
+    const auto mainArguments = stringClass ? env->NewObjectArray(contentUrl.empty() ? 0 : 1, stringClass, nullptr) : nullptr;
+    if (mainArguments && !contentUrl.empty()) {
+        const auto url = env->NewString(reinterpret_cast<const jchar*>(contentUrl.data()), static_cast<jsize>(contentUrl.size()));
+        if (url) { env->SetObjectArrayElement(mainArguments, 0, url); env->DeleteLocalRef(url); }
+    }
+    if (method && mainArguments && !env->ExceptionCheck()) env->CallStaticVoidMethod(main, method, mainArguments);
     const bool failed = env->ExceptionCheck();
     if (failed) env->ExceptionDescribe();
     disconnect();
@@ -454,7 +460,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR command, int) {
         Apartment apartment;
         const std::wstring_view mode(command ? command : L"");
         const bool notification = mode == L"-ToastActivated" || mode == L"-ToastActivated -Embedding";
-        require(mode.empty() || notification);
+        auto contentUrl = mode;
+        if (contentUrl.size() >= 2 && contentUrl.front() == L'"' && contentUrl.back() == L'"') {
+            contentUrl.remove_prefix(1);
+            contentUrl.remove_suffix(1);
+        }
+        const bool content = contentUrl.size() <= 8192 && contentUrl.starts_with(L"zhihu-plus-plus://open?") &&
+            contentUrl.find_first_of(L"\"\r\n\t ") == std::wstring_view::npos;
+        require(mode.empty() || notification || content);
         const auto security = CoInitializeSecurity(nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
             RPC_C_IMP_LEVEL_IDENTIFY, nullptr, EOAC_DISABLE_AAA, nullptr);
         checkPackage();
@@ -463,7 +476,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR command, int) {
             std::unique_lock lock(gate);
             if (!accepting || !clicksReady.wait_for(lock, std::chrono::seconds(45), [] { return !clicks.empty(); })) return 0;
         }
-        return runApplication();
+        return runApplication(content ? contentUrl : std::wstring_view{});
     } catch (...) {
         try {
             Apartment apartment;

@@ -238,6 +238,7 @@ fun OpenImagePreviewContent(
     onDismiss: () -> Unit,
     onOpenInBrowser: (String) -> Unit,
     showControls: Boolean = false,
+    onCurrentPageChange: (Int) -> Unit = {},
     imageContent: @Composable (
         url: String,
         onClick: () -> Unit,
@@ -259,6 +260,7 @@ fun OpenImagePreviewContent(
     }
     val initialPage = initialIndex.coerceIn(0, imageUrls.lastIndex)
     val pagerState = rememberPagerState(initialPage = initialPage) { imageUrls.size }
+    LaunchedEffect(pagerState.currentPage) { onCurrentPageChange(pagerState.currentPage) }
     val pageSwipeEnabled = remember(imageUrls) {
         mutableStateMapOf<String, Boolean>().apply {
             imageUrls.forEach { put(it, true) }

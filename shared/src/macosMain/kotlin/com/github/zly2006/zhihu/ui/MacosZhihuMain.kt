@@ -25,13 +25,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
+import com.github.zly2006.zhihu.account.rememberAccountQrConfirmationOpener
 import com.github.zly2006.zhihu.i18n.AppStrings
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Article
@@ -45,28 +44,32 @@ import com.github.zly2006.zhihu.navigation.Notification
 import com.github.zly2006.zhihu.navigation.OnlineHistory
 import com.github.zly2006.zhihu.navigation.OnlineHistoryRoute
 import com.github.zly2006.zhihu.navigation.Search
-import com.github.zly2006.zhihu.navigation.Video
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.notification.AppleSystemNotificationHost
-import com.github.zly2006.zhihu.platform.rememberExternalUrlOpener
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.reading.ReadingPlayerHost
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnFab
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardHost
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardScope
+import com.github.zly2006.zhihu.ui.components.ContinuousUsageReminderHost
+import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateAutoCheck
 import com.github.zly2006.zhihu.ui.subscreens.navDestinationFromName
-import com.github.zly2006.zhihu.util.signZhihuFetchRequest
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun MacosZhihuMain(
     onNotificationOpen: () -> Unit = {},
     windowChrome: MacosWindowChromeHost? = null,
 ) {
-    ReadingPlayerHost { MacosMainContent(onNotificationOpen, windowChrome) }
+    SystemUpdateAutoCheck()
+    CompositionLocalProvider(
+        LocalAccountQrConfirmationOpener provides rememberAccountQrConfirmationOpener(),
+        LocalSharedMainNavigationBarAvailable provides (windowChrome == null),
+    ) {
+        ReadingPlayerHost { MacosMainContent(onNotificationOpen, windowChrome) }
+    }
 }
 
 @Composable
@@ -80,8 +83,6 @@ private fun MacosMainContent(
     val accounts by accountStore.accountsState.collectAsState()
     val accountSession = accounts.session
     val httpClient = remember(accountStore, accountSession) { accountStore.client.httpClient() }
-    val coroutineScope = rememberCoroutineScope()
-    val openExternalUrl = rememberExternalUrlOpener()
     val userMessages = rememberUserMessageSink()
     val preferenceState = rememberZhihuMainPreferenceState()
     val tabsState = rememberZhihuMainTabsState(preferenceState)
@@ -93,31 +94,7 @@ private fun MacosMainContent(
         navHost.open(MainTabs)
     }
 
-    val currentOpenVideo by rememberUpdatedState<(Video, String, String) -> Unit>(
-        { route, contentId, contentType ->
-            coroutineScope.launch {
-                val cookies = accountStore.session.cookies
-                val videoUrl = withContext(Dispatchers.Default) {
-                    runCatching {
-                        fetchHighestQualityZhihuVideoUrl(
-                            httpClient = httpClient,
-                            videoId = route.id.toString(),
-                            contentId = contentId,
-                            contentType = contentType,
-                            xsrfToken = cookies["_xsrf"],
-                        ) {
-                            signZhihuFetchRequest(cookies)
-                        }
-                    }.getOrNull()
-                }
-                if (videoUrl == null) {
-                    userMessages.showMessage(AppStrings.videoLoadFailed)
-                } else {
-                    openExternalUrl(videoUrl)
-                }
-            }
-        },
-    )
+    val currentOpenVideo by rememberUpdatedState(rememberVideoPlaybackOpener())
     val currentShowMessage by rememberUpdatedState<(String) -> Unit>({ userMessages.showMessage(it) })
     val navigationCoordinator = remember(navHost, tabsState) {
         ZhihuMainNavigationCoordinator(
@@ -130,6 +107,10 @@ private fun MacosMainContent(
         )
     }
 
+    PlatformIncomingLinksHost {
+        onNotificationOpen()
+        navigationCoordinator.navigate(it)
+    }
     val content: @Composable (Modifier) -> Unit = { modifier ->
         AppleSystemNotificationHost(
             accountStore = accountStore,
@@ -140,24 +121,29 @@ private fun MacosMainContent(
         ) {
             CompositionLocalProvider(LocalPageTurnDispatcher provides pageTurnDispatcher) {
                 Box(modifier.fillMaxSize()) {
-                    ZhihuMain(
-                        navHost = navHost,
-                        tabsState = tabsState,
-                        navigate = { navigationCoordinator.navigate(it) },
-                        navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
-                        enableLandscapeListDetail = true,
-                        showMainNavigationBar = windowChrome == null,
-                        showHomeTopActions = windowChrome == null,
-                        accountSheetVisible = accountSheetVisible,
-                        onDismissAccountSheet = { accountSheetVisible = false },
-                        articleContent = { article: Article ->
-                            val articleViewModel: ArticleViewModel = viewModel {
-                                ArticleViewModel(article, httpClient, userMessages)
-                            }
-                            ArticleScreen(article, articleViewModel)
-                        },
-                    )
-                    PageTurnFab(dispatcher = pageTurnDispatcher)
+                    ContinuousUsageReminderHost()
+                    ReadingPageTurnKeyboardHost {
+                        ZhihuMain(
+                            navHost = navHost,
+                            tabsState = tabsState,
+                            navigate = { navigationCoordinator.navigate(it) },
+                            navigateContent = { destination, targetHost -> navigationCoordinator.navigate(destination, targetHost) },
+                            enableLandscapeListDetail = true,
+                            showMainNavigationBar = windowChrome == null,
+                            showHomeTopActions = windowChrome == null,
+                            accountSheetVisible = accountSheetVisible,
+                            onDismissAccountSheet = { accountSheetVisible = false },
+                            articleContent = { article: Article ->
+                                val articleViewModel: ArticleViewModel = viewModel {
+                                    ArticleViewModel(article, httpClient, userMessages)
+                                }
+                                ReadingPageTurnKeyboardScope(articleViewModel.content.isNotBlank() || articleViewModel.attachment != null) {
+                                    ArticleScreen(article, articleViewModel)
+                                }
+                            },
+                        )
+                        PageTurnFab(dispatcher = pageTurnDispatcher)
+                    }
                 }
             }
         }
@@ -177,8 +163,10 @@ private fun MacosMainContent(
                         navigationCoordinator.navigate(OnlineHistoryRoute)
                     }
                 } else {
-                    tabsState.requestTab(destination)
-                    navigateToMainTabs(clearRouteStack = true)
+                    tabsState.selectOrReselect(destination, navHost.top == MainTabs && destination == tabsState.currentDestination) {
+                        tabsState.requestTab(it)
+                        navigateToMainTabs(clearRouteStack = true)
+                    }
                 }
             }
             when (destination) {

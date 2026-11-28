@@ -39,7 +39,7 @@ import platform.WebKit.WKWebView
 
 /** Compose macOS 只将 NSWindow 暴露给 WindowScope；当前宿主只有一个可作为主窗口的窗口，浮窗不承载网页。 */
 @Composable
-internal actual fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView) {
+actual fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView) {
     if (!rememberNavEntryOnTop()) return
     val window = remember {
         NSApplication.sharedApplication.windows

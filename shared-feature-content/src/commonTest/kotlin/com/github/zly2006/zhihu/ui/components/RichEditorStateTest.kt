@@ -26,6 +26,21 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class RichEditorStateTest {
+    @Test
+    fun remountPreservesDraftAndSelectionWithoutConvertingToMarkdown() {
+        val html = "<p><strong>正文</strong><img src=\"https://pic.example/image.png\" data-rawwidth=\"800\"></p>"
+        val state = RichEditorState(html)
+        state.setReady(true)
+        state.updateSelection(2, 1)
+        state.setReady(false)
+        assertEquals(html, state.html)
+        assertEquals(2, state.selectionIndex)
+        assertEquals(1, state.selectionLength)
+        assertTrue(state.hasContent)
+        state.setReady(true)
+        assertEquals(html, state.html)
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun closedEditorFailsPendingSnapshotInsteadOfWaitingForever() = runTest {

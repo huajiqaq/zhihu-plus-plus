@@ -26,6 +26,35 @@ import kotlinx.coroutines.test.runTest
 
 class FeedContentFilterPipelineTest {
     @Test
+    fun semanticBlockingNotifiesOnlyItsPipelineOwner() = runTest {
+        val directory = createTempDirectory("semantic-message-")
+        val database = getContentFilterDatabase(directory.resolve("content-filter.db").toFile())
+        try {
+            database.blockedKeywordDao().insertKeyword(BlockedKeyword(keyword = "synthetic", keywordType = KeywordType.NLP_SEMANTIC.name))
+            val blocked = filterable("blocked-item", authorId = "author")
+            val kept = filterable("kept-item", authorId = "author")
+            val matcher = KeywordSemanticMatcher { text, _, _ ->
+                if (text.contains("blocked-item")) listOf("synthetic" to 0.95) else emptyList()
+            }
+            val notifications = mutableListOf<List<String>>()
+            val pipeline = FeedContentFilterPipeline(
+                FeedFilterSettings(enableKeywordBlocking = false),
+                database,
+                matcher,
+                onNlpBlocked = { items -> notifications += items.map { it.contentId } },
+            )
+            assertEquals(listOf(kept), pipeline.filter(listOf(blocked, kept)).kept)
+            assertEquals(listOf(listOf(blocked.contentId)), notifications)
+            assertEquals(listOf(kept), pipeline.filter(listOf(kept)).kept)
+            FeedContentFilterPipeline(FeedFilterSettings(), database, matcher).filter(listOf(blocked))
+            assertEquals(listOf(listOf(blocked.contentId)), notifications)
+        } finally {
+            database.close()
+            check(directory.toFile().deleteRecursively())
+        }
+    }
+
+    @Test
     fun scopedKeywordsMatchFieldSourcesAndKeepLegacyAllBehavior() = runTest {
         val directory = createTempDirectory("keyword-scope-")
         val database = getContentFilterDatabase(directory.resolve("content-filter.db").toFile())

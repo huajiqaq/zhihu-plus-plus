@@ -46,17 +46,18 @@
     <string name="break_reminder_time">你已经连续浏览知乎 %1$s
 
 休息一下吧</string>
-    <string name="bridge_denied">请求不在本标签页授权范围内</string>
+    <string name="bridge_denied">请求不在本标签页授权范围内。请在“账号 → 登录”核对当前账号，并授权所需的私有读取、互动、创作或浏览历史权限。</string>
     <string name="bridge_expired">浏览器的知乎登录已失效</string>
     <string name="bridge_guest">浏览器未登录知乎</string>
     <string name="bridge_missing">未检测到本机知乎请求桥</string>
     <string name="bridge_unavailable">浏览器请求桥暂时不可用</string>
     <string name="bridge_manager_info_missing">脚本管理器未提供 GM_info，无法核对安全能力。请检查脚本权限并刷新页面。</string>
-    <string name="bridge_manager_unsupported">浏览器桥需要 Tampermonkey 5.4 或更新版本，以阻止携带凭据的重定向。</string>
+    <string name="bridge_manager_unsupported">当前管理器的请求契约未经确认，请使用 Tampermonkey 5.4+；受支持版本的 ScriptCat 仅提供公共匿名读取。</string>
+    <string name="bridge_session_isolation_unsupported">公共匿名读取可用，但 ScriptCat 上游 Cookie 隔离问题 #1870 尚未解决，账号相关请求已禁用。请使用 Tampermonkey 5.4+ 使用账号功能。</string>
     <string name="bridge_manager_version_unknown">脚本管理器版本缺失或无法识别，不能确认安全重定向能力。请更新 Tampermonkey 后刷新页面。</string>
     <string name="bridge_redirect_unsupported">当前 Tampermonkey 版本不能安全阻止重定向，请更新至 5.4 或更新版本后刷新页面。</string>
     <string name="bridge_request_api_missing">脚本管理器未提供 GM_xmlhttpRequest，请启用脚本的请求权限后刷新页面。</string>
-    <string name="bridge_cookie_api_missing">当前管理器未提供 GM_cookie 的 list/set/delete 接口，扫码登录不能写入会话；请改用官网登录。</string>
+    <string name="bridge_cookie_api_missing">当前管理器未提供所需的 GM.cookie list/set/delete 接口，账号操作无法安全绑定会话；请启用该 API 权限或使用受支持的管理器。</string>
     <string name="bridge_web_locks_missing">当前浏览器不支持 Web Locks，无法协调扫码会话写入；请改用官网登录。</string>
     <string name="bridge_secure_random_missing">当前页面未提供安全的 randomUUID 接口，无法检查扫码 Cookie；请改用官网登录。</string>
     <string name="bridge_cookie_attributes_unsupported">脚本管理器未能保留 HttpOnly、Secure 和仅限当前主机等必要 Cookie 属性，已停止扫码登录；请改用官网登录。</string>

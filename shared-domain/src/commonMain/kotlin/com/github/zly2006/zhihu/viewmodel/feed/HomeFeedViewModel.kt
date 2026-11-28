@@ -43,11 +43,13 @@ import com.github.zly2006.zhihu.viewmodel.filter.ContentType
 import com.github.zly2006.zhihu.viewmodel.filter.ContentViewRecord
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -277,7 +279,8 @@ class HomeFeedViewModel(
 
     override fun onUiContentClick(environment: ZhihuApiEnvironment, feed: Feed) {
         viewModelScope.launch(Dispatchers.Default) {
-            if (environment.authenticatedCookies()["d_c0"] != null) {
+            try {
+                if (environment.isLoggedIn) {
                 val payloadItem = when (val target = feed.target) {
                     is Feed.AnswerTarget -> listOf("answer", target.id.toString(), "read")
                     is Feed.ArticleTarget -> listOf("article", target.id.toString(), "read")
@@ -287,15 +290,19 @@ class HomeFeedViewModel(
                 if (payloadItem != null) {
                     environment.post("https://www.zhihu.com/lastread/touch") {
                         header("x-requested-with", "fetch")
-                        setBody(
-                            MultiPartFormDataContent(
-                                formData {
-                                    append("items", ZhihuJson.json.encodeToString(listOf(payloadItem)))
-                                },
-                            ),
-                        )
+                        val items = ZhihuJson.json.encodeToString(listOf(payloadItem))
+                        if (environment.accountClient?.accountStore?.usesBrowserSession == true) {
+                            setBody(FormDataContent(Parameters.build { append("items", items) }))
+                        } else {
+                            setBody(MultiPartFormDataContent(formData { append("items", items) }))
+                        }
                     }
                 }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                environment.handleFetchFailure("HomeFeedViewModel", error)
             }
             try {
                 if (platformSettingsStore().getBoolean("enableContentFilter", true)) {
@@ -321,7 +328,7 @@ class HomeFeedViewModel(
         environment: ZhihuApiEnvironment,
     ) {
         try {
-            if (environment.authenticatedCookies()["d_c0"] == null) return
+            if (!environment.isLoggedIn) return
             val currentTouchItems = committedDisplayItems
                 .asSequence()
                 .filterNot { it.isFiltered }
@@ -340,13 +347,12 @@ class HomeFeedViewModel(
                 val payload = untouchedItemSet.map { (type, id) -> listOf(type, id, "touch") }
                 val response = environment.post("https://www.zhihu.com/lastread/touch") {
                     header("x-requested-with", "fetch")
-                    setBody(
-                        MultiPartFormDataContent(
-                            formData {
-                                append("items", ZhihuJson.json.encodeToString(payload))
-                            },
-                        ),
-                    )
+                    val items = ZhihuJson.json.encodeToString(payload)
+                    if (environment.accountClient?.accountStore?.usesBrowserSession == true) {
+                        setBody(FormDataContent(Parameters.build { append("items", items) }))
+                    } else {
+                        setBody(MultiPartFormDataContent(formData { append("items", items) }))
+                    }
                 }
                 if (response.status.isSuccess()) {
                     reportedTouchedItems.addAll(untouchedItemSet)

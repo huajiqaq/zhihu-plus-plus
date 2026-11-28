@@ -28,7 +28,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.uikit.OnFocusBehavior
@@ -39,8 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.zly2006.zhihu.account.LocalZhihuAccountStore
 import com.github.zly2006.zhihu.account.createNativeAccountStore
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
-import com.github.zly2006.zhihu.data.fetchHighestQualityZhihuVideoUrl
-import com.github.zly2006.zhihu.i18n.AppStrings
+import com.github.zly2006.zhihu.account.rememberAccountQrConfirmationOpener
 import com.github.zly2006.zhihu.navigation.MainTabs
 import com.github.zly2006.zhihu.navigation.rememberAppNavHost
 import com.github.zly2006.zhihu.notification.AppleSystemNotificationHost
@@ -48,25 +46,26 @@ import com.github.zly2006.zhihu.notification.installAppleSystemNotificationDeleg
 import com.github.zly2006.zhihu.platform.NativeFileDeliveryHost
 import com.github.zly2006.zhihu.platform.applySavedAppLanguage
 import com.github.zly2006.zhihu.platform.isSoftwareKeyboardVisible
-import com.github.zly2006.zhihu.platform.rememberExternalUrlOpener
 import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.reading.ReadingPlayerHost
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
-import com.github.zly2006.zhihu.ui.components.IosPageTurnKeyboardHost
-import com.github.zly2006.zhihu.ui.components.IosReadingPageTurnKeyboardScope
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardHost
+import com.github.zly2006.zhihu.ui.components.ReadingPageTurnKeyboardScope
 import com.github.zly2006.zhihu.ui.components.LocalPageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnDispatcher
 import com.github.zly2006.zhihu.ui.components.PageTurnFab
+import com.github.zly2006.zhihu.ui.components.ContinuousUsageReminderHost
 import com.github.zly2006.zhihu.ui.components.WindowUserMessageHost
-import com.github.zly2006.zhihu.util.signZhihuFetchRequest
+import com.github.zly2006.zhihu.ui.subscreens.SystemUpdateAutoCheck
 import com.github.zly2006.zhihu.viewmodel.ArticleViewModel
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import platform.UIKit.UIViewController
+import platform.UIKit.UIViewAutoresizingFlexibleWidth
+import platform.UIKit.UIViewAutoresizingFlexibleHeight
+import platform.UIKit.UIStatusBarStyle
+import platform.UIKit.addChildViewController
+import platform.UIKit.didMoveToParentViewController
 
 /** 冷启动时先由 Swift 安装代理；内容和路由只在账号对应的共享宿主就绪后处理。 */
 fun installIosSystemNotifications(): Boolean {
@@ -75,7 +74,37 @@ fun installIosSystemNotifications(): Boolean {
 }
 
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalForeignApi::class)
-fun makeIosViewController(): UIViewController = ComposeUIViewController(
+fun makeIosViewController(): UIViewController = IosReadingContainerController().apply {
+    content = makeIosContentController(::setReadingImmersive)
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private class IosReadingContainerController : UIViewController(nibName = null, bundle = null) {
+    lateinit var content: UIViewController
+    private var readingImmersive = false
+
+    fun setReadingImmersive(value: Boolean) {
+        if (readingImmersive == value) return
+        readingImmersive = value
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    override fun prefersStatusBarHidden(): Boolean = readingImmersive
+    override fun preferredStatusBarStyle(): UIStatusBarStyle =
+        if (::content.isInitialized) content.preferredStatusBarStyle() else super.preferredStatusBarStyle()
+
+    override fun viewDidLoad() {
+        super.viewDidLoad()
+        addChildViewController(content)
+        content.view.frame = view.bounds
+        content.view.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
+        view.addSubview(content.view)
+        content.didMoveToParentViewController(this)
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalForeignApi::class)
+private fun makeIosContentController(onImmersiveChanged: (Boolean) -> Unit): UIViewController = ComposeUIViewController(
     configure = {
         applySavedAppLanguage()
         onFocusBehavior = OnFocusBehavior.DoNothing
@@ -89,15 +118,20 @@ fun makeIosViewController(): UIViewController = ComposeUIViewController(
     CompositionLocalProvider(
         LocalZhihuAccountStore provides accountStore,
         LocalPageTurnDispatcher provides pageTurnDispatcher,
+        LocalNativeReadingImmersiveMode provides onImmersiveChanged,
     ) {
         AppStartupSplash {
             ZhihuTheme {
                 WindowUserMessageHost {
-                    IosPageTurnKeyboardHost {
+                    SystemUpdateAutoCheck()
+                    ContinuousUsageReminderHost()
+                    ReadingPageTurnKeyboardHost {
                         Box(Modifier.fillMaxSize()) {
                             NativeFileDeliveryHost {
-                                ReadingPlayerHost {
-                                    IosZhihuMain()
+                                CompositionLocalProvider(LocalAccountQrConfirmationOpener provides rememberAccountQrConfirmationOpener()) {
+                                    ReadingPlayerHost {
+                                        IosZhihuMain()
+                                    }
                                 }
                             }
                             if (lifecycleState == Lifecycle.State.RESUMED && !keyboardVisible) {
@@ -118,39 +152,17 @@ private fun IosZhihuMain() {
     val navHost = rememberAppNavHost(MainTabs)
     val tabsState = rememberZhihuMainTabsState()
     val accountStore = rememberZhihuAccountStore()
-    val scope = rememberCoroutineScope()
     val messages = rememberUserMessageSink()
-    val openUrl = rememberExternalUrlOpener()
-    val coordinator = remember(navHost, tabsState, accountStore, scope, messages, openUrl) {
+    val openVideo = rememberVideoPlaybackOpener()
+    val coordinator = remember(navHost, tabsState, messages, openVideo) {
         ZhihuMainNavigationCoordinator(
             mainHost = { navHost },
             tabs = { tabsState },
             showMessage = messages::showShortMessage,
-            openVideo = { video, contentId, contentType ->
-                val owner = accountStore.client
-                scope.launch {
-                    val url = try {
-                        withContext(Dispatchers.Default) {
-                            val cookies = owner.load().cookies.toMap()
-                            fetchHighestQualityZhihuVideoUrl(
-                                httpClient = owner.httpClient(),
-                                videoId = video.id.toString(),
-                                contentId = contentId,
-                                contentType = contentType,
-                                xsrfToken = cookies["_xsrf"],
-                            ) { signZhihuFetchRequest(cookies) }
-                        }
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        null
-                    }
-                    if (owner !== accountStore.client) return@launch
-                    if (url == null) messages.showShortMessage(AppStrings.videoLoadFailed) else openUrl(url)
-                }
-            },
+            openVideo = openVideo,
         )
     }
+    PlatformIncomingLinksHost { coordinator.navigate(it) }
     AppleSystemNotificationHost(accountStore, { coordinator.navigate(it) }) {
         ZhihuMain(
             navHost = navHost,
@@ -162,7 +174,7 @@ private fun IosZhihuMain() {
                 val articleModel: ArticleViewModel = viewModel {
                     ArticleViewModel(article, accountStore.client.httpClient(), messages)
                 }
-                IosReadingPageTurnKeyboardScope(
+                ReadingPageTurnKeyboardScope(
                     enabled = articleModel.content.isNotBlank() || articleModel.attachment != null,
                 ) {
                     ArticleScreen(article, articleModel)

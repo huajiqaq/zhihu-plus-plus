@@ -68,7 +68,7 @@ internal actual fun rememberWebPageBrowser(initialUrl: String): WebPageBrowser? 
 }
 
 @Composable
-internal expect fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView)
+expect fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView)
 
 private val webStateKeys = listOf("URL", "title", "canGoBack", "canGoForward")
 

@@ -148,11 +148,7 @@ fun ArticleScreen(
     val readingPlayerOverlayOffsetState = LocalReadingPlayerOverlayOffsetState.current
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
     val accountStore = rememberZhihuAccountStore()
-    val onVote: ((VoteUpState) -> Unit)? = if (accountStore.usesBrowserSession) {
-        null
-    } else {
-        { state -> viewModel.toggleVoteUp(environment, state) }
-    }
+    val onVote: ((VoteUpState) -> Unit)? = { state -> viewModel.toggleVoteUp(environment, state) }
     val articleNavHost = LocalArticleNavHost.current
     val articleEntryId = remember(articleNavHost, viewModel) { articleNavHost?.topEntryId }
     val skin = LocalAppSkinTokens.current

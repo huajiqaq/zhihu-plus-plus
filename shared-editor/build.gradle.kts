@@ -57,6 +57,7 @@ kotlin {
             implementation(libs.ksoup)
             implementation(libs.markdown.parser)
         }
+        findByName("iosMain")?.dependencies { implementation(libs.jb.compose.ui) }
         androidMain.dependencies {
             implementation(libs.jb.compose.ui)
             implementation(libs.androidx.activity.compose)

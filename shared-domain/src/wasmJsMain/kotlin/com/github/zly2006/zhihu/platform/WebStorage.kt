@@ -20,6 +20,7 @@
 package com.github.zly2006.zhihu.platform
 
 import androidx.compose.runtime.Composable
+import com.github.zly2006.zhihu.data.RecommendationMode
 import com.github.zly2006.zhihu.data.isSensitiveRequestHeader
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
@@ -29,9 +30,10 @@ import org.w3c.dom.events.Event
 
 private const val FILE_PREFIX = "zhihu++:file:"
 private const val SETTINGS_PREFIX = "zhihu++:settings:"
+private val homeCacheFileName = Regex("home_feed_startup_cache_(${RecommendationMode.entries.joinToString("|") { Regex.escape(it.key) }})_(guest|[0-9a-f]{32})[.]json")
 
 actual fun appPrivateTextFile(name: String): AppTextFile {
-    require(name == "history.json" || Regex("home_feed_startup_cache_server_(guest|[0-9a-f]{32})[.]json").matches(name)) {
+    require(name == "history.json" || homeCacheFileName.matches(name)) {
         "该文件不属于浏览器的历史或首页缓存"
     }
     return object : AppTextFile {
@@ -50,6 +52,8 @@ internal class WebSettingsStore(
     private val listeners = mutableSetOf<(String) -> Unit>()
 
     private fun canPersist(key: String): Boolean {
+        // 这是前台使用时长，不是账号会话；只豁免这一条固定键。
+        if (key == "continuousUsageReminderSessionAccumulatedMs") return true
         val name = key.lowercase()
         return name.isNotEmpty() &&
             !isSensitiveRequestHeader(name) &&
@@ -86,6 +90,9 @@ internal class WebSettingsStore(
     override fun commit(updates: Map<String, SettingValue?>) {
         val encoded = updates.mapValues { (key, value) ->
             require(value == null || canPersist(key)) { "浏览器不能以明文保存此项凭据" }
+            require(key != "continuousUsageReminderSessionAccumulatedMs" || value == null || value is SettingValue.LongValue) {
+                "浏览器使用时长只能保存为毫秒数"
+            }
             when (value) {
                 null -> null
                 is SettingValue.BooleanValue -> "b${value.value}"

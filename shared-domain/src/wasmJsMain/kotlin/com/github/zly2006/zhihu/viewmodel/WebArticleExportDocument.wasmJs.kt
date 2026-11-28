@@ -116,7 +116,7 @@ internal val webExportDocumentFactory: JsAny = createWebExportDocumentFactory()
             let module;
             try { module = await runtime.wait(import('katex'), signal); } catch { throw new Error('assets'); }
             const katex = module.default || module;
-            const cssUrl = new URL('export/katex/katex.min.css', document.baseURI);
+            const cssUrl = new URL('export/katex/katex.min.css', window.zhihuAppResourceBase || new URL('./', location.href));
             const css = await (await runtime.read(cssUrl.href, 'text', signal)).text();
             const definitions = Array.from(css.matchAll(/@font-face\s*\{([^}]+)\}/g));
             if (!definitions.length) throw new Error('assets');

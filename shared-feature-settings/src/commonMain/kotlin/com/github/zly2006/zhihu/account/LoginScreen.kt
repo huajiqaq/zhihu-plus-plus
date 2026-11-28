@@ -49,6 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -119,11 +120,15 @@ enum class LoginMethod(
 
 expect val supportedLoginMethods: List<LoginMethod>
 
+/** 平台能力检查只读取本机桥状态，不自动请求账号或发起登录。 */
+@Composable
+internal expect fun LoginMethodReady(method: LoginMethod): Boolean
+
 @Composable
 expect fun QrLoginPane(onLoginSuccess: (String) -> Unit)
 
 @Composable
-expect fun WebLoginPane(onLoginSuccess: (String) -> Unit, onBrowserSessionVerified: () -> Unit)
+expect fun WebLoginPane(onLoginSuccess: (String) -> Unit)
 
 /** 手机表单状态跨登录方式切换保留；onBack=null 表示根页面入口。 */
 @Composable
@@ -136,7 +141,8 @@ fun LoginScreen(
     val settings = rememberSettingsStore()
     val phoneLoginState = if (LoginMethod.Phone in supportedLoginMethods) rememberPhoneLoginState() else null
     var noticesConfirmed by rememberSetting(settings, "loginNoticesConfirmed", false)
-    var loggedInUsername by remember { mutableStateOf<String?>(null) }
+    val accountStore = rememberZhihuAccountStore()
+    val loginReceipt by accountStore.loginSuccessReceipt.collectAsState()
 
     if (!noticesConfirmed) {
         LoginWelcomeStage(
@@ -155,16 +161,17 @@ fun LoginScreen(
             onLoginComplete()
         },
         phoneLoginState = phoneLoginState,
-        onLoginSuccess = { username -> loggedInUsername = username },
-        onBrowserSessionVerified = onLoginComplete,
+        // 控制器在提交后发布属于新 client 的 receipt；页面重建不保留旧导航回调。
+        onLoginSuccess = {},
     ) {
-        loggedInUsername?.let { username ->
+        loginReceipt?.let { receipt ->
+            val complete = { if (accountStore.consumeLoginSuccess(receipt)) onLoginComplete() }
             AppDialog(
-                onDismissRequest = onLoginComplete,
+                onDismissRequest = complete,
                 title = AccountStrings.loginSuccess,
-                summary = AccountStrings.loginWelcome(username),
+                summary = AccountStrings.loginWelcome(receipt.username),
                 confirmText = AccountStrings.confirm,
-                onConfirm = onLoginComplete,
+                onConfirm = complete,
             )
         }
     }
@@ -177,7 +184,6 @@ private fun LoginMethodsStage(
     onContinueAsGuest: () -> Unit,
     phoneLoginState: PhoneLoginState?,
     onLoginSuccess: (String) -> Unit,
-    onBrowserSessionVerified: () -> Unit,
     overlays: @Composable () -> Unit,
 ) {
     val methods = supportedLoginMethods
@@ -235,7 +241,7 @@ private fun LoginMethodsStage(
                     .imePadding()
                     .testTag("login_web_content"),
             ) {
-                WebLoginPane(onLoginSuccess, onBrowserSessionVerified)
+                WebLoginPane(onLoginSuccess)
             }
         } else {
             Column(
@@ -272,10 +278,12 @@ private fun LoginMethodsStage(
                             .fillMaxWidth()
                             .weight(1f),
                     ) {
-                        if (selectedMethod == LoginMethod.Phone) {
-                            PhoneLoginPane(onLoginSuccess = onLoginSuccess, state = checkNotNull(phoneLoginState))
-                        } else {
-                            QrLoginPane(onLoginSuccess)
+                        if (LoginMethodReady(selectedMethod)) {
+                            if (selectedMethod == LoginMethod.Phone) {
+                                PhoneLoginPane(onLoginSuccess = onLoginSuccess, state = checkNotNull(phoneLoginState))
+                            } else {
+                                QrLoginPane(onLoginSuccess)
+                            }
                         }
                     }
                 }

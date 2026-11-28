@@ -34,7 +34,6 @@ import com.github.zly2006.zhihu.desktop.saveImageToDownloads
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.nlp.OfflineNlpController
 import com.github.zly2006.zhihu.nlp.OfflineNlpModelState
-import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import java.awt.KeyboardFocusManager
 import java.io.File
@@ -56,8 +55,6 @@ actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
 
 actual val platformSemanticRuntimeGeneration: StateFlow<Long>
     get() = OfflineNlpController.policyGeneration
-
-actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
 
 @Composable
 actual fun rememberSettingsStore(): SettingsStore = remember { desktopSettingsStore() }

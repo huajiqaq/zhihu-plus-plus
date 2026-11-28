@@ -37,6 +37,7 @@ import platform.AppKit.NSPasteboardTypeString
 import platform.AppKit.NSWorkspace
 import platform.Foundation.NSHomeDirectory
 import platform.Foundation.NSURL
+import platform.UniformTypeIdentifiers.UTType
 
 actual val nativeIsDesktop: Boolean = true
 
@@ -98,6 +99,12 @@ internal actual fun rememberFilePicker(
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
+    val types = extensions.mapNotNull { UTType.typeWithFilenameExtension(it) }
+        .ifEmpty { mimeTypes.mapNotNull { UTType.typeWithMIMEType(it) } }
+    if (types.isNotEmpty()) {
+        panel.allowedContentTypes = types
+        panel.allowsOtherFileTypes = false
+    }
     if (panel.runModal() == NSModalResponseOK) {
         panel.URL?.path?.let { filePath -> onPicked { filePath.substringAfterLast('/') to SystemFileSystem.source(Path(filePath)) } }
     }

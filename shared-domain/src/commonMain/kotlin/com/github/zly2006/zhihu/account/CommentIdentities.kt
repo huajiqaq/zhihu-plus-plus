@@ -112,16 +112,21 @@ class CommentIdentities internal constructor(
         }
     }
 
-    suspend fun list(owner: ZhihuAccountClient, sourceId: String): List<CommentSender> = withOriginal(sourceId) {
-        val session = store.withSessionLock {
-            checkOwner(owner)
-            source(sourceId).session
+    suspend fun list(owner: ZhihuAccountClient, sourceId: String): List<CommentSender> {
+        val accounts = if (store.usesBrowserSession) {
+            if (sourceId != store.accountsState.value.activeAccountId) throw DisplayFailure { DomainStrings.accountChangedOrVerify }
+            store.browserIdentityAccounts(owner)
+        } else withOriginal(sourceId) {
+            val session = store.withSessionLock {
+                checkOwner(owner)
+                source(sourceId).session
+            }
+            createAccountHttpClient(session.cookies.toMutableMap(), session.userAgent, store.engine, store.http403Log::record).use { client ->
+                val body = client.get("https://api.zhihu.com/people/account/list") { applyIdentityHeaders(session) }.identitySuccessBody { DomainStrings.loadCommentAccounts }
+                ZhihuJson.decodeJson<ZhihuIdentityAccountListResponse>(ZhihuJson.json.parseToJsonElement(body)).data
+            }
         }
-        val accounts = createAccountHttpClient(session.cookies.toMutableMap(), session.userAgent, store.engine, store.http403Log::record).use { client ->
-            val body = client.get("https://api.zhihu.com/people/account/list") { applyIdentityHeaders(session) }.identitySuccessBody { DomainStrings.loadCommentAccounts }
-            ZhihuJson.decodeJson<ZhihuIdentityAccountListResponse>(ZhihuJson.json.parseToJsonElement(body)).data
-        }
-        accounts.filter { it.id.isNotBlank() && it.name.isNotBlank() }.map {
+        return accounts.filter { it.id.isNotBlank() && it.name.isNotBlank() }.map {
             CommentSender(sourceId, ZhihuAccountProfileSnapshot(it.id, it.name, it.urlToken, avatarUrl = it.avatarUrl))
         }
     }

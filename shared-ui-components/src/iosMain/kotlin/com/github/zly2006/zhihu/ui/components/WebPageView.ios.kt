@@ -26,7 +26,7 @@ import androidx.compose.ui.viewinterop.UIKitView
 import platform.WebKit.WKWebView
 
 @Composable
-internal actual fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView) {
+actual fun AppleWebPageView(modifier: Modifier, factory: () -> WKWebView) {
     UIKitView(
         factory = factory,
         modifier = modifier,

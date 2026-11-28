@@ -23,6 +23,9 @@
 // @grant             GM_registerMenuCommand
 // @grant             GM_xmlhttpRequest
 // @grant             GM_cookie
+// @grant             GM.cookie
+// @connect           news-at.zhihu.com
+// @connect           daily.zhihu.com
 // @connect           www.zhihu.com
 // @connect           api.zhihu.com
 // @connect           lens.zhihu.com
@@ -68,6 +71,17 @@
     const HISTORY_SELF = 'https://api.zhihu.com/people/self';
     const TAG = 'zhihu++/bridge/1';
     const MAX_BODY = 4 * 1024 * 1024;
+    // 推荐续页参数来自服务器，不猜字段；只放行同一固定端点实际返回的完整查询串。
+    const homePages = new Map();
+    function rememberHomePage(key, query) {
+        const pages = homePages.get(key) || new Set();
+        if (pages.size >= 128) pages.delete(pages.values().next().value);
+        pages.add(query.toString());
+        if (key === 'public' || key === 'homeFeedWeb') {
+            const withInclude = new URLSearchParams(query); withInclude.set('include', feedInclude); pages.add(withInclude.toString());
+        }
+        homePages.set(key, pages);
+    }
     const controls = /[\x00-\x1f\x7f-\x9f]/u;
     const numberId = /^[1-9][0-9]{0,18}$/u;
     const pageNumber = /^(0|[1-9][0-9]{0,6})$/u;
@@ -92,17 +106,33 @@
     const managerVersion = typeof manager?.version === 'string'
         ? /^(\d+)\.(\d+)(?:\.\d+)*(?:[-+ ][A-Za-z0-9][A-Za-z0-9.+ -]*)?$/u.exec(manager.version.trim())
         : null;
+    const scriptCat = manager?.scriptHandler === 'ScriptCat';
     const readIssue = !manager ? 'manager-info-missing'
-        : manager.scriptHandler !== 'Tampermonkey' ? 'manager-unsupported'
+        : !['Tampermonkey', 'ScriptCat'].includes(manager.scriptHandler) ? 'manager-unsupported'
         : !managerVersion ? 'manager-version-unknown'
-        : (+managerVersion[1] < 5 || (+managerVersion[1] === 5 && +managerVersion[2] < 4)) ? 'redirect-unsupported'
+        : (scriptCat ? (+managerVersion[1] === 0 && +managerVersion[2] < 17)
+            : (+managerVersion[1] < 5 || (+managerVersion[1] === 5 && +managerVersion[2] < 4))) ? 'redirect-unsupported'
         : typeof GM_xmlhttpRequest !== 'function' ? 'request-api-missing'
         : null;
-    const cookieIssue = typeof GM_cookie === 'undefined' ||
-        ['list', 'set', 'delete'].some(method => typeof GM_cookie?.[method] !== 'function') ? 'cookie-api-missing'
+    // ScriptCat #1870：带会话请求的 Cookie 隔离存在已复现的上游错误；公共匿名读取不据此整体禁用。
+    const sessionIssue = scriptCat ? 'session-isolation-unsupported' : null;
+    // 正式 Promise API 避免两种管理器的 set/delete 回调参数含义不同。
+    const promiseCookies = typeof GM === 'object' && GM !== null && GM.cookie;
+    const legacyCookies = !scriptCat && typeof GM_cookie !== 'undefined' ? GM_cookie : null;
+    const cookies = promiseCookies ? {
+        list: details => GM.cookie.list(details),
+        set: details => GM.cookie.set(details),
+        delete: details => scriptCat ? GM.cookie.delete(details.name, details) : GM.cookie.delete(details),
+    } : legacyCookies ? {
+        list: details => new Promise((resolve, reject) => GM_cookie.list(details, (value, error) => error ? reject(new Error('unavailable')) : resolve(value))),
+        set: details => new Promise((resolve, reject) => GM_cookie.set(details, error => error ? reject(new Error('unavailable')) : resolve())),
+        delete: details => new Promise((resolve, reject) => GM_cookie.delete(details, error => error ? reject(new Error('unavailable')) : resolve())),
+    } : null;
+    const cookieIssue = sessionIssue ?? (!cookies ||
+        ['list', 'set', 'delete'].some(method => typeof (promiseCookies || legacyCookies)?.[method] !== 'function') ? 'cookie-api-missing'
         : typeof navigator.locks?.request !== 'function' ? 'web-locks-missing'
         : typeof globalThis.crypto?.randomUUID !== 'function' ? 'secure-random-missing'
-        : null;
+        : null);
     function bridgeStatus() {
         return {
             version: '1.0.0',
@@ -159,6 +189,16 @@
         return query;
     }
     function destination(op, id, query) {
+        if (op === 'dailyStories') {
+            only(query, {});
+            check(typeof id === 'string' && /^(news|daily)\/(latest|before\/[0-9]{8})$/u.test(id));
+            const [host, ...path] = id.split('/');
+            return `https://${host === 'news' ? 'news-at' : 'daily'}.zhihu.com/api/4/stories/${path.join('/')}`;
+        }
+        if (op === 'dailyStory') {
+            only(query, {}); check(typeof id === 'string' && numberId.test(id));
+            return `https://daily.zhihu.com/api/7/story/${id}`;
+        }
         const comment = /^(root|segments|segment)-(answer|article|question|pin)$/u.exec(op);
         if (comment) {
             check(typeof id === 'string' && numberId.test(id));
@@ -209,7 +249,7 @@
                 only(query, {desktop: ['true'], limit: ['10', '15', '20'], offset: pageNumber, include: [feedInclude]}, ['desktop', 'limit']);
                 return `${WWW}/api/v3/feed/topstory/recommend`;
             case 'homeFeed':
-                only(query, {include: [feedInclude]});
+                if (!homePages.get('public')?.has(query.toString())) only(query, {include: [feedInclude]});
                 return 'https://api.zhihu.com/topstory/recommend';
             case 'history':
                 only(query, {offset: pageNumber, limit: ['10', '50'], include: [feedInclude]}, ['offset', 'limit']);
@@ -219,12 +259,17 @@
                 return 'https://api.zhihu.com/read_history/total';
             case 'search':
                 only(query, {
-                    gk_version: ['gz-gaokao'], t: ['general', 'topic', 'people'], q: /^.{1,128}$/u,
+                    gk_version: ['gz-gaokao'], t: ['general', 'topic', 'people'], q: /^.{1,512}$/u,
                     correction: ['1'], offset: pageNumber, limit: ['20'], search_source: ['Normal', 'Filter'],
                     show_all_topics: ['0', '1'], include: ['data[*].highlight,object,type'],
                     vertical: ['answer', 'article', 'zvideo'], vertical_info: ['0,0,0,0,0,0,0,0,0,0,0,0'],
                     sort: ['created_time', 'upvoted_count'], time_interval: ['a_day', 'a_week', 'a_month', 'three_months', 'half_a_year', 'a_year'],
+                    filter_fields: [''], lc_idx: ['0'], restricted_scene: ['member'], restricted_field: ['member_hash_id'], restricted_value: /^[0-9a-fA-F]{32}$/u,
                 }, ['q', 't']);
+                {
+                    const member = ['filter_fields', 'lc_idx', 'restricted_scene', 'restricted_field', 'restricted_value'];
+                    check(member.every(key => query.has(key)) || member.every(key => !query.has(key)));
+                }
                 return `${WWW}/api/v4/search_v3`;
             case 'forwardCount':
                 only(query, {content_type: ['answer', 'article', 'pin'], content_token: numberId}, ['content_type', 'content_token']);
@@ -277,8 +322,9 @@
                 if (link === '' || link == null) continue;
                 check(typeof link === 'string' && link.startsWith(prefix + '?'));
                 const next = parseQuery(link.slice(prefix.length + 1));
+                if (op === 'homeFeed') rememberHomePage('public', next);
                 destination(op, id, next);
-                for (const key of ['q', 't', 'segment_id', 'content_type', 'content_token']) {
+                for (const key of ['q', 't', 'segment_id', 'content_type', 'content_token', 'restricted_value']) {
                     if (next.has(key)) check(next.get(key) === query.get(key));
                 }
             }
@@ -349,7 +395,7 @@
         const entry = {settled: false, channel: null, mutation: false, submitted: false, finish, stop, send, receive,
             timeout(ms) { clearTimeout(timer); timer = setTimeout(() => stop('unavailable'), ms); }};
         function send(kind, status = 0, body = '') {
-            try { port.postMessage(['http', 'unsupported'].includes(kind) ? {kind, status, body} : {kind}); }
+            try { port.postMessage(['http', 'unsupported', 'stream'].includes(kind) ? {kind, status, body} : {kind}); }
             catch { stop('cancelled'); }
         }
         function finish(kind, status = 0, body = '') {
@@ -377,8 +423,8 @@
             received = true;
             try {
                 exactObject(data, ['channel', 'op', 'owner', 'id', 'query', 'body', 'bytes']);
-                check(trustedPage() && ['read', 'business'].includes(data.channel) && typeof data.op === 'string');
-                const limit = data.channel === 'read' ? 12 : 8;
+                check(trustedPage() && ['read', 'business', 'session'].includes(data.channel) && typeof data.op === 'string');
+                const limit = data.channel === 'read' ? 12 : data.channel === 'session' ? 4 : 8;
                 if ([...active].filter(request => request.channel === data.channel).length >= limit) return finish('unavailable');
                 entry.channel = data.channel;
                 if (data.channel === 'read') {
@@ -387,7 +433,7 @@
                     handleRead(data, entry, menuConsent);
                 } else {
                     if (readIssue || cookieIssue) return finish('unsupported', 0, readIssue || cookieIssue);
-                    handleBusiness(data, entry);
+                    if (data.channel === 'session') handleSession(data, entry); else handleBusiness(data, entry);
                 }
             } catch { stop('denied'); }
         }
@@ -398,7 +444,7 @@
         send('accepted');
         return entry;
     }
-    function transport(entry, {url, method, headers = {}, body = '', cookie = '', anonymous = true}, receive, fail) {
+    function transport(entry, {url, method, headers = {}, body = '', cookie = '', anonymous = true, progress}, receive, fail) {
         check(!entry.settled);
         const token = entry.request = Symbol();
         entry.handle = null;
@@ -416,7 +462,13 @@
         const handle = GM_xmlhttpRequest({
             url, method, headers, ...(body === '' ? {} : {data: body}), ...(cookie ? {cookie} : {}),
             anonymous, redirect: 'manual', nocache: true,
-            onprogress: event => { if (current() && (event.loaded > MAX_BODY || event.total > MAX_BODY)) entry.stop('denied'); },
+            onprogress: event => {
+                if (!current()) return;
+                if (event.loaded > MAX_BODY || event.total > MAX_BODY) return entry.stop('denied');
+                if (progress && event.status === 200 && event.finalUrl === url && typeof event.responseText === 'string') {
+                    try { check(event.responseText.length <= MAX_BODY); progress(event.responseText); } catch { entry.stop('denied'); }
+                }
+            },
             onabort: () => failure('cancelled'),
             onerror: () => failure('unavailable'),
             ontimeout: () => failure('unavailable'),
@@ -438,7 +490,24 @@
 
     let profileAllowed = false, profileChecking = false;
     const gestures = new Map();
-    let verifiedId = null, historyOwner = null;
+    let verifiedId = null, historyOwner = null, sessionEpoch = 0;
+    /** 身份发布使此前所有敏感读取失效；保留正在发布身份的事务自身。 */
+    function invalidateSessionReads(current, kind = 'expired') {
+        sessionEpoch++;
+        if (current) current.sessionEpoch = sessionEpoch;
+        for (const request of active) {
+            if (request !== current && request.identitySensitive) request.stop(kind);
+        }
+    }
+    let tabSession = null, phoneTransaction = null, identityTransaction = null, pendingIdentityRestore = null;
+    const phoneDeadline = 10 * 60 * 1000;
+    function cancelPhone() {
+        if (phoneTransaction?.timer) clearTimeout(phoneTransaction.timer);
+        phoneTransaction = null;
+    }
+    function sessionCookie(snapshot) {
+        return Object.entries(snapshot.cookie).map(([name, value]) => `${name}=${value}`).join('; ');
+    }
     let challenge = null;
     function recordChallenge(url) {
         challenge = {url, owner: verifiedId, opened: false, checking: null};
@@ -461,12 +530,14 @@
         historyOwner = null;
         for (const request of active) if (request.history) request.stop(kind);
     }
-    function rememberProfile(id) {
-        if (verifiedId !== id) { challenge = null; revokeBusiness(); }
+    function rememberProfile(id, entry) {
+        if (verifiedId !== id) { invalidateSessionReads(entry); challenge = null; revokeBusiness(); }
         verifiedId = id;
         if (historyOwner !== null && historyOwner !== id) revokeHistory('expired');
     }
     function revoke() {
+        invalidateSessionReads(null, 'denied');
+        tabSession = null; cancelPhone(); pendingIdentityRestore = null; identityTransaction = null;
         revokeBusiness();
         profileAllowed = false;
         verifiedId = null;
@@ -659,7 +730,9 @@
             check(id !== null && (tx.user === null || tx.user === id));
             resetBrowserQr();
             qrProfileOwner = id;
-            rememberProfile(id);
+            invalidateSessionReads(entry);
+            tabSession = null; cancelPhone(); pendingIdentityRestore = null; identityTransaction = null;
+            rememberProfile(id, entry);
             profileAllowed = true;
             notifyPermission();
             reply({authorized: true});
@@ -672,10 +745,7 @@
             }
             if (!tx.cookie) return finish('unavailable');
             if (cookieIssue) return finish('unsupported', 0, cookieIssue);
-            const list = name => new Promise((resolve, reject) => GM_cookie.list({url: QR_SIGNIN, name}, (records, error) => {
-                if (error != null || !Array.isArray(records)) reject(); else resolve(records);
-            }));
-            const done = invoke => new Promise((resolve, reject) => invoke(error => { if (error != null) reject(); else resolve(); }));
+            const list = async name => { const records = await cookies.list({url: QR_SIGNIN, name}); check(Array.isArray(records)); return records; };
             const matches = (records, name, value, path) => {
                 const c = records[0];
                 return records.length === 1 && c?.name === name && c.value === value && c.path === path &&
@@ -693,13 +763,13 @@
                 const expirationDate = Math.floor(Date.now() / 1000) + 60;
                 let capable = false;
                 try {
-                    await done(cb => GM_cookie.set({...attrs, name: probe, value: '1', path: '/signin', expirationDate}, cb));
+                    await cookies.set({...attrs, name: probe, value: '1', path: '/signin', expirationDate});
                     if (!current()) return;
                     const records = await list(probe);
                     capable = matches(records, probe, '1', '/signin') && records[0].expirationDate === expirationDate;
                 } finally {
                     // 仅清理随机、无凭据的自有探针；GM_cookie.delete 无法按值原子删除真实票据。
-                    await done(cb => GM_cookie.delete({url: QR_SIGNIN, name: probe}, cb));
+                    await cookies.delete({url: QR_SIGNIN, name: probe});
                 }
                 if (!current()) return;
                 if (!capable || (await list(probe)).length) return finish('unsupported', 0, 'cookie-attributes-unsupported');
@@ -709,7 +779,7 @@
                 // 原有的广义资料授权不能抢在写入后的身份校验之前发布候选账号。
                 qrProfileOwner = QR_UNVERIFIED;
                 qrWriting = true;
-                try { await done(cb => GM_cookie.set({...attrs, name: 'z_c0', value: tx.cookie, path: '/'}, cb)); }
+                try { await cookies.set({...attrs, name: 'z_c0', value: tx.cookie, path: '/'}); }
                 finally { qrWriting = false; }
                 if (!current()) return;
                 if (!matches(await list('z_c0'), 'z_c0', tx.cookie, '/')) return finish('unavailable');
@@ -734,6 +804,7 @@
         businessEpoch++;
         businessScopes.clear();
         answerDraftSettings.clear();
+        homePages.clear();
         for (const [op, action] of Object.entries(actions)) if (action.scope) gestures.delete(op);
         for (const request of active) if (request.businessGrant || request.channel === 'business') request.stop('denied');
         notifyPermission();
@@ -764,11 +835,18 @@
                 `Allow Zhihu++ at ${site} to use the phone-confirmed account in this tab and read its basic profile? If signed out, this will sign the browser in to Zhihu. A different account stops sign-in. Do not sign in simultaneously from local Zhihu++, Pages or Zhihu itself; concurrent sign-ins could be replaced.`,
                 `允许 ${site} 上的 Zhihu++ 在本标签页使用手机确认的账号，并读取其基本资料？若浏览器未登录，将同时登录知乎官网。检测到其他账号将停止；请勿同时在本地版、Pages 版或官网登录或切换账号，以免覆盖同时发生的登录。`),
         },
+        loginPhoneSend: {prompt: () => chooseText('Send a Zhihu sign-in code for this tab? The resulting session stays in this tab and does not change Zhihu website sign-in.', '为本标签页发送知乎登录验证码？登录会话仅用于当前标签页，不改变知乎官网登录。')},
+        loginPhoneCommit: {prompt: () => chooseText('Verify this code and sign in for this tab only?', '校验验证码并仅登录当前标签页？')},
+        loginPhoneVerifyCaptcha: {prompt: () => chooseText('Verify the image challenge and send the sign-in code?', '校验图形验证码并发送登录验证码？')},
+        commentSendAs: {prompt: () => chooseText('Send this comment as the selected associated identity, then restore your current identity? The comment is sent only once.', '以所选关联身份发送评论，然后恢复当前身份？评论只会发送一次。')},
+        identityRestore: {prompt: () => chooseText('Restore the original identity without resending the comment?', '恢复原身份，不重新发送评论？')},
+        identitySwitch: {prompt: () => chooseText('Switch the account in this tab? Business permissions will be revoked.', '切换当前标签页的身份？已有业务权限将撤销。')},
+        identityCreate: {prompt: () => chooseText('Create a Zhihu associated identity and use it in this tab? This creates an account on Zhihu.', '创建知乎关联身份并用于当前标签页？此操作会在知乎创建账号。')},
         verificationCheck: {},
     };
     function consentFor(op) {
         const action = actions[op];
-        if (readIssue) return false;
+        if (readIssue || sessionIssue) return false;
         if (action.scope) {
             if (!profileAllowed || verifiedId === null || cookieIssue) return false;
             return window.confirm(chooseText(
@@ -838,6 +916,8 @@
     }
     window.addEventListener('languagechange', updateMenuLabels);
     window.addEventListener('pagehide', () => {
+        invalidateSessionReads(null, 'cancelled');
+        tabSession = null; cancelPhone(); pendingIdentityRestore = null; identityTransaction = null;
         profileAllowed = false;
         gestures.clear();
         verifiedId = historyOwner = null;
@@ -907,6 +987,58 @@
                 const url = new URL(destination(parts[0], parts[1], query)); url.search = query.toString();
                 return {url: url.href, method, scope, body, contentType, profile: parts[0] === 'pinV2' ? 'mobile' : profile};
             }
+            case 'videoPlayInfo': {
+                check(id === ''); only(query, {r: numberId}, ['r']); method = 'POST'; profile = 'video';
+                const value = jsonBody(raw, ['content_id', 'content_type_str', 'video_id', 'scene_code', 'is_only_video']);
+                resource(value.content_id); resource(value.video_id);
+                check(query.get('r') === value.video_id && ['answer', 'article', 'question'].includes(value.content_type_str) &&
+                    value.scene_code === 'answer_detail_web' && value.is_only_video === true);
+                path = '/api/v4/video/play_info'; break;
+            }
+            case 'summary': {
+                mutation('POST', 'create'); check(id === ''); profile = 'summary';
+                const value = jsonBody(raw, ['quiz_type', 'attachments', 'message_source_type', 'session_id', 'zhida_source', 'content_id', 'content_type', 'message_content']);
+                resource(value.content_id); check(['answer', 'article'].includes(value.content_type));
+                check(value.quiz_type === 'QT_CHAT' && value.message_source_type === 'text' && value.session_id === '' &&
+                    value.zhida_source === 'one_tap_summary' && value.message_content === '这篇内容讲了什么');
+                check(Array.isArray(value.attachments) && value.attachments.length === 1);
+                const attachment = value.attachments[0]; exactObject(attachment, ['type', 'value', 'title']);
+                check(attachment.type === 'DOC' && businessText(attachment.title) && attachment.value === btoa(`${value.content_id}|::|${value.content_type.toUpperCase()}`));
+                path = '/ai_ingress/stream/completion'; break;
+            }
+            case 'paidAnswer': resource(id); noQuery(); emptyBody(raw); profile = 'paid'; path = `/appview/v2/answer/${id}`; break;
+            case 'feedTouch': {
+                mutation('POST', 'history'); check(id === ''); contentType = 'application/x-www-form-urlencoded';
+                const form = formBody(raw, ['items']), items = JSON.parse(form.get('items'));
+                check(Array.isArray(items) && items.length > 0 && items.length <= 1000);
+                for (const item of items) {
+                    check(Array.isArray(item) && item.length === 3 && ['answer', 'article', 'pin'].includes(item[0]) && ['read', 'touch'].includes(item[2])); resource(item[1]);
+                }
+                path = '/lastread/touch'; break;
+            }
+            case 'segmentReaction-POST': case 'segmentReaction-DELETE': {
+                mutation(verb); check(parts.length === 2 && ['answers', 'articles'].includes(parts[0])); resource(parts[1]);
+                const value = jsonBody(raw, verb === 'DELETE' ? ['seg_ids'] : ['seg_id', 'content', 'position'], verb === 'DELETE' ? ['seg_ids'] : []);
+                const segments = value.seg_ids ?? value.seg_id;
+                if (segments !== undefined) check(typeof segments === 'string' && /^[A-Za-z0-9_-]{1,128}(?:,[A-Za-z0-9_-]{1,128}){0,99}$/u.test(segments));
+                if (verb === 'POST') {
+                    check(segments !== undefined || value.content !== undefined);
+                    if (value.content !== undefined || value.position !== undefined) {
+                        check(businessText(value.content) && value.content.length >= 5);
+                        exactObject(value.position, ['start', 'end']);
+                        for (const at of [value.position.start, value.position.end]) {
+                            exactObject(at, ['paragraph_id', 'offset']);
+                            check(typeof at.paragraph_id === 'string' && at.paragraph_id.length <= 256 && !controls.test(at.paragraph_id) && Number.isSafeInteger(at.offset) && at.offset >= 0);
+                        }
+                        check(value.position.start.paragraph_id === value.position.end.paragraph_id && value.position.end.offset > value.position.start.offset);
+                    }
+                }
+                path = `/api/v4/reaction/${id}/segment_reaction`; break;
+            }
+            case 'homeFeedWeb': case 'homeFeedMobile':
+                check(id === ''); host = API; emptyBody(raw);
+                if (!homePages.get(op)?.has(query.toString())) only(query, {include: [feedInclude]});
+                profile = op === 'homeFeedMobile' ? 'mobile' : 'web'; path = '/topstory/recommend'; break;
             case 'vote': {
                 mutation(); check(parts.length === 2 && ['answers', 'articles'].includes(parts[0])); resource(parts[1]);
                 const value = jsonBody(raw, parts[0] === 'answers' ? ['type'] : ['voting']);
@@ -1218,8 +1350,13 @@
         return btoa(binary);
     }
     async function businessCookies(host) {
+        if (tabSession) {
+            const snapshot = tabSession;
+            check(snapshot.owner === verifiedId && snapshot.cookie.z_c0);
+            return {header: sessionCookie(snapshot), identity: snapshot.cookie.z_c0, dc0: snapshot.cookie.d_c0, xsrf: snapshot.cookie._xsrf};
+        }
         const url = host === API ? HISTORY_SELF : host === LENS ? `${LENS}/api/v4/videos` : ME;
-        const records = await new Promise((resolve, reject) => GM_cookie.list({url}, (cookies, error) => error ? reject(new Error('unavailable')) : resolve(cookies)));
+        const records = await cookies.list({url});
         check(Array.isArray(records));
         const entries = new Map();
         for (const cookie of records) {
@@ -1237,15 +1374,77 @@
         JSON.parse(raw, safeResponseField);
         return raw;
     }
+    function videoPlayInfoBody(raw) {
+        const source = JSON.parse(raw), mp4 = source?.video_play?.playlist?.mp4;
+        check(Array.isArray(mp4) && mp4.length <= 32);
+        return JSON.stringify({video_play: {playlist: {mp4: mp4.map(item => {
+            const bitrate = item.bitrate ?? 0;
+            check(Number.isSafeInteger(bitrate) && bitrate >= 0 && Array.isArray(item.url) && item.url.length <= 8);
+            const urls = item.url.map(value => {
+                check(typeof value === 'string' && value.length <= 4096);
+                const url = new URL(value);
+                check(url.protocol === 'https:' && !url.username && !url.password && !url.hash &&
+                    (url.hostname.endsWith('.vzuu.com') || url.hostname.endsWith('.zhihu.com') || url.hostname.endsWith('.zhimg.com')));
+                return url.href;
+            });
+            return {bitrate, url: urls};
+        })}}});
+    }
+    /** 只投影阅读正文，网页中的脚本、表单和会话启动数据不能回到页面。 */
+    function paidAnswerBody(raw) {
+        const document = new DOMParser().parseFromString(raw, 'text/html');
+        const rich = document.querySelector('.RichText');
+        if (!rich) return '<div class="RichText"></div>';
+        for (const node of rich.querySelectorAll('script,style,iframe,object,embed,form,input,textarea,button,meta,link')) node.remove();
+        for (const node of [rich, ...rich.querySelectorAll('*')]) {
+            for (const attribute of [...node.attributes]) {
+                const name = attribute.name.toLowerCase();
+                if (!['class', 'href', 'src', 'alt', 'title', 'width', 'height', 'data-actualsrc', 'data-original', 'data-formula', 'data-paragraph-id'].includes(name)) node.removeAttribute(attribute.name);
+                else if (['href', 'src', 'data-actualsrc', 'data-original'].includes(name)) {
+                    try { const url = new URL(attribute.value, WWW); check(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password); node.setAttribute(name, url.href); }
+                    catch { node.removeAttribute(attribute.name); }
+                }
+            }
+        }
+        return rich.outerHTML;
+    }
+    /** SSE 仅回传总结事件，服务端的会话 ID 和调试字段留在桥内。 */
+    function summaryFrames(raw, final = true) {
+        let rest = raw.replace(/\r\n/gu, '\n'), output = '';
+        const frames = rest.split('\n\n');
+        rest = final ? '' : frames.pop();
+        for (const frame of frames) {
+            const lines = frame.split('\n'), payload = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5)).join('\n').trim();
+            if (!payload) continue;
+            if (payload === '[DONE]' || payload === 'DONE') { output += 'event: end\ndata: {}\n\n'; continue; }
+            const value = JSON.parse(payload);
+            const event = String(value.event ?? lines.find(line => line.startsWith('event:'))?.slice(6).trim() ?? '').toLowerCase();
+            let data = value.data ?? value;
+            if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = {message: data}; } }
+            if (event === 'answer') {
+                check(data && typeof data === 'object' && typeof data.summary === 'string' && businessText(data.summary));
+                output += 'event: answer\ndata: ' + JSON.stringify({summary: data.summary, delta: data.delta === true}) + '\n\n';
+            } else if (event === 'end') output += 'event: end\ndata: {}\n\n';
+            else if (event === 'error') output += 'event: error\ndata: {}\n\n';
+        }
+        return {output, rest};
+    }
     async function handleBusiness(data, entry) {
         const {finish} = entry;
-        let epoch, owner;
+        let epoch, owner, summaryOffset = 0, summaryPending = '';
+        const summaryProgress = raw => {
+            check(live() && raw.length >= summaryOffset);
+            const frames = summaryFrames(summaryPending + raw.slice(summaryOffset), false);
+            summaryOffset = raw.length; summaryPending = frames.rest;
+            if (frames.output) entry.send('stream', 200, frames.output);
+        };
         const live = () => !entry.settled && trustedPage() && profileAllowed && verifiedId === owner && businessOwner === owner && businessEpoch === epoch;
         const request = (url, method, headers = {}, body = '', cookie = '') => new Promise((resolve, reject) => {
             if (!live()) return reject(new Error('expired'));
             if (method !== 'GET' && !entry.submitted) { entry.submitted = true; entry.send('submitted'); }
             // 官方专用 cookie 参数与 anonymous 一起固定快照，绝不合入浏览器当前会话。
-            transport(entry, {url, method, headers, body, cookie, anonymous: true}, response => {
+            transport(entry, {url, method, headers, body, cookie, anonymous: true,
+                ...(data.op === 'summary' && url === `${WWW}/ai_ingress/stream/completion` ? {progress: summaryProgress} : {})}, response => {
                 if (!live()) return reject(new Error('expired'));
                 if (response.status >= 300 && response.status < 400) return reject(new Error('denied'));
                 resolve(response);
@@ -1254,7 +1453,7 @@
         try {
             check(keyId(data.owner) && typeof data.id === 'string' && data.id.length <= 512 && businessText(data.body));
             check(new TextEncoder().encode(data.body).length <= textBudget);
-            owner = data.owner; epoch = businessEpoch; check(live());
+            owner = data.owner; epoch = businessEpoch; check(live() && !identityTransaction && !pendingIdentityRestore);
             const query = parseQuery(data.query);
             const upload = data.op === 'uploadImage' || data.op === 'uploadVoice';
             if (upload) check(data.bytes instanceof ArrayBuffer && data.bytes.byteLength > 0 && data.bytes.byteLength <= binaryBudget && data.id === '' && data.query === '');
@@ -1275,10 +1474,11 @@
                 if (target.origin === LENS) check(snapshot.identity === api.identity);
                 check(live() && snapshot.dc0 && (method === 'GET' || snapshot.xsrf));
                 const zse93 = profile === 'message' ? '101_1_1.0' : '101_3_3.0';
-                const headers = {Accept: 'application/json', 'x-requested-with': 'fetch',
+                const headers = {Accept: profile === 'summary' ? 'text/event-stream' : profile === 'paid' ? 'text/html' : 'application/json', 'x-requested-with': 'fetch',
                     'x-zse-93': zse93, 'x-zse-96': zseSign([zse93, target.pathname + target.search, snapshot.dc0, body].filter(x => x !== '').join('+'))};
                 if (snapshot.xsrf) headers['x-xsrftoken'] = snapshot.xsrf;
                 if (profile === 'uploadVoice') headers['X-Upload-Conent-Type'] = 'audio/mp4';
+                if (profile === 'video') { headers['x-app-za'] = 'OS=webplayer'; headers['x-referer'] = ''; }
                 if (target.origin === WWW && /^\/api\/v4\/questions\/[1-9][0-9]{0,18}\/draft$/u.test(target.pathname)) {
                     headers.Referer = `${WWW}/question/${target.pathname.split('/')[4]}/answer/`;
                 } else if (target.pathname === '/api/v4/content/publish' || target.pathname === '/content/drafts') headers.Referer = WWW + '/';
@@ -1293,14 +1493,19 @@
             };
             const response = upload ? await businessUpload(data, signed, request, live) : await signed(destination.url, destination.method, destination.body, destination.contentType, destination.profile);
             check(live());
-            const safeBody = businessResponse(response.body);
+            const safeBody = data.op === 'videoPlayInfo' && response.status === 200 ? videoPlayInfoBody(response.body)
+                : data.op === 'paidAnswer' && response.status === 200 ? paidAnswerBody(response.body)
+                : data.op === 'summary' && response.status === 200 ? summaryFrames(summaryPending + response.body.slice(summaryOffset)).output
+                : businessResponse(response.body);
             if (destination.scope === 'private' && response.status === 200 && safeBody) {
                 const paging = JSON.parse(safeBody).paging;
                 if (paging?.next) {
                     const next = new URL(paging.next), current = new URL(destination.url);
                     if (next.protocol === 'http:' && !next.port) next.protocol = 'https:';
                     check(next.origin === current.origin && next.pathname === current.pathname && !next.username && !next.password && !next.hash);
-                    businessDestination(data.op, data.id, parseQuery(next.search.slice(1)), '');
+                    const nextQuery = parseQuery(next.search.slice(1));
+                    if (data.op === 'homeFeedWeb' || data.op === 'homeFeedMobile') rememberHomePage(data.op, nextQuery);
+                    businessDestination(data.op, data.id, nextQuery, '');
                 }
             }
             if (data.op === 'answerDraft-GET' && response.status === 200) {
@@ -1401,6 +1606,257 @@
         throw new Error('unavailable');
     }
 
+    const sessionCookieNames = new Set(['z_c0', 'd_c0', '_xsrf', '__zse_ck', 'q_c0', 'capsion_ticket']);
+    function issuedSessionCookies(value, previous = {}) {
+        check(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= 64);
+        const result = {...previous};
+        for (const [name, cookie] of Object.entries(value)) {
+            if (!sessionCookieNames.has(name)) continue;
+            check(typeof cookie === 'string' && cookie.length <= 16384 && !/[\x00-\x20\x7f;,]/u.test(cookie));
+            if (cookie) result[name] = cookie;
+        }
+        return result;
+    }
+    function receivedSessionCookies(headers, previous = {}) {
+        const result = {...previous};
+        for (const line of headers.split(/\r?\n/u)) {
+            const match = /^set-cookie:\s*([^=;\s]+)=([^;]*)/iu.exec(line);
+            if (match && sessionCookieNames.has(match[1])) Object.assign(result, issuedSessionCookies({[match[1]]: match[2]}));
+        }
+        return result;
+    }
+    const phoneClient = '8d5227e0aaaa4797a763ac64e0c3b8', phoneSource = 'com.zhihu.android';
+    const phoneUa = 'com.zhihu.android/Futureve/11.4.0 Mozilla/5.0 (Linux; Android 12; Android SDK built for arm64 Build/SE1A.220621.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.1000.10 Mobile Safari/537.36';
+    function mobileSessionHeaders(session, identity = false) {
+        return {Accept: 'application/json', 'User-Agent': identity ? 'com.zhihu.android/Futureve/11.2.0 Mozilla/5.0 (Linux; Android 12; sdk_gphone64_arm64 Build/SE1A.220630.001.A1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.1000.10 Mobile Safari/537.36' : phoneUa,
+            ...(session.authorization ? {Authorization: session.authorization} : {}), ...(session.udid ? {'x-udid': session.udid} : {}),
+            'x-api-version': '3.0.93', 'x-app-version': identity ? '11.2.0' : '11.4.0', 'x-app-build': 'release', 'x-app-bundleid': phoneSource,
+            'x-app-flavor': identity ? 'zhihuwap64' : 'honor', 'x-network-type': identity ? 'WiFi' : '3G', 'x-zse-93': '101_1_1.0',
+            ...(identity ? {} : {'x-page-id': '44'}),
+            'x-app-za': identity ? 'OS=Android&Release=12&Model=sdk_gphone64_arm64&VersionName=11.2.0&VersionCode=40210&Product=com.zhihu.android&Width=1440&Height=2952&Installer=Market&DeviceType=AndroidPhone&Brand=google'
+                : 'OS=Android&Release=12&Model=Android+SDK+built+for+arm64&VersionName=11.4.0&VersionCode=40408&Product=com.zhihu.android&Width=1080&Height=2274&Installer=%E8%8D%A3%E8%80%80%E5%95%86%E5%BA%97&DeviceType=AndroidPhone&Brand=Android'};
+    }
+    async function sessionHmac(secret, text) {
+        const encoder = new TextEncoder(), key = await crypto.subtle.importKey('raw', encoder.encode(secret), {name: 'HMAC', hash: 'SHA-1'}, false, ['sign']);
+        return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(text)))].map(value => value.toString(16).padStart(2, '0')).join('');
+    }
+    function sessionToken(value, previous) {
+        check(typeof value.access_token === 'string' && /^[^\s\x00-\x1f]{1,16384}$/u.test(value.access_token));
+        check(value.token_type == null || value.token_type === 'bearer');
+        const cookie = issuedSessionCookies(value.cookie, previous);
+        check(cookie.z_c0 && cookie.d_c0);
+        return {cookie, authorization: `bearer ${value.access_token}`, owner: null};
+    }
+    async function handleSession(data, entry) {
+        const reply = value => entry.finish('http', 200, JSON.stringify(value));
+        const previous = tabSession, owner = verifiedId, epoch = businessEpoch;
+        const live = () => !entry.settled && trustedPage() && tabSession === previous && verifiedId === owner && businessEpoch === epoch;
+        let tx;
+        const request = (url, method = 'GET', headers = {}, body = '', cookie = '') => new Promise((resolve, reject) => {
+            if (!live()) return reject(new Error('expired'));
+            check([WWW, API].includes(new URL(url).origin));
+            transport(entry, {url, method, headers, body, cookie, anonymous: true}, response => {
+                if (!live()) return reject(new Error('expired'));
+                if (response.status >= 300 && response.status < 400) return reject(new Error('denied'));
+                resolve(response);
+            }, kind => reject(new Error(kind)));
+        });
+        const json = response => { check(response.status >= 200 && response.status < 300); const value = JSON.parse(response.body); check(value && !value.error); return value; };
+        const phoneRequest = async (path, method = 'GET', form, extra = {}) => {
+            check(tx === phoneTransaction && Date.now() < tx.deadline);
+            const headers = {...mobileSessionHeaders(tx), ...extra};
+            const body = form === undefined ? '' : encryptMessageBody(new URLSearchParams(form).toString());
+            if (body) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            const response = await request(API + path, method, headers, body, sessionCookie(tx));
+            check(tx === phoneTransaction);
+            tx.cookie = receivedSessionCookies(response.headers, tx.cookie);
+            return response;
+        };
+        const captcha = async () => {
+            const value = json(await phoneRequest('/captcha', 'PUT'));
+            const image = value.img_base64;
+            check(image == null || typeof image === 'string' && image.length <= 450000 && /^(?:data:image\/(?:png|jpeg|gif);base64,)?[A-Za-z0-9+/=\r\n]+$/u.test(image));
+            return {state: 'captcha', ...(image ? {image} : {})};
+        };
+        const sendDigits = async (recheck = true) => {
+            check(tx.nextSend <= Date.now());
+            tx.nextSend = Date.now() + 60000;
+            const response = await phoneRequest('/api/account/prod/auth/digits', 'POST', {username: tx.phone, client_id: phoneClient});
+            if (response.status >= 200 && response.status < 300) { tx.sent = true; return {state: 'sent'}; }
+            const value = JSON.parse(response.body), code = Number((value.error || value).code);
+            tx.nextSend = 0;
+            if ([120001, 120002].includes(code)) return captcha();
+            if (code === 120005 && recheck) {
+                const state = json(await phoneRequest('/captcha'));
+                if (state.show_captcha === true) return captcha();
+                return sendDigits(false);
+            }
+            throw new Error('denied');
+        };
+        const commit = async candidate => {
+            const website = profileBody(json(await request(ME, 'GET', {}, '', sessionCookie(candidate))));
+            const api = profileBody(json(await request(HISTORY_SELF, 'GET', mobileSessionHeaders(candidate, true), '', sessionCookie(candidate))));
+            check(website && api && website.id === api.id && live());
+            if (data.op === 'identitySwitch') check(website.id === JSON.parse(data.body).target_user_id);
+            if (tx) check(tx === phoneTransaction);
+            candidate.owner = website.id;
+            invalidateSessionReads(entry);
+            revokeBusiness(); revokeHistory('expired'); resetBrowserQr(true);
+            tabSession = candidate; verifiedId = website.id; profileAllowed = true;
+            cancelPhone(); reply({authorized: true}); notifyPermission();
+        };
+        try {
+            check(data.id === '' && data.query === '' && data.bytes === null && typeof data.body === 'string' && data.body.length <= (data.op === 'commentSendAs' ? textBudget : 4096) && data.owner === (owner || ''));
+            entry.timeout(60000);
+            if (data.op === 'revokeProfile') { emptyBody(data.body); revoke(); return reply({revoked: true}); }
+            if (data.op === 'loginPhoneCancel') { emptyBody(data.body); cancelPhone(); return reply({cancelled: true}); }
+            if (['loginPhoneSend', 'loginPhoneCommit', 'loginPhoneVerifyCaptcha', 'identitySwitch', 'identityCreate', 'commentSendAs', 'identityRestore'].includes(data.op)) {
+                const gesture = gestures.get(data.op); gestures.delete(data.op);
+                check(gesture && Date.now() <= gesture.deadline);
+                if (!gesture.granted) return reply({authorized: false});
+            }
+            check(!identityTransaction && (!pendingIdentityRestore || data.op === 'identityRestore'));
+            if (data.op === 'commentSendAs' || data.op.startsWith('identity')) {
+                check([...active].every(other => other === entry || other.channel === 'read' && !other.profile && !other.history));
+                identityTransaction = entry;
+            }
+            if (data.op === 'commentSendAs' || data.op === 'identityRestore') {
+                check(profileAllowed && owner);
+                const switchAccount = async (state, target) => {
+                    const headers = {...mobileSessionHeaders(state, true), 'Content-Type': 'application/json'};
+                    const value = json(await request(`${API}/account/switch`, 'POST', headers, JSON.stringify({target_user_id: target}), sessionCookie(state)));
+                    return sessionToken(value, state.cookie);
+                };
+                const prove = async (state, expected) => {
+                    check(profileId(json(await request(ME, 'GET', {}, '', sessionCookie(state)))) === expected);
+                    check(profileId(json(await request(HISTORY_SELF, 'GET', mobileSessionHeaders(state, true), '', sessionCookie(state)))) === expected);
+                    state.owner = expected;
+                };
+                const restore = async () => {
+                    const pending = pendingIdentityRestore;
+                    if (!pending) return true;
+                    check(pending.owner === owner);
+                    const original = await switchAccount(pending.temporary || pending.original, owner);
+                    await prove(original, owner);
+                    check(live() && pendingIdentityRestore === pending);
+                    tabSession = original; pendingIdentityRestore = null;
+                    return true;
+                };
+                if (data.op === 'identityRestore') {
+                    emptyBody(data.body);
+                    entry.submitted = true; entry.send('submitted');
+                    try { return reply({restored: await restore()}); } catch { return reply({restored: false}); }
+                }
+                check(businessOwner === owner && businessScopes.has('interact'));
+                const value = jsonBody(data.body, ['target_user_id', 'resource', 'comment']);
+                check(keyId(value.target_user_id) && value.target_user_id !== owner && typeof value.resource === 'string');
+                const destination = businessDestination('commentSend', value.resource, new URLSearchParams(), JSON.stringify(value.comment));
+                check(!value.comment.has_img && value.comment.sticker_type === null && value.comment.voice_info === null);
+                const snapshot = await businessCookies(API);
+                const original = previous || {cookie: Object.fromEntries(snapshot.header.split('; ').map(pair => [pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1)])), owner};
+                await prove(original, owner);
+                const accounts = json(await request(`${API}/people/account/list`, 'GET', mobileSessionHeaders(original, true), '', sessionCookie(original)));
+                check(Array.isArray(accounts.data) && accounts.data.some(account => account.id === value.target_user_id));
+                const pending = pendingIdentityRestore = {owner, original, temporary: null};
+                entry.submitted = true; entry.send('submitted');
+                let accepted, acceptedRaw;
+                try {
+                    const target = await switchAccount(original, value.target_user_id);
+                    pending.temporary = target;
+                    await prove(target, value.target_user_id);
+                    check(target.cookie.d_c0 && target.cookie._xsrf);
+                    const url = new URL(destination.url), zse93 = '101_3_3.0';
+                    const headers = {Accept: 'application/json', 'Content-Type': destination.contentType, 'x-requested-with': 'fetch',
+                        'x-xsrftoken': target.cookie._xsrf, 'x-zse-93': zse93,
+                        'x-zse-96': zseSign([zse93, url.pathname, target.cookie.d_c0, destination.body].join('+'))};
+                    const response = await request(destination.url, 'POST', headers, destination.body, sessionCookie(target));
+                    acceptedRaw = businessResponse(response.body); accepted = JSON.parse(acceptedRaw);
+                    check(response.status >= 200 && response.status < 300 && accepted && numberId.test(String(accepted.id)) && accepted.author?.id === value.target_user_id);
+                } finally {
+                    try { await restore(); } catch { /* 留下原身份快照；恢复入口不持有也不会重发评论正文。 */ }
+                }
+                return entry.finish('http', 200, '{"comment":' + acceptedRaw + ',"restored":' + (pendingIdentityRestore === null) + '}');
+            }
+            if (data.op === 'loginPhoneCountries') {
+                emptyBody(data.body);
+                const value = json(await request(`${WWW}/api/v3/oauth/sms/supported_countries`));
+                check(Array.isArray(value.data) && value.data.length <= 300);
+                return reply({countries: value.data.map(country => {
+                    check(typeof country.code === 'string' && country.code.length <= 12 && /^\+[1-9][0-9 -]*$/u.test(country.code) && /^\+[1-9][0-9]{0,3}$/u.test(country.code.replace(/[ -]/gu, '')) && typeof country.name === 'string' && country.name.length <= 128 && typeof country.abbr === 'string' && /^[A-Z]{2,3}$/u.test(country.abbr));
+                    return {code: country.code, name: country.name, abbr: country.abbr};
+                })});
+            }
+            if (data.op.startsWith('identity')) {
+                check(profileAllowed && owner);
+                const website = await businessCookies(WWW), api = await businessCookies(API);
+                check(profileId(json(await request(ME, 'GET', {}, '', website.header))) === owner);
+                check(profileId(json(await request(HISTORY_SELF, 'GET', {}, '', api.header))) === owner);
+                const state = previous || {cookie: Object.fromEntries(api.header.split('; ').map(pair => [pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1)]))};
+                const headers = mobileSessionHeaders(state, true);
+                if (data.op === 'identityList') {
+                    emptyBody(data.body); const value = json(await request(`${API}/people/account/list`, 'GET', headers, '', api.header));
+                    check(Array.isArray(value.data) && value.data.length <= 100);
+                    return reply({data: value.data.map(item => {
+                        const profile = profileBody(item); check(profile);
+                        return {...profile, is_active: item.is_active === true, can_create_sub_account: item.can_create_sub_account === true,
+                            account_type: Number.isSafeInteger(item.account_type) ? item.account_type : 0,
+                            sub_account_control_status: Number.isSafeInteger(item.sub_account_control_status) ? item.sub_account_control_status : 0};
+                    })});
+                }
+                check(data.op === 'identitySwitch' || data.op === 'identityCreate');
+                let body = '';
+                if (data.op === 'identitySwitch') { const value = jsonBody(data.body, ['target_user_id']); check(keyId(value.target_user_id)); body = JSON.stringify(value); headers['Content-Type'] = 'application/json'; }
+                else emptyBody(data.body);
+                entry.submitted = true; entry.send('submitted');
+                const value = json(await request(API + (data.op === 'identitySwitch' ? '/account/switch' : '/account/sub/register'), 'POST', headers, body, api.header));
+                return await commit(sessionToken(value, state.cookie));
+            }
+            if (data.op === 'loginPhoneSend') {
+                const value = jsonBody(data.body, ['phone']); check(/^\+[1-9][0-9]{1,14}$/u.test(value.phone));
+                if (phoneTransaction?.phone === value.phone && phoneTransaction.nextSend > Date.now()) throw new Error('denied');
+                cancelPhone();
+                tx = phoneTransaction = {phone: value.phone, cookie: {}, authorization: `oauth ${phoneClient}`, deadline: Date.now() + phoneDeadline, nextSend: 0, busy: true};
+                tx.timer = setTimeout(() => { if (phoneTransaction === tx) cancelPhone(); }, phoneDeadline);
+                entry.onFinish = kind => { if (kind !== 'http' && phoneTransaction === tx) cancelPhone(); };
+                const web = await request(`${WWW}/udid`, 'POST', {'x-zse-93': '101_3_3.0', 'x-zse-96': zseSign('101_3_3.0+/udid'), 'x-requested-with': 'fetch'});
+                check(web.status >= 200 && web.status < 300);
+                tx.webCookie = receivedSessionCookies(web.headers); check(tx.webCookie.d_c0);
+                const timestamp = String(Math.floor(Date.now() / 1000));
+                // 与原生非Android宿主一样使用缺省设备字段，不采集或伪造浏览器硬件指纹。
+                const form = {app_build: '40408', app_install_time: '0', app_ticket: 'interface is empty', app_version: '11.4.0', bt_ck: '0', bundle_id: phoneSource,
+                    cp_ct: '1', cp_tp: 'Web', cp_us: '0.0', d_n: 'Web', fr_mem: '0', fr_st: '0', latitude: '0.0', longitude: '0.0', nt_st: '0',
+                    ph_br: 'Web', ph_md: 'Web', ph_os: 'Android 12', pre_install: 'InterfaceIsNull', tt_mem: '0', tt_st: '0', tz_of: '0', zx_expired: '0'};
+                const signature = await sessionHmac('dd49a835-56e7-4a0f-95b5-efd51ea5397f', '1355' + '2' + new URLSearchParams(form).toString() + timestamp);
+                const init = json(await phoneRequest('/api/account/prod/init/udid_guest', 'POST', form, {'x-app-id': '1355', 'x-sign-version': '2', 'x-req-ts': timestamp, 'x-req-signature': signature}));
+                check(typeof init.udid === 'string' && init.udid.length <= 4096 && !controls.test(init.udid) && typeof init.guest?.access_token === 'string' && /^[^\s\x00-\x1f]{1,16384}$/u.test(init.guest.access_token));
+                tx.udid = init.udid; tx.authorization = `bearer ${init.guest.access_token}`; tx.cookie = issuedSessionCookies(init.guest.cookie, tx.cookie);
+                const state = json(await phoneRequest('/captcha'));
+                const result = state.show_captcha === true ? await captcha() : await sendDigits();
+                if (live() && tx === phoneTransaction) reply(result);
+                return;
+            }
+            tx = phoneTransaction; check(tx && !tx.busy && Date.now() < tx.deadline);
+            tx.busy = true;
+            entry.onFinish = kind => { if (kind !== 'http' && phoneTransaction === tx) cancelPhone(); };
+            if (data.op === 'loginPhoneCaptcha') { emptyBody(data.body); return reply(await captcha()); }
+            if (data.op === 'loginPhoneVerifyCaptcha') {
+                const value = jsonBody(data.body, ['captcha']); check(typeof value.captcha === 'string' && value.captcha.length > 0 && value.captcha.length <= 256 && !controls.test(value.captcha));
+                check(json(await phoneRequest('/captcha', 'POST', {input_text: value.captcha})).success === true);
+                return reply(await sendDigits());
+            }
+            check(data.op === 'loginPhoneCommit');
+            const value = jsonBody(data.body, ['phone', 'digits']); check(value.phone === tx.phone && tx.sent && /^[0-9]{6}$/u.test(value.digits));
+            const timestamp = String(Math.floor(Date.now() / 1000)), signature = await sessionHmac('ecbefbf6b17e47ecb9035107866380', `digits${phoneClient}${phoneSource}${timestamp}`);
+            const token = json(await phoneRequest('/api/account/prod/sign_in', 'POST', {client_id: phoneClient, digits: value.digits, grant_type: 'digits', signature, source: phoneSource, timestamp, username: tx.phone}));
+            await commit(sessionToken(token, {...tx.webCookie, ...tx.cookie}));
+        } catch (error) {
+            entry.finish(['cancelled', 'expired', 'unavailable'].includes(error?.message) ? error.message : 'denied');
+        } finally {
+            if (tx && tx === phoneTransaction) tx.busy = false;
+            if (identityTransaction === entry) identityTransaction = null;
+        }
+    }
+
     function handleRead(data, entry, menuConsent) {
         const {op, id, query: rawQuery} = data, {finish} = entry;
         const profile = op === 'profile';
@@ -1412,6 +1868,8 @@
         const owner = historyOwner;
         const pending = verification ? challenge : null;
         entry.profile = profile || login;
+        entry.identitySensitive = profile || history || login || verification;
+        entry.sessionEpoch = sessionEpoch;
         entry.history = history;
         entry.businessGrant = businessGrant;
         entry.onFinish = kind => {
@@ -1422,18 +1880,19 @@
             }
             if (pending?.checking === entry) pending.checking = null;
         };
-        const allowed = () => trustedPage() && (!profile || profileAllowed) && (!history || (owner !== null && historyOwner === owner && verifiedId === owner)) &&
+        const allowed = () => trustedPage() && (!entry.identitySensitive || entry.sessionEpoch === sessionEpoch) && (!profile || profileAllowed) && (!history || (owner !== null && historyOwner === owner && verifiedId === owner)) &&
             (!verification || (pending && pending === challenge && pending.owner === verifiedId));
         const live = () => !entry.settled && allowed();
         function request(method, href, receive, options = {}) {
             check(live());
             const target = new URL(href);
-            check((method === 'GET' || (qr && method === 'POST')) && [WWW, API].includes(target.origin) && !target.username && !target.password && !target.hash);
+            check((method === 'GET' || (qr && method === 'POST')) && [WWW, API, ...(op === 'dailyStories' || op === 'dailyStory' ? ['https://news-at.zhihu.com', 'https://daily.zhihu.com'] : [])].includes(target.origin) && !target.username && !target.password && !target.hash);
             if (login) entry.timeout(15000);
             transport(entry, {
                 method, url: href,
                 anonymous: options.anonymous ?? (!profile && !history && !verification && !businessGrant && op !== 'authorizeProfile'),
                 ...(verification && href.startsWith(VERIFY) ? {headers: {Referer: pending.url}} : {}),
+                ...(tabSession && (profile || history || verification || businessGrant || op === 'authorizeProfile') ? {cookie: sessionCookie(tabSession), anonymous: true} : {}),
             }, ({status, body: raw, headers}) => {
                 check(allowed());
                 if (status >= 300 && status < 400) {
@@ -1453,7 +1912,7 @@
                     } catch { /* 非 JSON 错误不构成失效证据。 */ }
                     if (status === 401 || expired) {
                         if (history && target.origin !== WWW) return revokeHistory('expired');
-                        rememberProfile(null);
+                        rememberProfile(null, entry);
                     }
                     if (!entry.settled) finish(expired ? 'expired' : status === 401 ? 'guest' : 'denied');
                 } else receive(status, raw);
@@ -1464,7 +1923,7 @@
         function withHistoryOwner(next) {
             get(ME, (status, raw) => {
                 if (status !== 200) return finish('unavailable');
-                if (profileId(JSON.parse(raw)) !== owner) return rememberProfile(null);
+                if (profileId(JSON.parse(raw)) !== owner) return rememberProfile(null, entry);
                 get(HISTORY_SELF, (apiStatus, apiBody) => {
                     if (apiStatus !== 200) return finish('unavailable');
                     if (profileId(JSON.parse(apiBody)) !== owner) return revokeHistory('expired');
@@ -1480,6 +1939,8 @@
             }
             // 不支持 manual redirect 的管理器会先泄露请求；finalUrl 不能替代发送前的能力门槛。
             if (readIssue) return finish('unsupported', 0, readIssue);
+            if ((profile || history || login || verification) && (identityTransaction || pendingIdentityRestore)) return finish('denied');
+            if ((profile || history || login || verification) && sessionIssue) return finish('unsupported', 0, sessionIssue);
             check(allowed());
             if (history && data.owner !== owner) return finish('expired');
             const query = parseQuery(rawQuery);
@@ -1515,7 +1976,7 @@
                     return get(ME, (status, raw) => {
                         if (status !== 200) return finish('unavailable');
                         const data = profileBody(JSON.parse(raw));
-                        rememberProfile(data?.id ?? null);
+                        rememberProfile(data?.id ?? null, entry);
                         if (data === null) return finish('guest');
                         profileAllowed = true;
                         finish('http', 200, '{"authorized":true}');
@@ -1563,8 +2024,8 @@
                 if (status !== 200) return finish('http', status);
                 if (!profile) return finish('http', status, publicBody(raw, op, id, query));
                 const data = profileBody(JSON.parse(raw));
-                if (!browserQrProfileMatches(data?.id ?? null)) { rememberProfile(null); return finish('expired'); }
-                rememberProfile(data?.id ?? null);
+                if (!browserQrProfileMatches(data?.id ?? null)) { rememberProfile(null, entry); return finish('expired'); }
+                rememberProfile(data?.id ?? null, entry);
                 if (data === null) finish('guest'); else finish('http', status, JSON.stringify(data));
             });
             if (history) withHistoryOwner(read); else read();

@@ -42,6 +42,7 @@ import coil3.compose.AsyncImage
 import com.github.zly2006.zhihu.account.ZhihuAccounts
 import com.github.zly2006.zhihu.account.ZhihuIdentityAccount
 import com.github.zly2006.zhihu.account.ZhihuSavedAccount
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.requestLoginNavigation
 import com.github.zly2006.zhihu.ui.components.AppIcon
@@ -57,6 +58,8 @@ internal val ZhihuSavedAccount.displayName: String
 internal fun IdentityManagementContent(
     state: IdentityManagementState,
     savedAccounts: ZhihuAccounts,
+    browserSession: Boolean = false,
+    browserListRequested: Boolean = true,
     sessionChangeBlocked: Boolean,
     onRetry: () -> Unit,
     onSwitchTargetChange: (ZhihuIdentityAccount) -> Unit,
@@ -64,6 +67,18 @@ internal fun IdentityManagementContent(
     onSwitchLoginAccountChange: (ZhihuSavedAccount) -> Unit,
     onCreate: () -> Unit,
 ) {
+    if (browserSession) {
+        SettingItemGroup {
+            SettingItem(
+                title = { Text(SettingsStrings.fetchIdentities) },
+                description = { Text(AccountStrings.webIdentitySessionNote) },
+                icon = { AppIcon(Icons.Default.Refresh, null) },
+                enabled = !state.loading && !state.busy && !sessionChangeBlocked,
+                onClick = onRetry,
+                modifier = Modifier.testTag("identityManagement.browserLoad"),
+            )
+        }
+    }
     if (state.loading && state.accounts.isEmpty()) {
         Box(
             modifier = Modifier
@@ -142,7 +157,7 @@ internal fun IdentityManagementContent(
                 )
             }
         }
-    } else if (!state.loading && state.errorMessage == null) {
+    } else if (!state.loading && state.errorMessage == null && (!browserSession || browserListRequested)) {
         SettingItemGroup {
             SettingItem(
                 title = { Text(SettingsStrings.noAccountsFound) },
@@ -159,7 +174,7 @@ internal fun IdentityManagementContent(
     run {
         val otherAccounts = savedAccounts.accounts.filterNot { it.id == savedAccounts.activeAccountId }
         SettingItemGroup(
-            title = SettingsStrings.otherSavedAccounts,
+            title = if (browserSession) AccountStrings.webTabAccount else SettingsStrings.otherSavedAccounts,
         ) {
             otherAccounts.forEach { account ->
                 SettingItem(

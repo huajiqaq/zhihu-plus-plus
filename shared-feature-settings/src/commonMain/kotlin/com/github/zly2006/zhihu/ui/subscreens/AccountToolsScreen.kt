@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.testTag
 import com.github.zly2006.zhihu.account.ZhihuAccountClient
 import com.github.zly2006.zhihu.account.parseCookieAssignments
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
+import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.i18n.SettingsStrings
 import com.github.zly2006.zhihu.navigation.LocalNavigator
 import com.github.zly2006.zhihu.navigation.Login
@@ -64,13 +65,14 @@ import com.github.zly2006.zhihu.ui.components.AppTextButton
 import com.github.zly2006.zhihu.ui.components.SettingItem
 import com.github.zly2006.zhihu.ui.components.SettingItemGroup
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 const val DEVELOPER_SETTINGS_BACK_BUTTON_TAG = "developerSettings/backButton"
 
-private enum class AccountTool { Verify, RefreshToken, ImportCookie }
+private enum class AccountTool { Verify, RefreshToken, ImportCookie, RestoreIdentity }
 
 private data class AccountToolResult(
     private val text: () -> String,
@@ -95,13 +97,15 @@ fun AccountToolsScreen() {
     val accounts by accountStore.accountsState.collectAsState()
     val session = accounts.session
     val verification by accountClient.verificationState.collectAsState()
+    val restoreRequired by accountClient.browserCommentRestoreRequired.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var cookieDialogOwner by remember(accountStore) { mutableStateOf<ZhihuAccountClient?>(null) }
     val showCookieDialog = cookieDialogOwner === accountClient
     var showDiagnostics by remember(accountClient) { mutableStateOf(false) }
     var toolState by remember(accountStore) { mutableStateOf(AccountToolsState(accountClient)) }
     val state = toolState.takeIf { it.owner === accountClient } ?: AccountToolsState(accountClient)
-    val canRun = state.running == null && !verification.blocksSessionChange
+    val canRestore = state.running == null && !verification.blocksSessionChange
+    val canRun = canRestore && !restoreRequired
 
     LaunchedEffect(accountClient) {
         if (accountStore.client === accountClient) {
@@ -118,9 +122,10 @@ fun AccountToolsScreen() {
     ) {
         val owner = accountClient
         if (accountStore.client !== owner || owner.verificationState.value.blocksSessionChange) return
+        if (owner.browserCommentRestoreRequired.value && tool != AccountTool.RestoreIdentity) return
         if (toolState.owner === owner && toolState.running != null) return
         toolState = (toolState.takeIf { it.owner === owner } ?: AccountToolsState(owner)).copy(running = tool)
-        coroutineScope.launch {
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
             var resultOwner = owner
             try {
                 if (accountStore.client !== owner || owner.verificationState.value.blocksSessionChange) return@launch
@@ -189,6 +194,26 @@ fun AccountToolsScreen() {
             title = SettingsStrings.maintenance,
             footer = { Text(if (accountStore.usesBrowserSession) SettingsStrings.browserLoginPrivacy else SettingsStrings.cookieSecurityWarning) },
         ) {
+            if (restoreRequired) {
+                AccountToolRow(
+                    title = AccountStrings.webRestoreIdentity,
+                    idleSummary = AccountStrings.webRestoreIdentitySummary,
+                    runningSummary = AccountStrings.verificationConfirming,
+                    icon = Icons.Default.Sync,
+                    running = state.running == AccountTool.RestoreIdentity,
+                    result = state.results[AccountTool.RestoreIdentity],
+                    enabled = canRestore,
+                    onClick = {
+                        runTool(AccountTool.RestoreIdentity, { AccountStrings.webRestoreIdentityFailed }) { owner ->
+                            if (accountStore.restoreBrowserCommentIdentity(owner)) {
+                                AccountToolResult({ AccountStrings.webRestoreIdentitySucceeded }, failed = false)
+                            } else {
+                                AccountToolResult({ AccountStrings.webRestoreIdentityFailed }, failed = true)
+                            }
+                        }
+                    },
+                )
+            }
             AccountToolRow(
                 title = SettingsStrings.verifyLogin,
                 idleSummary = SettingsStrings.verifyLoginDescription,

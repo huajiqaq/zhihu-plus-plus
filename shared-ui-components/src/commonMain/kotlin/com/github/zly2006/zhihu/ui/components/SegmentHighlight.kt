@@ -229,7 +229,7 @@ suspend fun createSegmentReactions(
     target: SegmentSelectionTarget,
     ranges: List<SegmentCreationRange>,
 ): List<Pair<SegmentCreationRange, String>> {
-    if (environment.authenticatedCookies()["d_c0"].isNullOrBlank()) {
+    if (!environment.isLoggedIn) {
         throw SegmentReactionException(SegmentReactionFailure.LOGIN_REQUIRED, WidgetsStrings.segmentLoginRequired)
     }
     if (ranges.size > 1) {
@@ -660,7 +660,7 @@ suspend fun toggleSegmentLike(
     environment: PaginationEnvironment,
     highlight: SegmentHighlightSpan,
 ): SegmentInfoMeta {
-    check(!environment.authenticatedCookies()["d_c0"].isNullOrBlank()) { WidgetsStrings.segmentLoginRequired }
+    check(environment.isLoggedIn) { WidgetsStrings.segmentLoginRequired }
     val contentId = checkNotNull(highlight.contentId?.takeIf(String::isNotBlank)) { WidgetsStrings.missingContentId }
     val targetType = checkNotNull(highlight.contentType?.takeIf(String::isNotBlank)) { WidgetsStrings.missingContentType }
     val url = "https://www.zhihu.com/api/v4/reaction/${targetType}s/$contentId/segment_reaction"

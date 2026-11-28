@@ -45,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.navigation.History
 import com.github.zly2006.zhihu.navigation.LocalNavigator
@@ -94,7 +93,6 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
     val navigator = LocalNavigator.current
     val model: OnlineHistoryViewModel = viewModel { OnlineHistoryViewModel() }
     val account by rememberAccountSettingsAccountState()
-    val readOnly = rememberZhihuAccountStore().usesBrowserSession
     val environment = rememberPaginationEnvironment(allowGuestAccess = false)
     val accountClient = environment.httpClient()
     val userMessages = rememberUserMessageSink()
@@ -199,7 +197,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                             HistorySelectAction(selectionMode, {
                                 selectionMode = !selectionMode
                                 selectedKeys = emptySet()
-                            }, enabled = !readOnly && !busy && model.recordingEnabled)
+                            }, enabled = !busy && model.recordingEnabled)
                             AppIconButton(onClick = { showActions = true }, modifier = Modifier.testTag(ONLINE_HISTORY_OVERFLOW_TAG), enabled = !busy) {
                                 AppIcon(Icons.Default.MoreVert, AccountStrings.moreOptions)
                                 AppDropdownMenu(expanded = isActive && showActions, onDismissRequest = { showActions = false }) {
@@ -207,12 +205,12 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                                         showActions = false
                                         navigator.onNavigate(History)
                                     })
-                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyBulkDelete) }, enabled = !readOnly && !busy && model.recordingEnabled, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyBulkDelete) }, enabled = !busy && model.recordingEnabled, onClick = {
                                         showActions = false
                                         selectedKeys = emptySet()
                                         selectionMode = true
                                     })
-                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyClear) }, enabled = !readOnly && model.recordingEnabled, onClick = {
+                                    AppDropdownMenuItem(text = { Text(AccountStrings.historyClear) }, enabled = model.recordingEnabled, onClick = {
                                         showActions = false
                                         showClear = true
                                     })
@@ -220,16 +218,13 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                                         modifier = Modifier.testTag(HISTORY_RECORDING_TOGGLE_TAG),
                                         text = {
                                             Text(
-                                                if (readOnly) {
-                                                    AccountStrings.historyWebReadonly
-                                                } else if (model.recordingEnabled) {
+                                                if (model.recordingEnabled) {
                                                     AccountStrings.historyDisable
                                                 } else {
                                                     AccountStrings.historyEnable
                                                 },
                                             )
                                         },
-                                        enabled = !readOnly,
                                         onClick = {
                                             showActions = false
                                             if (model.recordingEnabled) {
@@ -261,7 +256,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                         allSelected,
                         onSelectAll = { selectedKeys = if (allSelected) selectedKeys - visibleKeys else selectedKeys + visibleKeys },
                         onDelete = { showDelete = true },
-                        enabled = !readOnly && !busy,
+                        enabled = !busy,
                     )
                 }
             },
@@ -273,7 +268,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                     modifier = Modifier.fillMaxSize().padding(padding),
                     icon = Icons.Default.History,
                     action = {
-                        AppButton(text = if (readOnly) AccountStrings.historyWebCannotEnable else AccountStrings.historyEnableAction, enabled = !readOnly && !busy, onClick = {
+                        AppButton(text = AccountStrings.historyEnableAction, enabled = !busy, onClick = {
                             scope.launch {
                                 try {
                                     model.setRecordingEnabled(environment, true)
@@ -316,7 +311,7 @@ fun OnlineHistoryScreen(scrollToTopTrigger: Int = 0, isActive: Boolean = true, o
                                     titleTrailingContent = { HistoryTypeBadge(item.historyType, item.titleBadges) },
                                     onClick = if (selectionMode) ({ _, _ -> if (!busy) toggle() }) else null,
                                     menuItems = { dismiss ->
-                                        AppDropdownMenuItem(text = { Text(AccountStrings.historyDeleteItem) }, enabled = !readOnly && !busy, onClick = {
+                                        AppDropdownMenuItem(text = { Text(AccountStrings.historyDeleteItem) }, enabled = !busy, onClick = {
                                             dismiss()
                                             scope.launch {
                                                 deleting = true

@@ -526,6 +526,10 @@ compose.desktop {
                 infoPlist {
                     extraKeysRawXml = """
                         <key>CFBundleShortVersionString</key><string>$appVersionName</string>
+                        <key>CFBundleURLTypes</key><array><dict>
+                          <key>CFBundleURLName</key><string>com.github.zly2006.zhihu.content</string>
+                          <key>CFBundleURLSchemes</key><array><string>zhihu-plus-plus</string></array>
+                        </dict></array>
                         <key>NSMicrophoneUsageDescription</key><string>录制语音输入并转换为文字。</string>
                     """.trimIndent()
                 }

@@ -48,18 +48,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.github.zly2006.zhihu.data.ZHIHU_ME_URL
 import com.github.zly2006.zhihu.data.ZhihuJson
 import com.github.zly2006.zhihu.i18n.AccountStrings
 import com.github.zly2006.zhihu.i18n.DomainStrings
+import com.github.zly2006.zhihu.i18n.ReaderStrings
+import com.github.zly2006.zhihu.platform.rememberSystemUrlOpener
+import com.github.zly2006.zhihu.platform.rememberUserMessageSink
 import com.github.zly2006.zhihu.theme.LocalAppSkinTokens
+import com.github.zly2006.zhihu.ui.components.AppButton
+import com.github.zly2006.zhihu.ui.components.AppCompactTopBar
 import com.github.zly2006.zhihu.ui.components.AppDimens
+import com.github.zly2006.zhihu.ui.components.AppScaffold
 import com.github.zly2006.zhihu.ui.components.AppOutlinedButton
 import com.github.zly2006.zhihu.ui.components.AppSpinner
 import com.github.zly2006.zhihu.ui.components.settingSkinIsMiuix
@@ -77,6 +86,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
+import io.ktor.http.URLProtocol
+import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -426,6 +437,7 @@ internal fun AccountQrLoginPane(onLoginSuccess: (String) -> Unit) {
         onRiskControl = { url, candidate -> owner.reportHumanVerification(url, candidate) },
         onLoginSuccess = { candidate ->
             if (store.login(owner, candidate.toMutableMap())) {
+                store.reportLoginSuccess(store.client, store.session.username)
                 onSuccess(store.session.username)
                 true
             } else {
@@ -544,6 +556,40 @@ fun SharedQrLoginPane(
         return
     }
 
+    QrLoginContent(
+        bitmap = qrBitmap,
+        status = statusText(),
+        loading = isWorking,
+        error = riskControlMessage?.invoke(),
+        modifier = modifier,
+    ) {
+        AppOutlinedButton(
+            onClick = {
+                qrBitmap = null
+                statusText = { AccountStrings.qrRefreshing }
+                isWorking = true
+                riskControlUrl = null
+                riskControlMessage = null
+                refreshKey += 1
+            },
+            modifier = Modifier.testTag("qr_login_retry"),
+            enabled = ownerIsCurrent && !isVerifying && !completed,
+        ) {
+            Text(AccountStrings.qrRefresh)
+        }
+    }
+}
+
+/** 呈现与协议分离；浏览器的授权及提交仍由调用侧的用户操作触发。 */
+@Composable
+internal fun QrLoginContent(
+    bitmap: ImageBitmap?,
+    status: String,
+    loading: Boolean,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    actions: @Composable () -> Unit,
+) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -554,13 +600,14 @@ fun SharedQrLoginPane(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            if (qrBitmap != null) {
+            if (bitmap != null) {
                 Surface(
                     shape = RoundedCornerShape(AppDimens.CardCornerRadius),
                     color = Color.White,
                 ) {
                     Image(
-                        bitmap = qrBitmap!!,
+                        bitmap = bitmap,
+                        filterQuality = FilterQuality.None,
                         contentDescription = AccountStrings.qrImageDescription,
                         modifier = Modifier
                             .widthIn(max = AppDimens.QrCodeSize + AppDimens.Space16 + AppDimens.Space16)
@@ -571,7 +618,7 @@ fun SharedQrLoginPane(
                     )
                 }
                 Spacer(modifier = Modifier.size(AppDimens.IconSizeCompact))
-            } else if (isWorking) {
+            } else if (loading) {
                 AppSpinner(
                     modifier = Modifier.testTag("qr_login_loading"),
                     size = AppDimens.ProgressIndicatorSize,
@@ -580,7 +627,7 @@ fun SharedQrLoginPane(
             }
 
             Text(
-                text = statusText(),
+                text = status,
                 style = if (settingSkinIsMiuix()) {
                     LocalAppSkinTokens.current.main
                 } else {
@@ -599,10 +646,10 @@ fun SharedQrLoginPane(
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
 
-            if (!riskControlMessage?.invoke().isNullOrBlank()) {
+            if (!error.isNullOrBlank()) {
                 Spacer(modifier = Modifier.size(AppDimens.Space12))
                 Text(
-                    text = riskControlMessage?.invoke().orEmpty(),
+                    text = error,
                     style = if (settingSkinIsMiuix()) {
                         LocalAppSkinTokens.current.footnote2
                     } else {
@@ -625,22 +672,61 @@ fun SharedQrLoginPane(
             Row(
                 horizontalArrangement = Arrangement.spacedBy(AppDimens.Space12),
             ) {
-                AppOutlinedButton(
-                    onClick = {
-                        qrBitmap = null
-                        statusText = { AccountStrings.qrRefreshing }
-                        isWorking = true
-                        riskControlUrl = null
-                        riskControlMessage = null
-                        refreshKey += 1
-                    },
-                    modifier = Modifier.testTag("qr_login_retry"),
-                    enabled = ownerIsCurrent && !isVerifying && !completed,
-                ) {
-                    Text(AccountStrings.qrRefresh)
+                actions()
+            }
+        }
+    }
+}
+
+/** 扫码只打开已确认的官方路径，不自动提交官网的授权表单。 */
+internal fun isAccountQrConfirmationUrl(value: String): Boolean {
+    if (value.length > 8192 || value.any(Char::isISOControl)) return false
+    val url = runCatching { Url(value) }.getOrNull() ?: return false
+    return url.protocol == URLProtocol.HTTPS && url.host == "www.zhihu.com" && url.port == 443 &&
+        url.user == null && url.password == null && url.fragment.isEmpty() && url.encodedQuery.isEmpty() &&
+        Regex("/account/scan/login/[A-Za-z0-9_-]{1,256}/?").matches(url.encodedPath)
+}
+
+@Composable
+fun rememberAccountQrConfirmationOpener(): (String) -> Unit {
+    val store = rememberZhihuAccountStore()
+    val owner = store.client
+    val messages = rememberUserMessageSink()
+    var selected by remember(owner) { mutableStateOf<String?>(null) }
+    selected?.let { url ->
+        Dialog(onDismissRequest = { selected = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            AppScaffold(
+                modifier = Modifier.fillMaxSize().testTag("account_qr_confirmation"),
+                topBar = { AppCompactTopBar(title = ReaderStrings.scanToSignIn, onBack = { selected = null }) },
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    AccountQrConfirmationPane(url, owner, Modifier.fillMaxSize())
                 }
             }
         }
+    }
+    return { url ->
+        if (store.client !== owner || !owner.isCurrent || !store.session.login) {
+            messages.showShortMessage(AccountStrings.loginRequiredSummary)
+        } else if (!isAccountQrConfirmationUrl(url)) {
+            messages.showShortMessage(AccountStrings.qrInvalidResponse)
+        } else {
+            selected = url
+        }
+    }
+}
+
+@Composable
+internal expect fun AccountQrConfirmationPane(url: String, owner: ZhihuAccountClient, modifier: Modifier)
+
+/** 外部浏览器拥有自己的登录态；打开页面不是对应用账号的扫码授权。 */
+@Composable
+internal fun ExternalAccountQrConfirmationPane(url: String, modifier: Modifier) {
+    require(isAccountQrConfirmationUrl(url))
+    val open = rememberSystemUrlOpener()
+    Column(modifier.padding(AppDimens.Space16), verticalArrangement = Arrangement.spacedBy(AppDimens.Space12)) {
+        Text(AccountStrings.webScanExternalSessionNotice)
+        AppButton(text = AccountStrings.webScanConfirmExternally, onClick = { open(url) })
     }
 }
 
@@ -648,13 +734,11 @@ expect fun generateQrLoginBitmap(content: String): ImageBitmap
 
 expect val isLoginRiskControlSupported: Boolean
 
-/** 手动确认时读取验证页最新 Cookie，包含页面 AJAX 更新的凭据。 */
-internal expect fun readLoginRiskControlCookies(url: String): Map<String, String>
-
 @Composable
 expect fun LoginRiskControlPane(
     url: String,
     cookies: Map<String, String>,
     onCookiesChanged: (Map<String, String>) -> Unit,
+    onCookieReaderReady: ((suspend () -> Map<String, String>)?) -> Unit,
     onVerificationComplete: () -> Unit,
 )

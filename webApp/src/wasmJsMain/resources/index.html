@@ -21,6 +21,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <meta name="referrer" content="no-referrer">
     <meta name="zhihu-build-id" content="development">
+    <meta name="zhihu-cache-mode" content="debug">
+    <meta name="zhihu-version-name" content="development">
+    <meta name="zhihu-version-code" content="0">
+    <meta name="zhihu-resource-base" content="./">
+    <meta name="zhihu-app-entry" content="zhihu.js">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/png" href="./icon-192.png">
     <link rel="apple-touch-icon" href="./icon-192.png">
@@ -54,7 +59,7 @@
     <main id="app" aria-busy="true"></main>
     <section id="boot-status" role="status" aria-live="polite" aria-atomic="true">
         <h1 id="boot-title">Loading Zhihu++…</h1>
-        <p id="boot-detail">The first visit downloads the app and rendering engine. Your browser may cache them for later visits.</p>
+        <p id="boot-detail">Downloads use browser storage; running the app also requires memory. App files are reused until a newer version is published. Codecs and NLP runtimes load on demand; models are separate. Delete downloads in Settings. Local debug builds reload from the network.</p>
         <button id="boot-retry" type="button" hidden>Reload</button>
     </section>
     <noscript>
@@ -73,8 +78,8 @@
             const chinese = /^zh(?:-|$)/i.test(document.documentElement.lang);
             title.textContent = chinese ? '正在加载知乎++…' : 'Loading Zhihu++…';
             detail.textContent = chinese
-                ? '首次访问需要下载应用和渲染引擎；后续访问可复用浏览器缓存。'
-                : 'The first visit downloads the app and rendering engine. Your browser may cache them for later visits.';
+                ? '下载占用浏览器本地存储，运行还需要内存。应用资源复用至发布新版本；编解码器和 NLP 运行库按需缓存，模型另行管理。可在设置删除下载。本地调试版每次从网络重新加载。'
+                : 'Downloads use browser storage; running the app also requires memory. App files are reused until a newer version is published. Codecs and NLP runtimes load on demand; models are separate. Delete downloads in Settings. Local debug builds reload from the network.';
             retry.textContent = chinese ? '重新加载' : 'Reload';
             retry.addEventListener('click', () => location.reload());
             const showFailure = () => {
@@ -85,20 +90,33 @@
                 retry.hidden = false;
             };
             const onError = event => {
-                if (event.target === window || event.target?.id === 'app-script') showFailure();
+                if (event.target === window || ['app-script', 'app-cache-bootstrap'].includes(event.target?.id)) showFailure();
             };
             const finish = () => {
                 window.removeEventListener('error', onError, true);
                 window.removeEventListener('unhandledrejection', showFailure);
+                window.removeEventListener('zhihu-app-boot-failed', showFailure);
                 document.getElementById('app').removeAttribute('aria-busy');
                 status.remove();
             };
             // 捕获脚本网络失败；Wasm 异步编译失败由 unhandledrejection 处理，不吞控制台错误。
             window.addEventListener('error', onError, true);
             window.addEventListener('unhandledrejection', showFailure);
+            window.addEventListener('zhihu-app-boot-failed', showFailure);
             window.addEventListener('zhihu-app-ready', finish, {once: true});
         })();
     </script>
-    <script id="app-script" src="zhihu.js" defer></script>
+    <script>
+        (() => {
+            const script = document.createElement('script');
+            script.id = 'app-cache-bootstrap';
+            const url = new URL('zhihu-app-bootstrap.js', new URL('./', location.href));
+            if (document.querySelector('meta[name="zhihu-cache-mode"]')?.content === 'debug') {
+                url.searchParams.set('visit', String(Date.now()));
+            }
+            script.src = url.href;
+            document.body.appendChild(script);
+        })();
+    </script>
 </body>
 </html>

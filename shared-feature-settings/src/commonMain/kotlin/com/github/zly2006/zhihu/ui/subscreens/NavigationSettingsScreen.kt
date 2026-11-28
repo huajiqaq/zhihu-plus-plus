@@ -36,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.github.zly2006.zhihu.i18n.SettingsStrings
+import com.github.zly2006.zhihu.i18n.PlatformStrings
+import com.github.zly2006.zhihu.ui.LocalSharedMainNavigationBarAvailable
 import com.github.zly2006.zhihu.navigation.Account
 import com.github.zly2006.zhihu.navigation.Daily
 import com.github.zly2006.zhihu.navigation.Follow
@@ -276,8 +278,9 @@ fun NavigationSettingsScreen(
             var autoHideBottomBar by rememberSetting(settings, "autoHideBottomBar", false)
             SettingItemWithSwitch(
                 title = { Text(SettingsStrings.autoHideBottomBar) },
-                description = { Text(SettingsStrings.autoHideBottomBarDescription) },
-                checked = autoHideBottomBar,
+                description = { Text(if (LocalSharedMainNavigationBarAvailable.current) SettingsStrings.autoHideBottomBarDescription else PlatformStrings.sharedNavigationOnly) },
+                checked = autoHideBottomBar && LocalSharedMainNavigationBarAvailable.current,
+                enabled = LocalSharedMainNavigationBarAvailable.current,
                 onCheckedChange = { autoHideBottomBar = it },
                 settingKey = "autoHideBottomBar",
             )
@@ -312,7 +315,7 @@ fun NavigationSettingsScreen(
             val shareActionOptions = listOf(
                 "ask" to SettingsStrings.ask,
                 "copy" to SettingsStrings.copyLink,
-                "share" to if (platformName == "iOS") SettingsStrings.systemShare else SettingsStrings.androidShare,
+                "share" to if (platformName == "Android") SettingsStrings.androidShare else SettingsStrings.systemShare,
             )
             SettingItemSelect(
                 title = { Text(SettingsStrings.shareAction) },

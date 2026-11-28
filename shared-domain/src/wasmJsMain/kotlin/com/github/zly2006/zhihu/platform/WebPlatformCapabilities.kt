@@ -32,7 +32,6 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import com.github.zly2006.zhihu.i18n.DomainStrings
 import com.github.zly2006.zhihu.nlp.OfflineNlpController
 import com.github.zly2006.zhihu.nlp.OfflineNlpModelState
-import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.KeywordSemanticMatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.io.files.Path
@@ -55,8 +54,6 @@ actual val platformKeywordSemanticMatcher: KeywordSemanticMatcher?
 
 actual val platformSemanticRuntimeGeneration: StateFlow<Long>
     get() = OfflineNlpController.policyGeneration
-
-actual suspend fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) = Unit
 
 actual fun appPrivateDirectory(): Path = throw UnsupportedOperationException("浏览器不提供本机私有目录，请使用应用数据存储")
 

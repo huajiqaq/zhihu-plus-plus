@@ -55,6 +55,7 @@ import com.github.zly2006.zhihu.util.exportCollectionItemsToZip
 import com.github.zly2006.zhihu.util.saveBitmapToGallery
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedQuestionAuthor
 import com.github.zly2006.zhihu.viewmodel.filter.BlockedUser
+import com.github.zly2006.zhihu.viewmodel.filter.FilterableContent
 import com.github.zly2006.zhihu.viewmodel.filter.getContentFilterDatabase
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
@@ -77,6 +78,12 @@ open class SharedAndroidPaginationEnvironment(
 ) : AndroidContextPaginationEnvironment,
     CollectionContentEnvironment {
     private val userMessageSink by lazy { androidUserMessageSink(context) }
+
+    override fun showNlpBlockedMessage(blocked: Collection<FilterableContent>) {
+        if (blocked.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            userMessageSink.showShortMessage(DomainStrings.semanticItemsBlocked(blocked.size, blocked.first().title.take(10)))
+        }
+    }
 
     override val accountClient: ZhihuAccountClient
         get() = accountStore.client

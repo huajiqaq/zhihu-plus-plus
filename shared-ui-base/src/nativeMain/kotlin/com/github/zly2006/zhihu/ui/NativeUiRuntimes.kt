@@ -22,6 +22,8 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.em
 import com.github.zly2006.zhihu.account.rememberZhihuAccountStore
 import com.github.zly2006.zhihu.navigation.Article
+import com.github.zly2006.zhihu.ui.components.rememberNavEntryOnTop
 import com.github.zly2006.zhihu.notification.NotificationSettingsStore
 import com.github.zly2006.zhihu.platform.LocalNativeFileDelivery
 import com.github.zly2006.zhihu.platform.withNativeExportDirectory
@@ -205,8 +208,24 @@ actual fun QuestionDetailWebViewContent(questionId: Long, html: String): Unit =
 
 actual fun Modifier.questionSelectionWorkaround(): Modifier = this
 
-@Composable
-actual fun ArticleImmersiveModeEffect(immersive: Boolean) = Unit
+/** 宿主窗口拥有 chrome，不通过全局可变回调控制另一窗口。 */
+val LocalNativeReadingImmersiveMode = staticCompositionLocalOf<(Boolean) -> Unit> { {} }
 
 @Composable
-actual fun LeaveImmersiveModeCleanup() = Unit
+actual fun ArticleImmersiveModeEffect(immersive: Boolean) {
+    val update = LocalNativeReadingImmersiveMode.current
+    val onTop = rememberNavEntryOnTop()
+    DisposableEffect(update, immersive, onTop) {
+        if (onTop) update(immersive)
+        onDispose { if (onTop) update(false) }
+    }
+}
+
+@Composable
+actual fun LeaveImmersiveModeCleanup() {
+    val update = LocalNativeReadingImmersiveMode.current
+    DisposableEffect(update) {
+        update(false)
+        onDispose { update(false) }
+    }
+}

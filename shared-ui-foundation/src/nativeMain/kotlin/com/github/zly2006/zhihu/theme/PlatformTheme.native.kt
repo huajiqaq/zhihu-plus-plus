@@ -22,6 +22,3 @@ import androidx.compose.ui.graphics.Color
 
 @Composable
 actual fun platformDynamicThemeSeedColor(): Color? = null
-
-@Composable
-actual fun PlatformSystemBarEffect(darkTheme: Boolean) = Unit

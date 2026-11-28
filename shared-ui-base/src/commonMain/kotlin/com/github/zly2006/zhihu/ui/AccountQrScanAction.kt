@@ -18,6 +18,11 @@
 package com.github.zly2006.zhihu.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+
+/** 登录模块在应用根提供当前账号的官方扫码确认页；解码层不持有凭据。 */
+val LocalAccountQrConfirmationOpener = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
 
 expect val isAccountQrScanSupported: Boolean
 

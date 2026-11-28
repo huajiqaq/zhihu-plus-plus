@@ -127,10 +127,12 @@ actual fun rememberSystemUpdateState(): StateFlow<SystemUpdateState> {
 }
 
 @Composable
-actual fun rememberSystemUpdateChecker(): suspend () -> Unit {
+actual fun rememberSystemUpdateChecker(auto: Boolean): suspend () -> Unit {
     val context = LocalContext.current
     val accountStore = rememberZhihuAccountStore()
-    return { UpdateManager.checkForUpdate(context, accountStore.engine) }
+    return {
+        if (auto) UpdateManager.autoCheckForUpdate(context, accountStore.engine) else UpdateManager.checkForUpdate(context, accountStore.engine)
+    }
 }
 
 @Composable
@@ -153,9 +155,13 @@ actual fun rememberDownloadedSystemUpdateInstaller(): suspend () -> Unit {
     return { UpdateManager.installUpdate(context) }
 }
 
-actual fun resetSystemUpdateState() {
-    UpdateManager.updateState.value = UpdateState.NoUpdate
-}
+actual fun resetSystemUpdateState() = UpdateManager.resetState()
+
+@Composable
+actual fun rememberSystemUpdateCanceller(): () -> Unit = UpdateManager::cancelDownload
+
+@Composable
+actual fun rememberWebAppCacheAction(): suspend (WebAppCacheAction) -> Unit = { error("Web cache is unavailable on Android") }
 
 actual fun setSystemUpdateError(message: String, step: UpdateStep) = UpdateManager.reportFailure(message, step)
 
@@ -178,6 +184,7 @@ private fun UpdateState.UpdateAvailable.toSystemUpdate() = SystemUpdateState.Upd
     downloadUrl = downloadUrl,
     cnDownloadUrl = cnDownloadUrl,
     opensExternally = opensExternally,
+    asset = asset,
 )
 
 @Composable

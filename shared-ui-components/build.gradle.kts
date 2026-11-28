@@ -95,7 +95,18 @@ kotlin {
     }
 }
 
+/** 编辑器各宿主使用同一份本地 Quill 资产，保留上游许可；不从 CDN 加载脚本。 */
+val prepareRichEditorResources = tasks.register<Sync>("prepareRichEditorResources") {
+    from(layout.projectDirectory.dir("src/commonMain/composeResources"))
+    from(layout.projectDirectory.dir("src/androidMain/assets/rich-editor")) { into("files/rich-editor") }
+    into(layout.buildDirectory.dir("generated/rich-editor-resources"))
+}
+
 compose.resources {
+    customDirectory(
+        sourceSetName = "commonMain",
+        directoryProvider = prepareRichEditorResources.map { layout.buildDirectory.dir("generated/rich-editor-resources").get() },
+    )
     publicResClass = true
     packageOfResClass = "zhihu.uicomponents.generated.resources"
 }

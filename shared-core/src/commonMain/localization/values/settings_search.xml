@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="system_update">
+        <item>check updates</item>
+        <item>version</item>
+        <item>download</item>
+        <item>release</item>
+        <item>apply update</item>
+    </string-array>
+    <string-array name="system_web_app_cache">
+        <item>app cache</item>
+        <item>disk storage</item>
+        <item>Wasm</item>
+        <item>offline startup</item>
+        <item>clear cache</item>
+        <item>restore cache</item>
+        <item>running memory</item>
+    </string-array>
     <string-array name="appearance_app_language">
         <item>Language</item>
         <item>English</item>

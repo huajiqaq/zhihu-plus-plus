@@ -33,12 +33,21 @@ import com.github.zly2006.zhihu.platform.applySavedAppLanguage
 import com.github.zly2006.zhihu.platform.platformSettingsStore
 import com.github.zly2006.zhihu.theme.ZhihuTheme
 import com.github.zly2006.zhihu.ui.DesktopZhihuMain
+import com.github.zly2006.zhihu.ui.handlePlatformIncomingUrl
+import java.awt.Desktop
 import com.github.zly2006.zhihu.ui.components.AppStartupSplash
 import com.github.zly2006.zhihu.ui.components.WindowUserMessageHost
 import org.jetbrains.compose.resources.painterResource
 
-fun main() {
+fun main(args: Array<String>) {
     System.setProperty("java.awt.im.style", "below-the-spot")
+    args.filter { it.startsWith("zhihu-plus-plus://", ignoreCase = true) }.forEach(::handlePlatformIncomingUrl)
+    if (Desktop.isDesktopSupported()) {
+        val desktop = Desktop.getDesktop()
+        if (desktop.isSupported(Desktop.Action.APP_OPEN_URI)) {
+            desktop.setOpenURIHandler { event -> handlePlatformIncomingUrl(event.uri.toASCIIString()) }
+        }
+    }
     applySavedAppLanguage(platformSettingsStore())
     val operatingSystem = System.getProperty("os.name")
     val windows = operatingSystem.startsWith("Windows", ignoreCase = true)

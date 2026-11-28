@@ -2,7 +2,7 @@
 
 SwiftUI 只嵌入一个 `ComposeUIViewController`。启动页、主题、页面、账号、主栈和分栏均来自共享模块。工程支持 arm64 iOS 与模拟器；设备包可在 Intel 或 Apple Silicon Mac 上构建，arm64 模拟器验收使用 Apple Silicon。包型差异、当前限制和验收状态见[平台能力与边界](../docs/platform-capabilities.md#ios)。
 
-**Full 已通过 arm64 模拟器构建、跨 job 产物交接及游客导航 XCTest；Lite 已通过 arm64 模拟器打包、资源／许可与无 ORT 链接检查。** XCTest 使用 iOS 26.5，不能代替最低版本 iOS 16 或真机验收。设备 Release IPA 的最终归档验收仍未完成；签名安装、输入法及系统功能的验证边界见[平台能力与边界](../docs/platform-capabilities.md#ios)。
+**Full 已通过 arm64 模拟器构建、跨 job 产物交接及游客导航 XCTest；Lite 已通过 arm64 模拟器打包、资源／许可与无 ORT 链接检查。** XCTest 使用 iOS 26.5，不能代替最低版本 iOS 16 或真机验收。Full / Lite 均已通过设备 Release unsigned IPA 的链接、资源／许可与归档检查；Lite 同时检查不包含 ORT。签名安装、输入法及系统功能的验证边界见[平台能力与边界](../docs/platform-capabilities.md#ios)。
 
 ## 构建
 
