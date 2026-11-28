@@ -160,7 +160,7 @@ internal actual fun rememberNativeImagePicker(onPicked: (PickedImage) -> Unit): 
                                 if (!owner.disposed) {
                                     val camera = UIImagePickerController().apply {
                                         sourceType = UIImagePickerControllerSourceTypeCamera
-                                        delegate = cameraDelegate
+                                        setDelegate(cameraDelegate)
                                     }
                                     owner.controller = camera
                                     presenter.presentViewController(camera, true, null)

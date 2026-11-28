@@ -44,6 +44,7 @@ import com.github.zly2006.zhihu.util.isZhihuLoginRiskControl
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.io.encoding.Base64
 import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.coroutines.CancellationException
@@ -322,6 +323,9 @@ private class AppleLoginBrowser(
             if (!continuation.isActive) return@getAllCookies
             if (!current) {
                 continuation.cancel()
+            } else if (values == null) {
+                // 缺少读取结果不等于空 Cookie；不能用空快照完成账号或风控验证。
+                continuation.resumeWithException(LoginMessageException { AccountStrings.webLoginLoadFailed })
             } else {
                 continuation.resume(values.filterIsInstance<NSHTTPCookie>().filter {
                     isZhihuRequestHost(it.domain.removePrefix("."))
@@ -335,8 +339,14 @@ private class AppleLoginBrowser(
         val location = view.URL?.absoluteString ?: return
         val url = location.trustedLoginUrl() ?: return
         scope.launch {
-            val cookies = readCookies()
-            if (current && view.URL?.absoluteString == location) onCookies(url, cookies)
+            try {
+                val cookies = readCookies()
+                if (current && view.URL?.absoluteString == location) onCookies(url, cookies)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (current && view.URL?.absoluteString == location) failure = true
+            }
         }
     }
 
